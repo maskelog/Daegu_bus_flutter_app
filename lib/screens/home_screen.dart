@@ -812,25 +812,6 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Row(
                 children: [
-                  // Text(
-                  //   '${busArrival.routeNo}번 버스',
-                  //   style: const TextStyle(
-                  //     fontSize: 20,
-                  //     fontWeight: FontWeight.bold,
-                  //   ),
-                  // ),
-                  // const SizedBox(width: 8), // 여백 추가
-                  // Expanded(
-                  //   child: Text(
-                  //     '${_selectedStop?.name}',
-                  //     style: TextStyle(
-                  //       fontSize: 16,
-                  //       color: Colors.grey[800],
-                  //     ),
-                  //     overflow: TextOverflow.ellipsis,
-                  //     maxLines: 1,
-                  //   ),
-                  // ),
                   IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
