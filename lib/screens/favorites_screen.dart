@@ -1,3 +1,4 @@
+import 'package:daegu_bus_app/utils/alarm_helper.dart';
 import 'package:flutter/material.dart';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
@@ -216,6 +217,74 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     );
   }
 
+  void _showFavoriteAlarmModal(
+      BuildContext context, BusStop station, BusArrival busArrival) {
+    // 기본 승차 알람 시간 (분)
+    int selectedAlarmTime = 3;
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '알람 설정',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  // 옵션 선택 부분 (필요 시 다른 옵션 제공 가능)
+                  // 여기서는 기본값 3분 전으로 설정합니다.
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            // 첫 번째 버스의 남은 시간을 가져옴
+                            int remainingTime = 0;
+                            if (busArrival.buses.isNotEmpty) {
+                              remainingTime =
+                                  busArrival.buses.first.getRemainingMinutes();
+                            }
+                            // 남은 시간이 선택한 알람 시간보다 클 경우에만 알람 예약
+                            if (remainingTime > selectedAlarmTime) {
+                              int alarmId = busArrival.routeId.hashCode;
+                              DateTime arrivalTime = DateTime.now().add(
+                                Duration(minutes: remainingTime),
+                              );
+                              await AlarmHelper.setOneTimeAlarm(
+                                id: alarmId,
+                                alarmTime: arrivalTime,
+                                preNotificationTime:
+                                    Duration(minutes: selectedAlarmTime),
+                                busNo: busArrival.routeNo, // 실제 버스 번호
+                                stationName: station.name, // 실제 정류장 이름
+                                remainingMinutes:
+                                    remainingTime, // 첫 번째 버스 남은 시간
+                              );
+                            }
+                            Navigator.pop(context);
+                          },
+                          child: const Text('확인'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showBusDetailModal(
       BuildContext context, BusStop station, BusArrival busArrival) {
     showModalBottomSheet(
@@ -226,13 +295,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       ),
       builder: (context) {
         return Container(
-          height: MediaQuery.of(context).size.height * 0.4, // 화면의 60%로 제한
+          height: MediaQuery.of(context).size.height * 0.4,
           padding: const EdgeInsets.all(16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 헤더 (모달 닫기 버튼 포함)
+              // 헤더
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -257,8 +326,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-
-              // 버스 도착 정보 목록 (스크롤 가능하게)
+              // 버스 도착 정보 목록 (스크롤 가능)
               Expanded(
                 child: BusArrivalList(
                   arrivals: busArrival.buses.length > 1
@@ -272,23 +340,21 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       : [busArrival],
                   station: station,
                   onTap: (arrival) {
-                    // 필요한 경우 추가 동작 정의
+                    // 추가 동작 정의 가능
                   },
                   onAlarmSet: (arrival) {
-                    // 알람 설정 로직
+                    // 추가 동작 정의 가능
                   },
                 ),
               ),
-
               const SizedBox(height: 16),
-
-              // 알람 설정 버튼
+              // 도착 알림 설정 버튼 → 새 모달 호출
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    // 알람 설정 로직
                     Navigator.pop(context);
+                    _showFavoriteAlarmModal(context, station, busArrival);
                   },
                   icon: const Icon(Icons.notifications_active),
                   label: const Text('도착 알림 설정'),
