@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
+import '../services/alarm_service.dart';
 
-class CompactBusCard extends StatelessWidget {
+class CompactBusCard extends StatefulWidget {
   final BusArrival busArrival;
   final VoidCallback onTap;
 
@@ -12,10 +14,18 @@ class CompactBusCard extends StatelessWidget {
   });
 
   @override
+  State<CompactBusCard> createState() => _CompactBusCardState();
+}
+
+class _CompactBusCardState extends State<CompactBusCard> {
+  bool _cacheUpdated = false;
+
+  @override
   Widget build(BuildContext context) {
     // 첫 번째 버스 정보 추출
-    final firstBus =
-        busArrival.buses.isNotEmpty ? busArrival.buses.first : null;
+    final firstBus = widget.busArrival.buses.isNotEmpty
+        ? widget.busArrival.buses.first
+        : null;
 
     // 아무 버스도 없을 때
     if (firstBus == null) {
@@ -27,6 +37,16 @@ class CompactBusCard extends StatelessWidget {
     final arrivalTimeText =
         remainingMinutes <= 0 ? '곧 도착' : '$remainingMinutes분';
 
+    // 한 번만 캐시 업데이트 실행
+    if (!_cacheUpdated) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final alarmService = Provider.of<AlarmService>(context, listen: false);
+        alarmService.updateBusInfoCache(widget.busArrival.routeNo,
+            widget.busArrival.routeId, firstBus, remainingMinutes);
+        _cacheUpdated = true; // 플래그 설정
+      });
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       elevation: 0,
@@ -36,7 +56,7 @@ class CompactBusCard extends StatelessWidget {
         side: BorderSide(color: Colors.grey[200]!, width: 1),
       ),
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -48,7 +68,7 @@ class CompactBusCard extends StatelessWidget {
 
               // 버스 번호
               Text(
-                busArrival.routeNo,
+                widget.busArrival.routeNo,
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -133,5 +153,15 @@ class CompactBusCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  @override
+  void didUpdateWidget(CompactBusCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 버스 정보가 변경되었을 때만 캐시 업데이트 플래그 재설정
+    if (oldWidget.busArrival.routeNo != widget.busArrival.routeNo ||
+        oldWidget.busArrival.routeId != widget.busArrival.routeId) {
+      _cacheUpdated = false;
+    }
   }
 }
