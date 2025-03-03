@@ -197,6 +197,9 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
               duration: const Duration(seconds: 2),
             ),
           );
+
+          // 알람 목록 강제 갱신 - 여기를 추가
+          await alarmService.loadAlarms();
         } else if (context.mounted) {
           // 실패 메시지 표시
           ScaffoldMessenger.of(context).showSnackBar(
