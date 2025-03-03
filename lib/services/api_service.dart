@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/bus_stop.dart';
@@ -8,13 +9,18 @@ class ApiService {
   static const String baseUrl =
       'http://10.0.2.2:8080'; // Android 에뮬레이터용 localhost 접근 주소
 
-  // 정류장 검색 - stations.json 파일을 활용하는 서버 API 사용
+  // 정류장 검색 - stations.json 파일을 활용하는 서버 API 사용 http 요청에 타임아웃 추가
   static Future<List<BusStop>> searchStations(String query) async {
     if (query.isEmpty) return [];
 
     try {
       final url = Uri.parse('$baseUrl/station/search/$query');
-      final response = await http.get(url);
+      final response = await http.get(url).timeout(
+        const Duration(seconds: 10), // 10초 이상 응답이 없으면 타임아웃
+        onTimeout: () {
+          throw TimeoutException('서버 응답 시간이 너무 깁니다.');
+        },
+      );
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
