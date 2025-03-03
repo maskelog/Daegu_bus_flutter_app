@@ -104,19 +104,11 @@ class NotificationHelper {
     String? payload,
   }) async {
     // 디버그 로그 추가
-    debugPrint('🔔 알림 표시 시도: $busNo, $stationName, $remainingMinutes분');
+    print('🔔 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, ID: $id');
 
-    // 알림 권한 확인 및 로그
-    final status = await Permission.notification.status;
-    debugPrint('알림 권한 상태: $status');
+    // WorkManager 콜백에서 호출된 경우 알림 권한 확인은 생략 (WorkManager 컨텍스트에서는 Permission 확인이 작동하지 않을 수 있음)
 
-    if (!status.isGranted) {
-      debugPrint('❌ 알림 권한이 없어 알림을 보낼 수 없습니다.');
-      await Permission.notification.request(); // 권한 요청 시도
-      return;
-    }
-
-    // 📌 알림 제목 형식: "[버스번호] 승차알람"
+    // 알림 제목과 내용
     String title = '$busNo번 버스 승차 알림';
     String body = '$stationName 정류장 - 약 $remainingMinutes분 후 도착';
 
@@ -129,18 +121,19 @@ class NotificationHelper {
       'bus_alerts', // 채널 ID
       'Bus Alerts', // 채널 이름
       channelDescription: '버스 도착 알림',
-      importance: Importance.max, // high에서 max로 변경
-      priority: Priority.max, // high에서 max로 변경
+      importance: Importance.max,
+      priority: Priority.max,
       showWhen: true,
       when: DateTime.now().millisecondsSinceEpoch,
-      icon: 'ic_bus_notification', // 작은 아이콘
-      color: const Color(0xFFFF5722), // 주황색 (버스 테마)
+      icon: 'ic_bus_notification',
+      color: const Color(0xFFFF5722),
       largeIcon: const DrawableResourceAndroidBitmap('ic_bus_large'),
       sound: const RawResourceAndroidNotificationSound('alarm_sound'),
-      ongoing: true, // 사용자가 직접 닫기 전까지 유지
-      autoCancel: false, // 자동 닫힘 방지
-      category: AndroidNotificationCategory.alarm, // transport에서 alarm으로 변경
-      styleInformation: const MediaStyleInformation(htmlFormatContent: true),
+      ongoing: true,
+      autoCancel: false,
+      category: AndroidNotificationCategory.alarm,
+      visibility: NotificationVisibility.public,
+      fullScreenIntent: true,
       actions: <AndroidNotificationAction>[
         const AndroidNotificationAction(
           'dismiss',
@@ -149,8 +142,6 @@ class NotificationHelper {
           cancelNotification: true,
         ),
       ],
-      visibility: NotificationVisibility.public, // 잠금화면에서도 표시
-      fullScreenIntent: true, // 중요 알림으로 처리
     );
 
     const DarwinNotificationDetails iOSPlatformChannelSpecifics =
@@ -168,13 +159,19 @@ class NotificationHelper {
       iOS: iOSPlatformChannelSpecifics,
     );
 
-    await NotificationHelper.flutterLocalNotificationsPlugin.show(
-      id,
-      title,
-      body,
-      platformChannelSpecifics,
-      payload: payload,
-    );
+    try {
+      print('🔔 flutterLocalNotificationsPlugin.show 직전');
+      await flutterLocalNotificationsPlugin.show(
+        id,
+        title,
+        body,
+        platformChannelSpecifics,
+        payload: payload,
+      );
+      print('🔔 알림 표시 완료: $id');
+    } catch (e) {
+      print('🔔 알림 표시 오류: $e');
+    }
   }
 
   /// ✅ 알림 취소 메소드
