@@ -1,5 +1,6 @@
-import 'package:daegu_bus_app/utils/alarm_helper.dart';
+import 'package:daegu_bus_app/services/alarm_service.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
 import '../services/api_service.dart';
@@ -194,6 +195,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                 final busArrival = stationArrivals[idx];
                                 return CompactBusCard(
                                   busArrival: busArrival,
+                                  stationName: station.name, // 정류장 이름 전달
                                   onTap: () {
                                     // 버스 상세 정보 또는 알람 설정
                                     _showBusDetailModal(
@@ -217,6 +219,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     );
   }
 
+  // favorites_screen.dart
   void _showFavoriteAlarmModal(
       BuildContext context, BusStop station, BusArrival busArrival) {
     // 기본 승차 알람 시간 (분)
@@ -239,8 +242,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
-                  // 옵션 선택 부분 (필요 시 다른 옵션 제공 가능)
-                  // 여기서는 기본값 3분 전으로 설정합니다.
                   Row(
                     children: [
                       Expanded(
@@ -252,21 +253,30 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               remainingTime =
                                   busArrival.buses.first.getRemainingMinutes();
                             }
+
                             // 남은 시간이 선택한 알람 시간보다 클 경우에만 알람 예약
                             if (remainingTime > selectedAlarmTime) {
+                              final alarmService = Provider.of<AlarmService>(
+                                  context,
+                                  listen: false);
+
                               int alarmId = busArrival.routeId.hashCode;
                               DateTime arrivalTime = DateTime.now().add(
                                 Duration(minutes: remainingTime),
                               );
-                              await AlarmHelper.setOneTimeAlarm(
+
+                              await alarmService.setOneTimeAlarm(
                                 id: alarmId,
                                 alarmTime: arrivalTime,
                                 preNotificationTime:
                                     Duration(minutes: selectedAlarmTime),
-                                busNo: busArrival.routeNo, // 실제 버스 번호
-                                stationName: station.name, // 실제 정류장 이름
-                                remainingMinutes:
-                                    remainingTime, // 첫 번째 버스 남은 시간
+                                busNo: busArrival.routeNo,
+                                stationName: station.name,
+                                remainingMinutes: remainingTime,
+                                routeId: busArrival.routeId,
+                                currentStation:
+                                    busArrival.buses.first.currentStation,
+                                busInfo: busArrival.buses.first,
                               );
                             }
                             Navigator.pop(context);
