@@ -132,6 +132,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return _favoriteStops.any((s) => s.id == stop.id);
   }
 
+  // 정류장 검색
   Future<void> _searchStations(String query) async {
     if (query.isEmpty) {
       setState(() {
@@ -148,18 +149,22 @@ class _SearchScreenState extends State<SearchScreen> {
       _errorMessage = null;
     });
 
+    // 디바운스 추가 - 짧은 시간 내에 여러 번 호출되는 것 방지
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return; // 위젯이 dispose 됐는지 확인
+
     try {
+      // 결과 수 제한 (너무 많은 결과가 반환되면 UI가 느려짐)
       final results = await ApiService.searchStations(query);
+      final limitedResults = results.take(30).toList(); // 최대 30개로 제한
 
       if (mounted) {
         setState(() {
           // 검색 결과에 즐겨찾기 상태 설정
-          _searchResults = results.map((stop) {
+          _searchResults = limitedResults.map((stop) {
             return stop.copyWith(isFavorite: _isStopFavorite(stop));
           }).toList();
           _isLoading = false;
-
-          // 이전에 조회했던 정류장 정보 초기화
           _stationArrivals = {};
           _selectedStation = null;
         });
@@ -364,24 +369,19 @@ class _SearchScreenState extends State<SearchScreen> {
                       station: station,
                       isSelected: isSelected,
                       onTap: () {
-                        if (isSelected) {
-                          setState(() {
+                        setState(() {
+                          if (isSelected) {
                             _selectedStation = null;
-                          });
-                        } else {
-                          if (!hasArrivalInfo) {
-                            _loadStationArrivals(station);
                           } else {
-                            setState(() {
-                              _selectedStation = station;
-                            });
+                            _selectedStation = station;
+                            if (!hasArrivalInfo) {
+                              _loadStationArrivals(station);
+                            }
                           }
-                        }
+                        });
                       },
                       onFavoriteToggle: () => _toggleFavorite(station),
                     ),
-
-                    // 선택된 정류장의 버스 도착 정보 표시
                     if (isSelected &&
                         hasArrivalInfo &&
                         _stationArrivals[station.id]!.isNotEmpty)
@@ -390,7 +390,6 @@ class _SearchScreenState extends State<SearchScreen> {
                             const EdgeInsets.only(left: 16, top: 8, bottom: 16),
                         child: Column(
                           children: [
-                            // 선택 버튼 추가
                             Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
@@ -405,19 +404,15 @@ class _SearchScreenState extends State<SearchScreen> {
                               ],
                             ),
                             const SizedBox(height: 8),
-
-                            // 버스 도착 정보 목록
                             Column(
                               children: _stationArrivals[station.id]!
-                                  .take(3) // 최대 3개까지만 표시
+                                  .take(3)
                                   .map((arrival) => CompactBusCard(
                                         busArrival: arrival,
                                         onTap: () {},
                                       ))
                                   .toList(),
                             ),
-
-                            // 더 많은 버스가 있을 경우
                             if (_stationArrivals[station.id]!.length > 3)
                               Padding(
                                 padding: const EdgeInsets.only(top: 8),
@@ -436,7 +431,6 @@ class _SearchScreenState extends State<SearchScreen> {
                           ],
                         ),
                       ),
-
                     if (index < _searchResults.length - 1) const Divider(),
                   ],
                 );
