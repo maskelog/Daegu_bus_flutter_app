@@ -165,9 +165,6 @@ class _BusCardState extends State<BusCard> {
         widget.busArrival.routeId,
       );
 
-      // TTS 알람 해제 안내
-      TTSHelper.speakAlarmCancel(widget.busArrival.routeNo);
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('승차 알람이 취소되었습니다.')),
@@ -178,12 +175,18 @@ class _BusCardState extends State<BusCard> {
 
     // 새 알람 설정
     if (remainingTime > 0) {
+      // 알람 ID 생성
+      int alarmId = alarmService.getAlarmId(
+        widget.busArrival.routeNo,
+        widget.stationName ?? '정류장 정보 없음',
+        routeId: widget.busArrival.routeId,
+      );
+
+      // 알람 시간 계산
       DateTime arrivalTime =
           DateTime.now().add(Duration(minutes: remainingTime));
-      int alarmId = alarmService.getAlarmId(
-          widget.busArrival.routeNo, widget.stationName ?? '정류장 정보 없음',
-          routeId: widget.busArrival.routeId);
 
+      // WorkManager를 통한 알람 설정
       bool success = await alarmService.setOneTimeAlarm(
         id: alarmId,
         alarmTime: arrivalTime,
@@ -193,28 +196,29 @@ class _BusCardState extends State<BusCard> {
         remainingMinutes: remainingTime,
         routeId: widget.busArrival.routeId,
         currentStation: firstBus.currentStation,
-        busInfo: firstBus, // 버스 정보 전달 추가
+        busInfo: firstBus,
       );
 
-      if (success) {
-        // TTS 알람 설정 안내
-        TTSHelper.speakAlarmSet(widget.busArrival.routeNo);
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('승차 알람이 설정되었습니다.')),
+        );
 
-        // 알람 설정 후 즉시 ActiveAlarmPanel 업데이트를 위해 알람 목록 갱신 요청
+        // 알람 패널 즉시 갱신
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             alarmService.refreshAlarms();
           }
         });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('승차 알람이 설정되었습니다.')),
-          );
-        }
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('승차 알람 설정에 실패했습니다.')),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('버스가 이미 도착했거나 곧 도착합니다.')),
         );
       }
     }
