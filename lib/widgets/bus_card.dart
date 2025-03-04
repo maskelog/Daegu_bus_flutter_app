@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
 import '../services/alarm_service.dart';
+import '../services/bus_api_service.dart';
 import '../utils/notification_helper.dart';
 import '../utils/tts_helper.dart';
 
@@ -10,12 +11,14 @@ class BusCard extends StatefulWidget {
   final BusArrival busArrival;
   final VoidCallback onTap;
   final String? stationName;
+  final String stationId; // 정류장 ID 추가
 
   const BusCard({
     super.key,
     required this.busArrival,
     required this.onTap,
     this.stationName,
+    required this.stationId, // 정류장 ID 필수
   });
 
   @override
@@ -28,6 +31,8 @@ class _BusCardState extends State<BusCard> {
   Timer? _timer;
   late BusInfo firstBus;
   int remainingTime = 0;
+  final BusApiService _busApiService = BusApiService(); // 네이티브 API 서비스 인스턴스 추가
+  bool _isUpdating = false; // 업데이트 진행 중 플래그
 
   @override
   void initState() {
@@ -40,16 +45,41 @@ class _BusCardState extends State<BusCard> {
       // 초기값 설정 시에도 AlarmService 캐시 업데이트
       _updateAlarmServiceCache();
 
-      // 30초마다 남은 시간을 업데이트 (더 빠른 업데이트)
+      // 30초마다 남은 시간을 업데이트
       _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
         if (!mounted) return;
+        _updateBusArrivalInfo(); // 네이티브 API를 통한 실시간 업데이트
+      });
+    }
+  }
+
+  // 네이티브 API를 통해 버스 도착 정보 업데이트
+  Future<void> _updateBusArrivalInfo() async {
+    if (_isUpdating) return; // 이미 업데이트 중이면 중복 실행 방지
+
+    setState(() {
+      _isUpdating = true;
+    });
+
+    try {
+      // 네이티브 API로 특정 노선의 도착 정보 조회
+      final BusArrivalInfo? arrivalInfo =
+          await _busApiService.getBusArrivalByRouteId(
+        widget.stationId,
+        widget.busArrival.routeId,
+      );
+
+      if (mounted && arrivalInfo != null && arrivalInfo.bus.isNotEmpty) {
+        // 네이티브 API 응답을 앱 모델로 변환
+        final BusArrival updatedBusArrival =
+            _busApiService.convertToBusArrival(arrivalInfo);
+
         setState(() {
-          // 남은 시간 업데이트 - API 데이터 기반
-          if (remainingTime > 0) {
+          if (updatedBusArrival.buses.isNotEmpty) {
+            firstBus = updatedBusArrival.buses.first;
             remainingTime = firstBus.getRemainingMinutes();
 
-            debugPrint('BusCard - Remaining Time: $remainingTime');
-            debugPrint('BusCard - Current Time: ${DateTime.now()}');
+            debugPrint('BusCard - 업데이트된 남은 시간: $remainingTime');
 
             // AlarmService의 캐시에 최신 도착 정보 업데이트
             _updateAlarmServiceCache();
@@ -70,16 +100,26 @@ class _BusCardState extends State<BusCard> {
               _playAlarm();
             }
 
-            // 다음 버스 알람 예약 로직 유지
+            // 다음 버스 알람 예약 로직
             if (!hasBoarded &&
                 remainingTime <= 0 &&
-                widget.busArrival.buses.length > 1) {
-              BusInfo nextBus = widget.busArrival.buses[1];
+                updatedBusArrival.buses.length > 1) {
+              BusInfo nextBus = updatedBusArrival.buses[1];
               int nextRemainingTime = nextBus.getRemainingMinutes();
               _setNextBusAlarm(nextRemainingTime, nextBus.currentStation);
             }
           }
+          _isUpdating = false;
         });
+      } else {
+        setState(() {
+          _isUpdating = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('버스 도착 정보 업데이트 오류: $e');
+      setState(() {
+        _isUpdating = false;
       });
     }
   }
@@ -316,6 +356,14 @@ class _BusCardState extends State<BusCard> {
                         maxLines: 1,
                       ),
                     ),
+                    if (_isUpdating)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -410,7 +458,7 @@ class _BusCardState extends State<BusCard> {
                             style: TextStyle(fontSize: 14, color: Colors.grey),
                           ),
                           Text(
-                            nextBus.arrivalTime,
+                            '${nextBus.getRemainingMinutes()}분',
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
@@ -418,7 +466,9 @@ class _BusCardState extends State<BusCard> {
                             ),
                           ),
                         ],
-                      ),
+                      )
+                    else
+                      const SizedBox.shrink(),
                     // 승차 알람 버튼
                     ElevatedButton.icon(
                       onPressed: _setBoardingAlarm,
