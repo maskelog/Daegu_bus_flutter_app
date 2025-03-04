@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
-import '../services/api_service.dart';
+import '../services/bus_api_service.dart';
 import '../widgets/station_item.dart';
 import '../widgets/compact_bus_card.dart';
 
@@ -21,6 +21,8 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final BusApiService _busApiService = BusApiService();
+
   List<BusStop> _searchResults = [];
   List<BusStop> _favoriteStops = [];
   Map<String, List<BusArrival>> _stationArrivals = {};
@@ -132,7 +134,12 @@ class _SearchScreenState extends State<SearchScreen> {
     return _favoriteStops.any((s) => s.id == stop.id);
   }
 
-  // 정류장 검색
+  // 정류장 ID를 사용하여 즐겨찾기 여부 확인 (네이티브 API 결과용)
+  bool _isStopIdFavorite(String stopId) {
+    return _favoriteStops.any((s) => s.id == stopId);
+  }
+
+  // 정류장 검색 (네이티브 API 서비스 사용)
   Future<void> _searchStations(String query) async {
     if (query.isEmpty) {
       setState(() {
@@ -149,20 +156,24 @@ class _SearchScreenState extends State<SearchScreen> {
       _errorMessage = null;
     });
 
-    // 디바운스 추가 - 짧은 시간 내에 여러 번 호출되는 것 방지
+    // 디바운스 추가
     await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return; // 위젯이 dispose 됐는지 확인
+    if (!mounted) return;
 
     try {
-      // 결과 수 제한 (너무 많은 결과가 반환되면 UI가 느려짐)
-      final results = await ApiService.searchStations(query);
-      final limitedResults = results.take(30).toList(); // 최대 30개로 제한
+      // 네이티브 API 호출로 변경
+      final nativeResults = await _busApiService.searchStations(query);
+      final limitedResults = nativeResults.take(30).toList();
 
       if (mounted) {
         setState(() {
-          // 검색 결과에 즐겨찾기 상태 설정
-          _searchResults = limitedResults.map((stop) {
-            return stop.copyWith(isFavorite: _isStopFavorite(stop));
+          // StationSearchResult를 BusStop으로 변환
+          _searchResults = limitedResults.map((station) {
+            return BusStop(
+              id: station.bsId,
+              name: station.bsNm,
+              isFavorite: _isStopIdFavorite(station.bsId),
+            );
           }).toList();
           _isLoading = false;
           _stationArrivals = {};
@@ -193,9 +204,23 @@ class _SearchScreenState extends State<SearchScreen> {
     });
 
     try {
-      final arrivals = await ApiService.getStationInfo(station.id);
+      // 네이티브 API 사용으로 변경
+      final arrivalInfos = await _busApiService.getStationInfo(station.id);
 
       if (mounted) {
+        if (arrivalInfos.isEmpty) {
+          setState(() {
+            _stationArrivals[station.id] = [];
+            _isLoading = false;
+          });
+          return;
+        }
+
+        // BusArrivalInfo를 BusArrival로 변환
+        final arrivals = arrivalInfos
+            .map((info) => _busApiService.convertToBusArrival(info))
+            .toList();
+
         setState(() {
           _stationArrivals[station.id] = arrivals;
           _isLoading = false;
