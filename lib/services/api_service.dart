@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:daegu_bus_app/services/bus_api_service.dart';
 import 'package:http/http.dart' as http;
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
@@ -49,18 +50,27 @@ class ApiService {
     }
   }
 
-  // 정류장 도착 정보 조회 - 정류장 ID 사용
-  static Future<List<BusArrival>> getStationInfo(String stationId) async {
-    try {
-      final url = Uri.parse('$baseUrl/station/$stationId');
-      final response = await http.get(url);
+  // 정류장 도착 정보 조회
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => BusArrival.fromJson(json)).toList();
-      } else {
-        throw Exception('Failed to load station info: ${response.statusCode}');
+  static Future<List<BusArrival>> getStationInfo(String stationId) async {
+    final busApiService = BusApiService();
+
+    try {
+      // 네이티브 API 호출로 변경
+      final List<BusArrivalInfo> arrivalInfos =
+          await busApiService.getStationInfo(stationId);
+
+      // 결과가 비어있으면 빈 목록 반환
+      if (arrivalInfos.isEmpty) {
+        return [];
       }
+
+      // BusArrivalInfo를 BusArrival로 변환
+      List<BusArrival> result = arrivalInfos
+          .map((info) => busApiService.convertToBusArrival(info))
+          .toList();
+
+      return result;
     } catch (e) {
       throw Exception('Error loading station info: $e');
     }
