@@ -35,8 +35,33 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+}
+
+dependencies {
+    // 기존 의존성 유지
+    
+    // Retrofit과 OkHttp
+    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.10.0'
+    
+    // JSON 처리
+    implementation 'com.google.code.gson:gson:2.9.1'
+    
+    // HTML 파싱
+    implementation 'org.jsoup:jsoup:1.15.3'
+    
+    // 코루틴
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
+    
+    // R8 오류 해결을 위한 androidx.window 관련 의존성
+    implementation 'androidx.window:window:1.0.0'
 }
 
 flutter {
