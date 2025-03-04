@@ -780,6 +780,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 busArrival: busArrival,
                 onTap: () {},
                 stationName: _selectedStop?.name,
+                stationId: _selectedStop?.id ?? "",
               ),
             ],
           ),
