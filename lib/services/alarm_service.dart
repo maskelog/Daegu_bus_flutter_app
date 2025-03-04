@@ -203,88 +203,43 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  // 알람 데이터 로드 (기존 코드 유지)
+  // 알람 데이터 로드
   Future<void> loadAlarms() async {
-    final prefs = await SharedPreferences.getInstance();
-    List<AlarmData> alarms = [];
-
     try {
-      for (String key in prefs.getKeys()) {
-        if (key.startsWith('alarm_')) {
-          final String? jsonStr = prefs.getString(key);
-          if (jsonStr != null) {
-            try {
-              final Map<String, dynamic> jsonMap = jsonDecode(jsonStr);
-              alarms.add(AlarmData.fromJson(jsonMap));
-            } catch (e) {
-              debugPrint('Failed to parse alarm data for key $key: $e');
-            }
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys();
+      final alarmKeys = keys.where((key) => key.startsWith('alarm_')).toList();
+
+      debugPrint('알람 로드 시작: ${alarmKeys.length}개');
+
+      // 기존 알람 목록 초기화
+      _activeAlarms = [];
+
+      for (var key in alarmKeys) {
+        try {
+          final String? jsonString = prefs.getString(key);
+          if (jsonString == null || jsonString.isEmpty) {
+            // 빈 데이터 정리
+            await prefs.remove(key);
+            continue;
           }
+
+          final Map<String, dynamic> jsonData = jsonDecode(jsonString);
+          final AlarmData alarm = AlarmData.fromJson(jsonData);
+
+          // 유효한 알람만 추가 (필요시 만료 알람 제거 로직도 추가)
+          _activeAlarms.add(alarm);
+        } catch (e) {
+          // 손상된 데이터 정리
+          debugPrint('알람 데이터 손상 ($key): $e');
+          await prefs.remove(key);
         }
       }
 
-      // 지난 알람 자동 삭제
-      final now = DateTime.now();
-      alarms = alarms.where((alarm) {
-        return alarm.targetArrivalTime
-            .isAfter(now.subtract(const Duration(minutes: 5)));
-      }).toList();
-
-      // 알람 정렬 및 캐시 동기화 (나머지 코드 유지)
-      alarms.sort((a, b) => a.targetArrivalTime.compareTo(b.targetArrivalTime));
-
-      bool shouldNotify = false;
-      for (var alarm in alarms) {
-        final cacheKey = "${alarm.busNo}_${alarm.routeId}";
-        if (_busInfoCache.containsKey(cacheKey)) {
-          final busInfo = _busInfoCache[cacheKey]!;
-          final remainingMinutes = busInfo.getRemainingMinutes();
-
-          if (alarm.getCurrentArrivalMinutes() != remainingMinutes) {
-            alarm.updateRemainingMinutes(remainingMinutes);
-            shouldNotify = true;
-          }
-        }
-      }
-
-      bool alarmsChanged = _activeAlarms.length != alarms.length;
-      if (!alarmsChanged) {
-        for (int i = 0; i < alarms.length; i++) {
-          if (i >= _activeAlarms.length ||
-              _activeAlarms[i].busNo != alarms[i].busNo ||
-              _activeAlarms[i].routeId != alarms[i].routeId) {
-            alarmsChanged = true;
-            break;
-          }
-        }
-      }
-
-      _activeAlarms = alarms;
-
-      if (shouldNotify || alarmsChanged) {
-        notifyListeners();
-      }
-
-      // 지난 알람 삭제
-      for (String key in prefs.getKeys()) {
-        if (key.startsWith('alarm_')) {
-          final String? jsonStr = prefs.getString(key);
-          if (jsonStr != null) {
-            try {
-              final Map<String, dynamic> jsonMap = jsonDecode(jsonStr);
-              final alarm = AlarmData.fromJson(jsonMap);
-              if (alarm.targetArrivalTime
-                  .isBefore(now.subtract(const Duration(minutes: 5)))) {
-                await prefs.remove(key);
-              }
-            } catch (e) {
-              debugPrint('Failed to process expired alarm for key $key: $e');
-            }
-          }
-        }
-      }
+      debugPrint('알람 로드 완료: ${_activeAlarms.length}개');
+      notifyListeners();
     } catch (e) {
-      debugPrint('알람 로드 중 오류 발생: $e');
+      debugPrint('알람 로드 오류: $e');
     }
   }
 
@@ -454,12 +409,36 @@ class AlarmService extends ChangeNotifier {
   Future<bool> cancelAlarmByRoute(
       String busNo, String stationName, String routeId) async {
     try {
-      int alarmId = getAlarmId(busNo, stationName, routeId: routeId);
-      debugPrint(
-          '버스/정류장으로 알람 취소: $busNo, $stationName, $routeId (ID: $alarmId)');
-      return await cancelAlarm(alarmId);
+      // 고유 알람 ID 생성
+      final key = "${busNo}_${stationName}_$routeId";
+      final id = key.hashCode;
+
+      // 알람 상태 확인 및 로깅
+      debugPrint('알람 취소 요청: $key (ID: $id)');
+
+      // 모든 알람 키 확인 (디버깅용)
+      final prefs = await SharedPreferences.getInstance();
+      final allKeys = prefs.getKeys();
+      final alarmKeys = allKeys.where((k) => k.startsWith('alarm_')).toList();
+      debugPrint('현재 저장된 알람 키 목록: $alarmKeys');
+
+      // 알람 취소 실행
+      final result = await cancelAlarm(id);
+
+      // 추가 청소 - routeId 관련 모든 알람 키 제거 시도
+      for (final key in alarmKeys) {
+        if (key.contains(routeId)) {
+          await prefs.remove(key);
+          debugPrint('추가 알람 키 제거: $key');
+        }
+      }
+
+      // 모든 알람 데이터 강제 리로드
+      await loadAlarms();
+
+      return result;
     } catch (e) {
-      debugPrint('알람 취소 오류 (경로별): $e');
+      debugPrint('알람 취소 오류: $e');
       return false;
     }
   }
