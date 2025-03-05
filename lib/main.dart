@@ -30,6 +30,7 @@ void log(String message, {LogLevel level = LogLevel.debug}) {
   }
 }
 
+/// WorkManager 콜백 핸들러
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((taskName, inputData) async {
@@ -42,6 +43,9 @@ void callbackDispatcher() {
         final remainingMinutes = inputData['remainingMinutes'] as int;
         final currentStation = inputData['currentStation'] as String?;
         final alarmId = inputData['alarmId'] as int;
+        // skipNotification 플래그 추가
+        final skipNotification =
+            inputData['skipNotification'] as bool? ?? false;
 
         log('버스 알람 실행: $busNo, $stationName, $remainingMinutes분',
             level: LogLevel.info);
@@ -53,35 +57,40 @@ void callbackDispatcher() {
           log('Wakelock 오류: $e', level: LogLevel.error);
         }
 
-        // NotificationHelper 초기화 및 알림 표시
-        try {
-          await NotificationHelper.initialize();
-          await NotificationHelper.showNotification(
-            id: alarmId,
-            busNo: busNo,
-            stationName: stationName,
-            remainingMinutes: remainingMinutes,
-            currentStation: currentStation,
-          );
-        } catch (e) {
-          log('알림 표시 오류: $e', level: LogLevel.error);
-        }
+        // skipNotification 플래그 확인
+        if (!skipNotification) {
+          // NotificationHelper 초기화 및 알림 표시
+          try {
+            await NotificationHelper.initialize();
+            await NotificationHelper.showNotification(
+              id: alarmId,
+              busNo: busNo,
+              stationName: stationName,
+              remainingMinutes: remainingMinutes,
+              currentStation: currentStation,
+            );
+          } catch (e) {
+            log('알림 표시 오류: $e', level: LogLevel.error);
+          }
 
-        // TTS 초기화 및 실행
-        try {
-          await TTSHelper.initialize();
-          await TTSHelper.speakBusAlert(
-            busNo: busNo,
-            stationName: stationName,
-            remainingMinutes: remainingMinutes,
-            currentStation: currentStation,
-          );
-        } catch (e) {
-          log('TTS 오류: $e', level: LogLevel.error);
-        }
+          // TTS 초기화 및 실행
+          try {
+            await TTSHelper.initialize();
+            await TTSHelper.speakBusAlert(
+              busNo: busNo,
+              stationName: stationName,
+              remainingMinutes: remainingMinutes,
+              currentStation: currentStation,
+            );
+          } catch (e) {
+            log('TTS 오류: $e', level: LogLevel.error);
+          }
 
-        // TTS 완료 대기
-        await Future.delayed(const Duration(seconds: 10));
+          // TTS 완료 대기
+          await Future.delayed(const Duration(seconds: 10));
+        } else {
+          log('알림 표시 생략 (트래킹 모드): $busNo, $stationName', level: LogLevel.info);
+        }
 
         // Wakelock 비활성화
         try {
@@ -154,8 +163,46 @@ Future<void> requestNotificationPermission() async {
       level: LogLevel.info);
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    // 앱 생명주기 옵저버 등록
+    WidgetsBinding.instance.addObserver(this);
+    log('앱 생명주기 옵저버 등록됨', level: LogLevel.info);
+  }
+
+  @override
+  void dispose() {
+    // 옵저버 해제
+    WidgetsBinding.instance.removeObserver(this);
+    log('앱 생명주기 옵저버 해제됨', level: LogLevel.info);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    if (state == AppLifecycleState.resumed) {
+      // 앱이 포그라운드로 돌아올 때 TTS 재초기화
+      log('앱이 포그라운드로 전환됨: TTS 재초기화 시작', level: LogLevel.info);
+      TTSHelper.initialize().then((_) {
+        log('TTS 재초기화 완료', level: LogLevel.info);
+      }).catchError((error) {
+        log('TTS 재초기화 실패: $error', level: LogLevel.error);
+      });
+    } else if (state == AppLifecycleState.paused) {
+      log('앱이 백그라운드로 전환됨', level: LogLevel.info);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
