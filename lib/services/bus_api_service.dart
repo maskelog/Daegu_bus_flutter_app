@@ -127,12 +127,16 @@ class BusApiService {
       String estimatedTime = busInfo.estimatedTime;
       String arrivalTime = estimatedTime;
 
+      // 운행 종료 여부 확인
+      bool isOutOfService = estimatedTime == '운행종료';
+
       return BusInfo(
         busNumber: busNumber,
         isLowFloor: isLowFloor,
         currentStation: busInfo.currentStation,
         remainingStops: remainingStops.toString(),
         arrivalTime: arrivalTime,
+        isOutOfService: isOutOfService,
       );
     }).toList();
 
