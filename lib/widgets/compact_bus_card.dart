@@ -1,3 +1,4 @@
+import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
@@ -37,8 +38,24 @@ class _CompactBusCardState extends State<CompactBusCard> {
 
     // 남은 시간 계산
     final remainingMinutes = firstBus.getRemainingMinutes();
-    final arrivalTimeText =
-        remainingMinutes <= 0 ? '곧 도착' : '$remainingMinutes분';
+
+    // 버스 상태에 따른 도착 정보 텍스트 설정
+    String arrivalTimeText;
+    Color arrivalTextColor;
+
+    if (firstBus.isOutOfService == true) {
+      // 운행 종료된 경우
+      arrivalTimeText = '운행종료';
+      arrivalTextColor = Colors.grey;
+    } else if (remainingMinutes <= 0) {
+      // 도착 임박한 경우
+      arrivalTimeText = '곧 도착';
+      arrivalTextColor = Colors.red;
+    } else {
+      // 일반적인 경우
+      arrivalTimeText = '$remainingMinutes분';
+      arrivalTextColor = remainingMinutes <= 3 ? Colors.red : Colors.blue[600]!;
+    }
 
     // 알람 서비스 가져오기
     final alarmService = Provider.of<AlarmService>(context);
@@ -142,7 +159,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '도착예정',
+                    firstBus.isOutOfService == true ? '' : '도착예정',
                     style: TextStyle(
                       fontSize: 11,
                       color: Colors.grey[600],
@@ -153,15 +170,14 @@ class _CompactBusCardState extends State<CompactBusCard> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color:
-                          remainingMinutes <= 3 ? Colors.red : Colors.blue[600],
+                      color: arrivalTextColor,
                     ),
                   ),
                 ],
               ),
 
-              // 알람 버튼 (정류장 이름이 있는 경우에만 표시)
-              if (widget.stationName != null)
+              // 알람 버튼 (정류장 이름이 있는 경우에만 표시, 운행 종료 시 비활성화)
+              if (widget.stationName != null && firstBus.isOutOfService != true)
                 IconButton(
                   icon: Icon(
                     hasAlarm
@@ -181,11 +197,15 @@ class _CompactBusCardState extends State<CompactBusCard> {
   }
 
   // 알람 설정 메서드
+// 알람 설정 메서드
   void _setAlarm(BusInfo busInfo, int remainingMinutes) async {
     // 정류장 이름이 없으면 알람을 설정할 수 없음
     if (widget.stationName == null) return;
 
     final alarmService = Provider.of<AlarmService>(context, listen: false);
+    // NotificationService 인스턴스 생성
+    final notificationService = NotificationService();
+    await notificationService.initialize();
 
     // 현재 알람 상태 확인
     bool hasAlarm = alarmService.hasAlarm(
@@ -201,6 +221,9 @@ class _CompactBusCardState extends State<CompactBusCard> {
         widget.stationName!,
         widget.busArrival.routeId,
       );
+
+      // 실시간 추적 알림도 함께 취소
+      await notificationService.cancelOngoingTracking();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -234,6 +257,14 @@ class _CompactBusCardState extends State<CompactBusCard> {
         );
 
         if (success && mounted) {
+          // 알람 설정 성공 시 실시간 추적 알림 시작
+          await notificationService.showOngoingBusTracking(
+            busNo: widget.busArrival.routeNo,
+            stationName: widget.stationName!,
+            remainingMinutes: remainingMinutes,
+            currentStation: busInfo.currentStation,
+          );
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('승차 알람이 설정되었습니다')),
           );
