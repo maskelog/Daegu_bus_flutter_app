@@ -7,7 +7,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/alarm_service.dart';
 import 'screens/home_screen.dart';
-import 'utils/notification_helper.dart';
+import 'services/notification_service.dart';
 import 'utils/tts_helper.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -59,10 +59,11 @@ void callbackDispatcher() {
 
         // skipNotification 플래그 확인
         if (!skipNotification) {
-          // NotificationHelper 초기화 및 알림 표시
+          // NotificationService 초기화 및 알림 표시
           try {
-            await NotificationHelper.initialize();
-            await NotificationHelper.showNotification(
+            final notificationService = NotificationService();
+            await notificationService.initialize();
+            await notificationService.showNotification(
               id: alarmId,
               busNo: busNo,
               stationName: stationName,
@@ -118,8 +119,8 @@ void main() async {
     isInDebugMode: false, // 디버그 모드 비활성화하여 WorkManager 로그 줄이기
   );
 
-  // 로컬 알림 초기화
-  await NotificationHelper.initialize();
+  // 로컬 알림 초기화 - NotificationService로 변경
+  await NotificationService().initialize();
 
   // TTS 초기화
   await TTSHelper.initialize();
@@ -152,7 +153,8 @@ Future<void> requestNotificationPermission() async {
     openAppSettings();
   }
 
-  // flutter_local_notifications 알림 권한 요청 (Android 13+)
+  // 이제 네이티브 코드에서 권한 처리를 하므로 이 부분은 생략 가능
+  // 하지만 호환성을 위해 유지할 수도 있음
   final androidImplementation =
       flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
