@@ -4,21 +4,21 @@ import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
 import '../services/alarm_service.dart';
 import '../services/bus_api_service.dart';
-import '../utils/notification_helper.dart';
+import '../services/notification_service.dart';
 import '../utils/tts_helper.dart';
 
 class BusCard extends StatefulWidget {
   final BusArrival busArrival;
   final VoidCallback onTap;
   final String? stationName;
-  final String stationId; // 정류장 ID 추가
+  final String stationId; // 정류장 ID
 
   const BusCard({
     super.key,
     required this.busArrival,
     required this.onTap,
     this.stationName,
-    required this.stationId, // 정류장 ID 필수
+    required this.stationId,
   });
 
   @override
@@ -31,8 +31,9 @@ class _BusCardState extends State<BusCard> {
   Timer? _timer;
   late BusInfo firstBus;
   int remainingTime = 0;
-  final BusApiService _busApiService = BusApiService(); // 네이티브 API 서비스 인스턴스 추가
+  final BusApiService _busApiService = BusApiService(); // 네이티브 API 서비스 인스턴스
   bool _isUpdating = false; // 업데이트 진행 중 플래그
+  final NotificationService _notificationService = NotificationService();
 
   @override
   void initState() {
@@ -45,24 +46,23 @@ class _BusCardState extends State<BusCard> {
       // 초기값 설정 시에도 AlarmService 캐시 업데이트
       _updateAlarmServiceCache();
 
-      // 30초마다 남은 시간을 업데이트
+      // 30초마다 남은 시간 업데이트
       _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
         if (!mounted) return;
-        _updateBusArrivalInfo(); // 네이티브 API를 통한 실시간 업데이트
+        _updateBusArrivalInfo(); // 네이티브 API를 통한 업데이트
       });
     }
   }
 
   // 네이티브 API를 통해 버스 도착 정보 업데이트
   Future<void> _updateBusArrivalInfo() async {
-    if (_isUpdating) return; // 이미 업데이트 중이면 중복 실행 방지
+    if (_isUpdating) return;
 
     setState(() {
       _isUpdating = true;
     });
 
     try {
-      // 네이티브 API로 특정 노선의 도착 정보 조회
       final BusArrivalInfo? arrivalInfo =
           await _busApiService.getBusArrivalByRouteId(
         widget.stationId,
@@ -70,7 +70,6 @@ class _BusCardState extends State<BusCard> {
       );
 
       if (mounted && arrivalInfo != null && arrivalInfo.bus.isNotEmpty) {
-        // 네이티브 API 응답을 앱 모델로 변환
         final BusArrival updatedBusArrival =
             _busApiService.convertToBusArrival(arrivalInfo);
 
@@ -81,10 +80,8 @@ class _BusCardState extends State<BusCard> {
 
             debugPrint('BusCard - 업데이트된 남은 시간: $remainingTime');
 
-            // AlarmService의 캐시에 최신 도착 정보 업데이트
             _updateAlarmServiceCache();
 
-            // 알람 체크 및 작동
             final alarmService =
                 Provider.of<AlarmService>(context, listen: false);
             final bool hasAlarm = alarmService.hasAlarm(
@@ -93,6 +90,7 @@ class _BusCardState extends State<BusCard> {
               widget.busArrival.routeId,
             );
 
+            // 알람 조건에 따라 알람 실행
             if (hasAlarm &&
                 !hasBoarded &&
                 remainingTime <= defaultPreNotificationMinutes &&
@@ -100,7 +98,7 @@ class _BusCardState extends State<BusCard> {
               _playAlarm();
             }
 
-            // 다음 버스 알람 예약 로직
+            // 다음 버스 알람 예약
             if (!hasBoarded &&
                 remainingTime <= 0 &&
                 updatedBusArrival.buses.length > 1) {
@@ -124,12 +122,15 @@ class _BusCardState extends State<BusCard> {
     }
   }
 
-  // AlarmService 캐시 업데이트를 위한 별도 메소드
+  // AlarmService 캐시 업데이트
   void _updateAlarmServiceCache() {
     final alarmService = Provider.of<AlarmService>(context, listen: false);
-    // 버스 정보 및 현재 남은 시간 업데이트
-    alarmService.updateBusInfoCache(widget.busArrival.routeNo,
-        widget.busArrival.routeId, firstBus, remainingTime);
+    alarmService.updateBusInfoCache(
+      widget.busArrival.routeNo,
+      widget.busArrival.routeId,
+      firstBus,
+      remainingTime,
+    );
   }
 
   @override
@@ -140,12 +141,13 @@ class _BusCardState extends State<BusCard> {
 
   // 알람 실행: OS 알림을 표시합니다.
   void _playAlarm() {
-    // AlarmService를 사용하지만 직접 알림 표시 기능
     int alarmId = Provider.of<AlarmService>(context, listen: false).getAlarmId(
-        widget.busArrival.routeNo, widget.stationName ?? '정류장 정보 없음',
-        routeId: widget.busArrival.routeId);
+      widget.busArrival.routeNo,
+      widget.stationName ?? '정류장 정보 없음',
+      routeId: widget.busArrival.routeId,
+    );
 
-    NotificationHelper.showNotification(
+    _notificationService.showNotification(
       id: alarmId,
       busNo: widget.busArrival.routeNo,
       stationName: widget.stationName ?? '정류장 정보 없음',
@@ -158,14 +160,14 @@ class _BusCardState extends State<BusCard> {
   Future<void> _setNextBusAlarm(
       int nextRemainingTime, String currentStation) async {
     final alarmService = Provider.of<AlarmService>(context, listen: false);
-
     DateTime arrivalTime =
         DateTime.now().add(Duration(minutes: nextRemainingTime));
     int alarmId = alarmService.getAlarmId(
-        widget.busArrival.routeNo, widget.stationName ?? '정류장 정보 없음',
-        routeId: widget.busArrival.routeId);
+      widget.busArrival.routeNo,
+      widget.stationName ?? '정류장 정보 없음',
+      routeId: widget.busArrival.routeId,
+    );
 
-    // 다음 버스 정보도 캐시에 저장
     BusInfo nextBus = widget.busArrival.buses[1];
 
     bool success = await alarmService.setOneTimeAlarm(
@@ -177,20 +179,18 @@ class _BusCardState extends State<BusCard> {
       remainingMinutes: nextRemainingTime,
       routeId: widget.busArrival.routeId,
       currentStation: currentStation,
-      busInfo: nextBus, // 버스 정보 전달 추가
+      busInfo: nextBus,
     );
 
     if (success) {
-      // TTS 안내 (알람 설정)
       TTSHelper.speakAlarmSet(widget.busArrival.routeNo);
     }
   }
 
-  // 승차 알람 예약
-  Future<void> _setBoardingAlarm() async {
+  // 승차 알람 예약 또는 해제
+// 승차 알람 예약 또는 해제
+  Future<void> _toggleBoardingAlarm() async {
     final alarmService = Provider.of<AlarmService>(context, listen: false);
-
-    // 현재 알람 상태 확인
     bool hasAlarm = alarmService.hasAlarm(
       widget.busArrival.routeNo,
       widget.stationName ?? '정류장 정보 없음',
@@ -198,73 +198,99 @@ class _BusCardState extends State<BusCard> {
     );
 
     if (hasAlarm) {
-      // 이미 알람이 설정되어 있으면 취소
-      await alarmService.cancelAlarmByRoute(
+      // 알람 해제
+      bool success = await alarmService.cancelAlarmByRoute(
         widget.busArrival.routeNo,
         widget.stationName ?? '정류장 정보 없음',
         widget.busArrival.routeId,
       );
 
-      if (mounted) {
+      if (success && mounted) {
+        // 1. 토스트 메시지 표시
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('승차 알람이 취소되었습니다.')),
         );
-      }
-      return;
-    }
 
-    // 새 알람 설정
-    if (remainingTime > 0) {
-      // 알람 ID 생성
-      int alarmId = alarmService.getAlarmId(
-        widget.busArrival.routeNo,
-        widget.stationName ?? '정류장 정보 없음',
-        routeId: widget.busArrival.routeId,
-      );
+        // 2. TTS로 알람 취소 안내
+        TTSHelper.speakAlarmCancel(widget.busArrival.routeNo);
 
-      // 알람 시간 계산
-      DateTime arrivalTime =
-          DateTime.now().add(Duration(minutes: remainingTime));
+        // 3. 버스 실시간 추적 중지 (NotificationService 사용)
+        await _notificationService.cancelOngoingTracking();
 
-      // WorkManager를 통한 알람 설정
-      bool success = await alarmService.setOneTimeAlarm(
-        id: alarmId,
-        alarmTime: arrivalTime,
-        preNotificationTime: Duration(minutes: defaultPreNotificationMinutes),
-        busNo: widget.busArrival.routeNo,
-        stationName: widget.stationName ?? '정류장 정보 없음',
-        remainingMinutes: remainingTime,
-        routeId: widget.busArrival.routeId,
-        currentStation: firstBus.currentStation,
-        busInfo: firstBus,
-      );
-
-      if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('승차 알람이 설정되었습니다.')),
-        );
-
-        // 알람 패널 즉시 갱신
+        // 4. 알람 목록 갱신
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             alarmService.refreshAlarms();
           }
         });
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('승차 알람 설정에 실패했습니다.')),
-        );
       }
     } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('버스가 이미 도착했거나 곧 도착합니다.')),
+      // 알람 예약
+      if (firstBus.isOutOfService) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('운행 종료된 버스입니다.')),
+          );
+        }
+        return;
+      }
+
+      if (remainingTime > 0) {
+        int alarmId = alarmService.getAlarmId(
+          widget.busArrival.routeNo,
+          widget.stationName ?? '정류장 정보 없음',
+          routeId: widget.busArrival.routeId,
         );
+        DateTime arrivalTime =
+            DateTime.now().add(Duration(minutes: remainingTime));
+        bool success = await alarmService.setOneTimeAlarm(
+          id: alarmId,
+          alarmTime: arrivalTime,
+          preNotificationTime: Duration(minutes: defaultPreNotificationMinutes),
+          busNo: widget.busArrival.routeNo,
+          stationName: widget.stationName ?? '정류장 정보 없음',
+          remainingMinutes: remainingTime,
+          routeId: widget.busArrival.routeId,
+          currentStation: firstBus.currentStation,
+          busInfo: firstBus,
+        );
+
+        if (success && mounted) {
+          // 1. 토스트 메시지 표시
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('승차 알람이 설정되었습니다.')),
+          );
+
+          // 2. 버스 실시간 추적 시작 (NotificationService 사용)
+          await _notificationService.showOngoingBusTracking(
+            busNo: widget.busArrival.routeNo,
+            stationName: widget.stationName ?? '정류장 정보 없음',
+            remainingMinutes: remainingTime,
+            currentStation: firstBus.currentStation,
+          );
+
+          // 3. 알람 목록 갱신
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              alarmService.refreshAlarms();
+            }
+          });
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('승차 알람 설정에 실패했습니다.')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('버스가 이미 도착했거나 곧 도착합니다.')),
+          );
+        }
       }
     }
   }
 
-  // 승차 완료 버튼: 사용자가 탑승했음을 확인하면 알람을 취소합니다.
+  // 승차 완료 버튼
   Widget _showBoardingButton() {
     return ElevatedButton(
       onPressed: () async {
@@ -272,7 +298,6 @@ class _BusCardState extends State<BusCard> {
           hasBoarded = true;
         });
 
-        // 알람 취소
         final alarmService = Provider.of<AlarmService>(context, listen: false);
         bool success = await alarmService.cancelAlarmByRoute(
           widget.busArrival.routeNo,
@@ -281,10 +306,13 @@ class _BusCardState extends State<BusCard> {
         );
 
         if (success && mounted) {
-          // TTS 알람 해제 안내
+          // 1. TTS로 알람 취소 안내
           TTSHelper.speakAlarmCancel(widget.busArrival.routeNo);
 
-          // 알람 취소 후 즉시 ActiveAlarmPanel 업데이트를 위해 알람 목록 갱신 요청
+          // 2. 버스 실시간 추적 중지 (NotificationService 사용)
+          await _notificationService.cancelOngoingTracking();
+
+          // 3. 알람 목록 갱신
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               alarmService.refreshAlarms();
@@ -314,7 +342,6 @@ class _BusCardState extends State<BusCard> {
     BusInfo? nextBus =
         widget.busArrival.buses.length > 1 ? widget.busArrival.buses[1] : null;
 
-    // 알람 상태 확인
     final alarmService = Provider.of<AlarmService>(context);
     final bool alarmEnabled = alarmService.hasAlarm(
       widget.busArrival.routeNo,
@@ -375,7 +402,9 @@ class _BusCardState extends State<BusCard> {
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue[500],
+                        color: firstBus.isOutOfService
+                            ? Colors.grey
+                            : Colors.blue[500],
                       ),
                     ),
                     if (firstBus.isLowFloor)
@@ -411,7 +440,8 @@ class _BusCardState extends State<BusCard> {
                 LinearProgressIndicator(
                   value: 0.6,
                   backgroundColor: Colors.grey[200],
-                  color: Colors.blue[500],
+                  color:
+                      firstBus.isOutOfService ? Colors.grey : Colors.blue[500],
                   borderRadius: BorderRadius.circular(4),
                 ),
                 const SizedBox(height: 12),
@@ -423,22 +453,25 @@ class _BusCardState extends State<BusCard> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '도착예정',
-                          style: TextStyle(fontSize: 14, color: Colors.grey),
+                        Text(
+                          firstBus.isOutOfService ? '버스 상태' : '도착예정',
+                          style:
+                              const TextStyle(fontSize: 14, color: Colors.grey),
                         ),
                         Text(
-                          '$remainingTime분',
+                          firstBus.isOutOfService ? '운행종료' : '$remainingTime분',
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
-                            color: remainingTime <= 3
-                                ? Colors.red
-                                : Colors.blue[600],
+                            color: firstBus.isOutOfService
+                                ? Colors.grey
+                                : (remainingTime <= 3
+                                    ? Colors.red
+                                    : Colors.blue[600]),
                           ),
                         ),
-                        // 현재 버스 위치 (n번째 전 출발) 표시 추가
-                        if (firstBus.currentStation.isNotEmpty)
+                        if (firstBus.currentStation.isNotEmpty &&
+                            !firstBus.isOutOfService)
                           Text(
                             '(${firstBus.currentStation})',
                             style: TextStyle(
@@ -458,7 +491,9 @@ class _BusCardState extends State<BusCard> {
                             style: TextStyle(fontSize: 14, color: Colors.grey),
                           ),
                           Text(
-                            '${nextBus.getRemainingMinutes()}분',
+                            nextBus.isOutOfService
+                                ? '운행종료'
+                                : '${nextBus.getRemainingMinutes()}분',
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
@@ -469,21 +504,26 @@ class _BusCardState extends State<BusCard> {
                       )
                     else
                       const SizedBox.shrink(),
-                    // 승차 알람 버튼
+                    // 승차 알람 버튼: 알람이 이미 설정되었다면 '알람 해제', 아니면 '승차 알람'
                     ElevatedButton.icon(
-                      onPressed: _setBoardingAlarm,
+                      onPressed: firstBus.isOutOfService
+                          ? null
+                          : () async {
+                              await _toggleBoardingAlarm();
+                            },
                       icon: Icon(
                         Icons.directions_bus,
                         color: alarmEnabled ? Colors.yellow : Colors.white,
                         size: 18,
                       ),
                       label: Text(
-                        alarmEnabled ? '알람 설정됨' : '승차 알람',
+                        alarmEnabled ? '알람 해제' : '승차 알람',
                         style: const TextStyle(fontSize: 13),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            alarmEnabled ? Colors.blue[700] : Colors.blue,
+                        backgroundColor: firstBus.isOutOfService
+                            ? Colors.grey
+                            : (alarmEnabled ? Colors.blue[700] : Colors.blue),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 0),
                         minimumSize: const Size(80, 36),
@@ -491,9 +531,9 @@ class _BusCardState extends State<BusCard> {
                     ),
                   ],
                 ),
-                // 승차 알람이 울린 상태이면 승차 완료 버튼 표시
                 if (alarmEnabled &&
                     !hasBoarded &&
+                    !firstBus.isOutOfService &&
                     remainingTime <= defaultPreNotificationMinutes)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),

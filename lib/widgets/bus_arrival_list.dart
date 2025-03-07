@@ -112,7 +112,9 @@ class BusArrivalItem extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blue.shade600,
+                  color: firstBus?.isOutOfService == true
+                      ? Colors.grey
+                      : Colors.blue.shade600,
                 ),
               ),
             ),
@@ -154,7 +156,9 @@ class BusArrivalItem extends StatelessWidget {
                     ),
                   if (firstBus != null)
                     Text(
-                      firstBus.remainingStops,
+                      firstBus.isOutOfService
+                          ? '운행종료'
+                          : firstBus.remainingStops,
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade600,
@@ -171,7 +175,7 @@ class BusArrivalItem extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    '도착예정',
+                    firstBus?.isOutOfService == true ? '버스 상태' : '도착예정',
                     style: TextStyle(
                       fontSize: 11,
                       color: Colors.grey.shade600,
@@ -179,13 +183,15 @@ class BusArrivalItem extends StatelessWidget {
                   ),
                   if (firstBus != null)
                     Text(
-                      firstBus.arrivalTime,
+                      firstBus.isOutOfService ? '운행종료' : firstBus.arrivalTime,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: firstBus.getRemainingMinutes() <= 3
-                            ? Colors.red
-                            : Colors.blue.shade600,
+                        color: firstBus.isOutOfService
+                            ? Colors.grey
+                            : (firstBus.getRemainingMinutes() <= 3
+                                ? Colors.red
+                                : Colors.blue.shade600),
                       ),
                     ),
                 ],
