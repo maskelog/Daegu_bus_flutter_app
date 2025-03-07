@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:daegu_bus_app/utils/tts_helper.dart';
 
 /// NotificationService: 네이티브 BusAlertService와 통신하는 Flutter 서비스
 class NotificationService {
@@ -82,7 +83,7 @@ class NotificationService {
     }
   }
 
-  /// 버스 도착 임박 알림 (중요도 높음)
+  /// 버스 도착 임박 알림 (중요도 높음) - TTS 발화와 함께 실행
   Future<bool> showBusArrivingSoon({
     required String busNo,
     required String stationName,
@@ -96,6 +97,16 @@ class NotificationService {
       });
 
       debugPrint('🚨 버스 도착 임박 알림 표시: $busNo');
+
+      // TTS 발화를 통해 버스 도착 임박 메시지를 음성으로 안내
+      await TTSHelper.speakBusAlert(
+        busNo: busNo,
+        stationName: stationName,
+        remainingMinutes: 0, // 도착 임박이므로 0분으로 처리
+        currentStation: currentStation,
+        priority: true,
+      );
+
       return result;
     } on PlatformException catch (e) {
       debugPrint('🚨 버스 도착 임박 알림 오류: ${e.message}');
