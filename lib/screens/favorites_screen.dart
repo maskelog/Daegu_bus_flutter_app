@@ -1,12 +1,15 @@
+import 'dart:async';
+
 import 'package:daegu_bus_app/services/alarm_service.dart';
+import 'package:daegu_bus_app/widgets/bus_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
 import '../services/api_service.dart';
 import '../widgets/compact_bus_card.dart';
 import '../widgets/station_item.dart';
-import '../widgets/bus_arrival_list.dart';
 
 class FavoritesScreen extends StatefulWidget {
   final List<BusStop> favoriteStops;
@@ -29,6 +32,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   final Map<String, bool> _isLoadingMap = {};
   final Map<String, String?> _errorMap = {};
   BusStop? _selectedStop;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -36,16 +40,30 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     if (widget.favoriteStops.isNotEmpty) {
       _loadAllFavoriteArrivals();
     }
+    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) {
+        if (_selectedStop != null) {
+          _loadStationArrivals(_selectedStop!);
+        } else if (widget.favoriteStops.isNotEmpty) {
+          _loadAllFavoriteArrivals();
+        }
+      }
+    });
   }
 
-  // 모든 즐겨찾기 정류장의 도착 정보 로드
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  /// 즐겨찾는 모든 정류장의 도착 정보 불러오기
   Future<void> _loadAllFavoriteArrivals() async {
-    for (final stop in widget.favoriteStops) {
-      _loadStationArrivals(stop);
+    for (final station in widget.favoriteStops) {
+      await _loadStationArrivals(station);
     }
   }
 
-  // 특정 정류장의 도착 정보 로드
   Future<void> _loadStationArrivals(BusStop station) async {
     setState(() {
       _isLoadingMap[station.id] = true;
@@ -60,6 +78,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         _stationArrivals[station.id] = arrivals;
         _isLoadingMap[station.id] = false;
       });
+      _updateAlarmServiceCache(arrivals, station.name);
     } catch (e) {
       debugPrint('Error loading arrivals for station ${station.id}: $e');
       if (!mounted) return;
@@ -71,6 +90,33 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     }
   }
 
+  void _updateAlarmServiceCache(
+      List<BusArrival> busArrivals, String stationName) {
+    if (busArrivals.isEmpty || !mounted) return;
+
+    final alarmService = Provider.of<AlarmService>(context, listen: false);
+    final Set<String> updatedBuses = {};
+
+    for (var busArrival in busArrivals) {
+      if (busArrival.buses.isNotEmpty) {
+        final firstBus = busArrival.buses.first;
+        final remainingTime = firstBus.getRemainingMinutes();
+        final busKey = "${busArrival.routeNo}:${busArrival.routeId}";
+        if (updatedBuses.contains(busKey)) continue;
+        updatedBuses.add(busKey);
+
+        alarmService.updateBusInfoCache(
+          busArrival.routeNo,
+          busArrival.routeId,
+          firstBus,
+          remainingTime,
+        );
+        debugPrint(
+            '즐겨찾기 화면에서 캐시 업데이트: ${busArrival.routeNo}, 남은 시간: $remainingTime분');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.favoriteStops.isEmpty) {
@@ -78,26 +124,16 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.star_border,
-              size: 64,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.star_border, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
               '즐겨찾는 정류장이 없습니다',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
             Text(
               '정류장 검색 후 별표 아이콘을 눌러 추가하세요',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             ),
           ],
         ),
@@ -117,14 +153,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 정류장 정보
             StationItem(
               station: station,
               isSelected: isSelected,
               onTap: () {
                 setState(() {
                   if (_selectedStop?.id == station.id) {
-                    _selectedStop = null; // 선택 해제
+                    _selectedStop = null;
                   } else {
                     _selectedStop = station;
                     if (stationArrivals.isEmpty && !isLoading) {
@@ -136,13 +171,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               },
               onFavoriteToggle: () => widget.onFavoriteToggle(station),
             ),
-
-            // 선택된 정류장의 버스 도착 정보 - 스크롤 가능하게 수정
             if (isSelected)
               Padding(
                 padding: const EdgeInsets.only(left: 12, top: 8, bottom: 16),
                 child: SizedBox(
-                  height: 300, // 고정 높이 설정 - 스크롤 가능하게
+                  height: 300,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -162,10 +195,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                 Icon(Icons.error_outline,
                                     size: 32, color: Colors.red[300]),
                                 const SizedBox(height: 8),
-                                Text(
-                                  error,
-                                  style: TextStyle(color: Colors.red[700]),
-                                ),
+                                Text(error,
+                                    style: TextStyle(color: Colors.red[700])),
                                 TextButton(
                                   onPressed: () =>
                                       _loadStationArrivals(station),
@@ -195,12 +226,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                 final busArrival = stationArrivals[idx];
                                 return CompactBusCard(
                                   busArrival: busArrival,
-                                  stationName: station.name, // 정류장 이름 전달
-                                  onTap: () {
-                                    // 버스 상세 정보 또는 알람 설정
-                                    _showBusDetailModal(
-                                        context, station, busArrival);
-                                  },
+                                  stationName: station.name,
+                                  onTap: () => _showBusDetailModal(
+                                      context, station, busArrival),
                                 );
                               },
                             ),
@@ -210,7 +238,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   ),
                 ),
               ),
-
             if (index < widget.favoriteStops.length - 1)
               const Divider(height: 24),
           ],
@@ -219,10 +246,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     );
   }
 
-  // favorites_screen.dart
   void _showFavoriteAlarmModal(
       BuildContext context, BusStop station, BusArrival busArrival) {
-    // 기본 승차 알람 시간 (분)
     int selectedAlarmTime = 3;
     showModalBottomSheet(
       context: context,
@@ -247,24 +272,18 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () async {
-                            // 첫 번째 버스의 남은 시간을 가져옴
                             int remainingTime = 0;
                             if (busArrival.buses.isNotEmpty) {
                               remainingTime =
                                   busArrival.buses.first.getRemainingMinutes();
                             }
-
-                            // 남은 시간이 선택한 알람 시간보다 클 경우에만 알람 예약
                             if (remainingTime > selectedAlarmTime) {
                               final alarmService = Provider.of<AlarmService>(
                                   context,
                                   listen: false);
-
                               int alarmId = busArrival.routeId.hashCode;
-                              DateTime arrivalTime = DateTime.now().add(
-                                Duration(minutes: remainingTime),
-                              );
-
+                              DateTime arrivalTime = DateTime.now()
+                                  .add(Duration(minutes: remainingTime));
                               await alarmService.setOneTimeAlarm(
                                 id: alarmId,
                                 alarmTime: arrivalTime,
@@ -297,6 +316,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   void _showBusDetailModal(
       BuildContext context, BusStop station, BusArrival busArrival) {
+    final alarmService = Provider.of<AlarmService>(context, listen: false);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -304,77 +325,316 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.4,
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 헤더
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${busArrival.routeNo}번 버스',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final bool hasActiveAlarm = alarmService.hasAlarm(
+                busArrival.routeNo, station.name, busArrival.routeId);
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.5, // 처음에는 50%만 표시
+              minChildSize: 0.5,
+              maxChildSize: 0.85,
+              expand: false,
+              builder: (context, scrollController) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      // 드래그 핸들
+                      Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        height: 4,
+                        width: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      // 헤더 정보
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${busArrival.routeNo}번 버스',
+                                  style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  '${station.name} → ${busArrival.destination}',
+                                  style: TextStyle(
+                                      fontSize: 14, color: Colors.grey[800]),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView(
+                          controller: scrollController,
+                          padding: EdgeInsets.zero,
+                          children: [
+                            // 첫 번째 버스 카드
+                            BusCard(
+                              busArrival: BusArrival(
+                                routeNo: busArrival.routeNo,
+                                destination: busArrival.destination,
+                                routeId: busArrival.routeId,
+                                buses: busArrival.buses.isNotEmpty
+                                    ? [busArrival.buses.first]
+                                    : [],
+                              ),
+                              onTap: () {},
+                              stationName: station.name,
+                              stationId: station.id,
+                            ),
+
+                            // 다음 버스 정보 안내 (다음 버스가 있는 경우만)
+                            if (busArrival.buses.length > 1) ...[
+                              const SizedBox(height: 12),
+                              Center(
+                                child: Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.keyboard_arrow_down,
+                                          size: 16, color: Colors.blue[700]),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '다음 버스 정보',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.blue[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // 다음 버스 정보 섹션 헤더
+                              const Text(
+                                '다음 버스 정보',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+
+                              // 다음 버스 목록
+                              ...busArrival.buses.skip(1).map((bus) {
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    side: BorderSide(color: Colors.grey[200]!),
+                                  ),
+                                  child: InkWell(
+                                    onTap: () {
+                                      // 해당 버스만 포함한 새 BusArrival 객체 생성
+                                      final selectedBusArrival = BusArrival(
+                                        routeNo: busArrival.routeNo,
+                                        destination: busArrival.destination,
+                                        routeId: busArrival.routeId,
+                                        buses: [bus],
+                                      );
+
+                                      // 현재 모달 닫고 새 버스 상세 모달 열기
+                                      Navigator.pop(context);
+                                      _showBusDetailModal(
+                                          context, station, selectedBusArrival);
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16.0),
+                                      child: Row(
+                                        children: [
+                                          // 버스 번호와 저상 여부
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Text(
+                                                    busArrival.routeNo,
+                                                    style: TextStyle(
+                                                      fontSize: 18,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors.blue[600],
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  if (bus.isLowFloor)
+                                                    Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 4,
+                                                        vertical: 2,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            Colors.green[100],
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(4),
+                                                      ),
+                                                      child: Text(
+                                                        '저상',
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          color:
+                                                              Colors.green[700],
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                bus.currentStation,
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                              Text(
+                                                bus.remainingStops,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[500],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const Spacer(),
+                                          // 도착 시간
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                '도착예정',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                              Text(
+                                                bus.arrivalTime,
+                                                style: TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                  color:
+                                                      bus.getRemainingMinutes() <=
+                                                              3
+                                                          ? Colors.red
+                                                          : Colors.blue[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                              const SizedBox(height: 20),
+                            ],
+                          ],
+                        ),
+                      ),
+                      // 하단 버튼 영역
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              Navigator.pop(context); // 모달 닫기
+                              if (hasActiveAlarm) {
+                                debugPrint(
+                                    '${busArrival.routeNo}번 도착 알림 취소 요청');
+                                final success =
+                                    await alarmService.cancelAlarmByRoute(
+                                  busArrival.routeNo,
+                                  station.name,
+                                  busArrival.routeId,
+                                );
+                                if (success && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          '${busArrival.routeNo}번 도착 알림이 취소되었습니다'),
+                                      duration: const Duration(seconds: 2),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                } else if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          '${busArrival.routeNo}번 도착 알림 취소에 실패했습니다'),
+                                      backgroundColor: Colors.red[700],
+                                      duration: const Duration(seconds: 2),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
+                              } else {
+                                _showFavoriteAlarmModal(
+                                    context, station, busArrival);
+                              }
+                            },
+                            icon: Icon(
+                              hasActiveAlarm
+                                  ? Icons.notifications_off
+                                  : Icons.notifications_active,
+                            ),
+                            label: Text(
+                              hasActiveAlarm ? '도착 알림 취소' : '도착 알림 설정',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              backgroundColor:
+                                  hasActiveAlarm ? Colors.red[100] : null,
+                              foregroundColor:
+                                  hasActiveAlarm ? Colors.red[700] : null,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              Text(
-                '${station.name} → ${busArrival.destination}',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[800],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // 버스 도착 정보 목록 (스크롤 가능)
-              Expanded(
-                child: BusArrivalList(
-                  arrivals: busArrival.buses.length > 1
-                      ? busArrival.buses
-                          .map((bus) => BusArrival(
-                              routeNo: busArrival.routeNo,
-                              destination: busArrival.destination,
-                              routeId: busArrival.routeId,
-                              buses: [bus]))
-                          .toList()
-                      : [busArrival],
-                  station: station,
-                  onTap: (arrival) {
-                    // 추가 동작 정의 가능
-                  },
-                  onAlarmSet: (arrival) {
-                    // 추가 동작 정의 가능
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              // 도착 알림 설정 버튼 → 새 모달 호출
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _showFavoriteAlarmModal(context, station, busArrival);
-                  },
-                  icon: const Icon(Icons.notifications_active),
-                  label: const Text('도착 알림 설정'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ],
-          ),
+                );
+              },
+            );
+          },
         );
       },
     );
