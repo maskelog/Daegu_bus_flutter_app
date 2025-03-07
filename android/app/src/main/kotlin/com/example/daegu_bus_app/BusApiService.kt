@@ -85,7 +85,7 @@ data class StationArrivalOutput(
     val name: String,
     val sub: String,
     val id: String,
-    val forward: String,
+    val forward: String?,
     val bus: List<BusInfo>
 ) {
     data class BusInfo(
@@ -161,6 +161,7 @@ class BusApiService(private val context: Context) {
     }
     
     // 버스 도착 정보 조회 함수
+// 버스 도착 정보 조회 함수
     suspend fun getBusArrivalInfo(stationId: String): List<StationArrivalOutput> = withContext(Dispatchers.IO) {
         try {
             val response = busInfoApi.getBusArrivalInfo(stationId)
@@ -175,25 +176,33 @@ class BusApiService(private val context: Context) {
                 val routeNo = route.routeNo
                 
                 route.arrList?.forEach { arrival ->
-                    val key = "${routeNo}_${arrival.moveDir}"
+                    // 이 부분에서 moveDir이 null일 수 있음
+                    val moveDir = arrival.moveDir ?: "알 수 없음" // null일 경우 기본값 제공
+                    val key = "${routeNo}_${moveDir}"
                     
                     if (!groups.containsKey(key)) {
                         groups[key] = StationArrivalOutput(
                             name = routeNo,
                             sub = "default",
                             id = arrival.routeId,
-                            forward = arrival.moveDir,
+                            forward = moveDir, // null이 아닌 값 사용
                             bus = mutableListOf()
                         )
                     }
                     
                     val busType = if (arrival.busTCd2 == "N") "저상" else "일반"
-                    val arrivalTime = if (arrival.arrState == "운행종료") "-" else arrival.arrState
+                    
+                    // arrState가 null일 수 있는 경우 처리
+                    val arrivalTime = when {
+                        arrival.arrState == null -> "-"
+                        arrival.arrState == "운행종료" -> "운행종료"
+                        else -> arrival.arrState
+                    }
                     
                     (groups[key]!!.bus as MutableList).add(
                         StationArrivalOutput.BusInfo(
                             busNumber = "${arrival.vhcNo2}(${busType})",
-                            currentStation = arrival.bsNm,
+                            currentStation = arrival.bsNm ?: "정보 없음", // null 처리
                             remainingStations = "${arrival.bsGap} 개소",
                             estimatedTime = arrivalTime
                         )
@@ -212,7 +221,14 @@ class BusApiService(private val context: Context) {
     suspend fun getBusArrivalInfoByRouteId(stationId: String, routeId: String): StationArrivalOutput? = withContext(Dispatchers.IO) {
         try {
             val allArrivals = getBusArrivalInfo(stationId)
-            return@withContext allArrivals.find { it.id == routeId }
+            val result = allArrivals.find { it.id == routeId }
+            
+            if (result != null && result.forward == null) {
+                // forward가 null인 경우 처리
+                return@withContext result.copy(forward = "알 수 없음")
+            }
+            
+            return@withContext result
         } catch (e: Exception) {
             Log.e(TAG, "노선별 버스 도착 정보 조회 오류: ${e.message}", e)
             return@withContext null
