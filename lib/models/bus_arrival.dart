@@ -28,6 +28,7 @@ class BusArrival {
     return BusArrival(
       routeId: json['id'] ?? '',
       routeNo: json['name'] ?? '',
+      // forward가 null일 수 있으므로 기본값 제공
       destination: json['forward'] ?? json['sub'] ?? 'default',
       buses: busList,
     );
@@ -40,6 +41,7 @@ class BusInfo {
   final String remainingStops;
   final String arrivalTime;
   final bool isLowFloor;
+  final bool isOutOfService;
 
   BusInfo({
     required this.busNumber,
@@ -47,6 +49,7 @@ class BusInfo {
     required this.remainingStops,
     required this.arrivalTime,
     required this.isLowFloor,
+    required this.isOutOfService,
   });
 
   factory BusInfo.fromJson(Map<String, dynamic> json) {
@@ -62,6 +65,9 @@ class BusInfo {
     }
 
     String arrivalTime = json['도착예정소요시간'] as String? ?? '';
+    // 운행종료 여부 확인
+    final isOutOfService = arrivalTime == '운행종료';
+
     if (arrivalTime != '-' &&
         arrivalTime != '운행종료' &&
         !arrivalTime.contains('분')) {
@@ -74,12 +80,13 @@ class BusInfo {
       remainingStops: '$remainingStopsValue 개소',
       arrivalTime: arrivalTime,
       isLowFloor: isLowFloor,
+      isOutOfService: isOutOfService, // 운행종료 여부 설정
     );
   }
 
   // 남은 시간을 분 단위의 int로 변환
   int getRemainingMinutes() {
-    if (arrivalTime == '-' || arrivalTime == '운행종료') return -1;
+    if (arrivalTime == '-' || isOutOfService) return -1;
 
     final regex = RegExp(r'(\d+)분');
     final match = regex.firstMatch(arrivalTime);
