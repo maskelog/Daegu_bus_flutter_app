@@ -25,12 +25,46 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     return Consumer<AlarmService>(
       builder: (context, alarmService, child) {
         final activeAlarms = alarmService.activeAlarms;
+        final isTracking = alarmService.isInTrackingMode;
 
-        // 알람이 없는 경우 최소 높이 유지
+        // 트래킹 중이고 알람이 없는 경우 트래킹 정보만 표시
+        if (isTracking && activeAlarms.isEmpty) {
+          return Container(
+            width: double.infinity,
+            color: Colors.blue[50], // 트래킹 모드 색상
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            child: Row(
+              children: [
+                Icon(Icons.location_on, color: Colors.blue[700]),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '버스 위치 실시간 추적 중',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.stop_circle, color: Colors.red),
+                  iconSize: 20,
+                  onPressed: () async {
+                    await alarmService.stopBusMonitoringService();
+                  },
+                  tooltip: '추적 중지',
+                ),
+              ],
+            ),
+          );
+        }
+
+        // 알람이 없는 경우 기본 표시
         if (activeAlarms.isEmpty) {
           return Container(
             width: double.infinity,
-            color: Colors.yellow[50], // 더 밝은 색상으로 변경
+            color: Colors.yellow[50],
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             child: const Center(
               child: Text(
