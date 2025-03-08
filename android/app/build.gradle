@@ -1,6 +1,7 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
+    id "kotlin-parcelize"
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
 }
@@ -62,6 +63,12 @@ dependencies {
     
     // R8 오류 해결을 위한 androidx.window 관련 의존성
     implementation 'androidx.window:window:1.0.0'
+
+    // 포그라운드 서비스 및 알림을 위한 androidx 종속성
+    implementation 'androidx.core:core-ktx:1.9.0'
+
+    // WorkManager
+    implementation "androidx.work:work-runtime-ktx:2.8.1"
 }
 
 flutter {
