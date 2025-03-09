@@ -1,3 +1,4 @@
+import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
@@ -51,7 +52,19 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                   icon: const Icon(Icons.stop_circle, color: Colors.red),
                   iconSize: 20,
                   onPressed: () async {
+                    // 트래킹 모드 중지 및 알림 취소
                     await alarmService.stopBusMonitoringService();
+                    // 관련 알림 취소
+                    await NotificationService().cancelOngoingTracking();
+                    // 사용자에게 피드백 제공
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('버스 추적이 중지되었습니다'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
                   },
                   tooltip: '추적 중지',
                 ),
@@ -173,18 +186,39 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
 
                             // 사용자가 확인을 선택한 경우
                             if (confirmDelete == true && context.mounted) {
-                              // AlarmService의 cancelAlarm 직접 호출
-                              final success = await alarmService
-                                  .cancelAlarm(alarm.getAlarmId());
+                              // 알람 취소 (cancelAlarmByRoute 사용)
+                              final success =
+                                  await alarmService.cancelAlarmByRoute(
+                                alarm.busNo,
+                                alarm.stationName,
+                                alarm.routeId,
+                              );
 
-                              if (success && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content:
-                                        Text('${alarm.busNo}번 버스 알람이 취소되었습니다'),
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
+                              // 남은 알람이 없으면 버스 추적 서비스도 중지
+                              if (success) {
+                                // 모든 관련 알림 취소 확인
+                                await NotificationService()
+                                    .cancelNotification(alarm.getAlarmId());
+                                await NotificationService()
+                                    .cancelOngoingTracking();
+
+                                // 알람 목록 즉시 새로고침
+                                await alarmService.loadAlarms();
+
+                                // 남은 알람이 없으면 추적 서비스도 중지
+                                if (alarmService.activeAlarms.isEmpty) {
+                                  await alarmService.stopBusMonitoringService();
+                                }
+
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          '${alarm.busNo}번 버스 알람이 취소되었습니다'),
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
                               }
                             }
                           },
