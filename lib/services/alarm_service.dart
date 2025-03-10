@@ -534,4 +534,21 @@ class AlarmService extends ChangeNotifier {
     _refreshTimer?.cancel();
     super.dispose();
   }
+
+  /// 알람 취소 전에 캐시에서 먼저 제거하여 UI에 즉시 반영
+  void removeFromCacheBeforeCancel(
+      String busNo, String stationName, String routeId) {
+    // 캐시에서 해당 알람 제거
+    _alarmCache.removeWhere((alarm) =>
+        alarm.busNo == busNo &&
+        alarm.stationName == stationName &&
+        alarm.routeId == routeId);
+
+    // 버스 정보 캐시에서도 제거
+    final key = "${busNo}_$routeId";
+    _busInfoCache.remove(key);
+
+    // 알람 목록 갱신 이벤트 발생 (UI 즉시 갱신)
+    notifyListeners();
+  }
 }
