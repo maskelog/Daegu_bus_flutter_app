@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:daegu_bus_app/services/alarm_service.dart';
+import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:daegu_bus_app/widgets/bus_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -580,12 +581,48 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               if (hasActiveAlarm) {
                                 debugPrint(
                                     '${busArrival.routeNo}번 도착 알림 취소 요청');
+
+                                // 알람 서비스 참조
+                                final alarmService = Provider.of<AlarmService>(
+                                    context,
+                                    listen: false);
+
+                                // 알림 서비스 초기화
+                                final notificationService =
+                                    NotificationService();
+                                await notificationService.initialize();
+
+                                // 알람 ID 가져오기
+                                int alarmId = alarmService.getAlarmId(
+                                  busArrival.routeNo,
+                                  station.name,
+                                  routeId: busArrival.routeId,
+                                );
+
+                                // 알람 목록에서 바로 제거 (UI 즉시 반응을 위해)
+                                alarmService.removeFromCacheBeforeCancel(
+                                  busArrival.routeNo,
+                                  station.name,
+                                  busArrival.routeId,
+                                );
+
+                                // 실제 알람 취소
                                 final success =
                                     await alarmService.cancelAlarmByRoute(
                                   busArrival.routeNo,
                                   station.name,
                                   busArrival.routeId,
                                 );
+
+                                // 관련 알림 모두 취소
+                                await notificationService
+                                    .cancelNotification(alarmId);
+                                await notificationService
+                                    .cancelOngoingTracking();
+
+                                // 알람 즉시 새로고침
+                                await alarmService.loadAlarms();
+
                                 if (success && context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
