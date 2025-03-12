@@ -1,11 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:daegu_bus_app/models/bus_route.dart';
+import 'package:daegu_bus_app/models/route_station.dart';
 import 'package:daegu_bus_app/services/bus_api_service.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
 
+import 'package:flutter/services.dart';
+
 class ApiService {
+  static const MethodChannel _methodChannel =
+      MethodChannel('com.example.app/methods');
   // API 서버 URL (실제 사용 시 서버 주소로 변경)
   static const String baseUrl =
       'http://10.0.2.2:8080'; // Android 에뮬레이터용 localhost 접근 주소
@@ -108,21 +115,42 @@ class ApiService {
   }
 
   // 노선 검색
-  static Future<List<Map<String, dynamic>>> searchRoutes(String query) async {
-    if (query.isEmpty) return [];
-
+  static Future<List<BusRoute>> searchBusRoutes(String query) async {
     try {
-      final url = Uri.parse('$baseUrl/route/search/$query');
-      final response = await http.get(url);
+      final List<BusRoute> routes = [];
+      final response = await _methodChannel
+          .invokeMethod('searchBusRoutes', {'query': query});
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.cast<Map<String, dynamic>>();
-      } else {
-        throw Exception('Failed to search routes: ${response.statusCode}');
+      if (response != null) {
+        for (var item in response) {
+          routes.add(BusRoute.fromJson(item));
+        }
       }
+
+      return routes;
     } catch (e) {
-      throw Exception('Error searching routes: $e');
+      debugPrint('Error searching bus routes: $e');
+      return [];
+    }
+  }
+
+// 노선별 정류장 목록 조회
+  static Future<List<RouteStation>> getRouteStations(String routeId) async {
+    try {
+      final List<RouteStation> stations = [];
+      final response = await _methodChannel
+          .invokeMethod('getRouteStations', {'routeId': routeId});
+
+      if (response != null) {
+        for (var item in response) {
+          stations.add(RouteStation.fromJson(item));
+        }
+      }
+
+      return stations;
+    } catch (e) {
+      debugPrint('Error getting route stations: $e');
+      return [];
     }
   }
 
