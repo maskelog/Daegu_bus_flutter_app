@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:daegu_bus_app/screens/reoute_map_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
@@ -790,7 +791,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildRouteMapTab() {
-    return const Center(child: Text('노선도 화면 (개발 예정)'));
+    return const RouteMapScreen();
   }
 
   Widget _buildFavoritesTab() {
