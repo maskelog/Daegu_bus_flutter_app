@@ -2,9 +2,11 @@
 -keep class androidx.window.** { *; }
 -keep class androidx.window.extensions.** { *; }
 -keep class androidx.window.sidecar.** { *; }
+-dontwarn androidx.window.**
 
 # Play Core 라이브러리 관련
 -keep class com.google.android.play.core.** { *; }
+-dontwarn com.google.android.play.core.**
 
 # 보안 라이브러리 관련
 -keep class org.bouncycastle.** { *; }
@@ -28,6 +30,11 @@
 # Flutter 관련
 -keep class io.flutter.** { *; }
 -keep class dev.fluttercommunity.plus.androidalarmmanager.** { *; }
+-keep class io.flutter.app.** { *; }
+-keep class io.flutter.plugin.**  { *; }
+-keep class io.flutter.util.**  { *; }
+-keep class io.flutter.view.**  { *; }
+-keep class io.flutter.plugins.**  { *; }
 
 # 일반적인 Android 앱 규칙
 -keepattributes Signature

@@ -39,6 +39,10 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            
+            ndk {
+                abiFilters 'armeabi-v7a', 'arm64-v8a'
+            }
         }
     }
 }
@@ -69,6 +73,10 @@ dependencies {
 
     // WorkManager
     implementation "androidx.work:work-runtime-ktx:2.8.1"
+
+    // 추가된 종속성
+    implementation 'androidx.window:window-java:1.0.0'
+    implementation 'com.google.android.play:core:1.10.3'
 }
 
 flutter {
