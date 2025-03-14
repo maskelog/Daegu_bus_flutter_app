@@ -4,11 +4,13 @@ import io.flutter.plugin.common.MethodChannel
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
+import android.os.IBinder
 import android.util.Log
 import android.graphics.Color
 import androidx.core.app.NotificationCompat
@@ -24,7 +26,7 @@ import java.util.concurrent.TimeUnit
  * BusAlertService: Android 네이티브 알림 서비스
  * Flutter의 NotificationHelper를 대체하는 Kotlin 구현체
  */
-class BusAlertService(private val context: Context) {
+class BusAlertService : Service() {
     companion object {
         private const val TAG = "BusAlertService"
         
@@ -41,7 +43,8 @@ class BusAlertService(private val context: Context) {
         
         fun getInstance(context: Context): BusAlertService {
             return instance ?: synchronized(this) {
-                instance ?: BusAlertService(context.applicationContext).also { 
+                instance ?: BusAlertService().also { 
+                    it.initialize(context)
                     instance = it
                 }
             }
@@ -50,12 +53,24 @@ class BusAlertService(private val context: Context) {
     
     private var _methodChannel: MethodChannel? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main)
+    private lateinit var context: Context
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return null
+    }
     
     /**
      * 알림 서비스 초기화
      * 알림 채널 생성 및 권한 체크
      */
-    fun initialize(flutterEngine: io.flutter.embedding.engine.FlutterEngine? = null) {
+    fun initialize(context: Context? = null, flutterEngine: io.flutter.embedding.engine.FlutterEngine? = null) {
+        val actualContext = context ?: this.context
+        if (actualContext == null) {
+            Log.e(TAG, "🔔 컨텍스트가 없어 알림 서비스를 초기화할 수 없습니다")
+            return
+        }
+
+        this.context = actualContext.applicationContext
         Log.d(TAG, "🔔 알림 서비스 초기화")
         createNotificationChannels()
         checkNotificationPermission()
