@@ -30,36 +30,62 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
 
   // 노선 검색
   void _searchRoutes(String query) {
+    print('검색 쿼리: $query'); // 디버그 로그 추가
+
     if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
 
     _searchDebounce = Timer(const Duration(milliseconds: 500), () {
-      if (query.length < 2) {
+      print('실제 검색 쿼리: $query'); // 추가 디버그 로그
+
+      final RegExp searchPattern = RegExp(r'^[가-힣0-9A-Za-z\s\-\(\)_]+$');
+
+      if (query.length < 2 || !searchPattern.hasMatch(query)) {
         setState(() {
           _searchResults = [];
           _isSearching = false;
+          _errorMessage = query.isEmpty ? null : '2자 이상의 한글, 숫자, 영문으로 검색해주세요';
         });
         return;
       }
 
       setState(() {
         _isSearching = true;
+        _errorMessage = null;
       });
 
       ApiService.searchBusRoutes(query).then((routes) {
+        print('검색 결과: ${routes.length}개'); // 결과 로깅
+
         if (mounted) {
           setState(() {
             _searchResults = routes;
             _isSearching = false;
+            _errorMessage =
+                routes.isEmpty ? '\'$query\'에 대한 검색 결과가 없습니다' : null;
           });
+
+          if (routes.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('\'$query\'에 대한 검색 결과가 없습니다'),
+                backgroundColor: Colors.orange[400],
+              ),
+            );
+          }
         }
       }).catchError((e) {
+        print('검색 중 오류 발생: $e'); // 오류 로깅
+
         if (mounted) {
           setState(() {
             _errorMessage = '노선 검색 중 오류가 발생했습니다';
             _isSearching = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('노선 검색 중 오류가 발생했습니다: $e')),
+            SnackBar(
+              content: Text('노선 검색 중 오류가 발생했습니다: $e'),
+              backgroundColor: Colors.red[400],
+            ),
           );
         }
       });
