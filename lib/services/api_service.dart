@@ -9,20 +9,24 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 
 class ApiService {
+  // 네이티브에서 API 호출 관련 메서드들은 "bus_api" 채널에 등록되어 있습니다.
+  static const MethodChannel _busApiChannel =
+      MethodChannel('com.example.daegu_bus_app/bus_api');
+  // 나머지 기능(예: getRouteStations, getStationInfo 등)은 기존 "methods" 채널 사용
   static const MethodChannel _methodChannel =
       MethodChannel('com.example.daegu_bus_app/methods');
-  // API 서버 URL (실제 사용 시 서버 주소로 변경)
-  static const String baseUrl =
-      'http://10.0.2.2:8080'; // Android 에뮬레이터용 localhost 접근 주소
 
-  // 정류장 검색 - stations.json 파일을 활용하는 서버 API 사용 (HTTP 요청)
+  // API 서버 URL (Android 에뮬레이터용 localhost 접근 주소)
+  static const String baseUrl = 'http://10.0.2.2:8080';
+
+  // 정류장 검색 - HTTP 요청
   static Future<List<BusStop>> searchStations(String query) async {
     if (query.isEmpty) return [];
 
     try {
       final url = Uri.parse('$baseUrl/station/search/$query');
       final response = await http.get(url).timeout(
-        const Duration(seconds: 10), // 10초 이상 응답이 없으면 타임아웃
+        const Duration(seconds: 10),
         onTimeout: () {
           throw TimeoutException('서버 응답 시간이 너무 깁니다.');
         },
@@ -55,14 +59,84 @@ class ApiService {
     }
   }
 
-  // 정류장 도착 정보 조회 (네이티브 BusApiService와 MethodChannel 연동)
+  // 정류장 도착 정보 조회 (네이티브 연동)
   static Future<List<BusArrival>> getStationInfo(String stationId) async {
     try {
-      // 네이티브 코드에서 getStationInfo를 호출하여 JSON 문자열(혹은 List<Map>) 반환받음
       final dynamic response = await _methodChannel
           .invokeMethod('getStationInfo', {'stationId': stationId});
+      List<dynamic> jsonList;
+      if (response is String) {
+        jsonList = json.decode(response);
+      } else if (response is List) {
+        jsonList = response;
+      } else {
+        throw Exception('Unexpected response type: ${response.runtimeType}');
+      }
+      return jsonList.map((json) => BusArrival.fromJson(json)).toList();
+    } catch (e) {
+      throw Exception('Error loading station info: $e');
+    }
+  }
 
-      // 네이티브에서 반환한 값이 JSON 문자열일 경우 파싱
+  // 노선 검색 (네이티브 연동) - "searchBusRoutes"는 bus_api 채널에 등록되어 있음
+  static Future<List<BusRoute>> searchBusRoutes(String query) async {
+    try {
+      final List<BusRoute> routes = [];
+      final dynamic response = await _busApiChannel
+          .invokeMethod('searchBusRoutes', {'searchText': query});
+
+      List<dynamic> responseList;
+      if (response is String) {
+        responseList = json.decode(response);
+      } else if (response is List) {
+        responseList = response;
+      } else {
+        throw Exception('Unexpected response type: ${response.runtimeType}');
+      }
+
+      for (var item in responseList) {
+        // 네이티브에서 검색 결과의 노선 ID는 "id" 키로 전달됨
+        final routeId = item['id'];
+        final routeDetails = await getRouteDetails(routeId);
+        routes.add(routeDetails ?? BusRoute.fromJson(item));
+      }
+
+      return routes;
+    } catch (e) {
+      debugPrint('Error searching bus routes: $e');
+      return [];
+    }
+  }
+
+  // 노선 상세 정보 조회 (네이티브 연동)
+  static Future<BusRoute?> getRouteDetails(String routeId) async {
+    try {
+      final dynamic response = await _busApiChannel
+          .invokeMethod('getBusRouteDetails', {'routeId': routeId});
+
+      Map<String, dynamic> jsonMap;
+      if (response is String) {
+        jsonMap = json.decode(response);
+      } else if (response is Map) {
+        jsonMap = response.cast<String, dynamic>();
+      } else {
+        throw Exception('Unexpected response type: ${response.runtimeType}');
+      }
+
+      return jsonMap.isNotEmpty ? BusRoute.fromJson(jsonMap) : null;
+    } catch (e) {
+      debugPrint('Error getting route details: $e');
+      return null;
+    }
+  }
+
+// 노선별 정류장 목록 조회 (네이티브 연동)
+  static Future<List<RouteStation>> getRouteStations(String routeId) async {
+    try {
+      // 수정: 'getBusRouteMap' → 'getRouteStations'
+      final dynamic response = await _methodChannel
+          .invokeMethod('getRouteStations', {'routeId': routeId});
+
       List<dynamic> jsonList;
       if (response is String) {
         jsonList = json.decode(response);
@@ -72,75 +146,10 @@ class ApiService {
         throw Exception('Unexpected response type: ${response.runtimeType}');
       }
 
-      // BusArrival.fromJson() 생성자를 통해 모델 변환
-      return jsonList.map((json) => BusArrival.fromJson(json)).toList();
-    } catch (e) {
-      throw Exception('Error loading station info: $e');
-    }
-  }
+      final List<RouteStation> stations =
+          jsonList.map((json) => RouteStation.fromJson(json)).toList();
 
-  // 정류장 도착 정보 조회 (쿼리 방식) - stations.json 데이터를 서버에서 사용 (HTTP 요청)
-  static Future<Map<String, dynamic>> getStationArrivalByQuery({
-    String? bsNm,
-    String? wincId,
-  }) async {
-    if (bsNm == null && wincId == null) {
-      throw Exception('At least one of bsNm or wincId must be provided');
-    }
-
-    try {
-      final queryParams = <String, String>{};
-      if (bsNm != null) queryParams['bsNm'] = bsNm;
-      if (wincId != null) queryParams['wincId'] = wincId;
-
-      final url = Uri.parse('$baseUrl/api/arrival')
-          .replace(queryParameters: queryParams);
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else if (response.statusCode == 404) {
-        throw Exception('Station not found');
-      } else {
-        throw Exception(
-            'Failed to load station arrival info: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Error loading station arrival info: $e');
-    }
-  }
-
-  // 노선 검색 (네이티브 연동)
-  static Future<List<BusRoute>> searchBusRoutes(String query) async {
-    try {
-      final List<BusRoute> routes = [];
-      final dynamic response = await _methodChannel
-          .invokeMethod('searchBusRoutes', {'query': query});
-
-      if (response != null) {
-        for (var item in response) {
-          routes.add(BusRoute.fromJson(item));
-        }
-      }
-      return routes;
-    } catch (e) {
-      debugPrint('Error searching bus routes: $e');
-      return [];
-    }
-  }
-
-  // 노선별 정류장 목록 조회 (네이티브 연동)
-  static Future<List<RouteStation>> getRouteStations(String routeId) async {
-    try {
-      final List<RouteStation> stations = [];
-      final dynamic response = await _methodChannel
-          .invokeMethod('getRouteStations', {'routeId': routeId});
-
-      if (response != null) {
-        for (var item in response) {
-          stations.add(RouteStation.fromJson(item));
-        }
-      }
+      stations.sort((a, b) => a.sequenceNo.compareTo(b.sequenceNo));
       return stations;
     } catch (e) {
       debugPrint('Error getting route stations: $e');
