@@ -87,6 +87,49 @@ class MainActivity: FlutterActivity() {
                             }
                         }
                     }
+
+                    "getBusRouteDetails" -> {
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        
+                        if (routeId.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "노선 ID가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                // 노선 기본 정보 조회
+                                val searchRoutes = busApiService.searchBusRoutes(routeId)
+                                
+                                // 노선 상세 정보 조회
+                                val routeInfo = busApiService.getBusRouteInfo(routeId)
+                                
+                                // 결과 병합
+                                val mergedRoute = if (routeInfo != null) {
+                                    BusRoute(
+                                        id = routeInfo.id,
+                                        routeNo = routeInfo.routeNo,
+                                        startPoint = routeInfo.startPoint,
+                                        endPoint = routeInfo.endPoint,
+                                        routeDescription = routeInfo.routeDescription
+                                    )
+                                } else if (searchRoutes.isNotEmpty()) {
+                                    searchRoutes.first()
+                                } else {
+                                    null
+                                }
+                                
+                                if (mergedRoute != null) {
+                                    result.success(busApiService.convertToJson(mergedRoute))
+                                } else {
+                                    result.success("{}")
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "버스 노선 상세 정보 조회 오류: ${e.message}", e)
+                                result.error("API_ERROR", "버스 노선 상세 정보 조회 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
                     
                     "searchBusRoutes" -> {
                         val searchText = call.argument<String>("searchText") ?: ""
@@ -99,8 +142,26 @@ class MainActivity: FlutterActivity() {
                         CoroutineScope(Dispatchers.Main).launch {
                             try {
                                 val routes = busApiService.searchBusRoutes(searchText)
+                                
+                                // 로깅 추가
                                 Log.d(TAG, "노선 검색 결과: ${routes.size}개")
-                                result.success(busApiService.convertToJson(routes))
+                                
+                                if (routes.isEmpty()) {
+                                    Log.d(TAG, "검색 결과 없음: $searchText")
+                                }
+                                
+                                // JSON으로 변환하여 반환
+                                val jsonRoutes = routes.map { route ->
+                                    mapOf(
+                                        "id" to route.id,
+                                        "routeNo" to route.routeNo,
+                                        "startPoint" to route.startPoint,
+                                        "endPoint" to route.endPoint,
+                                        "routeDescription" to route.routeDescription
+                                    )
+                                }
+                                
+                                result.success(jsonRoutes)
                             } catch (e: Exception) {
                                 Log.e(TAG, "노선 검색 오류: ${e.message}", e)
                                 result.error("API_ERROR", "노선 검색 중 오류 발생: ${e.message}", null)
