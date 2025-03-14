@@ -46,10 +46,10 @@ class _BusCardState extends State<BusCard> {
       // 초기값 설정 시에도 AlarmService 캐시 업데이트
       _updateAlarmServiceCache();
 
-      // 30초마다 남은 시간 업데이트
+      // 30초마다 남은 시간 업데이트 (네이티브 API를 통한 업데이트)
       _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
         if (!mounted) return;
-        _updateBusArrivalInfo(); // 네이티브 API를 통한 업데이트
+        _updateBusArrivalInfo();
       });
     }
   }
@@ -98,7 +98,7 @@ class _BusCardState extends State<BusCard> {
               _playAlarm();
             }
 
-            // 다음 버스 알람 예약
+            // 다음 버스 알람 예약 (두 번째 버스가 존재하는 경우)
             if (!hasBoarded &&
                 remainingTime <= 0 &&
                 updatedBusArrival.buses.length > 1) {
@@ -188,7 +188,6 @@ class _BusCardState extends State<BusCard> {
   }
 
   // 승차 알람 예약 또는 해제
-// 승차 알람 예약 또는 해제
   Future<void> _toggleBoardingAlarm() async {
     final alarmService = Provider.of<AlarmService>(context, listen: false);
     bool hasAlarm = alarmService.hasAlarm(
@@ -206,18 +205,14 @@ class _BusCardState extends State<BusCard> {
       );
 
       if (success && mounted) {
-        // 1. 토스트 메시지 표시
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('승차 알람이 취소되었습니다.')),
         );
 
-        // 2. TTS로 알람 취소 안내
         TTSHelper.speakAlarmCancel(widget.busArrival.routeNo);
 
-        // 3. 버스 실시간 추적 중지 (NotificationService 사용)
         await _notificationService.cancelOngoingTracking();
 
-        // 4. 알람 목록 갱신
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             alarmService.refreshAlarms();
@@ -256,12 +251,10 @@ class _BusCardState extends State<BusCard> {
         );
 
         if (success && mounted) {
-          // 1. 토스트 메시지 표시
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('승차 알람이 설정되었습니다.')),
           );
 
-          // 2. 버스 실시간 추적 시작 (NotificationService 사용)
           await _notificationService.showOngoingBusTracking(
             busNo: widget.busArrival.routeNo,
             stationName: widget.stationName ?? '정류장 정보 없음',
@@ -269,7 +262,6 @@ class _BusCardState extends State<BusCard> {
             currentStation: firstBus.currentStation,
           );
 
-          // 3. 알람 목록 갱신
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               alarmService.refreshAlarms();
@@ -306,13 +298,9 @@ class _BusCardState extends State<BusCard> {
         );
 
         if (success && mounted) {
-          // 1. TTS로 알람 취소 안내
           TTSHelper.speakAlarmCancel(widget.busArrival.routeNo);
-
-          // 2. 버스 실시간 추적 중지 (NotificationService 사용)
           await _notificationService.cancelOngoingTracking();
 
-          // 3. 알람 목록 갱신
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               alarmService.refreshAlarms();
@@ -341,6 +329,21 @@ class _BusCardState extends State<BusCard> {
     firstBus = widget.busArrival.buses.first;
     BusInfo? nextBus =
         widget.busArrival.buses.length > 1 ? widget.busArrival.buses[1] : null;
+
+    // currentStationText: 버스의 현재 정류소 정보가 없으면 widget.stationName 사용
+    final String currentStationText = firstBus.currentStation.trim().isNotEmpty
+        ? firstBus.currentStation
+        : (widget.stationName ?? "정류장 정보 없음");
+
+    // 도착 예정 텍스트 처리
+    String arrivalTimeText;
+    if (firstBus.isOutOfService) {
+      arrivalTimeText = '운행종료';
+    } else if (remainingTime <= 0) {
+      arrivalTimeText = '곧 도착';
+    } else {
+      arrivalTimeText = '$remainingTime분';
+    }
 
     final alarmService = Provider.of<AlarmService>(context);
     final bool alarmEnabled = alarmService.hasAlarm(
@@ -394,7 +397,7 @@ class _BusCardState extends State<BusCard> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // 버스 번호, 저상 여부, 현재 정류장 정보
+                // 버스 번호, 저상 여부, 현재 정류소 정보
                 Row(
                   children: [
                     Text(
@@ -427,7 +430,7 @@ class _BusCardState extends State<BusCard> {
                       ),
                     Expanded(
                       child: Text(
-                        firstBus.currentStation,
+                        currentStationText,
                         style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                         textAlign: TextAlign.right,
                         overflow: TextOverflow.ellipsis,
@@ -459,7 +462,7 @@ class _BusCardState extends State<BusCard> {
                               const TextStyle(fontSize: 14, color: Colors.grey),
                         ),
                         Text(
-                          firstBus.isOutOfService ? '운행종료' : '$remainingTime분',
+                          arrivalTimeText,
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -470,10 +473,10 @@ class _BusCardState extends State<BusCard> {
                                     : Colors.blue[600]),
                           ),
                         ),
-                        if (firstBus.currentStation.isNotEmpty &&
+                        if (currentStationText.isNotEmpty &&
                             !firstBus.isOutOfService)
                           Text(
-                            '(${firstBus.currentStation})',
+                            '($currentStationText)',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey[600],

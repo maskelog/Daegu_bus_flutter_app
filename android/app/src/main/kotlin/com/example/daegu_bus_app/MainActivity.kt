@@ -13,10 +13,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.content.Intent
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.example.daegu_bus_app/bus_api"
-    private val METHOD_CHANNEL = "com.example.daegu_bus_app/methods"  // 메서드 채널 추가
+    private val METHOD_CHANNEL = "com.example.daegu_bus_app/methods"
     private val NOTIFICATION_CHANNEL = "com.example.daegu_bus_app/notification"
     private val TAG = "MainActivity"
     private lateinit var busApiService: BusApiService
@@ -27,11 +31,16 @@ class MainActivity: FlutterActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        busApiService = BusApiService(context)
+        // 수정: applicationContext 대신 this (Context) 사용
+        busApiService = BusApiService(this)
         
         try {
-            // 안전하게 초기화 시도
-            busAlertService = BusAlertService.getInstance(context)
+            // 서비스 시작을 위한 인텐트 생성
+            val serviceIntent = Intent(this, BusAlertService::class.java)
+            startService(serviceIntent)
+            
+            // 서비스 인스턴스 가져오기 (수정: this 컨텍스트 전달)
+            busAlertService = BusAlertService.getInstance(this)
         } catch (e: Exception) {
             Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
             // 실패해도 앱은 계속 실행
@@ -79,7 +88,6 @@ class MainActivity: FlutterActivity() {
                         }
                     }
                     
-                    // 여기에 searchBusRoutes 메서드 추가
                     "searchBusRoutes" -> {
                         val searchText = call.argument<String>("searchText") ?: ""
                         
@@ -192,43 +200,7 @@ class MainActivity: FlutterActivity() {
                 }
             }
         
-        // 메서드 채널 설정 (노선 정류장 목록 조회에 사용)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "getRouteStations" -> {
-                        val routeId = call.argument<String>("routeId") ?: ""
-                        
-                        if (routeId.isEmpty()) {
-                            result.error("INVALID_ARGUMENT", "노선 ID가 비어있습니다", null)
-                            return@setMethodCallHandler
-                        }
-                        
-                        CoroutineScope(Dispatchers.Main).launch {
-                            try {
-                                val stations = busApiService.getBusRouteMap(routeId)
-                                if (stations.isEmpty()) {
-                                    Log.d(TAG, "노선도 조회 결과: 정류장 정보 없음")
-                                    result.success("[]")
-                                } else {
-                                    Log.d(TAG, "노선도 조회 결과: ${stations.size}개 정류장")
-                                    // JSON 문자열로 변환하여 반환
-                                    val jsonStr = busApiService.convertRouteStationsToJson(stations)
-                                    result.success(jsonStr)
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "노선도 조회 오류: ${e.message}", e)
-                                result.error("API_ERROR", "노선도 조회 중 오류 발생: ${e.message}", null)
-                            }
-                        }
-                    }
-                    else -> {
-                        result.notImplemented()
-                    }
-                }
-            }
-            
-        // MethodChannel에 getRouteStations 처리 추가
+        // 메서드 채널 설정 - 중복 코드 통합
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -263,7 +235,29 @@ class MainActivity: FlutterActivity() {
                             }
                         }
                     }
-                    // 다른 메서드 처리...
+                    "getStationInfo" -> { // ApiService.dart에서 호출하는 getStationInfo 처리
+                        val stationId = call.argument<String>("stationId") ?: ""
+                        if (stationId.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "정류장 ID가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                // BusApiService를 사용하여 정류장 정보 가져오기
+                                val arrivalInfo = busApiService.getStationInfo(stationId)
+                                // JSON으로 변환하여 Flutter에 반환
+                                val jsonResult = convertBusArrivalInfoToJson(arrivalInfo)
+                                result.success(jsonResult)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "정류장 정보 조회 오류: ${e.message}", e)
+                                result.error("API_ERROR", "정류장 정보 조회 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
+                    else -> {
+                        result.notImplemented()
+                    }
                 }
             }
             
@@ -279,7 +273,8 @@ class MainActivity: FlutterActivity() {
                 when (call.method) {
                     "initialize" -> {
                         try {
-                            busAlertService?.initialize()
+                            // 수정: this 컨텍스트와 flutterEngine 전달
+                            busAlertService?.initialize(this, flutterEngine)
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
@@ -386,7 +381,8 @@ class MainActivity: FlutterActivity() {
         // 알림 서비스 초기화 - 오류가 나도 앱은 계속 실행되도록 예외 처리
         try {
             if (busAlertService != null) {
-                busAlertService?.initialize(flutterEngine)
+                // 수정: this 컨텍스트와 flutterEngine 전달
+                busAlertService?.initialize(this, flutterEngine)
             }
         } catch (e: Exception) {
             Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
@@ -415,5 +411,32 @@ class MainActivity: FlutterActivity() {
                 // 필요하다면 사용자에게 알림 권한 필요성 설명
             }
         }
+    }
+
+    // BusArrivalInfo 목록을 JSON 문자열로 변환하는 함수
+    private fun convertBusArrivalInfoToJson(arrivalInfoList: List<BusArrivalInfo>): String {
+        val jsonArray = JSONArray()
+        for (arrivalInfo in arrivalInfoList) {
+            val busesJson = JSONArray()
+            for (bus in arrivalInfo.buses) {
+                val busJson = JSONObject().apply {
+                    put("버스번호", bus.busNumber)
+                    put("현재정류소", bus.currentStation)
+                    put("남은정류소", bus.remainingStops)
+                    put("도착예정소요시간", bus.estimatedTime)
+                }
+                busesJson.put(busJson)
+            }
+
+            val arrivalInfoJson = JSONObject().apply {
+                put("name", arrivalInfo.routeNo)
+                put("sub", "default")
+                put("id", arrivalInfo.routeId)
+                put("forward", arrivalInfo.destination)
+                put("bus", busesJson)
+            }
+            jsonArray.put(arrivalInfoJson)
+        }
+        return jsonArray.toString()
     }
 }

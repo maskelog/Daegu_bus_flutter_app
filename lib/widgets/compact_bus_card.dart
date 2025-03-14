@@ -7,13 +7,13 @@ import '../services/alarm_service.dart';
 class CompactBusCard extends StatefulWidget {
   final BusArrival busArrival;
   final VoidCallback onTap;
-  final String? stationName; // 정류장 이름 추가
+  final String? stationName; // 정류장 이름
 
   const CompactBusCard({
     super.key,
     required this.busArrival,
     required this.onTap,
-    this.stationName, // 정류장 이름 매개변수 추가
+    this.stationName,
   });
 
   @override
@@ -31,36 +31,35 @@ class _CompactBusCardState extends State<CompactBusCard> {
         ? widget.busArrival.buses.first
         : null;
 
-    // 아무 버스도 없을 때
     if (firstBus == null) {
       return const SizedBox.shrink();
     }
 
-    // 남은 시간 계산
-    final remainingMinutes = firstBus.getRemainingMinutes();
+    // 남은 시간 계산 (getRemainingMinutes()는 정수값을 반환)
+    final int remainingMinutes = firstBus.getRemainingMinutes();
 
     // 버스 상태에 따른 도착 정보 텍스트 설정
     String arrivalTimeText;
     Color arrivalTextColor;
 
-    if (firstBus.isOutOfService == true) {
-      // 운행 종료된 경우
+    if (firstBus.isOutOfService) {
       arrivalTimeText = '운행종료';
       arrivalTextColor = Colors.grey;
     } else if (remainingMinutes <= 0) {
-      // 도착 임박한 경우
       arrivalTimeText = '곧 도착';
       arrivalTextColor = Colors.red;
     } else {
-      // 일반적인 경우
       arrivalTimeText = '$remainingMinutes분';
       arrivalTextColor = remainingMinutes <= 3 ? Colors.red : Colors.blue[600]!;
     }
 
+    // 버스 위치(정류장) 이름 표시: firstBus.currentStation 값이 없으면 widget.stationName 사용
+    final currentStationText = firstBus.currentStation.trim().isNotEmpty
+        ? firstBus.currentStation
+        : (widget.stationName ?? "정보 없음");
+
     // 알람 서비스 가져오기
     final alarmService = Provider.of<AlarmService>(context);
-
-    // 현재 알람 상태 확인
     final bool hasAlarm = widget.stationName != null &&
         alarmService.hasAlarm(
           widget.busArrival.routeNo,
@@ -68,12 +67,16 @@ class _CompactBusCardState extends State<CompactBusCard> {
           widget.busArrival.routeId,
         );
 
-    // 한 번만 캐시 업데이트 실행
+    // 캐시 업데이트 (한 번만 실행)
     if (!_cacheUpdated) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        alarmService.updateBusInfoCache(widget.busArrival.routeNo,
-            widget.busArrival.routeId, firstBus, remainingMinutes);
-        _cacheUpdated = true; // 플래그 설정
+        alarmService.updateBusInfoCache(
+          widget.busArrival.routeNo,
+          widget.busArrival.routeId,
+          firstBus,
+          remainingMinutes,
+        );
+        _cacheUpdated = true;
       });
     }
 
@@ -95,7 +98,6 @@ class _CompactBusCardState extends State<CompactBusCard> {
               // 위치 아이콘
               Icon(Icons.location_on, size: 18, color: Colors.grey[500]),
               const SizedBox(width: 8),
-
               // 버스 번호
               Text(
                 widget.busArrival.routeNo,
@@ -105,7 +107,6 @@ class _CompactBusCardState extends State<CompactBusCard> {
                   color: Colors.blue[600],
                 ),
               ),
-
               // 저상 버스 뱃지
               if (firstBus.isLowFloor)
                 Container(
@@ -125,17 +126,15 @@ class _CompactBusCardState extends State<CompactBusCard> {
                     ),
                   ),
                 ),
-
               const SizedBox(width: 8),
-
-              // 현재 정류소 및 남은 정류소
+              // 현재 정류소 및 남은 정류소 표시
               Expanded(
                 flex: 3,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      firstBus.currentStation,
+                      currentStationText,
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[700],
@@ -153,13 +152,12 @@ class _CompactBusCardState extends State<CompactBusCard> {
                   ],
                 ),
               ),
-
-              // 도착 예정 시간
+              // 도착 예정 시간 표시
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    firstBus.isOutOfService == true ? '' : '도착예정',
+                    firstBus.isOutOfService ? '' : '도착예정',
                     style: TextStyle(
                       fontSize: 11,
                       color: Colors.grey[600],
@@ -175,9 +173,8 @@ class _CompactBusCardState extends State<CompactBusCard> {
                   ),
                 ],
               ),
-
-              // 알람 버튼 (정류장 이름이 있는 경우에만 표시, 운행 종료 시 비활성화)
-              if (widget.stationName != null && firstBus.isOutOfService != true)
+              // 알람 버튼 (정류장 이름이 있는 경우에만 표시, 운행종료 시 비활성화)
+              if (widget.stationName != null && !firstBus.isOutOfService)
                 IconButton(
                   icon: Icon(
                     hasAlarm
@@ -197,17 +194,13 @@ class _CompactBusCardState extends State<CompactBusCard> {
   }
 
   // 알람 설정 메서드
-// 알람 설정 메서드
   void _setAlarm(BusInfo busInfo, int remainingMinutes) async {
-    // 정류장 이름이 없으면 알람을 설정할 수 없음
     if (widget.stationName == null) return;
 
     final alarmService = Provider.of<AlarmService>(context, listen: false);
-    // NotificationService 인스턴스 생성
     final notificationService = NotificationService();
     await notificationService.initialize();
 
-    // 현재 알람 상태 확인
     bool hasAlarm = alarmService.hasAlarm(
       widget.busArrival.routeNo,
       widget.stationName!,
@@ -215,14 +208,11 @@ class _CompactBusCardState extends State<CompactBusCard> {
     );
 
     if (hasAlarm) {
-      // 이미 알람이 설정되어 있으면 취소
       await alarmService.cancelAlarmByRoute(
         widget.busArrival.routeNo,
         widget.stationName!,
         widget.busArrival.routeId,
       );
-
-      // 실시간 추적 알림도 함께 취소
       await notificationService.cancelOngoingTracking();
 
       if (mounted) {
@@ -231,16 +221,13 @@ class _CompactBusCardState extends State<CompactBusCard> {
         );
       }
     } else {
-      // 새 알람 설정
       if (remainingMinutes > 0) {
-        // 알람 ID 생성
         int alarmId = alarmService.getAlarmId(
           widget.busArrival.routeNo,
           widget.stationName!,
           routeId: widget.busArrival.routeId,
         );
 
-        // 도착 예정 시간 계산
         DateTime arrivalTime =
             DateTime.now().add(Duration(minutes: remainingMinutes));
 
@@ -257,7 +244,6 @@ class _CompactBusCardState extends State<CompactBusCard> {
         );
 
         if (success && mounted) {
-          // 알람 설정 성공 시 실시간 추적 알림 시작
           await notificationService.showOngoingBusTracking(
             busNo: widget.busArrival.routeNo,
             stationName: widget.stationName!,
@@ -286,7 +272,6 @@ class _CompactBusCardState extends State<CompactBusCard> {
   @override
   void didUpdateWidget(CompactBusCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 버스 정보가 변경되었을 때만 캐시 업데이트 플래그 재설정
     if (oldWidget.busArrival.routeNo != widget.busArrival.routeNo ||
         oldWidget.busArrival.routeId != widget.busArrival.routeId) {
       _cacheUpdated = false;
