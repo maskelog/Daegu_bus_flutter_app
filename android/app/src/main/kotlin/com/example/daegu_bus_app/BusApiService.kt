@@ -197,35 +197,41 @@ class BusApiService(private val context: Context) {
     // 노선 검색 함수
     suspend fun searchBusRoutes(query: String): List<BusRoute> = withContext(Dispatchers.IO) {
         try {
-            val encodedQuery = URLEncoder.encode(query, "EUC-KR")
+            // 검색어가 순수 숫자인 경우 와일드카드를 추가하지 않음
+            val modifiedQuery = if (query.matches(Regex("^[0-9]+$"))) query else "%$query%"
+            val encodedQuery = URLEncoder.encode(modifiedQuery, "EUC-KR")
             val response = busInfoApi.searchBusRoutes(encodedQuery)
-            val responseStr = String(response.bytes(), Charset.forName("EUC-KR"))
+            val responseStr = String(response.bytes(), Charset.forName("EUC-KR")).trim()
             
-            val jsonObj = JSONObject(responseStr)
-            val header = jsonObj.getJSONObject("header")
-            
-            if (!header.getBoolean("success")) {
-                Log.e(TAG, "노선 검색 실패: ${header.getString("resultMsg")}")
-                return@withContext emptyList()
-            }
-            
-            val bodyArray = jsonObj.getJSONArray("body")
-            val routes = mutableListOf<BusRoute>()
-            
-            for (i in 0 until bodyArray.length()) {
-                val routeObj = bodyArray.getJSONObject(i)
-                routes.add(
-                    BusRoute(
-                        id = routeObj.getString("routeId"),
-                        routeNo = routeObj.getString("routeNo"),
-                        startPoint = "",
-                        endPoint = "",
-                        routeDescription = routeObj.getString("routeNm")
+            // 응답이 XML인지 JSON인지 확인
+            if (responseStr.startsWith("<")) {
+                // XML 응답이면 XML 파서로 파싱
+                parseXmlBusRoutes(responseStr)
+            } else {
+                // JSON 응답이면 기존 JSON 파싱 로직 사용
+                val jsonObj = JSONObject(responseStr)
+                val header = jsonObj.getJSONObject("header")
+                if (!header.getBoolean("success")) {
+                    Log.e(TAG, "노선 검색 실패: ${header.getString("resultMsg")}")
+                    return@withContext emptyList()
+                }
+                
+                val bodyArray = jsonObj.getJSONArray("body")
+                val routes = mutableListOf<BusRoute>()
+                for (i in 0 until bodyArray.length()) {
+                    val routeObj = bodyArray.getJSONObject(i)
+                    routes.add(
+                        BusRoute(
+                            id = routeObj.getString("routeId"),
+                            routeNo = routeObj.getString("routeNo"),
+                            startPoint = "",
+                            endPoint = "",
+                            routeDescription = routeObj.getString("routeNm")
+                        )
                     )
-                )
+                }
+                routes
             }
-            
-            routes
         } catch (e: Exception) {
             Log.e(TAG, "노선 검색 오류: ${e.message}", e)
             emptyList()
