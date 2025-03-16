@@ -1,22 +1,25 @@
 class RouteStation {
-  final String stationId;
-  final String stationName;
+  final String bsId; // stationId 대신 사용
+  final String bsNm; // stationName 대신 사용
+  final double lat;
+  final double lng;
   final int sequenceNo;
-  final String direction;
 
   RouteStation({
-    required this.stationId,
-    required this.stationName,
+    required this.bsId,
+    required this.bsNm,
+    required this.lat,
+    required this.lng,
     required this.sequenceNo,
-    required this.direction,
   });
 
   factory RouteStation.fromJson(Map<String, dynamic> json) {
     return RouteStation(
-      stationId: json['stationId'] ?? '',
-      stationName: json['stationName'] ?? '',
-      sequenceNo: json['sequenceNo'] ?? 0,
-      direction: json['direction'] ?? '',
+      bsId: json['bsId'] as String,
+      bsNm: json['bsNm'] as String,
+      lat: (json['lat'] as num).toDouble(),
+      lng: (json['lng'] as num).toDouble(),
+      sequenceNo: (json['seq'] as num).toInt(),
     );
   }
 }

@@ -12,25 +12,13 @@ class BusArrival {
   });
 
   factory BusArrival.fromJson(Map<String, dynamic> json) {
-    List<BusInfo> busList = [];
-
-    if (json['bus'] != null) {
-      if (json['bus'] is List) {
-        busList = (json['bus'] as List)
-            .map((busJson) => BusInfo.fromJson(busJson))
-            .toList();
-      } else {
-        // 단일 항목인 경우
-        busList.add(BusInfo.fromJson(json['bus']));
-      }
-    }
-
+    final busesJson = json['buses'] as List<dynamic>? ?? [];
     return BusArrival(
-      routeId: json['id'] ?? '',
-      routeNo: json['name'] ?? '',
-      // forward가 null일 수 있으므로 기본값 제공
-      destination: json['forward'] ?? json['sub'] ?? 'default',
-      buses: busList,
+      routeId: json['routeId'] ?? json['id'] ?? '', // 네이티브와 호환
+      routeNo: json['routeNo'] ?? json['name'] ?? '',
+      destination:
+          json['destination'] ?? json['forward'] ?? json['sub'] ?? 'default',
+      buses: busesJson.map((busJson) => BusInfo.fromJson(busJson)).toList(),
     );
   }
 }
@@ -38,8 +26,8 @@ class BusArrival {
 class BusInfo {
   final String busNumber;
   final String currentStation;
-  final String remainingStops;
-  final String arrivalTime;
+  final String remainingStops; // 문자열로 유지하며 변환 로직 추가
+  final String arrivalTime; // estimatedTime으로 매핑
   final bool isLowFloor;
   final bool isOutOfService;
 
@@ -53,21 +41,24 @@ class BusInfo {
   });
 
   factory BusInfo.fromJson(Map<String, dynamic> json) {
-    final busNumStr = json['버스번호'] as String? ?? '';
-    final isLowFloor = busNumStr.contains('저상');
+    final busNumber = json['busNumber'] as String? ?? '';
+    final isLowFloor = json['isLowFloor'] as bool? ?? busNumber.contains('저상');
+    final estimatedTime = json['estimatedTime'] as String? ?? '';
+    final isOutOfService =
+        json['isOutOfService'] as bool? ?? (estimatedTime == '운행종료');
 
-    String remainingStopsText = json['남은정류소'] as String? ?? '';
+    // remainingStops 처리
+    String remainingStopsText = json['remainingStops'] as String? ?? '';
     int remainingStopsValue = 0;
-
     if (remainingStopsText.contains('개소')) {
       remainingStopsText = remainingStopsText.split(' ')[0];
       remainingStopsValue = int.tryParse(remainingStopsText) ?? 0;
+    } else {
+      remainingStopsValue = int.tryParse(remainingStopsText) ?? 0;
     }
 
-    String arrivalTime = json['도착예정소요시간'] as String? ?? '';
-    // 운행종료 여부 확인
-    final isOutOfService = arrivalTime == '운행종료';
-
+    // arrivalTime 처리
+    String arrivalTime = estimatedTime;
     if (arrivalTime != '-' &&
         arrivalTime != '운행종료' &&
         !arrivalTime.contains('분')) {
@@ -75,12 +66,12 @@ class BusInfo {
     }
 
     return BusInfo(
-      busNumber: busNumStr.replaceAll('(저상)', '').replaceAll('(일반)', ''),
-      currentStation: json['현재정류소'] as String? ?? '',
+      busNumber: busNumber.replaceAll('(저상)', '').replaceAll('(일반)', ''),
+      currentStation: json['currentStation'] as String? ?? '',
       remainingStops: '$remainingStopsValue 개소',
       arrivalTime: arrivalTime,
       isLowFloor: isLowFloor,
-      isOutOfService: isOutOfService, // 운행종료 여부 설정
+      isOutOfService: isOutOfService,
     );
   }
 

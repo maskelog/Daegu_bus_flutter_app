@@ -3,12 +3,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
-import '../services/bus_api_service.dart';
+import '../services/api_service.dart'; // ApiService로 변경
 import '../widgets/station_item.dart';
 import '../widgets/compact_bus_card.dart';
 
 class SearchScreen extends StatefulWidget {
-  final List<BusStop>? favoriteStops; // 홈 화면에서 전달받는 즐겨찾기 목록
+  final List<BusStop>? favoriteStops;
 
   const SearchScreen({
     super.key,
@@ -21,11 +21,10 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final BusApiService _busApiService = BusApiService();
 
   List<BusStop> _searchResults = [];
   List<BusStop> _favoriteStops = [];
-  Map<String, List<BusArrival>> _stationArrivals = {};
+  final Map<String, List<BusArrival>> _stationArrivals = {};
   bool _isLoading = false;
   bool _hasSearched = false;
   String? _errorMessage;
@@ -47,26 +46,16 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
-  // 즐겨찾기 불러오기
   Future<void> _loadFavoriteStops() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (!mounted) return;
 
       final favorites = prefs.getStringList('favorites') ?? [];
-
       setState(() {
         _favoriteStops = favorites.map((json) {
           final data = jsonDecode(json);
-          return BusStop(
-            id: data['id'],
-            name: data['name'],
-            isFavorite: true,
-            wincId: data['wincId'],
-            routeList: data['routeList'],
-            ngisXPos: data['ngisXPos'],
-            ngisYPos: data['ngisYPos'],
-          );
+          return BusStop.fromJson(data);
         }).toList();
       });
     } catch (e) {
@@ -74,24 +63,20 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  // 즐겨찾기 저장
   Future<void> _saveFavoriteStops() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final List<String> favorites = [];
-
-      for (var stop in _favoriteStops) {
-        favorites.add(jsonEncode({
-          'id': stop.id,
-          'name': stop.name,
-          'isFavorite': true,
-          'wincId': stop.wincId,
-          'routeList': stop.routeList,
-          'ngisXPos': stop.ngisXPos,
-          'ngisYPos': stop.ngisYPos,
-        }));
-      }
-
+      final favorites = _favoriteStops
+          .map((stop) => jsonEncode({
+                'id': stop.id,
+                'name': stop.name,
+                'isFavorite': true,
+                'wincId': stop.wincId,
+                'routeList': stop.routeList,
+                'ngisXPos': stop.ngisXPos,
+                'ngisYPos': stop.ngisYPos,
+              }))
+          .toList();
       await prefs.setStringList('favorites', favorites);
     } catch (e) {
       debugPrint('Error saving favorites: $e');
@@ -103,13 +88,10 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  // 정류장 즐겨찾기 추가/제거
   void _toggleFavorite(BusStop stop) {
     setState(() {
       if (_isStopFavorite(stop)) {
         _favoriteStops.removeWhere((s) => s.id == stop.id);
-
-        // 검색 결과에서도 즐겨찾기 상태 업데이트
         final index = _searchResults.indexWhere((s) => s.id == stop.id);
         if (index != -1) {
           _searchResults[index] =
@@ -117,8 +99,6 @@ class _SearchScreenState extends State<SearchScreen> {
         }
       } else {
         _favoriteStops.add(stop.copyWith(isFavorite: true));
-
-        // 검색 결과에서도 즐겨찾기 상태 업데이트
         final index = _searchResults.indexWhere((s) => s.id == stop.id);
         if (index != -1) {
           _searchResults[index] =
@@ -129,17 +109,14 @@ class _SearchScreenState extends State<SearchScreen> {
     });
   }
 
-  // 정류장이 즐겨찾기에 있는지 확인
   bool _isStopFavorite(BusStop stop) {
     return _favoriteStops.any((s) => s.id == stop.id);
   }
 
-  // 정류장 ID를 사용하여 즐겨찾기 여부 확인 (네이티브 API 결과용)
   bool _isStopIdFavorite(String stopId) {
     return _favoriteStops.any((s) => s.id == stopId);
   }
 
-  // 정류장 검색 (네이티브 API 서비스 사용)
   Future<void> _searchStations(String query) async {
     if (query.isEmpty) {
       setState(() {
@@ -156,41 +133,34 @@ class _SearchScreenState extends State<SearchScreen> {
       _errorMessage = null;
     });
 
-    // 디바운스 추가
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
 
     try {
-      // 네이티브 API 호출로 변경
-      final nativeResults = await _busApiService.searchStations(query);
-      final limitedResults = nativeResults.take(30).toList();
+      final results = await ApiService.searchStations(query); // 정적 호출로 변경
+      final limitedResults = results.take(30).toList();
 
       if (mounted) {
         setState(() {
-          // StationSearchResult를 BusStop으로 변환
-          _searchResults = limitedResults.map((station) {
-            return BusStop(
-              id: station.bsId,
-              name: station.bsNm,
-              isFavorite: _isStopIdFavorite(station.bsId),
-            );
-          }).toList();
+          _searchResults = limitedResults
+              .map((station) => station.copyWith(
+                    isFavorite: _isStopIdFavorite(station.id),
+                  ))
+              .toList();
           _isLoading = false;
-          _stationArrivals = {};
+          _stationArrivals.clear();
           _selectedStation = null;
         });
       }
     } catch (e) {
       debugPrint('Error searching stations: $e');
-
       if (mounted) {
         setState(() {
-          _errorMessage = '정류장 검색 중 오류가 발생했습니다.\n$e';
+          _errorMessage = '정류장 검색 중 오류가 발생했습니다: $e';
           _isLoading = false;
         });
-
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('정류장 검색 중 오류가 발생했습니다')),
+          SnackBar(content: Text('정류장 검색 중 오류가 발생했습니다: $e')),
         );
       }
     }
@@ -204,23 +174,8 @@ class _SearchScreenState extends State<SearchScreen> {
     });
 
     try {
-      // 네이티브 API 사용으로 변경
-      final arrivalInfos = await _busApiService.getStationInfo(station.id);
-
+      final arrivals = await ApiService.getStationInfo(station.id); // 정적 호출로 변경
       if (mounted) {
-        if (arrivalInfos.isEmpty) {
-          setState(() {
-            _stationArrivals[station.id] = [];
-            _isLoading = false;
-          });
-          return;
-        }
-
-        // BusArrivalInfo를 BusArrival로 변환
-        final arrivals = arrivalInfos
-            .map((info) => _busApiService.convertToBusArrival(info))
-            .toList();
-
         setState(() {
           _stationArrivals[station.id] = arrivals;
           _isLoading = false;
@@ -228,10 +183,9 @@ class _SearchScreenState extends State<SearchScreen> {
       }
     } catch (e) {
       debugPrint('Error loading arrivals: $e');
-
       if (mounted) {
         setState(() {
-          _errorMessage = '버스 도착 정보를 불러오지 못했습니다';
+          _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
           _isLoading = false;
         });
       }
@@ -246,14 +200,12 @@ class _SearchScreenState extends State<SearchScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            // 홈 화면으로 돌아갈 때 즐겨찾기 목록 전달
             Navigator.of(context).pop(_favoriteStops);
           },
         ),
       ),
       body: Column(
         children: [
-          // 검색 입력 필드
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: TextField(
@@ -283,21 +235,14 @@ class _SearchScreenState extends State<SearchScreen> {
               onSubmitted: _searchStations,
             ),
           ),
-
-          // 검색 결과 또는 안내 메시지
-          Expanded(
-            child: _buildSearchContent(),
-          ),
+          Expanded(child: _buildSearchContent()),
         ],
       ),
     );
   }
 
   Widget _buildSearchContent() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (_errorMessage != null) {
       return Center(
         child: Padding(
@@ -310,69 +255,38 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
       );
     }
-
     if (!_hasSearched) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.search,
-              size: 64,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.search, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
-            Text(
-              '정류장 이름을 입력하여 검색하세요',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
-            ),
+            Text('정류장 이름을 입력하여 검색하세요',
+                style: TextStyle(fontSize: 16, color: Colors.grey[600])),
             const SizedBox(height: 8),
-            const Text(
-              '예: 대구역, 동대구역, 현풍시외버스터미널',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
-            ),
+            const Text('예: 대구역, 동대구역, 현풍시외버스터미널',
+                style: TextStyle(fontSize: 14, color: Colors.grey)),
           ],
         ),
       );
     }
-
     if (_searchResults.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.search_off,
-              size: 64,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
-            Text(
-              '\'${_searchController.text}\' 검색 결과가 없습니다',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
-            ),
+            Text('\'${_searchController.text}\' 검색 결과가 없습니다',
+                style: TextStyle(fontSize: 16, color: Colors.grey[600])),
             const SizedBox(height: 8),
-            const Text(
-              '다른 정류장 이름으로 검색해보세요',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
-            ),
+            const Text('다른 정류장 이름으로 검색해보세요',
+                style: TextStyle(fontSize: 14, color: Colors.grey)),
           ],
         ),
       );
     }
-
     return _buildSearchResults();
   }
 
