@@ -396,6 +396,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                 buses: busArrival.buses.isNotEmpty
                                     ? [busArrival.buses.first]
                                     : [],
+                                stationId: '',
                               ),
                               onTap: () {},
                               stationName: station.name,
@@ -461,6 +462,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                         destination: busArrival.destination,
                                         routeId: busArrival.routeId,
                                         buses: [bus],
+                                        stationId: busArrival.stationId,
                                       );
 
                                       // 현재 모달 닫고 새 버스 상세 모달 열기
