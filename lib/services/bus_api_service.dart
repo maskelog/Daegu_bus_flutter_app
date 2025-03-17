@@ -35,14 +35,18 @@ class BusApiService {
   }
 
   // 정류장 도착 정보 조회 메소드
-  Future<List<BusArrivalInfo>> getStationInfo(String stationId) async {
+  Future<List<BusArrival>> getStationInfo(String stationId) async {
     try {
       final String jsonResult = await _channel.invokeMethod('getStationInfo', {
         'stationId': stationId,
       });
 
       final List<dynamic> decoded = jsonDecode(jsonResult);
-      return decoded.map((info) => BusArrivalInfo.fromJson(info)).toList();
+      debugPrint('getStationInfo 응답: $decoded'); // 응답 로그 추가
+      return decoded
+          .map((info) =>
+              convertToBusArrival(BusArrivalInfo.fromJson(info), stationId))
+          .toList();
     } on PlatformException catch (e) {
       debugPrint('정류장 정보 조회 오류: ${e.message}');
       return [];
@@ -109,7 +113,7 @@ class BusApiService {
   }
 
   // BusArrivalInfo를 BusArrival로 변환하는 헬퍼 메소드
-  BusArrival convertToBusArrival(BusArrivalInfo info) {
+  BusArrival convertToBusArrival(BusArrivalInfo info, String stationId) {
     List<BusInfo> buses = info.bus.map((busInfo) {
       // 버스 번호에서 저상버스 정보 추출
       bool isLowFloor = busInfo.busNumber.contains('저상');
@@ -141,6 +145,7 @@ class BusApiService {
     }).toList();
 
     return BusArrival(
+      stationId: stationId,
       routeId: info.id,
       routeNo: info.name,
       destination: info.forward,
