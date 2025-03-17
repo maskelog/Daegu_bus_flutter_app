@@ -17,8 +17,10 @@ class BusRoute {
     return BusRoute(
       id: json['routeId'] as String,
       routeNo: json['routeNo'] as String,
-      startPoint: json['startPoint'] as String?,
-      endPoint: json['endPoint'] as String?,
+      startPoint: json['startStation'] as String? ??
+          json['startPoint'] as String?, // 실제 키 확인
+      endPoint: json['endStation'] as String? ??
+          json['endPoint'] as String?, // 실제 키 확인
       routeDescription: json['routeTCd'] as String?,
     );
   }
