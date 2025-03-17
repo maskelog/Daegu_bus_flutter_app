@@ -1,15 +1,15 @@
 class RouteStation {
-  final String bsId; // stationId 대신 사용
-  final String bsNm; // stationName 대신 사용
-  final double lat;
-  final double lng;
+  final String bsId;
+  final String bsNm;
+  final double? lat;
+  final double? lng;
   final int sequenceNo;
 
   RouteStation({
     required this.bsId,
     required this.bsNm,
-    required this.lat,
-    required this.lng,
+    this.lat,
+    this.lng,
     required this.sequenceNo,
   });
 
