@@ -1,10 +1,12 @@
 class BusArrival {
+  final String stationId;
   final String routeId;
   final String routeNo;
   final String destination;
   final List<BusInfo> buses;
 
   BusArrival({
+    required this.stationId,
     required this.routeId,
     required this.routeNo,
     required this.destination,
@@ -14,7 +16,8 @@ class BusArrival {
   factory BusArrival.fromJson(Map<String, dynamic> json) {
     final busesJson = json['buses'] as List<dynamic>? ?? [];
     return BusArrival(
-      routeId: json['routeId'] ?? json['id'] ?? '', // 네이티브와 호환
+      stationId: json['stationId'] as String? ?? '',
+      routeId: json['routeId'] ?? json['id'] ?? '',
       routeNo: json['routeNo'] ?? json['name'] ?? '',
       destination:
           json['destination'] ?? json['forward'] ?? json['sub'] ?? 'default',
@@ -26,8 +29,8 @@ class BusArrival {
 class BusInfo {
   final String busNumber;
   final String currentStation;
-  final String remainingStops; // 문자열로 유지하며 변환 로직 추가
-  final String arrivalTime; // estimatedTime으로 매핑
+  final String remainingStops;
+  final String arrivalTime;
   final bool isLowFloor;
   final bool isOutOfService;
 
