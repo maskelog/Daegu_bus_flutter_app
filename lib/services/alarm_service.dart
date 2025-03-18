@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:daegu_bus_app/screens/profile_screen.dart';
 import 'package:daegu_bus_app/utils/alarm_helper.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:http/http.dart' as http;
 import '../models/bus_arrival.dart';
 import '../services/notification_service.dart';
 import '../utils/tts_helper.dart';
@@ -113,7 +115,6 @@ class AlarmService extends ChangeNotifier {
   }
 
   void _setupMethodChannel() {
-    // 네이티브 BusAlertService와의 통신 채널 설정
     _methodChannel = const MethodChannel('com.example.daegu_bus_app/bus_api');
     _methodChannel?.setMethodCallHandler((call) async {
       if (call.method == 'onBusArrival') {
@@ -133,7 +134,6 @@ class AlarmService extends ChangeNotifier {
             return true;
           }
 
-          // 네이티브 이벤트 수신 시 NotificationService를 통해 알림 표시
           await NotificationService().showBusArrivingSoon(
             busNo: busNumber,
             stationName: stationName,
@@ -166,7 +166,6 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  // 네이티브 BusAlertService를 시작하는 메서드
   Future<bool> startBusMonitoringService({
     required String stationId,
     required String stationName,
@@ -197,7 +196,6 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  // 네이티브 BusAlertService를 중지하는 메서드
   Future<bool> stopBusMonitoringService() async {
     try {
       final result =
@@ -412,7 +410,6 @@ class AlarmService extends ChangeNotifier {
     try {
       debugPrint('알람 취소 시작: $id');
 
-      // 취소할 알람을 activeAlarms 목록에서 찾음
       AlarmData? alarmToCancel;
       for (var alarm in _activeAlarms) {
         if (alarm.getAlarmId() == id) {
@@ -422,12 +419,10 @@ class AlarmService extends ChangeNotifier {
       }
       final String? busNumber = alarmToCancel?.busNo;
 
-      // SharedPreferences에서 알람 데이터 삭제
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove("alarm_$id");
       debugPrint('SharedPreferences에서 알람 제거: alarm_$id');
 
-      // WorkManager 작업 취소 (cancelByUniqueName 사용)
       final uniqueTaskName = 'busAlarm_$id';
       try {
         debugPrint('WorkManager 작업 취소 시작: $uniqueTaskName');
@@ -437,14 +432,11 @@ class AlarmService extends ChangeNotifier {
         debugPrint('WorkManager 작업 취소 오류 (계속 진행): $e');
       }
 
-      // activeAlarms 목록에서 해당 알람 제거
       _activeAlarms.removeWhere((alarm) => alarm.getAlarmId() == id);
       debugPrint('알람 목록에서 제거 완료, 남은 알람 수: ${_activeAlarms.length}');
 
-      // TTS: 딜레이 후 TTS 엔진 재초기화 및 알람 해제 안내 발화
       if (busNumber != null) {
         try {
-          // TTS 엔진이 재바인딩될 충분한 시간을 주기 위해 딜레이 2초 적용
           await Future.delayed(const Duration(seconds: 2));
           await TTSHelper.initialize();
           await TTSHelper.speakAlarmCancel(busNumber);
@@ -453,11 +445,9 @@ class AlarmService extends ChangeNotifier {
         }
       }
 
-      // UI 업데이트
       notifyListeners();
       debugPrint('알람 취소 UI 갱신 요청');
 
-      // 노티피케이션 취소: NotificationService 사용
       await NotificationService().cancelNotification(id);
       debugPrint('알림 취소 완료: $id');
 
@@ -473,32 +463,24 @@ class AlarmService extends ChangeNotifier {
     return (busNo + stationName + routeId).hashCode;
   }
 
-  /// 특정 버스 노선에 대한 알람 취소 (버스 번호, 정류장 이름, 노선 ID 기준)
   Future<bool> cancelAlarmByRoute(
       String busNo, String stationName, String routeId) async {
     try {
-      // 알람 ID 가져오기
       int id = getAlarmId(busNo, stationName, routeId: routeId);
-
-      // 안드로이드 알람 취소
       bool success = await AlarmHelper.cancelAlarm(id);
 
-      // NotificationService를 통해 관련 알림도 모두 취소
       final notificationService = NotificationService();
       await notificationService.initialize();
       await notificationService.cancelNotification(id);
       await notificationService.cancelOngoingTracking();
 
-      // 알람 캐시에서 해당 알람 제거
       _alarmCache.removeWhere((alarm) =>
           alarm.busNo == busNo &&
           alarm.stationName == stationName &&
           alarm.routeId == routeId);
 
-      // 알람 목록 갱신 이벤트 발생
       notifyListeners();
       debugPrint('🚫 알람 취소: $busNo, $stationName ($routeId), ID: $id');
-
       return success;
     } catch (e) {
       debugPrint('🚫 알람 취소 오류: $e');
@@ -535,20 +517,115 @@ class AlarmService extends ChangeNotifier {
     super.dispose();
   }
 
-  /// 알람 취소 전에 캐시에서 먼저 제거하여 UI에 즉시 반영
   void removeFromCacheBeforeCancel(
       String busNo, String stationName, String routeId) {
-    // 캐시에서 해당 알람 제거
     _alarmCache.removeWhere((alarm) =>
         alarm.busNo == busNo &&
         alarm.stationName == stationName &&
         alarm.routeId == routeId);
 
-    // 버스 정보 캐시에서도 제거
     final key = "${busNo}_$routeId";
     _busInfoCache.remove(key);
 
-    // 알람 목록 갱신 이벤트 발생 (UI 즉시 갱신)
     notifyListeners();
+  }
+
+  Future<List<DateTime>> _fetchHolidays(int year, int month) async {
+    const String serviceKey =
+        'U5x6XR0zMipv1m9CQk72BiQp3Goghg6YttuJm3BNnCnf2dda1ywYcAbqdWkt1Kkug3DdpZS77wXCpioS0y9WYA==';
+    final String url =
+        'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo'
+        '?serviceKey=$serviceKey'
+        '&solYear=$year'
+        '&solMonth=${month.toString().padLeft(2, '0')}'
+        '&numOfRows=100';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final jsonData = jsonDecode(response.body);
+        final items = jsonData['response']['body']['items']?['item'] ?? [];
+        final holidays = <DateTime>[];
+
+        if (items is List) {
+          for (var item in items) {
+            if (item['isHoliday'] == 'Y') {
+              final locdate = item['locdate'].toString();
+              final holiday = DateTime.parse(locdate);
+              holidays.add(holiday);
+            }
+          }
+        } else if (items is Map && items['isHoliday'] == 'Y') {
+          final locdate = items['locdate'].toString();
+          holidays.add(DateTime.parse(locdate));
+        }
+
+        debugPrint('공휴일 목록 ($year-$month): $holidays');
+        return holidays;
+      } else {
+        debugPrint('공휴일 API 응답 오류: ${response.statusCode}');
+        return [];
+      }
+    } catch (e) {
+      debugPrint('공휴일 API 호출 오류: $e');
+      return [];
+    }
+  }
+
+  Future<void> updateAutoAlarms(List<AutoAlarm> autoAlarms) async {
+    try {
+      debugPrint('자동 알람 갱신 시작: ${autoAlarms.length}개');
+      final now = DateTime.now();
+
+      final holidays = await _fetchHolidays(now.year, now.month);
+
+      for (var alarm in autoAlarms) {
+        if (!alarm.isActive) continue;
+
+        final alarmId = alarm.id.hashCode;
+        final todayWeekday = now.weekday;
+
+        if (!alarm.repeatDays.contains(todayWeekday)) continue;
+
+        if (alarm.excludeWeekends && (todayWeekday == 6 || todayWeekday == 7)) {
+          continue;
+        }
+
+        bool isHoliday = holidays.any((holiday) =>
+            holiday.year == now.year &&
+            holiday.month == now.month &&
+            holiday.day == now.day);
+        if (alarm.excludeHolidays && isHoliday) continue;
+
+        DateTime scheduledTime = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          alarm.hour,
+          alarm.minute,
+        );
+
+        if (scheduledTime.isBefore(now)) {
+          scheduledTime = scheduledTime.add(const Duration(days: 1));
+        }
+
+        await setOneTimeAlarm(
+          id: alarmId,
+          alarmTime: scheduledTime,
+          preNotificationTime: Duration(minutes: alarm.beforeMinutes),
+          busNo: alarm.routeNo,
+          stationName: alarm.stationName,
+          remainingMinutes: alarm.beforeMinutes,
+          routeId: alarm.routeId,
+        );
+
+        debugPrint(
+            '자동 알람 예약: ${alarm.routeNo}, ${alarm.stationName}, ${alarm.hour}:${alarm.minute}');
+      }
+      await loadAlarms();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('자동 알람 갱신 오류: $e');
+    }
   }
 }
