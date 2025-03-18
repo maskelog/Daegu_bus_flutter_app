@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:daegu_bus_app/screens/profile_screen.dart';
 import 'package:daegu_bus_app/screens/reoute_map_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -808,7 +809,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildProfileTab() {
-    return const Center(child: Text('내정보 화면 (개발 예정)'));
+    return const ProfileScreen();
   }
 
   String _formatDistance(String distanceStr) {
