@@ -3,6 +3,8 @@ import 'dart:async';
 import '../models/bus_route.dart';
 import '../models/route_station.dart';
 import '../services/api_service.dart';
+import '../widgets/compact_bus_card.dart';
+import '../models/bus_arrival.dart';
 
 class RouteMapScreen extends StatefulWidget {
   const RouteMapScreen({super.key});
@@ -20,6 +22,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   bool _isSearching = false;
   String? _errorMessage;
   Timer? _searchDebounce;
+  List<BusArrival> _selectedStationArrivals = [];
 
   // 노선 ID별 정류장 정보를 캐싱하는 맵
   final Map<String, List<RouteStation>> _routeStationsCache = {};
@@ -133,8 +136,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
 
       ApiService.getRouteStations(route.id).then((stations) {
         if (mounted && stations.isNotEmpty) {
+          // 순서대로 정렬
+          stations.sort((a, b) => a.sequenceNo.compareTo(b.sequenceNo));
+
           setState(() {
             _routeStationsCache[route.id] = stations;
+
+            // 검색 결과에 보여지는 노선을 업데이트하기 위함
+            if (_searchResults.isNotEmpty) {
+              setState(() {});
+            }
           });
         }
       }).catchError((e) {
@@ -148,6 +159,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       _isLoading = true;
       _errorMessage = null;
       _selectedRoute = route;
+      _selectedStationArrivals = [];
     });
 
     try {
@@ -162,10 +174,14 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
 
       final stations = await ApiService.getRouteStations(route.id);
       if (mounted) {
+        stations.sort((a, b) => a.sequenceNo.compareTo(b.sequenceNo));
         setState(() {
           _routeStations = stations;
           _routeStationsCache[route.id] = stations; // 캐시에 저장
           _isLoading = false;
+          debugPrint('노선 ${route.routeNo} 정류장 수: ${stations.length}');
+          debugPrint('기점: ${stations.isNotEmpty ? stations.first.bsNm : '없음'}');
+          debugPrint('종점: ${stations.isNotEmpty ? stations.last.bsNm : '없음'}');
         });
       }
     } catch (e) {
@@ -181,12 +197,52 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     }
   }
 
+  // 정류장 클릭 시 모든 도착 정보 가져오기
+  Future<void> _showStationArrival(RouteStation station) async {
+    try {
+      final arrivals = await ApiService.getStationInfo(station.bsId);
+      if (mounted) {
+        setState(() {
+          _selectedStationArrivals = arrivals; // 모든 도착 정보 저장
+          debugPrint('정류장 ${station.bsNm} 도착 정보: ${arrivals.length}개 노선');
+        });
+      }
+    } catch (e) {
+      debugPrint('정류장 도착 정보 조회 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('도착 정보 조회 실패: $e')),
+        );
+      }
+    }
+  }
+
+  // 노선의 기점-종점 정보를 가져오는 메소드
+  String _getRouteEndpoints(BusRoute route) {
+    // 이미 캐시에 해당 노선의 정류장 정보가 있는 경우 사용
+    if (_routeStationsCache.containsKey(route.id) &&
+        _routeStationsCache[route.id]!.isNotEmpty) {
+      final stations = _routeStationsCache[route.id]!;
+      return '${stations.first.bsNm} → ${stations.last.bsNm}';
+    }
+
+    // 선택된 노선이고 정류장 정보가 있는 경우
+    if (_selectedRoute?.id == route.id && _routeStations.isNotEmpty) {
+      return '${_routeStations.first.bsNm} → ${_routeStations.last.bsNm}';
+    }
+
+    // API에서 받아온 시작점/종점 정보가 있는 경우 (낙후된 방법)
+    if (route.startPoint != null && route.endPoint != null) {
+      return '${route.startPoint} → ${route.endPoint}';
+    }
+
+    // 노선 정보 로딩 중임을 표시
+    return '노선 정보 로딩 중...';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('노선 지도'),
-      ),
       body: Column(
         children: [
           Padding(
@@ -222,6 +278,45 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
             ),
           ),
           Expanded(child: _buildContent()),
+          if (_selectedStationArrivals.isNotEmpty) // 모든 도착 정보 표시
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '도착 정보',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _selectedStationArrivals.length,
+                        itemBuilder: (context, index) {
+                          final arrival = _selectedStationArrivals[index];
+                          final matchingStation = _routeStations.firstWhere(
+                            (s) => s.bsId == arrival.stationId,
+                            orElse: () => RouteStation(
+                                bsId: '',
+                                bsNm: '알 수 없음',
+                                sequenceNo: 0,
+                                lat: 0.0,
+                                lng: 0.0),
+                          );
+                          return CompactBusCard(
+                            busArrival: arrival,
+                            onTap: () {},
+                            stationName: matchingStation.bsNm,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -306,7 +401,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _getRoutePathText(route),
+                            _getRouteEndpoints(route),
                             style: const TextStyle(fontWeight: FontWeight.w500),
                           ),
                           if (route.routeDescription != null &&
@@ -397,7 +492,9 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _getSelectedRoutePathText(),
+                      _routeStations.isNotEmpty
+                          ? '${_routeStations.first.bsNm} → ${_routeStations.last.bsNm}'
+                          : '기점/종점 정보 없음',
                       style: const TextStyle(fontWeight: FontWeight.w500),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -410,7 +507,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                 ),
               ),
               ElevatedButton(
-                onPressed: () => setState(() => _selectedRoute = null),
+                onPressed: () => setState(() {
+                  _selectedRoute = null;
+                  _selectedStationArrivals = [];
+                }),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.blue,
@@ -446,21 +546,24 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: InkWell(
-                          onTap: () {
-                            // TODO: 정류장 상세정보로 이동
-                          },
+                          onTap: () => _showStationArrival(station),
                           child: Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: isStart || isEnd
-                                  ? Colors.blue[50]
-                                  : Colors.grey[50],
+                              color: isStart
+                                  ? Colors.green[50]
+                                  : isEnd
+                                      ? Colors.red[50]
+                                      : Colors.grey[50],
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: isStart || isEnd
-                                    ? Colors.blue[200]!
-                                    : Colors.grey[300]!,
+                                color: isStart
+                                    ? Colors.green[200]!
+                                    : isEnd
+                                        ? Colors.red[200]!
+                                        : Colors.grey[300]!,
+                                width: isStart || isEnd ? 2 : 1,
                               ),
                             ),
                             child: Column(
@@ -476,7 +579,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
-                                        station.bsId, // stationId -> bsId
+                                        station.bsId,
                                         style: TextStyle(
                                             fontSize: 10,
                                             color: Colors.grey[700]),
@@ -488,15 +591,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: Colors.green[100],
+                                          color: Colors.green[200],
                                           borderRadius:
                                               BorderRadius.circular(4),
                                         ),
                                         child: Text(
                                           '기점',
                                           style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.green[700]),
+                                              fontSize: 12,
+                                              color: Colors.green[800],
+                                              fontWeight: FontWeight.bold),
                                         ),
                                       ),
                                     if (isEnd)
@@ -504,26 +608,33 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: Colors.red[100],
+                                          color: Colors.red[200],
                                           borderRadius:
                                               BorderRadius.circular(4),
                                         ),
                                         child: Text(
                                           '종점',
                                           style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.red[700]),
+                                              fontSize: 12,
+                                              color: Colors.red[800],
+                                              fontWeight: FontWeight.bold),
                                         ),
                                       ),
                                   ],
                                 ),
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 8),
                                 Text(
-                                  station.bsNm, // stationName -> bsNm
+                                  station.bsNm,
                                   style: TextStyle(
+                                    fontSize: 16,
                                     fontWeight: isStart || isEnd
                                         ? FontWeight.bold
                                         : FontWeight.normal,
+                                    color: isStart
+                                        ? Colors.green[900]
+                                        : isEnd
+                                            ? Colors.red[900]
+                                            : Colors.black87,
                                   ),
                                 ),
                               ],
@@ -540,47 +651,6 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
         ),
       ],
     );
-  }
-
-  // 노선의 경로(기점→종점) 텍스트를 반환하는 메소드
-  String _getRoutePathText(BusRoute route) {
-    // 캐시에 해당 노선의 정류장 정보가 있는 경우
-    if (_routeStationsCache.containsKey(route.id) &&
-        _routeStationsCache[route.id]!.isNotEmpty) {
-      final stations = _routeStationsCache[route.id]!;
-      final firstStation = stations.first;
-      final lastStation = stations.last;
-      return '${firstStation.bsNm} → ${lastStation.bsNm}';
-    }
-    // 선택된 노선과 현재 노선이 동일하고 정류장 정보가 있으면
-    else if (_selectedRoute?.id == route.id && _routeStations.isNotEmpty) {
-      // 노선도에서 첫 번째와 마지막 정류장 정보를 사용
-      final firstStation = _routeStations.first;
-      final lastStation = _routeStations.last;
-      return '${firstStation.bsNm} → ${lastStation.bsNm}';
-    }
-    // 그렇지 않으면 노선 객체의 정보 사용
-    else if (route.startPoint != null && route.endPoint != null) {
-      return '${route.startPoint} → ${route.endPoint}';
-    }
-    // 모든 정보가 없는 경우 - 로딩 표시
-    else {
-      return '${route.routeNo} 노선 정보 로딩 중...';
-    }
-  }
-
-  // 노선도 화면에서 선택된 노선의 경로 텍스트를 반환
-  String _getSelectedRoutePathText() {
-    if (_routeStations.isNotEmpty) {
-      final firstStation = _routeStations.first;
-      final lastStation = _routeStations.last;
-      return '${firstStation.bsNm} → ${lastStation.bsNm}';
-    } else if (_selectedRoute!.startPoint != null &&
-        _selectedRoute!.endPoint != null) {
-      return '${_selectedRoute!.startPoint} → ${_selectedRoute!.endPoint}';
-    } else {
-      return '노선 정보를 불러오는 중입니다...';
-    }
   }
 }
 
@@ -615,5 +685,5 @@ class RouteLinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
