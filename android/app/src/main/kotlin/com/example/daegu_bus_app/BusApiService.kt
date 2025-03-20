@@ -43,12 +43,6 @@ interface BusInfoApi {
     suspend fun getBusPositionInfo(@Path("routeId") routeId: String): ResponseBody
 }
 
-// 모델: 정류장 검색 결과
-data class StationSearchResult(
-    val bsId: String,
-    val bsNm: String
-)
-
 // 모델: 버스 도착 정보 응답
 data class BusArrivalResponse(
     val header: Header,
