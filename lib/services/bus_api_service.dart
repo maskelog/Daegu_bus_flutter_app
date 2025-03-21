@@ -158,16 +158,27 @@ class BusApiService {
 class StationSearchResult {
   final String bsId;
   final String bsNm;
+  final double? latitude;
+  final double? longitude;
 
   StationSearchResult({
     required this.bsId,
     required this.bsNm,
+    this.latitude,
+    this.longitude,
   });
 
   factory StationSearchResult.fromJson(Map<String, dynamic> json) {
     return StationSearchResult(
-      bsId: json['bsId'],
-      bsNm: json['bsNm'],
+      bsId: json['bsId'] as String,
+      // 네이티브 쪽에서는 컬럼명이 "stop_name"일 수 있으므로 fallback 처리
+      bsNm: json['bsNm'] ?? json['stop_name'] ?? '',
+      latitude: json['latitude'] != null
+          ? (json['latitude'] as num).toDouble()
+          : null,
+      longitude: json['longitude'] != null
+          ? (json['longitude'] as num).toDouble()
+          : null,
     );
   }
 
@@ -175,6 +186,8 @@ class StationSearchResult {
     return {
       'bsId': bsId,
       'bsNm': bsNm,
+      'latitude': latitude,
+      'longitude': longitude,
     };
   }
 }
