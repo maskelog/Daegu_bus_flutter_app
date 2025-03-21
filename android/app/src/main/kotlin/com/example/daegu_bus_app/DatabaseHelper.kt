@@ -1,190 +1,99 @@
 package com.example.daegu_bus_app
 
-import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
+import java.io.FileOutputStream
 
-class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class DatabaseHelper(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
     companion object {
         private const val DATABASE_NAME = "bus_stops.db"
         private const val DATABASE_VERSION = 3
         private const val TAG = "DatabaseHelper"
     }
 
+    init {
+        copyDatabaseIfNeeded()
+    }
+
+    // assets에 있는 pre-populated DB 파일을 기기의 DB 경로로 복사하는 메서드
+    private fun copyDatabaseIfNeeded() {
+        val dbPath = context.getDatabasePath(DATABASE_NAME)
+        if (!dbPath.exists()) {
+            dbPath.parentFile?.mkdirs()
+            try {
+                context.assets.open(DATABASE_NAME).use { inputStream ->
+                    FileOutputStream(dbPath).use { outputStream ->
+                        val buffer = ByteArray(1024)
+                        var length: Int
+                        while (inputStream.read(buffer).also { length = it } > 0) {
+                            outputStream.write(buffer, 0, length)
+                        }
+                        outputStream.flush()
+                    }
+                }
+                Log.d(TAG, "DB 파일 복사 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "DB 파일 복사 오류: ${e.message}", e)
+            }
+        } else {
+            Log.d(TAG, "DB 파일이 이미 존재함")
+        }
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
-        // 버스 도착 정보 테이블 생성
-        db.execSQL("""
-            CREATE TABLE IF NOT EXISTS bus_arrivals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                station_id TEXT NOT NULL,
-                route_id TEXT NOT NULL,
-                route_no TEXT NOT NULL,
-                destination TEXT,
-                bus_number TEXT,
-                current_station TEXT,
-                remaining_stops TEXT,
-                estimated_time TEXT,
-                is_low_floor INTEGER,
-                is_out_of_service INTEGER,
-                last_updated INTEGER
-            )
-        """)
-
-        // bus_stops 테이블 생성
-        db.execSQL("""
-            CREATE TABLE IF NOT EXISTS bus_stops (
-                bsId TEXT PRIMARY KEY,
-                stop_name TEXT NOT NULL,
-                latitude REAL,
-                longitude REAL
-            )
-        """)
-
-        // 테스트 데이터 삽입
-        db.execSQL("INSERT INTO bus_stops (bsId, stop_name, latitude, longitude) VALUES ('STOP_001', '새동네', 35.870, 128.590)")
-        db.execSQL("INSERT INTO bus_stops (bsId, stop_name, latitude, longitude) VALUES ('STOP_002', '강남역', 37.497, 127.027)")
+        // assets에서 복사한 DB 파일을 사용하는 경우 onCreate()에서 테이블 생성이나 초기 데이터 삽입이 필요 없습니다.
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 2) {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS bus_arrivals (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    station_id TEXT NOT NULL,
-                    route_id TEXT NOT NULL,
-                    route_no TEXT NOT NULL,
-                    destination TEXT,
-                    bus_number TEXT,
-                    current_station TEXT,
-                    remaining_stops TEXT,
-                    estimated_time TEXT,
-                    is_low_floor INTEGER,
-                    is_out_of_service INTEGER,
-                    last_updated INTEGER
-                )
-            """)
-        }
-        if (oldVersion < 3) {
-            db.execSQL("""
-                CREATE TABLE IF NOT EXISTS bus_stops (
-                    bsId TEXT PRIMARY KEY,
-                    stop_name TEXT NOT NULL,
-                    latitude REAL,
-                    longitude REAL
-                )
-            """)
-        }
+        // DB 버전 업그레이드 로직 구현 (필요 시)
     }
 
-    // 버스 도착 정보 저장
-    fun saveBusArrivalInfo(stationId: String, arrivalInfo: BusArrivalInfo) {
-        val db = writableDatabase
-        try {
-            // 기존 데이터 삭제
-            db.delete("bus_arrivals", "station_id = ?", arrayOf(stationId))
-
-            // 새 데이터 삽입
-            arrivalInfo.buses.forEach { bus ->
-                val values = ContentValues().apply {
-                    put("station_id", stationId)
-                    put("route_id", arrivalInfo.routeId)
-                    put("route_no", arrivalInfo.routeNo)
-                    put("destination", arrivalInfo.destination)
-                    put("bus_number", bus.busNumber)
-                    put("current_station", bus.currentStation)
-                    put("remaining_stops", bus.remainingStops)
-                    put("estimated_time", bus.estimatedTime)
-                    put("is_low_floor", if (bus.isLowFloor) 1 else 0)
-                    put("is_out_of_service", if (bus.isOutOfService) 1 else 0)
-                    put("last_updated", System.currentTimeMillis())
-                }
-                db.insert("bus_arrivals", null, values)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "버스 도착 정보 저장 오류: ${e.message}", e)
-        } finally {
-            db.close()
-        }
-    }
-
-    // 버스 도착 정보 조회
-    fun getBusArrivalInfo(stationId: String): List<BusArrivalInfo> {
+    // 정류장 검색 메서드: 검색어가 비어있거나 "*" 또는 "all"이면 전체 데이터를 반환
+    suspend fun searchStations(searchText: String): List<LocalStationSearchResult> {
         val db = readableDatabase
-        val cursor = db.query(
-            "bus_arrivals",
-            null,
-            "station_id = ?",
-            arrayOf(stationId),
-            "route_id",
-            null,
-            "last_updated DESC"
-        )
+        val stations = mutableListOf<LocalStationSearchResult>()
+        val query: String
+        val args: Array<String>?
 
-        val arrivalMap = mutableMapOf<String, MutableList<BusInfo>>()
+        // BusApiService 인스턴스 생성
+        val busApiService = BusApiService(context)
+
+        if (searchText.isEmpty() || searchText == "*" || searchText.equals("all", ignoreCase = true)) {
+            query = "SELECT bsId, stop_name, latitude, longitude FROM bus_stops"
+            args = null
+        } else {
+            query = "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE stop_name LIKE ?"
+            args = arrayOf("%$searchText%")
+        }
+
+        val cursor = db.rawQuery(query, args)
         try {
             if (cursor.moveToFirst()) {
                 do {
-                    val routeId = cursor.getString(cursor.getColumnIndexOrThrow("route_id"))
-                    val routeNo = cursor.getString(cursor.getColumnIndexOrThrow("route_no"))
-                    val destination = cursor.getString(cursor.getColumnIndexOrThrow("destination"))
-                    val busNumber = cursor.getString(cursor.getColumnIndexOrThrow("bus_number"))
-                    val currentStation = cursor.getString(cursor.getColumnIndexOrThrow("current_station"))
-                    val remainingStops = cursor.getString(cursor.getColumnIndexOrThrow("remaining_stops"))
-                    val estimatedTime = cursor.getString(cursor.getColumnIndexOrThrow("estimated_time"))
-                    val isLowFloor = cursor.getInt(cursor.getColumnIndexOrThrow("is_low_floor")) == 1
-                    val isOutOfService = cursor.getInt(cursor.getColumnIndexOrThrow("is_out_of_service")) == 1
+                    val bsId = cursor.getString(cursor.getColumnIndexOrThrow("bsId"))
+                    val stopName = cursor.getString(cursor.getColumnIndexOrThrow("stop_name"))
+                    val latitude = cursor.getDouble(cursor.getColumnIndexOrThrow("latitude"))
+                    val longitude = cursor.getDouble(cursor.getColumnIndexOrThrow("longitude"))
 
-                    val busInfo = BusInfo(
-                        busNumber = busNumber,
-                        currentStation = currentStation,
-                        remainingStops = remainingStops,
-                        estimatedTime = estimatedTime,
-                        isLowFloor = isLowFloor,
-                        isOutOfService = isOutOfService
+                    // bsId를 통해 stationId와 routeList 조회
+                    val stationInfo = busApiService.getStationInfoFromBsId(bsId) ?: continue
+                    val stationId = stationInfo["bsId"]?.toString() ?: continue
+                    val routeList = stationInfo["routeList"]?.toString()
+
+                    // 결과 객체 생성 및 리스트에 추가
+                    val result = LocalStationSearchResult(
+                        bsId = bsId,
+                        bsNm = stopName,
+                        latitude = latitude,
+                        longitude = longitude,
+                        stationId = stationId,
+                        routeList = routeList // routeList 추가
                     )
+                    stations.add(result)
 
-                    val key = "$routeId|$routeNo|$destination"
-                    if (!arrivalMap.containsKey(key)) {
-                        arrivalMap[key] = mutableListOf()
-                    }
-                    arrivalMap[key]!!.add(busInfo)
-                } while (cursor.moveToNext())
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "버스 도착 정보 조회 오류: ${e.message}", e)
-        } finally {
-            cursor.close()
-            db.close()
-        }
-
-        return arrivalMap.map { (key, buses) ->
-            val parts = key.split("|")
-            BusArrivalInfo(
-                routeId = parts[0],
-                routeNo = parts[1],
-                destination = parts[2],
-                buses = buses
-            )
-        }
-    }
-
-    // 정류장 검색 메서드
-    fun searchStations(searchText: String): List<StationSearchResult> {
-        val db = readableDatabase
-        val stations = mutableListOf<StationSearchResult>()
-        val cursor = db.rawQuery(
-            "SELECT bsId, stop_name FROM bus_stops WHERE stop_name LIKE ?",
-            arrayOf("%$searchText%")
-        )
-
-        try {
-            if (cursor.moveToFirst()) {
-                do {
-                    val stationId = cursor.getString(cursor.getColumnIndexOrThrow("bsId"))
-                    val stationName = cursor.getString(cursor.getColumnIndexOrThrow("stop_name"))
-                    stations.add(StationSearchResult(bsId = stationId, bsNm = stationName))
+                    Log.d(TAG, "정류장: $stopName, bsId: $bsId, stationId: $stationId, routeList: $routeList")
                 } while (cursor.moveToNext())
             }
             Log.d(TAG, "정류장 검색 결과: ${stations.size}개")
@@ -194,7 +103,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             cursor.close()
             db.close()
         }
-
         return stations
     }
 }
