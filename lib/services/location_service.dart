@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/bus_stop.dart';
-import '../utils/coordinate_converter.dart';
 import 'api_service.dart';
 
 class LocationService {
@@ -47,57 +46,95 @@ class LocationService {
     return Geolocator.distanceBetween(lat1, lon1, lat2, lon2);
   }
 
-  // 주변 정류장 가져오기
-  static Future<List<BusStop>> getNearbyStations(
-      double maxDistanceInMeters) async {
-    final Position? position = await getCurrentLocation();
-    if (position == null) {
-      return [];
+  // 위치 서비스 및 권한 확인 (context 필요)
+  static Future<bool> checkLocationPermission(BuildContext context) async {
+    // 위치 서비스가 활성화되어 있는지 확인
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // 위치 서비스가 비활성화된 경우 사용자에게 알림
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('위치 서비스가 비활성화되어 있습니다. 설정에서 활성화해주세요.'),
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: '설정',
+              onPressed: () async {
+                await Geolocator.openLocationSettings();
+              },
+            ),
+          ),
+        );
+      }
+      return false;
     }
+
+    // 위치 권한 확인
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      // 권한이 거부된 경우, 사용자에게 권한 요청
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        // 사용자가 권한 요청을 거부한 경우
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('주변 정류장을 찾으려면 위치 권한이 필요합니다.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return false;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      // 사용자가 권한을 영구적으로 거부한 경우
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('위치 권한이 영구적으로 거부되었습니다. 설정에서 권한을 허용해주세요.'),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: '설정',
+              onPressed: () async {
+                await openAppSettings();
+              },
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+
+    // 권한이 허용된 경우
+    return true;
+  }
+
+  // 주변 정류장 가져오기 (context 매개변수 추가)
+  static Future<List<BusStop>> getNearbyStations(double maxDistanceInMeters,
+      {BuildContext? context}) async {
+    // context가 제공된 경우 권한 확인
+    if (context != null) {
+      bool hasPermission = await checkLocationPermission(context);
+      if (!hasPermission) {
+        return [];
+      }
+    }
+
     try {
-      // API 서비스를 통해 모든 정류장 정보 가져오기
-      final allStations = await ApiService.getAllStations();
+      final Position? position = await getCurrentLocation();
+      if (position == null) {
+        debugPrint('위치를 가져올 수 없습니다.');
+        return [];
+      }
 
-      // 현재 위치 기준으로 정렬
-      final nearbyStations = allStations.where((station) {
-        // NGISXPos와 NGISYPos가 있는 정류장만 대상으로 함
-        if (station.ngisXPos == null || station.ngisYPos == null) {
-          return false;
-        }
-        try {
-          // NGIS 좌표를 위도/경도로 변환
-          final double ngisX = double.parse(station.ngisXPos!);
-          final double ngisY = double.parse(station.ngisYPos!);
+      debugPrint(
+          '현재 GPS 위치: lat=${position.latitude}, lon=${position.longitude}');
 
-          // 좌표 변환
-          final convertedCoords =
-              CoordinateConverter.convertNGISToLatLon(ngisX, ngisY);
-          final double stationLat = convertedCoords[0];
-          final double stationLon = convertedCoords[1];
-
-          // 거리 계산
-          final distance = calculateDistance(
-              position.latitude, position.longitude, stationLat, stationLon);
-
-          // 거리 정보 추가
-          station.copyWith(distance: distance.toStringAsFixed(0));
-
-          // 최대 거리 이내의 정류장만 반환
-          return distance <= maxDistanceInMeters;
-        } catch (e) {
-          debugPrint('Error converting or calculating distance: $e');
-          return false;
-        }
-      }).toList();
-
-      // 거리 순으로 정렬
-      nearbyStations.sort((a, b) {
-        final distanceA = double.tryParse(a.distance ?? '0') ?? 0;
-        final distanceB = double.tryParse(b.distance ?? '0') ?? 0;
-        return distanceA.compareTo(distanceB);
-      });
-
-      return nearbyStations;
+      // ApiService의 새 메서드 사용
+      return await ApiService.getNearbyStations(
+          position.latitude, position.longitude, maxDistanceInMeters);
     } catch (e) {
       debugPrint('Error getting nearby stations: $e');
       return [];
