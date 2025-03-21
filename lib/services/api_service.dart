@@ -5,7 +5,6 @@ import 'package:daegu_bus_app/models/route_station.dart';
 import 'package:daegu_bus_app/models/bus_stop.dart';
 import 'package:daegu_bus_app/models/bus_arrival.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 
 class ApiService {
@@ -14,131 +13,197 @@ class ApiService {
 
   static const String baseUrl = 'https://businfo.daegu.go.kr:8095/dbms_web_api';
 
-  // 정류장 검색
-  static Future<List<BusStop>> searchStations(String query) async {
-    if (query.isEmpty) return [];
-    try {
-      final dynamic response = await _busApiChannel
-          .invokeMethod('searchStations', {'searchText': query});
-      List<dynamic> jsonList =
-          response is String ? json.decode(response) : response;
-      return jsonList.map((json) => BusStop.fromJson(json)).toList();
-    } catch (e) {
-      debugPrint('Error searching stations: $e');
-      throw Exception('Error searching stations: $e');
+  // JSON 응답을 파싱하는 유틸리티 메서드
+  static List<dynamic> _parseJsonResponse(dynamic response) {
+    if (response is String) {
+      return json.decode(response) as List<dynamic>;
+    } else if (response is List) {
+      return response;
+    } else {
+      throw Exception('Unexpected response type: ${response.runtimeType}');
     }
   }
 
-  // 모든 정류장 가져오기
-  static Future<List<BusStop>> getAllStations() async {
+  // Map 응답을 파싱하는 유틸리티 메서드
+  static Map<String, dynamic> _parseMapResponse(dynamic response) {
+    if (response is String) {
+      return json.decode(response) as Map<String, dynamic>;
+    } else if (response is Map) {
+      return response.cast<String, dynamic>();
+    } else {
+      throw Exception('Unexpected response type: ${response.runtimeType}');
+    }
+  }
+
+  // 정류장 검색 (웹 또는 로컬 DB)
+  static Future<List<BusStop>> searchStations(String query,
+      {String searchType = 'web'}) async {
+    if (query.isEmpty) {
+      debugPrint('검색어가 비어 있습니다.');
+      return [];
+    }
+
     try {
-      debugPrint('모든 정류장 가져오기 시작');
-      final dynamic response = await _busApiChannel
-          .invokeMethod('searchStations', {'searchText': ''});
-      List<dynamic> jsonList =
-          response is String ? json.decode(response) : response;
+      debugPrint('정류장 검색 시작: query="$query", searchType="$searchType"');
+      final dynamic response = await _busApiChannel.invokeMethod(
+        'searchStations',
+        {
+          'searchText': query,
+          'searchType': searchType, // 'web' 또는 'local'
+        },
+      );
+
+      final jsonList = _parseJsonResponse(response);
       final stations = jsonList.map((json) => BusStop.fromJson(json)).toList();
-      debugPrint('가져온 정류장 수: ${stations.length}');
+      debugPrint('정류장 검색 결과: ${stations.length}개');
       return stations;
     } catch (e) {
-      debugPrint('Error getting all stations: $e');
-      throw Exception('Error getting all stations: $e');
+      debugPrint('정류장 검색 오류: $e');
+      throw Exception('정류장 검색 중 오류 발생: $e');
     }
   }
 
-  // 노선 검색 (JSON 응답 처리)
-  static Future<List<BusRoute>> searchBusRoutes(String query) async {
+  // 주변 정류장 검색 (getNearbyStations)
+  static Future<List<BusStop>> getNearbyStations(
+      double latitude, double longitude, double radius) async {
     try {
-      debugPrint('노선 검색 시작: "$query"');
-      final url = Uri.parse('$baseUrl/route/search?searchText=$query');
-      final response = await http.get(url);
+      debugPrint(
+          '주변 정류장 검색 시작: latitude=$latitude, longitude=$longitude, radius=$radius');
+      final dynamic response = await _busApiChannel.invokeMethod(
+        'findNearbyStations', // Android에서 정의된 메서드 이름과 일치
+        {
+          'latitude': latitude,
+          'longitude': longitude,
+          'radiusKm': radius,
+        },
+      );
 
-      if (response.statusCode != 200) {
-        throw Exception('Failed to search bus routes: ${response.statusCode}');
-      }
+      final jsonList = _parseJsonResponse(response);
+      final stations = jsonList.map((json) => BusStop.fromJson(json)).toList();
+      debugPrint('주변 정류장 검색 결과: ${stations.length}개');
+      return stations;
+    } catch (e) {
+      debugPrint('주변 정류장 검색 오류: $e');
+      throw Exception('주변 정류장 검색 중 오류 발생: $e');
+    }
+  }
 
-      debugPrint('API 응답: ${response.body}');
+  // 모든 정류장 가져오기 (로컬 DB에서 조회)
+  static Future<List<BusStop>> getAllStations() async {
+    try {
+      debugPrint('모든 정류장 조회 시작');
+      final dynamic response = await _busApiChannel.invokeMethod(
+        'searchStations',
+        {
+          'searchText': '*', // 모든 정류장을 가져오기 위한 특수 검색어
+          'searchType': 'local',
+        },
+      );
 
-      if (response.body.isEmpty) {
-        throw Exception('API 응답이 비어 있습니다');
-      }
+      final jsonList = _parseJsonResponse(response);
+      final stations = jsonList.map((json) => BusStop.fromJson(json)).toList();
+      debugPrint('모든 정류장 조회 결과: ${stations.length}개');
+      return stations;
+    } catch (e) {
+      debugPrint('모든 정류장 조회 오류: $e');
+      throw Exception('모든 정류장 조회 중 오류 발생: $e');
+    }
+  }
 
-      final jsonData = json.decode(response.body) as Map<String, dynamic>;
-      final success = jsonData['header']['success'] == true;
-      if (!success) {
-        throw Exception('API 요청 실패: ${jsonData['header']['resultMsg']}');
-      }
+  // 노선 검색 (MethodChannel 사용)
+  static Future<List<BusRoute>> searchBusRoutes(String query) async {
+    if (query.isEmpty) {
+      debugPrint('노선 검색어가 비어 있습니다.');
+      return [];
+    }
 
-      final body = jsonData['body'];
-      final routes = (body as List<dynamic>)
-          .map((item) => BusRoute(
-                id: item['routeId'] as String,
-                routeNo: item['routeNo'] as String,
-                startPoint: null,
-                endPoint: null,
-                routeDescription: item['routeTCd'] as String?,
-              ))
-          .toList();
+    try {
+      debugPrint('노선 검색 시작: query="$query"');
+      final dynamic response = await _busApiChannel.invokeMethod(
+        'searchBusRoutes',
+        {'searchText': query},
+      );
 
-      debugPrint('노선 검색 결과 개수: ${routes.length}');
+      final jsonList = _parseJsonResponse(response);
+      final routes = jsonList.map((json) => BusRoute.fromJson(json)).toList();
+      debugPrint('노선 검색 결과: ${routes.length}개');
       return routes;
     } catch (e) {
-      debugPrint('노선 검색 중 오류 발생: $e');
+      debugPrint('노선 검색 오류: $e');
       throw Exception('노선 검색 중 오류 발생: $e');
     }
   }
 
-  // 노선 정류장 조회 (JSON 응답 처리)
+  // 노선 정류장 조회 (MethodChannel 사용)
   static Future<List<RouteStation>> getRouteStations(String routeId) async {
+    if (routeId.isEmpty) {
+      debugPrint('노선 ID가 비어 있습니다.');
+      return [];
+    }
+
     try {
-      final url = Uri.parse('$baseUrl/bs/route?routeId=$routeId');
-      final response = await http.get(url);
+      debugPrint('노선 정류장 조회 시작: routeId="$routeId"');
+      final dynamic response = await _busApiChannel.invokeMethod(
+        'getRouteStations',
+        {'routeId': routeId},
+      );
 
-      if (response.statusCode != 200) {
-        throw Exception(
-            'Failed to load route stations: ${response.statusCode}');
-      }
-
-      final jsonData = json.decode(response.body) as Map<String, dynamic>;
-      final success = jsonData['header']['success'] == true;
-      if (!success) {
-        throw Exception('API 요청 실패: ${jsonData['header']['resultMsg']}');
-      }
-
-      final List<dynamic> body = jsonData['body'];
-      final stations = body.map((json) => RouteStation.fromJson(json)).toList();
-      stations.sort((a, b) => a.sequenceNo.compareTo(b.sequenceNo));
+      final jsonList = _parseJsonResponse(response);
+      final stations =
+          jsonList.map((json) => RouteStation.fromJson(json)).toList();
+      debugPrint('노선 정류장 조회 결과: ${stations.length}개');
       return stations;
     } catch (e) {
-      debugPrint('Error getting route stations: $e');
-      throw Exception('Error getting route stations: $e');
+      debugPrint('노선 정류장 조회 오류: $e');
+      throw Exception('노선 정류장 조회 중 오류 발생: $e');
     }
   }
 
   // 정류장 도착 정보 조회
   static Future<List<BusArrival>> getStationInfo(String stationId) async {
+    if (stationId.isEmpty) {
+      debugPrint('정류장 ID가 비어 있습니다.');
+      return [];
+    }
+
     try {
-      final dynamic response = await _busApiChannel
-          .invokeMethod('getStationInfo', {'stationId': stationId});
-      List<dynamic> jsonList =
-          response is String ? json.decode(response) : response;
-      return jsonList.map((json) => BusArrival.fromJson(json)).toList();
+      debugPrint('정류장 도착 정보 조회 시작: stationId="$stationId"');
+      final dynamic response = await _busApiChannel.invokeMethod(
+        'getStationInfo',
+        {'stationId': stationId},
+      );
+
+      final jsonList = _parseJsonResponse(response);
+      final arrivals =
+          jsonList.map((json) => BusArrival.fromJson(json)).toList();
+      debugPrint('정류장 도착 정보 조회 결과: ${arrivals.length}개');
+      return arrivals;
     } catch (e) {
-      debugPrint('Error loading station info: $e');
-      throw Exception('Error loading station info: $e');
+      debugPrint('정류장 도착 정보 조회 오류: $e');
+      throw Exception('정류장 도착 정보 조회 중 오류 발생: $e');
     }
   }
 
   // 노선 상세 정보 조회
   static Future<BusRoute?> getRouteDetails(String routeId) async {
+    if (routeId.isEmpty) {
+      debugPrint('노선 ID가 비어 있습니다.');
+      return null;
+    }
+
     try {
-      final dynamic response = await _busApiChannel
-          .invokeMethod('getBusRouteDetails', {'routeId': routeId});
-      Map<String, dynamic> jsonMap =
-          response is String ? json.decode(response) : response;
-      return jsonMap.isNotEmpty ? BusRoute.fromJson(jsonMap) : null;
+      debugPrint('노선 상세 정보 조회 시작: routeId="$routeId"');
+      final dynamic response = await _busApiChannel.invokeMethod(
+        'getBusRouteDetails',
+        {'routeId': routeId},
+      );
+
+      final jsonMap = _parseMapResponse(response);
+      final route = jsonMap.isNotEmpty ? BusRoute.fromJson(jsonMap) : null;
+      debugPrint('노선 상세 정보 조회 결과: ${route?.routeNo ?? "없음"}');
+      return route;
     } catch (e) {
-      debugPrint('Error getting route details: $e');
+      debugPrint('노선 상세 정보 조회 오류: $e');
       return null;
     }
   }
@@ -146,15 +211,27 @@ class ApiService {
   // 노선별 도착 정보 조회
   static Future<BusArrival?> getBusArrivalByRouteId(
       String stationId, String routeId) async {
+    if (stationId.isEmpty || routeId.isEmpty) {
+      debugPrint('정류장 ID 또는 노선 ID가 비어 있습니다.');
+      return null;
+    }
+
     try {
+      debugPrint('노선별 도착 정보 조회 시작: stationId="$stationId", routeId="$routeId"');
       final dynamic response = await _busApiChannel.invokeMethod(
-          'getBusArrivalByRouteId',
-          {'stationId': stationId, 'routeId': routeId});
-      Map<String, dynamic> jsonMap =
-          response is String ? json.decode(response) : response;
-      return jsonMap.isNotEmpty ? BusArrival.fromJson(jsonMap) : null;
+        'getBusArrivalByRouteId',
+        {
+          'stationId': stationId,
+          'routeId': routeId,
+        },
+      );
+
+      final jsonMap = _parseMapResponse(response);
+      final arrival = jsonMap.isNotEmpty ? BusArrival.fromJson(jsonMap) : null;
+      debugPrint('노선별 도착 정보 조회 결과: ${arrival?.routeNo ?? "없음"}');
+      return arrival;
     } catch (e) {
-      debugPrint('Error getting bus arrival by route ID: $e');
+      debugPrint('노선별 도착 정보 조회 오류: $e');
       return null;
     }
   }
