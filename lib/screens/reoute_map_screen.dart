@@ -48,14 +48,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       debugPrint('패턴 일치 여부: $matchesPattern');
 
       final List<String> specialKeywords = [
-        '급행',
-        '수성',
-        '남구',
-        '북구',
-        '동구',
-        '서구',
-        '달서',
-        '달성'
+        '급행', '수성', '남구', '북구', '동구',
+        '서구', '달서', '달성', '군위',
+        // 추가 키워드: 노선 이름에 포함된 지역명
+        '10', '1', '1-1', '3', '4', '5', '6', '7', '8'
       ];
       bool isSpecialKeyword =
           specialKeywords.any((keyword) => query.contains(keyword));
@@ -448,6 +444,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
 
   Widget _buildRouteStationList() {
     if (_routeStations.isEmpty) {
+      debugPrint('노선 정보가 없습니다. 선택된 노선: ${_selectedRoute?.routeNo}');
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -465,6 +462,9 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
         ),
       );
     }
+
+    debugPrint(
+        '노선 ${_selectedRoute!.routeNo} 정류장 ${_routeStations.length}개 표시');
 
     return Column(
       children: [
