@@ -121,7 +121,7 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 
-                                "findNearbyStations" -> {
+                "findNearbyStations" -> {
                     val latitude = call.argument<Double>("latitude") ?: 0.0
                     val longitude = call.argument<Double>("longitude") ?: 0.0
                     val radiusKm = call.argument<Double>("radiusKm") ?: 1.0
@@ -133,67 +133,40 @@ class MainActivity : FlutterActivity() {
 
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
-                            // 로컬 DB에서 모든 정류장 가져오기
+                            // 거리 기반 필터링이 적용된 검색 메서드 사용
                             val databaseHelper = DatabaseHelper(this@MainActivity)
-                            val allStations = databaseHelper.searchStations("")
-                            Log.d(TAG, "전체 정류장 수: ${allStations.size}개")
-
-                            // 현재 위치 기준으로 거리 계산 및 필터링 (radiusKm을 미터로 변환)
                             val radiusMeters = radiusKm * 1000.0 // km -> m
-                            val nearbyStations = allStations.filter { station ->
-                                // LocalStationSearchResult로 캐스팅
-                                val localStation = station as? LocalStationSearchResult
-                                if (localStation == null) {
-                                    Log.w(TAG, "Station is not LocalStationSearchResult: $station")
-                                    return@filter false
-                                }
-
-                                // 좌표 값이 유효한지 확인
-                                if (localStation.latitude == 0.0 || localStation.longitude == 0.0) {
-                                    Log.w(TAG, "유효하지 않은 좌표: ${localStation.bsNm}, lat=${localStation.latitude}, lon=${localStation.longitude}")
-                                    return@filter false
-                                }
-
-                                val distance = calculateDistance(
-                                    latitude, longitude,
-                                    localStation.latitude, localStation.longitude
-                                )
-                                Log.d(TAG, "정류장: ${localStation.bsNm}, 거리: $distance m")
-                                distance <= radiusMeters
-                            }.sortedBy { station ->
-                                val localStation = station as LocalStationSearchResult
-                                calculateDistance(
-                                    latitude, longitude,
-                                    localStation.latitude, localStation.longitude
-                                )
-                            }
-
-                            Log.d(TAG, "주변 정류장 수: ${nearbyStations.size}개")
+                            val nearbyStations = databaseHelper.searchStations(
+                                searchText = "", 
+                                latitude = latitude, 
+                                longitude = longitude, 
+                                radiusInMeters = radiusMeters
+                            )
+                            
+                            Log.d(TAG, "주변 정류장 검색 결과: ${nearbyStations.size}개")
 
                             // 결과를 JSON으로 변환
                             val jsonArray = JSONArray()
                             nearbyStations.forEach { station ->
-                                val localStation = station as LocalStationSearchResult
-                                val distance = calculateDistance(
-                                    latitude, longitude,
-                                    localStation.latitude, localStation.longitude
-                                )
-
                                 val jsonObj = JSONObject().apply {
-                                    // stationId가 있으면 그것을 사용하고, 없으면 bsId를 사용
-                                    put("id", localStation.stationId ?: localStation.bsId)
-                                    put("name", localStation.bsNm)
+                                    put("id", station.stationId ?: station.bsId)
+                                    put("name", station.bsNm)
                                     put("isFavorite", false)
-                                    put("wincId", localStation.bsId) // 원래 bsId는 wincId 필드로 계속 전달
-                                    put("distance", distance)
-                                    put("ngisXPos", localStation.longitude)
-                                    put("ngisYPos", localStation.latitude)
-                                    put("routeList", JSONArray())
+                                    put("wincId", station.bsId)
+                                    put("distance", station.distance ?: 0.0)
+                                    put("ngisXPos", station.longitude)
+                                    put("ngisYPos", station.latitude)
+                                    // 문자열로 변환
+                                    if (station.routeList != null) {
+                                        put("routeList", station.routeList)
+                                    } else {
+                                        put("routeList", "[]") // 빈 배열을 문자열로 표현
+                                    }
                                 }
                                 jsonArray.put(jsonObj)
                                 
                                 // 로그 개선 - stationId 정보도 함께 표시
-                                Log.d(TAG, "정류장 정보 - 이름: ${localStation.bsNm}, bsId: ${localStation.bsId}, stationId: ${localStation.stationId}")
+                                Log.d(TAG, "정류장 정보 - 이름: ${station.bsNm}, bsId: ${station.bsId}, stationId: ${station.stationId}, 거리: ${station.distance}m")
                             }
 
                             result.success(jsonArray.toString())
@@ -234,8 +207,23 @@ class MainActivity : FlutterActivity() {
                             val routes = busApiService.searchBusRoutes(searchText)
                             Log.d(TAG, "노선 검색 결과: ${routes.size}개")
                             if (routes.isEmpty()) Log.d(TAG, "검색 결과 없음: $searchText")
-                            val jsonRoutes = routes.map { it.toMap() }
-                            result.success(jsonRoutes)
+                            
+                            // JSON 문자열로 직접 변환
+                            val jsonArray = JSONArray()
+                            routes.forEach { route ->
+                                val jsonObj = JSONObject().apply {
+                                    put("id", route.id)
+                                    put("routeNo", route.routeNo)
+                                    put("routeTp", route.routeTp)
+                                    put("startPoint", route.startPoint)
+                                    put("endPoint", route.endPoint)
+                                    put("routeDescription", route.routeDescription)
+                                }
+                                jsonArray.put(jsonObj)
+                            }
+                            
+                            // JSON 문자열로 반환
+                            result.success(jsonArray.toString())
                         } catch (e: Exception) {
                             Log.e(TAG, "노선 검색 오류: ${e.message}", e)
                             result.error("API_ERROR", "노선 검색 중 오류 발생: ${e.message}", null)
@@ -251,9 +239,9 @@ class MainActivity : FlutterActivity() {
                     }
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
-                            val arrivalInfo = busApiService.getStationInfo(stationId)
-                            Log.d(TAG, "정류장 정보 조회 결과: ${arrivalInfo.size}개")
-                            result.success(convertBusArrivalInfoToJson(arrivalInfo))
+                            val stationInfoJson = busApiService.getStationInfo(stationId)
+                            Log.d(TAG, "정류장 정보 조회 완료: $stationId")
+                            result.success(stationInfoJson)
                         } catch (e: Exception) {
                             Log.e(TAG, "정류장 정보 조회 오류: ${e.message}", e)
                             result.error("API_ERROR", "정류장 정보 조회 중 오류 발생: ${e.message}", null)
