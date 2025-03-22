@@ -1,6 +1,7 @@
 class BusRoute {
   final String id;
   final String routeNo;
+  final String? routeTp;
   final String? startPoint;
   final String? endPoint;
   final String? routeDescription;
@@ -8,20 +9,27 @@ class BusRoute {
   BusRoute({
     required this.id,
     required this.routeNo,
+    this.routeTp,
     this.startPoint,
     this.endPoint,
     this.routeDescription,
   });
 
-  factory BusRoute.fromJson(Map<String, dynamic> json) {
+  factory BusRoute.fromJson(Map<dynamic, dynamic> json) {
+    final Map<String, dynamic> safeJson = {};
+    json.forEach((key, value) {
+      if (key != null) {
+        safeJson[key.toString()] = value;
+      }
+    });
+
     return BusRoute(
-      id: json['routeId'] as String,
-      routeNo: json['routeNo'] as String,
-      startPoint: json['startStation'] as String? ??
-          json['startPoint'] as String?, // 실제 키 확인
-      endPoint: json['endStation'] as String? ??
-          json['endPoint'] as String?, // 실제 키 확인
-      routeDescription: json['routeTCd'] as String?,
+      id: safeJson['id']?.toString() ?? '',
+      routeNo: safeJson['routeNo']?.toString() ?? '',
+      routeTp: safeJson['routeTp']?.toString(),
+      startPoint: safeJson['startPoint']?.toString() ?? '',
+      endPoint: safeJson['endPoint']?.toString() ?? '',
+      routeDescription: safeJson['routeDescription']?.toString(),
     );
   }
 }
