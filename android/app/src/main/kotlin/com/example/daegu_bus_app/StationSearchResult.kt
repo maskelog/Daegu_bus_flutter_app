@@ -11,5 +11,6 @@ data class LocalStationSearchResult(
     val latitude: Double,     // 위도
     val longitude: Double,    // 경도
     var stationId: String? = null, // API 호출에 사용되는 정류장 ID
-    val routeList: String? = null // 정류장에 관한 경로 정보
+    val routeList: String? = null, // 정류장에 관한 경로 정보
+    val distance: Double? = null   // 현재 위치로부터의 거리(미터)
 )
