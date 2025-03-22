@@ -51,13 +51,37 @@ class DatabaseHelper {
         final name = maps[i]['stop_name']?.toString() ??
             '알 수 없는 정류장'; // stop-name -> stop_name
         final bsId = maps[i]['bsId']?.toString() ?? ''; // bsld -> bsId
-        debugPrint('Processing station: ID=$bsId, Name=$name');
+
+        // 좌표 데이터 처리
+        double? longitude;
+        double? latitude;
+
+        // 문자열을 double로 변환
+        try {
+          if (maps[i]['longitude'] != null) {
+            longitude = double.tryParse(maps[i]['longitude'].toString());
+          }
+          if (maps[i]['latitude'] != null) {
+            latitude = double.tryParse(maps[i]['latitude'].toString());
+          }
+        } catch (e) {
+          debugPrint('Error parsing coordinates for station $bsId: $e');
+        }
+
+        // 추가 정보: stationId
+        final stationId = maps[i]['stationId']?.toString();
+
+        debugPrint(
+            'Processing station: ID=$bsId, Name=$name, StationId=$stationId');
+
         return BusStop(
           id: bsId,
           name: name,
           isFavorite: false,
-          ngisXPos: maps[i]['longitude']?.toString() ?? '0.0',
-          ngisYPos: maps[i]['latitude']?.toString() ?? '0.0',
+          stationId: stationId, // stationId 필드 추가
+          ngisXPos: longitude,
+          ngisYPos: latitude,
+          wincId: bsId, // wincId와 bsId는 동일하게 설정
         );
       });
       debugPrint('Successfully generated ${stations.length} BusStop objects');
@@ -69,5 +93,73 @@ class DatabaseHelper {
     }
   }
 
-  // 기타 메서드 (getStationById 등)는 필요 시 동일하게 수정
+  // 특정 stationId로 정류장 검색
+  Future<BusStop?> getStationByStationId(String stationId) async {
+    final db = await database;
+    try {
+      final List<Map<String, dynamic>> maps = await db.query(
+        'bus_stops',
+        where: 'stationId = ?',
+        whereArgs: [stationId],
+      );
+
+      if (maps.isEmpty) {
+        return null;
+      }
+
+      final map = maps.first;
+      final name = map['stop_name']?.toString() ?? '알 수 없는 정류장';
+      final bsId = map['bsId']?.toString() ?? '';
+
+      // 좌표 데이터 처리
+      double? longitude;
+      double? latitude;
+
+      try {
+        if (map['longitude'] != null) {
+          longitude = double.tryParse(map['longitude'].toString());
+        }
+        if (map['latitude'] != null) {
+          latitude = double.tryParse(map['latitude'].toString());
+        }
+      } catch (e) {
+        debugPrint('Error parsing coordinates for station $bsId: $e');
+      }
+
+      return BusStop(
+        id: bsId,
+        name: name,
+        isFavorite: false,
+        stationId: stationId,
+        ngisXPos: longitude,
+        ngisYPos: latitude,
+        wincId: bsId,
+      );
+    } catch (e) {
+      debugPrint('Error querying station by stationId: $e');
+      return null;
+    }
+  }
+
+  // bsId로 stationId 조회
+  Future<String?> getStationIdFromBsId(String bsId) async {
+    final db = await database;
+    try {
+      final List<Map<String, dynamic>> maps = await db.query(
+        'bus_stops',
+        columns: ['stationId'],
+        where: 'bsId = ?',
+        whereArgs: [bsId],
+      );
+
+      if (maps.isEmpty) {
+        return null;
+      }
+
+      return maps.first['stationId']?.toString();
+    } catch (e) {
+      debugPrint('Error querying stationId by bsId: $e');
+      return null;
+    }
+  }
 }
