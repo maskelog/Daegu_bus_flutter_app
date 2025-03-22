@@ -161,25 +161,34 @@ class _HomeScreenState extends State<HomeScreen> {
   // 버스 도착 정보 로드
   Future<void> _loadBusArrivals() async {
     if (_selectedStop == null) return;
+
     debugPrint(
         'Loading bus arrivals for station: ${_selectedStop!.id}, ${_selectedStop!.name}');
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
+
     try {
+      // 정류장 ID를 사용하여 도착 정보 조회 (ApiService 내부에서 stationId 매핑 처리)
       final arrivalsData = await ApiService.getStationInfo(_selectedStop!.id);
+
       debugPrint('Bus arrivals loaded: ${arrivalsData.length} routes');
+
       if (!mounted) return;
+
       setState(() {
         _busArrivals = arrivalsData;
       });
+
       _updateAlarmServiceCache();
     } catch (e) {
       debugPrint('Error loading arrivals: $e');
       setState(() {
         _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
       });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('버스 도착 정보를 불러오지 못했습니다: $e')),
