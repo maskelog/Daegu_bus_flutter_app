@@ -1,12 +1,15 @@
 package com.example.daegu_bus_app
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.ResponseBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,6 +21,7 @@ import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Url
+import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.Charset
 import java.util.concurrent.TimeUnit
@@ -31,7 +35,7 @@ interface BusInfoApi {
     suspend fun getBusArrivalInfo(@Path("stationId") stationId: String): BusArrivalResponse
 
     @GET("route/search")
-    suspend fun searchBusRoutes(@Query("searchText") searchText: String): ResponseBody
+    suspend fun searchBusRoutes(@Query("searchText", encoded = true) searchText: String): ResponseBody
 
     @GET("route/info")
     suspend fun getBusRouteInfo(@Query("routeId") routeId: String): ResponseBody
@@ -49,7 +53,7 @@ data class BusArrivalResponse(
     val body: Body
 ) {
     data class Header(
-        val success: Boolean,      // JSON의 true/false 값에 맞게 수정
+        val success: Boolean,
         val resultCode: String,
         val resultMsg: String
     )
@@ -94,16 +98,15 @@ data class StationArrivalOutput(
     )
 }
 
-// 모델: 노선 정보 – Flutter 모델과 일치
 data class BusRoute(
     val id: String,
     val routeNo: String,
+    val routeTp: String,
     val startPoint: String,
     val endPoint: String,
-    val routeDescription: String
+    val routeDescription: String?
 )
 
-// 모델: 노선의 정류장 – Flutter 모델과 일치
 data class RouteStation(
     val stationId: String,
     val stationName: String,
@@ -111,7 +114,6 @@ data class RouteStation(
     val direction: String
 )
 
-// 모델: BusInfo - Flutter 컨버팅을 위한 확장
 data class BusInfo(
     val busNumber: String,
     val currentStation: String,
@@ -121,7 +123,6 @@ data class BusInfo(
     val isOutOfService: Boolean = false
 )
 
-// 모델: BusArrivalInfo - Flutter 컨버팅을 위한 확장
 data class BusArrivalInfo(
     val routeId: String,
     val routeNo: String,
@@ -129,7 +130,6 @@ data class BusArrivalInfo(
     val buses: List<BusInfo>
 )
 
-// 최종 BusArrival 모델 (Flutter와 연동)
 data class BusArrival(
     val routeNo: String,
     val routeId: String,
@@ -188,68 +188,90 @@ class BusApiService(private val context: Context) {
         }
     }
 
-    
-    // 수정된 노선 검색 함수 - 오류 수정
+    // 수정된 노선 검색 함수 - 캐싱 추가
     suspend fun searchBusRoutes(query: String): List<BusRoute> = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "원본 검색어: '$query'")
-            val modifiedQuery = if (query.matches(Regex("^[0-9]+$"))) query else query
-            Log.d(TAG, "수정된 검색어: '$modifiedQuery'")
+            val fullUrl = "https://businfo.daegu.go.kr:8095/dbms_web_api/route/search?searchText=${URLEncoder.encode(query, "UTF-8")}"
+            Log.d(TAG, "요청 URL: $fullUrl")
             
-            val encodedQuery = URLEncoder.encode(modifiedQuery, "UTF-8")
-            Log.d(TAG, "UTF-8 인코딩: '$encodedQuery'")
-            
-            val requestUrl = "${BASE_URL}route/search?searchText=$encodedQuery"
-            Log.d(TAG, "API 요청 URL: $requestUrl")
-            
-            val response = busInfoApi.searchBusRoutes(encodedQuery)
-            val responseBytes = response.bytes()
-            var responseStr = String(responseBytes, Charset.forName("UTF-8"))
-            
-            if (containsBrokenKorean(responseStr)) {
-                responseStr = String(responseBytes, Charset.forName("EUC-KR"))
-                Log.d(TAG, "UTF-8 응답에 깨진 한글 감지, EUC-KR로 변환")
-            }
-            
-            Log.d(TAG, "응답 데이터 미리보기(${minOf(responseStr.length, 200)}자): ${responseStr.substring(0, minOf(responseStr.length, 200))}")
-            
-            // XML 응답을 먼저 확인
-            var routes = if (responseStr.trim().startsWith("<")) {
-                Log.d(TAG, "XML 응답 감지됨, XML 파서로 파싱")
-                parseXmlBusRoutes(responseStr)
-            } else if (responseStr.startsWith("{")) {
-                Log.d(TAG, "JSON 응답 감지됨, JSON 파서로 파싱")
+            val response = busInfoApi.searchBusRoutes(query) // 원본 쿼리 전달
+            val responseStr = String(response.bytes(), Charset.forName("UTF-8"))
+            Log.d(TAG, "API 응답全文: $responseStr")
+
+            val routes = if (responseStr.trim().startsWith("{")) {
                 parseJsonBusRoutes(responseStr)
             } else {
-                Log.e(TAG, "알 수 없는 응답 형식: ${responseStr.take(50)}...")
                 emptyList()
             }
-            
-            // 결과가 없으면 백업 시도
-            if (routes.isEmpty() && !query.matches(Regex("^[0-9]+$"))) {
-                Log.d(TAG, "결과 없음, 백업 방법 시도")
-                val backupEncodedQuery = URLEncoder.encode(query, "EUC-KR") // EUC-KR로 재시도
-                val backupResponse = busInfoApi.searchBusRoutes(backupEncodedQuery)
-                val backupStr = String(backupResponse.bytes(), Charset.forName("EUC-KR"))
-                
-                routes = if (backupStr.trim().startsWith("<")) {
-                    Log.d(TAG, "백업 방법에서 XML 응답 감지")
-                    parseXmlBusRoutes(backupStr)
-                } else if (backupStr.startsWith("{")) {
-                    Log.d(TAG, "백업 방법에서 JSON 응답 감지")
-                    parseJsonBusRoutes(backupStr)
-                } else {
-                    emptyList()
-                }
+
+            if (routes.isNotEmpty()) {
+                saveCachedBusRoutes(query, routes)
             }
-            
-            Log.d(TAG, "노선 검색 완료: ${routes.size}개 결과")
-            routes.forEach { Log.d(TAG, "검색 결과: ${it.routeNo} (${it.id})") }
             routes
         } catch (e: Exception) {
             Log.e(TAG, "노선 검색 오류: ${e.message}", e)
             emptyList()
         }
+    }
+
+    // JSON 파싱 메서드
+    private fun parseJsonBusRoutes(jsonStr: String): List<BusRoute> {
+        val routes = mutableListOf<BusRoute>()
+        try {
+            val json = JSONObject(jsonStr)
+            val header = json.optJSONObject("header")
+            if (header != null) {
+                val success = header.optBoolean("success", false)
+                if (!success) {
+                    Log.e(TAG, "JSON 응답 실패: ${header.optString("resultMsg", "알 수 없는 오류")}")
+                    return routes
+                }
+            }
+            val body = json.optJSONArray("body")
+            if (body != null) {
+                for (i in 0 until body.length()) {
+                    val routeObj = body.getJSONObject(i)
+                    val routeId = routeObj.optString("routeId", "")
+                    val routeNo = routeObj.optString("routeNo", "")
+                    val routeTp = routeObj.optString("routeTCd", "") // "routeTCd" 사용
+                    val routeNm = routeObj.optString("routeNm", "")
+                    if (routeId.isNotEmpty() && routeNo.isNotEmpty()) {
+                        routes.add(
+                            BusRoute(
+                                id = routeId,
+                                routeNo = routeNo,
+                                routeTp = routeTp,
+                                startPoint = "",
+                                endPoint = "",
+                                routeDescription = routeNm.ifEmpty { routeNo }
+                            )
+                        )
+                    }
+                }
+            }
+            Log.d(TAG, "JSON 파싱 완료: ${routes.size}개 노선")
+        } catch (e: Exception) {
+            Log.e(TAG, "JSON 노선 파싱 오류: ${e.message}", e)
+        }
+        return routes
+    }
+
+    // 캐싱된 데이터 로드
+    private fun loadCachedBusRoutes(searchText: String): List<BusRoute>? {
+        val sharedPreferences: SharedPreferences = context.getSharedPreferences("BusRouteCache", Context.MODE_PRIVATE)
+        val cachedJson = sharedPreferences.getString("busRoutes_$searchText", null) ?: return null
+
+        val type = object : TypeToken<List<BusRoute>>() {}.type
+        return gson.fromJson(cachedJson, type)
+    }
+
+    // 캐싱 데이터 저장
+    private fun saveCachedBusRoutes(searchText: String, routes: List<BusRoute>) {
+        val sharedPreferences: SharedPreferences = context.getSharedPreferences("BusRouteCache", Context.MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        val json = gson.toJson(routes)
+        editor.putString("busRoutes_$searchText", json)
+        editor.apply()
     }
         
     // XML 파싱 메서드
@@ -271,6 +293,7 @@ class BusApiService(private val context: Context) {
             bodyElements.forEach { element ->
                 val routeId = element.select("routeId").text()
                 val routeNo = element.select("routeNo").text()
+                val routeTp = element.select("routeTp").text() // 추가
                 val routeNm = element.select("routeNm").text()
                 
                 if (routeId.isNotEmpty() && routeNo.isNotEmpty()) {
@@ -278,6 +301,7 @@ class BusApiService(private val context: Context) {
                         BusRoute(
                             id = routeId,
                             routeNo = routeNo,
+                            routeTp = routeTp, // 추가
                             startPoint = "", // 필요 시 API에서 추가 정보 요청
                             endPoint = "",
                             routeDescription = routeNm.ifEmpty { routeNo }
@@ -290,72 +314,6 @@ class BusApiService(private val context: Context) {
             Log.d(TAG, "XML 파싱 완료: ${routes.size}개 노선")
         } catch (e: Exception) {
             Log.e(TAG, "XML 파싱 오류: ${e.message}", e)
-        }
-        return routes
-    }
-
-    // JSON 파싱 메서드
-    private fun parseJsonBusRoutes(jsonStr: String): List<BusRoute> {
-        val routes = mutableListOf<BusRoute>()
-        try {
-            val json = JSONObject(jsonStr)
-            
-            // header 확인
-            val header = json.optJSONObject("header")
-            if (header != null) {
-                val success = header.optBoolean("success", false)
-                if (!success) {
-                    Log.e(TAG, "JSON 응답 실패: ${header.optString("resultMsg", "알 수 없는 오류")}")
-                    return routes
-                }
-            }
-            
-            // body 배열이 있는 경우
-            val body = json.optJSONArray("body")
-            if (body != null) {
-                for (i in 0 until body.length()) {
-                    val routeObj = body.getJSONObject(i)
-                    val routeId = routeObj.optString("routeId", "")
-                    val routeNo = routeObj.optString("routeNo", "")
-                    val routeNm = routeObj.optString("routeNm", "")
-                    
-                    if (routeId.isNotEmpty() && routeNo.isNotEmpty()) {
-                        routes.add(
-                            BusRoute(
-                                id = routeId,
-                                routeNo = routeNo,
-                                startPoint = "",
-                                endPoint = "",
-                                routeDescription = routeNm.ifEmpty { routeNo }
-                            )
-                        )
-                    }
-                }
-            } else {
-                // body가 객체인 경우
-                val bodyObj = json.optJSONObject("body")
-                if (bodyObj != null) {
-                    val routeId = bodyObj.optString("routeId", "")
-                    val routeNo = bodyObj.optString("routeNo", "")
-                    val routeNm = bodyObj.optString("routeNm", "")
-                    
-                    if (routeId.isNotEmpty() && routeNo.isNotEmpty()) {
-                        routes.add(
-                            BusRoute(
-                                id = routeId,
-                                routeNo = routeNo,
-                                startPoint = bodyObj.optString("stNm", ""),
-                                endPoint = bodyObj.optString("edNm", ""),
-                                routeDescription = routeNm.ifEmpty { routeNo }
-                            )
-                        )
-                    }
-                }
-            }
-            
-            Log.d(TAG, "JSON 파싱 완료: ${routes.size}개 노선")
-        } catch (e: Exception) {
-            Log.e(TAG, "JSON 노선 파싱 오류: ${e.message}", e)
         }
         return routes
     }
@@ -402,7 +360,7 @@ class BusApiService(private val context: Context) {
             groups.values.toList()
         } catch (e: Exception) {
             Log.e(TAG, "버스 도착 정보 조회 오류: ${e.message}", e)
-            emptyList()
+            throw e
         }
     }
     
@@ -425,9 +383,6 @@ class BusApiService(private val context: Context) {
     suspend fun getBusRouteInfo(routeId: String): BusRoute? = withContext(Dispatchers.IO) {
         try {
             val response = busInfoApi.getBusRouteInfo(routeId)
-            // return@withContext String(response.bytes()) // 필요 시 주석 해제
-
-            // 다양한 인코딩 시도 (getBusRouteMap과 동일한 방식 적용)
             var responseStr = String(response.bytes(), Charset.forName("UTF-8"))
             if (containsBrokenKorean(responseStr)) {
                 responseStr = String(response.bytes(), Charset.forName("EUC-KR"))
@@ -451,7 +406,6 @@ class BusApiService(private val context: Context) {
     
     // JSON 노선 정보 파싱 - 한글 깨짐 처리 추가
     private fun parseJsonRouteInfo(jsonStr: String, routeId: String): BusRoute? {
-        // JSON 파싱 로직 구현 (예시)
         try {
             val jsonObj = JSONObject(jsonStr)
             val resultObj = if (jsonObj.has("Result")) jsonObj.getJSONObject("Result") else jsonObj
@@ -465,6 +419,7 @@ class BusApiService(private val context: Context) {
             return BusRoute(
                 id = body.optString("routeId", routeId),
                 routeNo = body.optString("routeNo", ""),
+                routeTp = body.optString("routeTp", ""), // 추가
                 startPoint = body.optString("stNm", "출발지 정보 없음"),
                 endPoint = body.optString("edNm", "도착지 정보 없음"),
                 routeDescription = "배차간격: ${body.optString("avgTm", "정보 없음")}, 업체: ${body.optString("comNm", "정보 없음")}"
@@ -477,7 +432,6 @@ class BusApiService(private val context: Context) {
     
     // XML 노선 정보 파싱
     private fun parseXmlRouteInfo(xmlStr: String, routeId: String): BusRoute? {
-        // XML 파싱 로직 구현 (예시)
         try {
             val document = Jsoup.parse(xmlStr, "", Parser.xmlParser())
             val headerElement = document.select("header").first()
@@ -492,6 +446,7 @@ class BusApiService(private val context: Context) {
                 BusRoute(
                     id = bodyElement.select("routeId").text().ifEmpty { routeId },
                     routeNo = bodyElement.select("routeNo").text(),
+                    routeTp = bodyElement.select("routeTp").text(), // 추가
                     startPoint = bodyElement.select("stNm").text(),
                     endPoint = bodyElement.select("edNm").text(),
                     routeDescription = "배차간격: ${bodyElement.select("avgTm").text()}, 업체: ${bodyElement.select("comNm").text()}"
@@ -558,12 +513,10 @@ class BusApiService(private val context: Context) {
     }
         
     private fun parseJsonRouteStations(jsonStr: String): List<RouteStation> {
-        // JSON 파싱 로직 구현 (예시)
         return emptyList()
     }
     
     private fun parseXmlRouteStations(xmlStr: String): List<RouteStation> {
-        // XML 파싱 로직 구현 (예시)
         val document = Jsoup.parse(xmlStr, "", Parser.xmlParser())
         val stationList = mutableListOf<RouteStation>()
         val elements = document.select("body")
@@ -626,54 +579,84 @@ class BusApiService(private val context: Context) {
                 put("stationId", station.stationId)
                 put("stationName", station.stationName)
                 put("sequenceNo", station.sequenceNo)
-                put("direction", station.direction)
+                put("lat", 0.0) 
+                put("lng", 0.0) 
+                // 기존 direction 필드도 유지
+                put("direction", station.direction ?: "")
             }
             jsonArray.put(jsonObj)
         }
         return jsonArray.toString()
     }
 
-    suspend fun getStationInfo(stationId: String): List<BusArrivalInfo> = withContext(Dispatchers.IO) {
-        try {
-            // 디버그 로깅 추가
-            Log.d(TAG, "정류장 정보 조회 시작: stationId=$stationId")
-            
-            // getBusArrivalInfo 메서드를 통해 정류장 도착 정보 가져오기
-            val arrivalOutputs = getBusArrivalInfo(stationId)
-            Log.d(TAG, "정류장 도착 정보 조회 결과: ${arrivalOutputs.size}개 노선")
-            
-            // 각 출력을 BusArrivalInfo로 변환 (Flutter에서 기대하는 형식)
-            return@withContext arrivalOutputs.map { output ->
-                val buses = output.bus.map { busInfo ->
-                    val isLowFloor = busInfo.busNumber.contains("저상")
-                    val isOutOfService = busInfo.estimatedTime == "운행종료"
-                    
-                    // 버스 정보 변환
-                    BusInfo(
-                        busNumber = busInfo.busNumber.replace("(저상)", "").replace("(일반)", ""),
-                        currentStation = busInfo.currentStation,
-                        remainingStops = busInfo.remainingStations,
-                        estimatedTime = busInfo.estimatedTime,
-                        isLowFloor = isLowFloor,
-                        isOutOfService = isOutOfService
-                    )
+    // 정류장 도착 정보 조회 함수 - JSONObject/JSONArray 직접 사용으로 변경
+    suspend fun getStationInfo(stationId: String): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                Log.d(TAG, "정류장($stationId) 도착 정보 조회 시작")
+                
+                // API 호출
+                val url = "https://businfo.daegu.go.kr:8095/dbms_web_api/realtime/arr2/$stationId"
+                val request = Request.Builder().url(url).build()
+                val response = okHttpClient.newCall(request).execute()
+                
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "API 호출 실패: ${response.code}")
+                    throw IOException("API 호출 실패: ${response.code}")
                 }
                 
-                // 노선별 도착 정보 생성
-                val arrivalInfo = BusArrivalInfo(
-                    routeId = output.id,
-                    routeNo = output.name,
-                    destination = output.forward ?: "알 수 없음",
-                    buses = buses
-                )
+                val responseBody = response.body?.string() ?: throw IOException("응답 본문이 비어있습니다")
                 
-                Log.d(TAG, "변환된 도착 정보: 노선=${arrivalInfo.routeNo}, 버스 수=${arrivalInfo.buses.size}대")
-                arrivalInfo
+                // JSONObject로 직접 파싱
+                val jsonObj = JSONObject(responseBody)
+                val header = jsonObj.getJSONObject("header")
+                
+                if (!header.getBoolean("success")) {
+                    val resultMsg = header.getString("resultMsg")
+                    Log.e(TAG, "API 오류: $resultMsg")
+                    throw IOException("API 오류: $resultMsg")
+                }
+                
+                val body = jsonObj.getJSONObject("body")
+                val resultArray = JSONArray()
+                
+                // 노선 목록 확인
+                if (body.has("list") && !body.isNull("list")) {
+                    val list = body.getJSONArray("list")
+                    
+                    for (i in 0 until list.length()) {
+                        val routeInfo = list.getJSONObject(i)
+                        val resultRouteObj = JSONObject()
+                        
+                        // 기본 노선 정보 복사
+                        val keys = routeInfo.keys()
+                        while (keys.hasNext()) {
+                            val key = keys.next()
+                            resultRouteObj.put(key, routeInfo.get(key))
+                        }
+                        
+                        // arrList 처리
+                        if (routeInfo.has("arrList") && !routeInfo.isNull("arrList")) {
+                            val arrList = routeInfo.getJSONArray("arrList")
+                            val resultArrArray = JSONArray()
+                            
+                            for (j in 0 until arrList.length()) {
+                                resultArrArray.put(arrList.getJSONObject(j))
+                            }
+                            
+                            resultRouteObj.put("arrList", resultArrArray)
+                        }
+                        
+                        resultArray.put(resultRouteObj)
+                    }
+                }
+                
+                Log.d(TAG, "정류장 도착 정보 조회 결과: ${resultArray.length()}개 노선")
+                return@withContext resultArray.toString()
+            } catch (e: Exception) {
+                Log.e(TAG, "정류장 도착 정보 조회 오류: ${e.message}", e)
+                throw e
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "버스 도착 정보 변환 오류: ${e.message}", e)
-            e.printStackTrace()
-            emptyList()
         }
     }
 
@@ -739,94 +722,6 @@ class BusApiService(private val context: Context) {
             null
         } catch (e: Exception) {
             Log.e(TAG, "wincId($wincId)에 대한 stationId 조회 오류: ${e.message}", e)
-            null
-        }
-    }
-
-    // bsId(wincId)로부터 정류장 정보(stationId, routeList 등)를 조회하는 메서드
-    suspend fun getStationInfoFromBsId(bsId: String): Map<String, Any?>? = withContext(Dispatchers.IO) {
-        try {
-            Log.d(TAG, "bsId($bsId)에 대한 정류장 정보 조회 시작")
-            val url = "${BASE_URL}bs/search?searchText=&wincId=$bsId"
-            
-            val response = busInfoApi.getStationSearchResult(url)
-            var responseStr = String(response.bytes(), Charset.forName("UTF-8"))
-            
-            if (containsBrokenKorean(responseStr)) {
-                responseStr = String(response.bytes(), Charset.forName("EUC-KR"))
-            }
-            
-            Log.d(TAG, "응답 데이터 미리보기: ${responseStr.take(200)}")
-            
-            // 결과 맵 생성
-            val resultMap = mutableMapOf<String, Any?>()
-            
-            // XML 또는 JSON 응답 처리
-            if (responseStr.trim().startsWith("<")) {
-                // XML 파싱
-                val document = Jsoup.parse(responseStr, "", Parser.xmlParser())
-                val header = document.select("header").first()
-                val success = header?.select("success")?.text() == "true"
-                
-                if (!success) {
-                    Log.e(TAG, "API 요청 실패: ${header?.select("resultMsg")?.text()}")
-                    return@withContext null
-                }
-                
-                val bodyElement = document.select("body").first()
-                if (bodyElement != null) {
-                    val stationId = bodyElement.select("bsId").text()
-                    if (stationId.isNotEmpty()) {
-                        resultMap["bsId"] = stationId
-                        
-                        // 노선 정보가 있으면 추가
-                        val routeListElement = bodyElement.select("routeList")
-                        if (routeListElement.isNotEmpty()) {
-                            resultMap["routeList"] = routeListElement.toString()
-                        }
-                        
-                        Log.d(TAG, "bsId($bsId)에 대한 정류장 정보 찾음: stationId=$stationId")
-                        return@withContext resultMap
-                    }
-                }
-            } else if (responseStr.startsWith("{")) {
-                // JSON 파싱
-                val jsonObj = JSONObject(responseStr)
-                val header = jsonObj.getJSONObject("header")
-                val success = header.getBoolean("success")
-                
-                if (!success) {
-                    Log.e(TAG, "API 요청 실패: ${header.getString("resultMsg")}")
-                    return@withContext null
-                }
-                
-                val body = jsonObj.optJSONArray("body")
-                if (body != null && body.length() > 0) {
-                    val stationInfo = body.getJSONObject(0)
-                    val stationId = stationInfo.optString("bsId", "")
-                    
-                    if (stationId.isNotEmpty()) {
-                        resultMap["bsId"] = stationId
-                        
-                        // 노선 정보가 있으면 추가
-                        val routeList = stationInfo.optJSONArray("routeList")
-                        if (routeList != null && routeList.length() > 0) {
-                            resultMap["routeList"] = routeList.toString()
-                        } else {
-                            // 노선 정보를 별도로 조회할 수도 있음
-                            // 필요한 경우 추가 API 호출
-                        }
-                        
-                        Log.d(TAG, "bsId($bsId)에 대한 정류장 정보 찾음: stationId=$stationId")
-                        return@withContext resultMap
-                    }
-                }
-            }
-            
-            Log.w(TAG, "bsId($bsId)에 대한 정류장 정보를 찾을 수 없음")
-            null
-        } catch (e: Exception) {
-            Log.e(TAG, "bsId($bsId)에 대한 정류장 정보 조회 오류: ${e.message}", e)
             null
         }
     }
