@@ -53,12 +53,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // 주변 정류장 로드 (1km 이내)
+// 주변 정류장 로드 (500m 이내)
   Future<void> _loadNearbyStations() async {
     setState(() => _isLoadingNearby = true);
     try {
+      // 500미터로 변경 (1000에서 500으로 수정)
       final nearbyStations =
-          await LocationService.getNearbyStations(1000, context: context);
+          await LocationService.getNearbyStations(500, context: context);
       if (!mounted) return;
       setState(() {
         _nearbyStops = nearbyStations;
@@ -171,9 +172,8 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      // 정류장 ID를 사용하여 도착 정보 조회 (ApiService 내부에서 stationId 매핑 처리)
-      final arrivalsData = await ApiService.getStationInfo(_selectedStop!.id);
-
+      final arrivalsData =
+          await ApiService.getStationInfo(_selectedStop!.id); // bsId 사용
       debugPrint('Bus arrivals loaded: ${arrivalsData.length} routes');
 
       if (!mounted) return;
