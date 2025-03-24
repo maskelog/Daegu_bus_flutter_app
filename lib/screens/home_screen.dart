@@ -416,7 +416,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   : SliverToBoxAdapter(
                       child: SizedBox(
-                        height: 160,
+                        height: 120,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           itemCount: _nearbyStops.length,
@@ -509,19 +509,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                                         FontWeight.w500),
                                               ),
                                             const SizedBox(width: 8),
-                                            if (stop.routeList != null &&
-                                                stop.routeList!.isNotEmpty)
-                                              Expanded(
-                                                child: Text(
-                                                  stop.routeList!,
-                                                  style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: Colors.grey[600]),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ),
                                           ],
                                         ),
                                       ],
@@ -563,7 +550,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.only(top: 8, bottom: 20),
             sliver: SliverToBoxAdapter(
               child: SizedBox(
-                height: 140,
+                height: 100,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: _favoriteStops.length,
@@ -620,10 +607,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                         _toggleFavorite(stop);
                                       },
                                       borderRadius: BorderRadius.circular(16),
-                                      child: const Padding(
-                                        padding: EdgeInsets.all(4.0),
-                                        child: Icon(Icons.star,
-                                            color: Colors.amber, size: 20),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4.0),
+                                        child: Icon(
+                                          _isStopFavorite(stop)
+                                              ? Icons.star
+                                              : Icons.star_border,
+                                          color: _isStopFavorite(stop)
+                                              ? Colors.amber
+                                              : Colors.grey,
+                                          size: 20,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -642,15 +636,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 4),
-                                if (stop.routeList != null &&
-                                    stop.routeList!.isNotEmpty)
-                                  Text(
-                                    stop.routeList!,
-                                    style: TextStyle(
-                                        fontSize: 12, color: Colors.grey[600]),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
                               ],
                             ),
                           ),
