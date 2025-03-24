@@ -82,21 +82,6 @@ class StationItem extends StatelessWidget {
                   color: isSelected ? Colors.blue.shade700 : Colors.black87,
                 ),
               ),
-
-              // 지원 노선 목록 (있는 경우)
-              if (station.routeList != null && station.routeList!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Text(
-                    '노선: ${station.routeList!}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
             ],
           ),
         ),
