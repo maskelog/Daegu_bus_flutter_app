@@ -174,7 +174,7 @@ class _SearchScreenState extends State<SearchScreen> {
     });
 
     try {
-      final arrivals = await ApiService.getStationInfo(station.id); // 정적 호출로 변경
+      final arrivals = await ApiService.getStationInfo(station.id); // bsId 사용
       if (mounted) {
         setState(() {
           _stationArrivals[station.id] = arrivals;
