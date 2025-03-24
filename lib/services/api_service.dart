@@ -89,18 +89,18 @@ class ApiService {
     }
   }
 
-  // 주변 정류장 검색 (getNearbyStations)
+// 주변 정류장 검색 (getNearbyStations)
   static Future<List<BusStop>> getNearbyStations(
-      double latitude, double longitude, double radius) async {
+      double latitude, double longitude, double radiusMeters) async {
     try {
       debugPrint(
-          '주변 정류장 검색 시작: latitude=$latitude, longitude=$longitude, radius=$radius');
+          '주변 정류장 검색 시작: latitude=$latitude, longitude=$longitude, radius=${radiusMeters}m');
       final dynamic response = await _busApiChannel.invokeMethod(
         'findNearbyStations', // Android에서 정의된 메서드 이름과 일치
         {
           'latitude': latitude,
           'longitude': longitude,
-          'radiusKm': radius,
+          'radiusMeters': radiusMeters, // 미터 단위로 직접 전달
         },
       );
 
@@ -320,16 +320,17 @@ class ApiService {
     }
 
     try {
-      // stationId 형식 확인 (7로 시작하는 10자리 숫자면 바로 사용)
+      // stationId가 유효한 형식(7로 시작, 10자리)이 아닌 경우 bsId로 간주하고 변환 시도
       String finalStationId = stationId;
       if (!stationId.startsWith('7') || stationId.length != 10) {
-        debugPrint('유효한 stationId 형식이 아닙니다. 매핑 시도: $stationId');
-
-        // 매핑 시도
+        debugPrint('유효한 stationId 형식이 아닙니다. bsId로 간주하고 매핑 시도: $stationId');
         final mappedStation = await getStationById(stationId);
         if (mappedStation != null && mappedStation.stationId != null) {
           finalStationId = mappedStation.stationId!;
           debugPrint('매핑된 stationId: $finalStationId');
+        } else {
+          debugPrint('bsId "$stationId"에 대한 stationId 매핑 실패');
+          throw Exception('정류장 ID 매핑 실패: $stationId');
         }
       }
 
@@ -339,10 +340,8 @@ class ApiService {
         {'stationId': finalStationId},
       );
 
-      // 디버깅용 로그
       debugPrint('정류장 도착 정보 원본 응답: $response');
 
-      // 응답 처리 코드는 동일하게 유지
       if (response is String) {
         debugPrint('응답이 문자열 형식입니다. 길이: ${response.length}');
         if (response.length > 500) {
@@ -355,10 +354,6 @@ class ApiService {
           final jsonList = json.decode(response) as List<dynamic>;
           debugPrint('JSON 파싱 성공. 항목 수: ${jsonList.length}');
 
-          if (jsonList.isNotEmpty && jsonList[0] is Map) {
-            debugPrint('첫 번째 항목의 키: ${(jsonList[0] as Map).keys.join(', ')}');
-          }
-
           final arrivals = jsonList.map((json) {
             if (json is Map && !json.containsKey('stationId')) {
               json['stationId'] = finalStationId;
@@ -370,7 +365,7 @@ class ApiService {
           return arrivals;
         } catch (parseError) {
           debugPrint('JSON 파싱 실패: $parseError');
-          rethrow;
+          throw Exception('JSON 파싱 오류: $parseError');
         }
       } else {
         debugPrint('응답이 문자열이 아닌 ${response.runtimeType} 형식입니다.');
