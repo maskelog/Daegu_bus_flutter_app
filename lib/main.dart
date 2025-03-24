@@ -9,6 +9,7 @@ import 'services/alarm_service.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 import 'utils/tts_helper.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -110,8 +111,11 @@ void callbackDispatcher() {
   });
 }
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // flutter_dotenv를 이용해 .env 파일 로드
+  await dotenv.load(fileName: '.env');
 
   // WorkManager 초기화
   Workmanager().initialize(
