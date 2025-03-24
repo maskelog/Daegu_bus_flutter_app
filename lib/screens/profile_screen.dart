@@ -570,9 +570,58 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       if (widget.selectedStation != null) {
         _selectedStation = widget.selectedStation;
         _stationController.text = _selectedStation!.name;
-        _loadRouteOptions();
+        _loadRouteOptions().then((_) {
+          // 정류장 선택 후 노선이 로드되면 자동으로 노선 선택 다이얼로그 표시
+          if (_routeOptions.length > 1) {
+            // 1개 이상의 노선이 있으면 다이얼로그 표시
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showRouteSelectionDialog();
+            });
+          } else if (_routeOptions.length == 1) {
+            // 노선이 하나만 있으면 자동 선택
+            _selectRoute(_routeOptions[0]['id']!, _routeOptions[0]['routeNo']!);
+          }
+        });
       }
     }
+  }
+
+  // 노선 선택 다이얼로그를 표시하는 새로운 메서드 추가
+  void _showRouteSelectionDialog() {
+    debugPrint('노선 선택 다이얼로그 표시 시작: ${_routeOptions.length}개 노선');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('노선 선택'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 300, // 높이 제한
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _routeOptions.length,
+            itemBuilder: (context, index) {
+              final route = _routeOptions[index];
+              debugPrint('다이얼로그 항목 빌드: ${route['routeNo']}');
+              return ListTile(
+                title: Text(route['routeNo']!),
+                onTap: () {
+                  debugPrint('노선 선택됨: ${route['routeNo']}');
+                  _selectRoute(route['id']!, route['routeNo']!);
+                  Navigator.pop(context);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -589,13 +638,23 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
 
     try {
       final stationId = _selectedStation!.id;
+      debugPrint('정류장 ID: $stationId 에 대한 버스 정보 로드 시작');
       final arrivals = await ApiService.getStationInfo(stationId);
+      debugPrint('정류장 정보 로드 완료: ${arrivals.length}개 버스 노선 발견');
 
-      // 중복 제거를 위해 Set 사용
+      // 각 노선 정보 로깅
+      for (var arrival in arrivals) {
+        debugPrint('노선 정보: ${arrival.routeNo} (ID: ${arrival.routeId})');
+      }
+
+      // routeNo를 키로 사용하여 중복 제거 (routeId가 비어있기 때문)
       final uniqueRoutes = <String, Map<String, String>>{};
       for (var arrival in arrivals) {
-        uniqueRoutes[arrival.routeId] = {
-          'id': arrival.routeId,
+        // routeNo를 키로 사용
+        uniqueRoutes[arrival.routeNo] = {
+          'id': arrival.routeId.isEmpty
+              ? arrival.routeNo
+              : arrival.routeId, // 빈 ID면 routeNo를 ID로 사용
           'routeNo': arrival.routeNo,
         };
       }
@@ -605,7 +664,22 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
           _routeOptions = uniqueRoutes.values.toList();
           _isLoadingRoutes = false;
         });
-        debugPrint('정류장 $stationId 의 노선 개수: ${_routeOptions.length}');
+        debugPrint('노선 옵션 설정 완료: ${_routeOptions.length}개 고유 노선');
+
+        // 노선 목록 출력
+        for (var route in _routeOptions) {
+          debugPrint('노선 옵션: ${route['routeNo']} (ID: ${route['id']})');
+        }
+
+        // 노선이 여러 개인 경우 다이얼로그 표시
+        if (_routeOptions.length > 1) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showRouteSelectionDialog();
+          });
+        } else if (_routeOptions.length == 1) {
+          // 노선이 하나만 있으면 자동 선택
+          _selectRoute(_routeOptions[0]['id']!, _routeOptions[0]['routeNo']!);
+        }
       }
     } catch (e) {
       debugPrint('노선 정보 로드 오류: $e');
