@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:daegu_bus_app/screens/profile_screen.dart';
 import 'package:daegu_bus_app/utils/alarm_helper.dart';
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:http/http.dart' as http;
+import 'package:xml/xml.dart' as xml;
 import '../models/bus_arrival.dart';
 import '../services/notification_service.dart';
 import '../utils/tts_helper.dart';
@@ -271,14 +273,22 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
+  // loadAlarms 메소드에서 자동 알람은 로드하지 않도록 수정
   Future<void> loadAlarms() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final keys = prefs.getKeys();
-      final alarmKeys = keys.where((key) => key.startsWith('alarm_')).toList();
+
+      // 중요: auto_alarm_ 접두사가 붙은 키는 제외하고 일반 알람만 로드
+      final alarmKeys = keys
+          .where((key) =>
+              key.startsWith('alarm_') && !key.startsWith('auto_alarm_'))
+          .toList();
+
       debugPrint('알람 로드 시작: ${alarmKeys.length}개');
       _activeAlarms = [];
       final keysToRemove = <String>[];
+
       for (var key in alarmKeys) {
         try {
           final String? jsonString = prefs.getString(key);
@@ -286,8 +296,10 @@ class AlarmService extends ChangeNotifier {
             keysToRemove.add(key);
             continue;
           }
+
           final Map<String, dynamic> jsonData = jsonDecode(jsonString);
           final AlarmData alarm = AlarmData.fromJson(jsonData);
+
           final now = DateTime.now();
           if (alarm.targetArrivalTime
               .isBefore(now.subtract(const Duration(minutes: 5)))) {
@@ -295,16 +307,19 @@ class AlarmService extends ChangeNotifier {
             keysToRemove.add(key);
             continue;
           }
+
           _activeAlarms.add(alarm);
         } catch (e) {
           debugPrint('알람 데이터 손상 ($key): $e');
           keysToRemove.add(key);
         }
       }
+
       for (var key in keysToRemove) {
         await prefs.remove(key);
         debugPrint('불필요한 알람 키 정리: $key');
       }
+
       debugPrint('알람 로드 완료: ${_activeAlarms.length}개');
       notifyListeners();
     } catch (e) {
@@ -531,8 +546,7 @@ class AlarmService extends ChangeNotifier {
   }
 
   Future<List<DateTime>> _fetchHolidays(int year, int month) async {
-    const String serviceKey =
-        'U5x6XR0zMipv1m9CQk72BiQp3Goghg6YttuJm3BNnCnf2dda1ywYcAbqdWkt1Kkug3DdpZS77wXCpioS0y9WYA==';
+    final String serviceKey = dotenv.env['SERVICE_KEY'] ?? '';
     final String url =
         'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo'
         '?serviceKey=$serviceKey'
@@ -543,25 +557,32 @@ class AlarmService extends ChangeNotifier {
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
-        final jsonData = jsonDecode(response.body);
-        final items = jsonData['response']['body']['items']?['item'] ?? [];
-        final holidays = <DateTime>[];
+        // XML 응답 처리
+        try {
+          final holidays = <DateTime>[];
+          final xmlDoc = xml.XmlDocument.parse(response.body);
 
-        if (items is List) {
+          // 'item' 요소 찾기
+          final items = xmlDoc.findAllElements('item');
+
           for (var item in items) {
-            if (item['isHoliday'] == 'Y') {
-              final locdate = item['locdate'].toString();
-              final holiday = DateTime.parse(locdate);
-              holidays.add(holiday);
+            final isHoliday = item.findElements('isHoliday').first.innerText;
+            if (isHoliday == 'Y') {
+              final locdate = item.findElements('locdate').first.innerText;
+              // YYYYMMDD 형식을 DateTime으로 변환
+              final year = int.parse(locdate.substring(0, 4));
+              final month = int.parse(locdate.substring(4, 6));
+              final day = int.parse(locdate.substring(6, 8));
+              holidays.add(DateTime(year, month, day));
             }
           }
-        } else if (items is Map && items['isHoliday'] == 'Y') {
-          final locdate = items['locdate'].toString();
-          holidays.add(DateTime.parse(locdate));
-        }
 
-        debugPrint('공휴일 목록 ($year-$month): $holidays');
-        return holidays;
+          debugPrint('공휴일 목록 ($year-$month): ${holidays.length}개 공휴일 발견');
+          return holidays;
+        } catch (e) {
+          debugPrint('XML 파싱 오류: $e');
+          return [];
+        }
       } else {
         debugPrint('공휴일 API 응답 오류: ${response.statusCode}');
         return [];
@@ -577,7 +598,11 @@ class AlarmService extends ChangeNotifier {
       debugPrint('자동 알람 갱신 시작: ${autoAlarms.length}개');
       final now = DateTime.now();
 
+      // 공휴일 정보 가져오기
       final holidays = await _fetchHolidays(now.year, now.month);
+
+      // 이미 설정된 자동 알람 취소 (진행 중인 알람은 취소하지 않음)
+      // 새로운 알람 설정만 처리하고, ActiveAlarmPanel에는 표시하지 않음
 
       for (var alarm in autoAlarms) {
         if (!alarm.isActive) continue;
@@ -585,18 +610,22 @@ class AlarmService extends ChangeNotifier {
         final alarmId = alarm.id.hashCode;
         final todayWeekday = now.weekday;
 
+        // 반복 요일 체크
         if (!alarm.repeatDays.contains(todayWeekday)) continue;
 
+        // 주말 제외 옵션 체크
         if (alarm.excludeWeekends && (todayWeekday == 6 || todayWeekday == 7)) {
           continue;
         }
 
+        // 공휴일 제외 옵션 체크
         bool isHoliday = holidays.any((holiday) =>
             holiday.year == now.year &&
             holiday.month == now.month &&
             holiday.day == now.day);
         if (alarm.excludeHolidays && isHoliday) continue;
 
+        // 예약 시간 설정
         DateTime scheduledTime = DateTime(
           now.year,
           now.month,
@@ -605,24 +634,56 @@ class AlarmService extends ChangeNotifier {
           alarm.minute,
         );
 
+        // 이미 지난 시간이면 다음 날로 설정
         if (scheduledTime.isBefore(now)) {
           scheduledTime = scheduledTime.add(const Duration(days: 1));
         }
 
-        await setOneTimeAlarm(
-          id: alarmId,
-          alarmTime: scheduledTime,
-          preNotificationTime: Duration(minutes: alarm.beforeMinutes),
-          busNo: alarm.routeNo,
-          stationName: alarm.stationName,
-          remainingMinutes: alarm.beforeMinutes,
-          routeId: alarm.routeId,
+        // 자동 알람 ID에 특별한 접두사 사용 - 일반 도착 알람과 구분
+        final autoAlarmId = "auto_$alarmId";
+
+        // 자동 알람용 WorkManager 등록
+        // 일반 도착 알람과 다른 태스크 이름 사용
+        final uniqueTaskName = 'autoAlarm_$alarmId';
+        final initialDelay = scheduledTime
+            .subtract(Duration(minutes: alarm.beforeMinutes))
+            .difference(now);
+
+        // 자동 알람용 메타데이터
+        final inputData = {
+          'alarmId': alarmId,
+          'busNo': alarm.routeNo,
+          'stationName': alarm.stationName,
+          'remainingMinutes': alarm.beforeMinutes,
+          'routeId': alarm.routeId,
+          'isAutoAlarm': true, // 자동 알람 식별자 추가
+        };
+
+        await Workmanager().registerOneOffTask(
+          uniqueTaskName,
+          'autoAlarmTask', // 별도의 태스크 이름 사용
+          initialDelay: initialDelay,
+          inputData: inputData,
+          constraints: Constraints(
+            networkType: NetworkType.not_required,
+            requiresBatteryNotLow: false,
+            requiresCharging: false,
+            requiresDeviceIdle: false,
+            requiresStorageNotLow: false,
+          ),
+          existingWorkPolicy: ExistingWorkPolicy.replace,
         );
 
+        // 중요: activeAlarms에 직접 추가하지 않음
+        // 대신 별도의 저장소에 자동 알람 정보만 저장
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(autoAlarmId, jsonEncode(alarm.toJson()));
+
         debugPrint(
-            '자동 알람 예약: ${alarm.routeNo}, ${alarm.stationName}, ${alarm.hour}:${alarm.minute}');
+            '자동 알람 예약: ${alarm.routeNo}, ${alarm.stationName}, ${alarm.hour}:${alarm.minute}, ${initialDelay.inMinutes}분 후 알림');
       }
-      await loadAlarms();
+
+      // 여기서 loadAlarms()를 호출하지 않음 - 자동 알람은 activeAlarms에 포함되지 않음
       notifyListeners();
     } catch (e) {
       debugPrint('자동 알람 갱신 오류: $e');
