@@ -167,3 +167,4 @@ CMakeLists.txt
 **/CMakeLists.txt
 
 .metadata
+.env
