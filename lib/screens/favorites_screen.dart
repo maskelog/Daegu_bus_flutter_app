@@ -406,34 +406,34 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             // 다음 버스 정보 안내 (다음 버스가 있는 경우만)
                             if (busArrival.buses.length > 1) ...[
                               const SizedBox(height: 12),
-                              Center(
-                                child: Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue[50],
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.keyboard_arrow_down,
-                                          size: 16, color: Colors.blue[700]),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '다음 버스 정보',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                          color: Colors.blue[700],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
+                              // Center(
+                              //   child: Container(
+                              //     margin: const EdgeInsets.only(bottom: 8),
+                              //     padding: const EdgeInsets.symmetric(
+                              //         horizontal: 12, vertical: 6),
+                              //     decoration: BoxDecoration(
+                              //       color: Colors.blue[50],
+                              //       borderRadius: BorderRadius.circular(12),
+                              //     ),
+                              //     child: Row(
+                              //       mainAxisSize: MainAxisSize.min,
+                              //       children: [
+                              //         Icon(Icons.keyboard_arrow_down,
+                              //             size: 16, color: Colors.blue[700]),
+                              //         const SizedBox(width: 4),
+                              //         Text(
+                              //           '다음 버스 정보',
+                              //           style: TextStyle(
+                              //             fontSize: 13,
+                              //             fontWeight: FontWeight.w500,
+                              //             color: Colors.blue[700],
+                              //           ),
+                              //         ),
+                              //       ],
+                              //     ),
+                              //   ),
+                              // ),
+                              // const SizedBox(height: 16),
 
                               // 다음 버스 정보 섹션 헤더
                               const Text(
@@ -526,7 +526,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                                 ),
                                               ),
                                               Text(
-                                                bus.remainingStops,
+                                                bus.remainingStops.toString(),
                                                 style: TextStyle(
                                                   fontSize: 12,
                                                   color: Colors.grey[500],
