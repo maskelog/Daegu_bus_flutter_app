@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
 import '../services/alarm_service.dart';
-import '../services/api_service.dart'; // ApiService로 변경
+import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../utils/tts_helper.dart';
 
@@ -486,22 +486,6 @@ class _BusCardState extends State<BusCard> {
                     decoration: BoxDecoration(
                       color: Colors.blue[50],
                       borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.arrow_downward,
-                            size: 16, color: Colors.blue[700]),
-                        const SizedBox(width: 8),
-                        Text(
-                          '다음 버스',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.blue[700],
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                   const SizedBox(height: 16),
