@@ -26,6 +26,42 @@ class NotificationService {
     }
   }
 
+  /// 자동 알람 알림 전송 (예약된 시간에 실행)
+  Future<bool> showAutoAlarmNotification({
+    required int id,
+    required String busNo,
+    required String stationName,
+    required int remainingMinutes,
+    String? routeId,
+  }) async {
+    try {
+      // 초기화 확인
+      await initialize();
+
+      debugPrint(
+          '🔔 자동 알람 알림 표시: $busNo, $stationName, $remainingMinutes분 전, ID: $id');
+
+      final bool result = await _channel.invokeMethod('showNotification', {
+        'id': id,
+        'busNo': busNo,
+        'stationName': stationName,
+        'remainingMinutes': remainingMinutes,
+        'currentStation': '자동 알람', // 자동 알람임을 표시
+        'payload': routeId, // 필요시 routeId를 페이로드로 전달
+        'isAutoAlarm': true, // 자동 알람 식별자
+      });
+
+      // TTS를 통한 음성 안내 (선택적)
+      await TTSHelper.speakAlarmSet(busNo);
+
+      debugPrint('🔔 자동 알람 알림 표시 완료: $id');
+      return result;
+    } on PlatformException catch (e) {
+      debugPrint('🔔 자동 알람 알림 표시 오류: ${e.message}');
+      return false;
+    }
+  }
+
   /// 즉시 알림 전송
   Future<bool> showNotification({
     required int id,
