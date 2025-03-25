@@ -111,32 +111,33 @@ class LocationService {
     return true;
   }
 
-  // 주변 정류장 가져오기 (context 매개변수 추가)
-  static Future<List<BusStop>> getNearbyStations(double maxDistanceInMeters,
+// 주변 정류장 가져오기 - 반경 단위를 미터로 직접 사용
+  static Future<List<BusStop>> getNearbyStations(double radiusMeters,
       {BuildContext? context}) async {
-    // context가 제공된 경우 권한 확인
-    if (context != null) {
-      bool hasPermission = await checkLocationPermission(context);
-      if (!hasPermission) {
-        return [];
-      }
-    }
-
     try {
-      final Position? position = await getCurrentLocation();
+      final position = await getCurrentLocation();
+
       if (position == null) {
-        debugPrint('위치를 가져올 수 없습니다.');
+        if (context != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('위치 정보를 가져올 수 없습니다. 위치 서비스를 확인해주세요.')),
+          );
+        }
         return [];
       }
 
       debugPrint(
-          '현재 GPS 위치: lat=${position.latitude}, lon=${position.longitude}');
+          '좌표 검색 파라미터: lat=${position.latitude}, lon=${position.longitude}, radius=${radiusMeters}m');
 
-      // ApiService의 새 메서드 사용
       return await ApiService.getNearbyStations(
-          position.latitude, position.longitude, maxDistanceInMeters);
+          position.latitude, position.longitude, radiusMeters);
     } catch (e) {
-      debugPrint('Error getting nearby stations: $e');
+      debugPrint('주변 정류장을 가져오는 중 오류 발생: $e');
+      if (context != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('주변 정류장을 가져오는 중 오류가 발생했습니다: $e')),
+        );
+      }
       return [];
     }
   }
