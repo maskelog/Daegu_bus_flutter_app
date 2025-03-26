@@ -60,30 +60,34 @@ class BusAlertService : Service() {
     }
     
     /**
-     * 알림 서비스 초기화
-     * 알림 채널 생성 및 권한 체크
-     */
+    * 알림 서비스 초기화
+    * 알림 채널 생성 및 권한 체크
+    */
     fun initialize(context: Context? = null, flutterEngine: io.flutter.embedding.engine.FlutterEngine? = null) {
-        val actualContext = context ?: this.context
-        if (actualContext == null) {
-            Log.e(TAG, "🔔 컨텍스트가 없어 알림 서비스를 초기화할 수 없습니다")
-            return
-        }
+        try {
+            val actualContext = context ?: this.context
+            if (actualContext == null) {
+                Log.e(TAG, "🔔 컨텍스트가 없어 알림 서비스를 초기화할 수 없습니다")
+                return
+            }
 
-        this.context = actualContext.applicationContext
-        Log.d(TAG, "🔔 알림 서비스 초기화")
-        createNotificationChannels()
-        checkNotificationPermission()
-        
-        // 메서드 채널 초기화 (네이티브 서비스와의 통신)
-        if (flutterEngine != null) {
-            _methodChannel = MethodChannel(
-                flutterEngine.dartExecutor.binaryMessenger,
-                "com.example.daegu_bus_app/bus_api"
-            )
-            Log.d(TAG, "🔌 메서드 채널 초기화 완료")
-        } else {
-            Log.d(TAG, "⚠️ FlutterEngine이 전달되지 않아 메서드 채널을 초기화할 수 없습니다")
+            this.context = actualContext.applicationContext
+            Log.d(TAG, "🔔 알림 서비스 초기화")
+            createNotificationChannels()
+            checkNotificationPermission()
+            
+            // 메서드 채널 초기화 (네이티브 서비스와의 통신)
+            if (flutterEngine != null) {
+                _methodChannel = MethodChannel(
+                    flutterEngine.dartExecutor.binaryMessenger,
+                    "com.example.daegu_bus_app/bus_api"
+                )
+                Log.d(TAG, "🔌 메서드 채널 초기화 완료")
+            } else {
+                Log.d(TAG, "⚠️ FlutterEngine이 전달되지 않아 메서드 채널을 초기화할 수 없습니다")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "🔔 알림 서비스 초기화 중 오류 발생: ${e.message}", e)
         }
     }
         
