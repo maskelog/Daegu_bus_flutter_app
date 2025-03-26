@@ -37,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('HomeScreen initState called');
     _loadFavoriteStops();
     _loadNearbyStations();
     _refreshTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
