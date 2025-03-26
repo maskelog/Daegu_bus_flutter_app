@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -114,24 +115,47 @@ void callbackDispatcher() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // flutter_dotenv를 이용해 .env 파일 로드
+  // Initialize Android Alarm Manager
+  try {
+    await AndroidAlarmManager.initialize();
+  } catch (e) {
+    debugPrint('AndroidAlarmManager 초기화 오류: $e');
+  }
+
+  // flutter_dotenv load
   await dotenv.load(fileName: '.env');
 
-  // WorkManager 초기화
-  Workmanager().initialize(
-    callbackDispatcher,
-    isInDebugMode: false, // 디버그 모드 비활성화하여 WorkManager 로그 줄이기
-  );
+  // WorkManager initialization with proper error handling
+  try {
+    Workmanager().initialize(
+      callbackDispatcher,
+      isInDebugMode: false,
+    );
+  } catch (e) {
+    debugPrint('WorkManager initialization error: $e');
+  }
 
-  // 로컬 알림 초기화 - NotificationService로 변경
-  await NotificationService().initialize();
+  // Notification service initialization
+  try {
+    await NotificationService().initialize();
+  } catch (e) {
+    debugPrint('Notification service initialization error: $e');
+  }
 
-  // TTS 초기화
-  await TTSHelper.initialize();
+  // TTS initialization
+  try {
+    await TTSHelper.initialize();
+  } catch (e) {
+    debugPrint('TTS initialization error: $e');
+  }
 
-  // 알림 권한 요청 (Android 13+ 대응)
+  // Request permissions with proper error handling
   if (Platform.isAndroid) {
-    await requestNotificationPermission();
+    try {
+      await requestNotificationPermission();
+    } catch (e) {
+      debugPrint('Permission request error: $e');
+    }
   }
 
   runApp(
@@ -212,6 +236,33 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Set custom error widget
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        color: Colors.red[100],
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: Colors.red[700], size: 60),
+            const SizedBox(height: 16),
+            Text(
+              'Error: ${details.exception}',
+              style: TextStyle(
+                  color: Colors.red[700], fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              details.stack.toString(),
+              style: const TextStyle(fontSize: 12),
+              maxLines: 10,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      );
+    };
+
     return MaterialApp(
       title: '대구 버스',
       theme: ThemeData(
