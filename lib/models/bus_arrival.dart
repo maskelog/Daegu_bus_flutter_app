@@ -67,7 +67,7 @@ class BusInfo {
   final bool isLowFloor;
   final String currentStation;
   final String remainingStops;
-  final String arrivalTime;
+  final String estimatedTime; // arrivalTime 대신 estimatedTime 사용
   final bool isOutOfService;
 
   BusInfo({
@@ -75,7 +75,7 @@ class BusInfo {
     required this.isLowFloor,
     required this.currentStation,
     required this.remainingStops,
-    required this.arrivalTime,
+    required this.estimatedTime, // arrivalTime 대신 estimatedTime 사용
     this.isOutOfService = false,
   });
 
@@ -109,25 +109,27 @@ class BusInfo {
         remainingStops = json['bsGap'].toString();
       } else if (json.containsKey('remainingStops')) {
         remainingStops = json['remainingStops'];
+      } else if (json.containsKey('remainingStations')) {
+        remainingStops = json['remainingStations'];
       } else if (json.containsKey('남은정류소')) {
         remainingStops = json['남은정류소'];
       }
 
-      // 도착 예정 시간
-      String arrivalTime = '';
+      // 도착 예정 시간 - estimatedTime으로 통일
+      String estimatedTime = '';
       if (json.containsKey('arrState')) {
-        arrivalTime = json['arrState'] ?? '';
+        estimatedTime = json['arrState'] ?? '';
       } else if (json.containsKey('arrivalTime')) {
-        arrivalTime = json['arrivalTime'];
+        estimatedTime = json['arrivalTime'];
       } else if (json.containsKey('estimatedTime')) {
-        arrivalTime = json['estimatedTime'];
+        estimatedTime = json['estimatedTime'];
       } else if (json.containsKey('도착예정소요시간')) {
-        arrivalTime = json['도착예정소요시간'];
+        estimatedTime = json['도착예정소요시간'];
       }
 
       // 운행종료 여부
       bool isOutOfService = false;
-      if (arrivalTime == '운행종료') {
+      if (estimatedTime == '운행종료') {
         isOutOfService = true;
       } else if (json.containsKey('isOutOfService')) {
         isOutOfService = json['isOutOfService'] == true;
@@ -138,7 +140,7 @@ class BusInfo {
         isLowFloor: isLowFloor,
         currentStation: currentStation,
         remainingStops: remainingStops,
-        arrivalTime: arrivalTime,
+        estimatedTime: estimatedTime, // arrivalTime 대신 estimatedTime 사용
         isOutOfService: isOutOfService,
       );
     } catch (e) {
@@ -149,20 +151,23 @@ class BusInfo {
     }
   }
 
+  // 호환성을 위한 getter 추가
+  String get arrivalTime => estimatedTime;
+
   int getRemainingMinutes() {
     if (isOutOfService) return 0;
 
-    // arrivalTime에서 숫자만 추출
+    // estimatedTime에서 숫자만 추출
     final regex = RegExp(r'(\d+)');
-    final match = regex.firstMatch(arrivalTime);
+    final match = regex.firstMatch(estimatedTime);
 
     if (match != null) {
       final minutes = int.tryParse(match.group(1) ?? '0') ?? 0;
       return minutes;
-    } else if (arrivalTime.contains('곧') || arrivalTime.contains('잠시후')) {
+    } else if (estimatedTime.contains('곧') || estimatedTime.contains('잠시후')) {
       // '곧 도착' 또는 '잠시후' 같은 텍스트인 경우
       return 0;
-    } else if (arrivalTime.contains('출발')) {
+    } else if (estimatedTime.contains('출발')) {
       // '출발' 텍스트가 있는 경우 (예: '출발 대기중')
       try {
         return int.tryParse(remainingStops) ?? 5;
