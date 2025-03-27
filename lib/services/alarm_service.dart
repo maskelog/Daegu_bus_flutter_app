@@ -161,7 +161,19 @@ class AlarmService extends ChangeNotifier {
 
   Future<void> _registerBusArrivalReceiver() async {
     try {
-      await _methodChannel?.invokeMethod('registerBusArrivalReceiver');
+      final prefs = await SharedPreferences.getInstance();
+      final alarms = prefs.getStringList('auto_alarms') ?? [];
+      for (var json in alarms) {
+        final data = jsonDecode(json);
+        final autoAlarm = AutoAlarm.fromJson(data);
+        if (autoAlarm.isActive) {
+          await _methodChannel?.invokeMethod('registerBusArrivalReceiver', {
+            'stationId': autoAlarm.stationId,
+            'stationName': autoAlarm.stationName,
+            'routeId': autoAlarm.routeId,
+          });
+        }
+      }
       debugPrint('버스 도착 이벤트 리시버 등록 완료');
     } catch (e) {
       debugPrint('버스 도착 이벤트 리시버 등록 오류: $e');
