@@ -12,12 +12,13 @@ import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.content.Intent
 import org.json.JSONArray
 import org.json.JSONObject
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.example.daegu_bus_app/bus_api" // 단일 채널로 통합
+    private val CHANNEL = "com.example.daegu_bus_app/bus_api"
     private val NOTIFICATION_CHANNEL = "com.example.daegu_bus_app/notification"
     private val TAG = "MainActivity"
     private lateinit var busApiService: BusApiService
@@ -28,7 +29,6 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         busApiService = BusApiService(this)
 
-        // BusAlertService 초기화 및 시작
         try {
             val serviceIntent = Intent(this, BusAlertService::class.java)
             startService(serviceIntent)
@@ -37,7 +37,6 @@ class MainActivity : FlutterActivity() {
             Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
         }
 
-        // Android 13+ 알림 권한 요청
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     this,
@@ -56,7 +55,6 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // 단일 채널(bus_api)로 모든 메서드 처리
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "searchStations" -> {
@@ -65,19 +63,13 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGUMENT", "검색어가 비어있습니다", null)
                         return@setMethodCallHandler
                     }
-                    
-                    // 검색 방식 구분 - 기본은 웹 검색
                     val searchType = call.argument<String>("searchType") ?: "web"
-                    
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
                             if (searchType == "local") {
-                                // 로컬 DB 검색 (좌표 정보 포함)
-                                val databaseHelper = DatabaseHelper(this@MainActivity)
+                                val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
                                 val stations = databaseHelper.searchStations(searchText)
                                 Log.d(TAG, "로컬 정류장 검색 결과: ${stations.size}개")
-                                
-                                // 결과를 JSON으로 변환
                                 val jsonArray = JSONArray()
                                 stations.forEach { station ->
                                     val jsonObj = JSONObject().apply {
@@ -93,11 +85,8 @@ class MainActivity : FlutterActivity() {
                                 }
                                 result.success(jsonArray.toString())
                             } else {
-                                // 웹 API 검색 (기존 기능)
                                 val stations = busApiService.searchStations(searchText)
                                 Log.d(TAG, "웹 정류장 검색 결과: ${stations.size}개")
-                                
-                                // 결과 반환
                                 val jsonArray = JSONArray()
                                 stations.forEach { station ->
                                     Log.d(TAG, "Station - ID: ${station.bsId}, Name: ${station.bsNm}")
@@ -120,40 +109,25 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-                
                 "findNearbyStations" -> {
                     val latitude = call.argument<Double>("latitude") ?: 0.0
                     val longitude = call.argument<Double>("longitude") ?: 0.0
-                    // Flutter 측에서 meters로 전달받도록 key 이름 변경 (예: "radiusMeters")
                     val radiusMeters = call.argument<Double>("radiusMeters") ?: 500.0
-
                     if (latitude == 0.0 || longitude == 0.0) {
                         result.error("INVALID_ARGUMENT", "위도 또는 경도가 유효하지 않습니다", null)
                         return@setMethodCallHandler
                     }
-
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
                             Log.d(TAG, "주변 정류장 검색 요청: lat=$latitude, lon=$longitude, radius=${radiusMeters}m")
-                            
-                            // 좌표 확인 - 예상 내 정류장과의 거리 계산
-                            val knownStationLat = 35.8806131461098
-                            val knownStationLon = 128.601802131046
-                            val distanceToKnown = calculateDistance(latitude, longitude, knownStationLat, knownStationLon)
-                            Log.d(TAG, "알려진 정류장 '새동네아파트건너'와의 거리: ${distanceToKnown}m (500m 이내? ${distanceToKnown <= 500.0})")
-                            
-                            // 거리 기반 필터링이 적용된 검색 메서드 사용
-                            val databaseHelper = DatabaseHelper(this@MainActivity)
+                            val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
                             val nearbyStations = databaseHelper.searchStations(
-                                searchText = "", 
-                                latitude = latitude, 
-                                longitude = longitude, 
+                                searchText = "",
+                                latitude = latitude,
+                                longitude = longitude,
                                 radiusInMeters = radiusMeters
                             )
-                            
                             Log.d(TAG, "주변 정류장 검색 결과: ${nearbyStations.size}개 (검색 반경: ${radiusMeters}m)")
-
-                            // 결과를 JSON으로 변환
                             val jsonArray = JSONArray()
                             nearbyStations.forEach { station ->
                                 val jsonObj = JSONObject().apply {
@@ -164,15 +138,11 @@ class MainActivity : FlutterActivity() {
                                     put("distance", station.distance)
                                     put("ngisXPos", station.longitude)
                                     put("ngisYPos", station.latitude)
-                                    put("routeList", "[]") // 빈 배열을 문자열로 표현
+                                    put("routeList", "[]")
                                 }
                                 jsonArray.put(jsonObj)
-                                
-                                // 로그 - 모든 정보 출력
-                                Log.d(TAG, "정류장 정보 - 이름: ${station.bsNm}, ID: ${station.bsId}, " +
-                                    "위치: (${station.longitude}, ${station.latitude}), 거리: ${station.distance}m")
+                                Log.d(TAG, "정류장 정보 - 이름: ${station.bsNm}, ID: ${station.bsId}, 위치: (${station.longitude}, ${station.latitude}), 거리: ${station.distance}m")
                             }
-
                             result.success(jsonArray.toString())
                         } catch (e: Exception) {
                             Log.e(TAG, "주변 정류장 검색 오류: ${e.message}", e)
@@ -180,7 +150,6 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-                
                 "getBusRouteDetails" -> {
                     val routeId = call.argument<String>("routeId") ?: ""
                     if (routeId.isEmpty()) {
@@ -199,7 +168,6 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-
                 "searchBusRoutes" -> {
                     val searchText = call.argument<String>("searchText") ?: ""
                     if (searchText.isEmpty()) {
@@ -211,8 +179,6 @@ class MainActivity : FlutterActivity() {
                             val routes = busApiService.searchBusRoutes(searchText)
                             Log.d(TAG, "노선 검색 결과: ${routes.size}개")
                             if (routes.isEmpty()) Log.d(TAG, "검색 결과 없음: $searchText")
-                            
-                            // JSON 문자열로 직접 변환
                             val jsonArray = JSONArray()
                             routes.forEach { route ->
                                 val jsonObj = JSONObject().apply {
@@ -225,8 +191,6 @@ class MainActivity : FlutterActivity() {
                                 }
                                 jsonArray.put(jsonObj)
                             }
-                            
-                            // JSON 문자열로 반환
                             result.success(jsonArray.toString())
                         } catch (e: Exception) {
                             Log.e(TAG, "노선 검색 오류: ${e.message}", e)
@@ -234,27 +198,35 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-
                 "getStationIdFromBsId" -> {
                     val bsId = call.argument<String>("bsId") ?: ""
                     if (bsId.isEmpty()) {
                         result.error("INVALID_ARGUMENT", "bsId가 비어있습니다", null)
                         return@setMethodCallHandler
                     }
+                    
+                    if (bsId.startsWith("7") && bsId.length == 10) {
+                        Log.d(TAG, "bsId '$bsId'는 이미 stationId 형식입니다")
+                        result.success(bsId)
+                        return@setMethodCallHandler
+                    }
+                    
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
                             val stationId = busApiService.getStationIdFromBsId(bsId)
-                            if (stationId != null) {
+                            if (stationId != null && stationId.isNotEmpty()) {
+                                Log.d(TAG, "bsId '${bsId}'에 대한 stationId '$stationId' 조회 성공")
                                 result.success(stationId)
                             } else {
-                                result.error("NOT_FOUND", "bsId로 정류장 ID를 찾을 수 없음: $bsId", null)
+                                Log.e(TAG, "stationId 조회 실패: $bsId")
+                                result.error("NOT_FOUND", "stationId를 찾을 수 없습니다: $bsId", null)
                             }
                         } catch (e: Exception) {
-                            result.error("API_ERROR", "stationId 조회 중 오류 발생: ${e.message}", null)
+                            Log.e(TAG, "정류장 ID 변환 오류: ${e.message}", e)
+                            result.error("API_ERROR", "stationId 변환 중 오류 발생: ${e.message}", null)
                         }
                     }
                 }
-
                 "getStationInfo" -> {
                     val stationId = call.argument<String>("stationId") ?: ""
                     if (stationId.isEmpty()) {
@@ -272,7 +244,6 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-
                 "getBusArrivalByRouteId" -> {
                     val stationId = call.argument<String>("stationId") ?: ""
                     val routeId = call.argument<String>("routeId") ?: ""
@@ -290,7 +261,6 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-
                 "getBusRouteInfo" -> {
                     val routeId = call.argument<String>("routeId") ?: ""
                     if (routeId.isEmpty()) {
@@ -307,7 +277,6 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-
                 "getBusPositionInfo" -> {
                     val routeId = call.argument<String>("routeId") ?: ""
                     if (routeId.isEmpty()) {
@@ -324,7 +293,6 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-
                 "getRouteStations" -> {
                     val routeId = call.argument<String>("routeId") ?: ""
                     if (routeId.isEmpty()) {
@@ -342,12 +310,10 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-
                 else -> result.notImplemented()
             }
         }
 
-        // 알림 채널 설정 (별도 유지)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
             if (busAlertService == null) {
                 result.error("SERVICE_UNAVAILABLE", "알림 서비스가 초기화되지 않았습니다", null)
@@ -430,7 +396,6 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // 알림 서비스 초기화
         try {
             busAlertService?.initialize(this, flutterEngine)
         } catch (e: Exception) {
@@ -454,35 +419,8 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun convertBusArrivalInfoToJson(arrivalInfoList: List<BusArrivalInfo>): String {
-        val jsonArray = JSONArray()
-        arrivalInfoList.forEach { arrivalInfo ->
-            val busesJson = JSONArray()
-            arrivalInfo.buses.forEach { bus ->
-                val busJson = JSONObject().apply {
-                    put("busNumber", bus.busNumber)
-                    put("currentStation", bus.currentStation)
-                    put("remainingStops", bus.remainingStops)
-                    put("estimatedTime", bus.estimatedTime)
-                    put("isLowFloor", bus.isLowFloor)
-                    put("isOutOfService", bus.isOutOfService)
-                }
-                busesJson.put(busJson)
-            }
-            val arrivalInfoJson = JSONObject().apply {
-                put("routeId", arrivalInfo.routeId)
-                put("routeNo", arrivalInfo.routeNo)
-                put("destination", arrivalInfo.destination)
-                put("buses", busesJson)
-            }
-            jsonArray.put(arrivalInfoJson)
-        }
-        return jsonArray.toString()
-    }
-
-    // 거리 계산 함수 추가
     private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val earthRadius = 6371000.0 // 지구 반지름(미터)
+        val earthRadius = 6371000.0
         val dLat = Math.toRadians(lat2 - lat1)
         val dLon = Math.toRadians(lon2 - lon1)
         val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -493,7 +431,6 @@ class MainActivity : FlutterActivity() {
     }
 }
 
-// BusRoute를 Map으로 변환하는 확장 함수
 fun BusRoute.toMap(): Map<String, Any?> {
     return mapOf(
         "id" to id,
