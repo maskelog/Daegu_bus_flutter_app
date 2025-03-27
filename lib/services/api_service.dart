@@ -14,39 +14,34 @@ class ApiService {
   static const String baseUrl = 'https://businfo.daegu.go.kr:8095/dbms_web_api';
 
   // JSON 응답을 파싱하는 유틸리티 메서드
-  // JSON 응답을 파싱하는 유틸리티 메서드
   static List<dynamic> _parseJsonResponse(dynamic response) {
-    try {
-      if (response is String) {
-        // 응답 로깅 추가
-        debugPrint('문자열 응답 받음 (길이: ${response.length})');
-        if (response.length > 500) {
-          debugPrint('응답 미리보기: ${response.substring(0, 500)}...');
+    if (response == null) {
+      debugPrint('응답이 null입니다.');
+      return [];
+    }
+    if (response is String) {
+      debugPrint('문자열 응답 받음 (길이: ${response.length})');
+      if (response.isEmpty) {
+        debugPrint('빈 문자열 응답');
+        return [];
+      }
+      try {
+        final decoded = jsonDecode(response);
+        if (decoded is List) {
+          return decoded;
         } else {
-          debugPrint('응답 전체: $response');
-        }
-
-        return json.decode(response) as List<dynamic>;
-      } else if (response is List) {
-        debugPrint('리스트 응답 받음 (${response.length}개 항목)');
-        return response;
-      } else {
-        debugPrint('예상치 못한 응답 타입: ${response.runtimeType}');
-        if (response == null) {
+          debugPrint('응답이 리스트 형식이 아님: $decoded');
           return [];
         }
-
-        // Map 타입인 경우 리스트로 변환 시도
-        if (response is Map) {
-          debugPrint('Map을 List로 변환 시도');
-          return [response];
-        }
-
-        throw Exception('예상치 못한 응답 타입: ${response.runtimeType}');
+      } on FormatException catch (e) {
+        debugPrint('JSON 파싱 오류: $e');
+        return [];
       }
-    } catch (e) {
-      debugPrint('응답 파싱 오류: $e');
-      rethrow;
+    } else if (response is List) {
+      return response;
+    } else {
+      debugPrint('예상치 못한 응답 타입: ${response.runtimeType}');
+      return [];
     }
   }
 
@@ -61,7 +56,7 @@ class ApiService {
     }
   }
 
-  // 정류장 검색 (웹 또는 로컬 DB)
+// 정류장 검색 (웹 또는 로컬 DB)
   static Future<List<BusStop>> searchStations(String query,
       {String searchType = 'web'}) async {
     if (query.isEmpty) {
@@ -71,20 +66,40 @@ class ApiService {
 
     try {
       debugPrint('정류장 검색 시작: query="$query", searchType="$searchType"');
+
+      // 요청 전 파라미터 로깅
+      final requestArgs = {
+        'searchText': query,
+        'searchType': searchType, // 'web' 또는 'local'
+      };
+      debugPrint('요청 파라미터: $requestArgs');
+
       final dynamic response = await _busApiChannel.invokeMethod(
         'searchStations',
-        {
-          'searchText': query,
-          'searchType': searchType, // 'web' 또는 'local'
-        },
+        requestArgs,
       );
 
+      // 응답 로깅
+      debugPrint('응답 타입: ${response.runtimeType}');
+      debugPrint('원본 응답: $response');
+
       final jsonList = _parseJsonResponse(response);
+      debugPrint('파싱된 JSON 리스트 길이: ${jsonList.length}');
+      if (jsonList.isNotEmpty) {
+        debugPrint('첫 번째 항목 미리보기: ${jsonList.first}');
+      }
+
       final stations = jsonList.map((json) => BusStop.fromJson(json)).toList();
       debugPrint('정류장 검색 결과: ${stations.length}개');
+      if (stations.isNotEmpty) {
+        debugPrint(
+            '첫 번째 정류장: id=${stations.first.id}, name=${stations.first.name}');
+      }
+
       return stations;
     } catch (e) {
       debugPrint('정류장 검색 오류: $e');
+      debugPrint('스택 트레이스: ${StackTrace.current}');
       throw Exception('정류장 검색 중 오류 발생: $e');
     }
   }
@@ -270,26 +285,7 @@ class ApiService {
     try {
       debugPrint('정류장 정보 조회 시작: bsId="$bsId"');
 
-      // 로컬 DB에서 정류장 정보 조회
-      // (실제 구현에서는 DB 조회 코드로 대체)
-
-      // 임시로 하드코딩된 매핑 사용
-      final Map<String, String> stationIdMapping = {
-        '22086': '7041065000', // 한실공원앞
-        '10369': '7011011000', // 고곡리
-        // 필요한 다른 매핑 추가
-      };
-
-      // 매핑된 stationId가 있으면 반환
-      if (stationIdMapping.containsKey(bsId)) {
-        return BusStop(
-          id: bsId,
-          name: '매핑된 정류장',
-          stationId: stationIdMapping[bsId],
-        );
-      }
-
-      // 없으면 Native 코드 호출하여 검색
+      // Native 코드 호출하여 stationId 조회
       final stationId = await _busApiChannel.invokeMethod(
         'getStationIdFromBsId',
         {'bsId': bsId},
@@ -305,6 +301,7 @@ class ApiService {
         );
       }
 
+      debugPrint('bsId "$bsId"에 대한 stationId 조회 실패');
       return null;
     } catch (e) {
       debugPrint('정류장 정보 조회 오류: $e');
@@ -312,7 +309,8 @@ class ApiService {
     }
   }
 
-  // 정류장 도착 정보 조회
+// 정류장 도착 정보 조회
+// 정류장 도착 정보 조회
   static Future<List<BusArrival>> getStationInfo(String stationId) async {
     if (stationId.isEmpty) {
       debugPrint('정류장 ID가 비어 있습니다.');
@@ -351,38 +349,94 @@ class ApiService {
         }
 
         try {
-          final jsonList = json.decode(response) as List<dynamic>;
+          // 응답이 오류 메시지를 포함하는지 확인
+          if (response.contains('error')) {
+            debugPrint('API 오류 응답 감지: $response');
+            // 오류 메시지 대신 빈 리스트 반환
+            return [];
+          }
+
+          dynamic jsonData = json.decode(response);
+
+          // 응답이 객체인 경우 리스트로 변환
+          if (jsonData is Map) {
+            debugPrint('맵 형식 응답을 리스트로 변환');
+            if (jsonData.containsKey('error')) {
+              debugPrint('오류 응답: ${jsonData['error']}');
+              return [];
+            }
+            // 테스트용 데이터 또는 다른 형식의 응답인 경우
+            jsonData = [jsonData];
+          }
+
+          final jsonList = jsonData as List<dynamic>;
           debugPrint('JSON 파싱 성공. 항목 수: ${jsonList.length}');
 
-          final arrivals = jsonList.map((json) {
-            if (json is Map && !json.containsKey('stationId')) {
-              json['stationId'] = finalStationId;
-            }
-            return BusArrival.fromJson(json as Map<String, dynamic>);
-          }).toList();
+          // 응답이 비어있는 경우 처리
+          if (jsonList.isEmpty) {
+            debugPrint('API 응답이 비어있습니다. 빈 목록 반환');
+            return [];
+          }
+
+          final arrivals = jsonList
+              .map((json) {
+                if (json is Map && !json.containsKey('stationId')) {
+                  json['stationId'] = finalStationId;
+                }
+
+                // 오류 발생 시 개별 항목 스킵
+                try {
+                  return BusArrival.fromJson(json as Map<String, dynamic>);
+                } catch (itemError) {
+                  debugPrint('항목 파싱 오류, 무시됨: $itemError');
+                  debugPrint('오류 항목: $json');
+                  return null;
+                }
+              })
+              .where((arrival) => arrival != null) // null 항목 제거
+              .cast<BusArrival>() // 타입 캐스팅
+              .toList();
 
           debugPrint('정류장 도착 정보 조회 결과: ${arrivals.length}개');
           return arrivals;
         } catch (parseError) {
           debugPrint('JSON 파싱 실패: $parseError');
-          throw Exception('JSON 파싱 오류: $parseError');
+          // 파싱 오류 시 빈 리스트 반환
+          return [];
         }
-      } else {
-        debugPrint('응답이 문자열이 아닌 ${response.runtimeType} 형식입니다.');
-        final jsonList = _parseJsonResponse(response);
-        final arrivals = jsonList.map((json) {
-          if (json is Map && !json.containsKey('stationId')) {
-            json['stationId'] = finalStationId;
-          }
-          return BusArrival.fromJson(json as Map<String, dynamic>);
-        }).toList();
+      } else if (response is List) {
+        debugPrint('응답이 이미, 리스트 형식입니다. 항목 수: ${response.length}');
+
+        final arrivals = response
+            .map((item) {
+              if (item is Map && !item.containsKey('stationId')) {
+                item['stationId'] = finalStationId;
+              }
+
+              try {
+                return BusArrival.fromJson(item as Map<String, dynamic>);
+              } catch (itemError) {
+                debugPrint('항목 파싱 오류, 무시됨: $itemError');
+                return null;
+              }
+            })
+            .where((arrival) => arrival != null)
+            .cast<BusArrival>()
+            .toList();
 
         debugPrint('정류장 도착 정보 조회 결과: ${arrivals.length}개');
         return arrivals;
+      } else if (response == null) {
+        debugPrint('응답이 null입니다. 빈 목록 반환');
+        return [];
+      } else {
+        debugPrint('응답이 예상치 못한 형식입니다: ${response.runtimeType}');
+        return [];
       }
     } catch (e) {
       debugPrint('정류장 도착 정보 조회 오류: $e');
-      throw Exception('정류장 도착 정보 조회 중 오류 발생: $e');
+      // 오류 발생 시 조용히 빈 리스트 반환 (앱 크래시 방지)
+      return [];
     }
   }
 
