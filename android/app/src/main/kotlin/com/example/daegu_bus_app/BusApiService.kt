@@ -158,12 +158,20 @@ class BusApiService(private val context: Context) {
         try {
             val encodedText = URLEncoder.encode(searchText, "EUC-KR")
             val url = "$SEARCH_URL?act=findByBS2&bsNm=$encodedText"
+            Log.d(TAG, "정류장 검색 요청 URL: $url")
+            
             val response = busInfoApi.getStationSearchResult(url)
             val html = String(response.bytes(), Charset.forName("EUC-KR"))
+            Log.d(TAG, "정류장 검색 응답 (길이: ${html.length}): ${html.take(200)}...")
+            
             val document = Jsoup.parse(html)
+            val elements = document.select("#arrResultBsPanel td.body_col1")
+            Log.d(TAG, "파싱된 요소 수: ${elements.size}")
+            
             val results = mutableListOf<WebStationSearchResult>()
-            document.select("#arrResultBsPanel td.body_col1").forEach { element ->
+            elements.forEach { element ->
                 val onclick = element.attr("onclick") ?: ""
+                Log.v(TAG, "onclick 속성: $onclick")
                 val firstcom = onclick.indexOf("'")
                 val lastcom = onclick.indexOf("'", firstcom + 1)
                 if (firstcom >= 0 && lastcom > firstcom) {
@@ -173,8 +181,12 @@ class BusApiService(private val context: Context) {
                         bsNm = bsNm.substring(0, bsNm.length - 7).trim()
                     }
                     results.add(WebStationSearchResult(bsId = bsId, bsNm = bsNm))
+                    Log.d(TAG, "추가된 정류장: bsId=$bsId, bsNm=$bsNm")
+                } else {
+                    Log.w(TAG, "onclick 파싱 실패: $onclick")
                 }
             }
+            Log.d(TAG, "정류장 검색 결과: ${results.size}개")
             results
         } catch (e: Exception) {
             Log.e(TAG, "정류장 검색 오류: ${e.message}", e)
