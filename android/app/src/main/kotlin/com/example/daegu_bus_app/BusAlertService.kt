@@ -16,28 +16,17 @@ import android.graphics.Color
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import androidx.work.*
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.*
+import java.util.Timer
+import java.util.TimerTask
 
-/**
- * BusAlertService: Android 네이티브 알림 서비스
- * Flutter의 NotificationHelper를 대체하는 Kotlin 구현체
- */
 class BusAlertService : Service() {
     companion object {
         private const val TAG = "BusAlertService"
-        
-        // 알림 채널 ID
         private const val CHANNEL_BUS_ALERTS = "bus_alerts"
         private const val CHANNEL_BUS_ONGOING = "bus_ongoing"
-        
-        // 지속적인 알림을 위한 고정 ID
         const val ONGOING_NOTIFICATION_ID = 10000
         
-        // 싱글톤 인스턴스
         @Volatile
         private var instance: BusAlertService? = null
         
@@ -52,17 +41,22 @@ class BusAlertService : Service() {
     }
     
     private var _methodChannel: MethodChannel? = null
-    private val serviceScope = CoroutineScope(Dispatchers.Main)
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var context: Context
+    private lateinit var busApiService: BusApiService
+    private var monitoringJob: Job? = null
+    private val monitoredRoutes = mutableMapOf<String, Pair<String, String>>() // routeId -> (stationId, stationName)
+    private val timer = Timer()
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
+
+    override fun onCreate() {
+        super.onCreate()
+        busApiService = BusApiService(this)
+    }
     
-    /**
-    * 알림 서비스 초기화
-    * 알림 채널 생성 및 권한 체크
-    */
     fun initialize(context: Context? = null, flutterEngine: io.flutter.embedding.engine.FlutterEngine? = null) {
         try {
             val actualContext = context ?: this.context
@@ -70,13 +64,11 @@ class BusAlertService : Service() {
                 Log.e(TAG, "🔔 컨텍스트가 없어 알림 서비스를 초기화할 수 없습니다")
                 return
             }
-
             this.context = actualContext.applicationContext
             Log.d(TAG, "🔔 알림 서비스 초기화")
             createNotificationChannels()
             checkNotificationPermission()
             
-            // 메서드 채널 초기화 (네이티브 서비스와의 통신)
             if (flutterEngine != null) {
                 _methodChannel = MethodChannel(
                     flutterEngine.dartExecutor.binaryMessenger,
@@ -91,9 +83,6 @@ class BusAlertService : Service() {
         }
     }
         
-    /**
-     * 알림 채널 생성
-     */
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
@@ -135,18 +124,93 @@ class BusAlertService : Service() {
         }
     }
     
-    /**
-     * 알림 권한 체크
-     */
     private fun checkNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Log.d(TAG, "Android 13+ 알림 권한 확인 필요")
         }
     }
     
-    /**
-     * 즉시 알림 전송
-     */
+    fun registerBusArrivalReceiver() {
+        try {
+            Log.d(TAG, "🔔 버스 도착 이벤트 리시버 등록 시작")
+            monitoringJob?.cancel()
+            monitoringJob = serviceScope.launch {
+                timer.scheduleAtFixedRate(object : TimerTask() {
+                    override fun run() {
+                        serviceScope.launch {
+                            checkBusArrivals()
+                        }
+                    }
+                }, 0, 15000)
+            }
+            _methodChannel?.invokeMethod("onBusArrivalReceiverRegistered", null)
+            Log.d(TAG, "🔔 버스 도착 이벤트 리시버 등록 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "🔔 버스 도착 이벤트 리시버 등록 오류: ${e.message}", e)
+            throw e
+        }
+    }
+
+    private fun parseEstimatedTime(estimatedTime: String): Int {
+        return when {
+            estimatedTime == "-" || estimatedTime == "운행종료" -> -1
+            estimatedTime.contains("분") -> {
+                val minutesStr = estimatedTime.replace("[^0-9]".toRegex(), "")
+                minutesStr.toIntOrNull() ?: -1
+            }
+            else -> -1
+        }
+    }
+
+    private suspend fun checkBusArrivals() {
+        try {
+            if (monitoredRoutes.isEmpty()) {
+                Log.d(TAG, "🔔 모니터링할 노선이 없습니다")
+                return
+            }
+
+            for ((routeId, pair) in monitoredRoutes) {
+                val (stationId, stationName) = pair
+                Log.d(TAG, "🔔 버스 도착 정보 확인: routeId=$routeId, stationId=$stationId")
+
+                val arrivalInfo = busApiService.getBusArrivalInfoByRouteId(stationId, routeId)
+                if (arrivalInfo != null && arrivalInfo.bus.isNotEmpty()) {
+                    val busInfo = arrivalInfo.bus[0] // 첫 번째 버스 정보 사용
+                    val busNo = arrivalInfo.name
+                    val currentStation = busInfo.currentStation
+                    val remainingTime = parseEstimatedTime(busInfo.estimatedTime)
+
+                    Log.d(TAG, "🔔 도착 정보: $busNo, $stationName, 남은 시간: $remainingTime 분")
+                    if (remainingTime in 0..2) {
+                        withContext(Dispatchers.Main) {
+                            showBusArrivingSoon(busNo, stationName, currentStation)
+                            _methodChannel?.invokeMethod(
+                                "onBusArrival",
+                                mapOf(
+                                    "busNumber" to busNo,
+                                    "stationName" to stationName,
+                                    "currentStation" to currentStation,
+                                    "routeId" to routeId
+                                ).toString()
+                            )
+                        }
+                    } else if (remainingTime > 2) {
+                        withContext(Dispatchers.Main) {
+                            showOngoingBusTracking(busNo, stationName, remainingTime, currentStation)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "🔔 버스 도착 정보 확인 오류: ${e.message}", e)
+        }
+    }
+
+    fun addMonitoredRoute(routeId: String, stationId: String, stationName: String) {
+        monitoredRoutes[routeId] = Pair(stationId, stationName)
+        Log.d(TAG, "🔔 모니터링 노선 추가: routeId=$routeId, stationId=$stationId, stationName=$stationName")
+    }
+
     fun showNotification(
         id: Int,
         busNo: String,
@@ -214,9 +278,6 @@ class BusAlertService : Service() {
         }
     }
     
-    /**
-     * 지속적인 버스 위치 추적 알림 시작/업데이트
-     */
     fun showOngoingBusTracking(
         busNo: String,
         stationName: String,
@@ -287,9 +348,6 @@ class BusAlertService : Service() {
         }
     }
     
-    /**
-     * 버스 도착 임박 알림 (중요도 높음)
-     */
     fun showBusArrivingSoon(
         busNo: String,
         stationName: String,
@@ -342,9 +400,6 @@ class BusAlertService : Service() {
         }
     }
     
-    /**
-     * 알림 취소
-     */
     fun cancelNotification(id: Int) {
         try {
             NotificationManagerCompat.from(context).cancel(id)
@@ -354,31 +409,16 @@ class BusAlertService : Service() {
         }
     }
     
-    /**
-     * 지속적인 추적 알림 취소
-     */
     fun cancelOngoingTracking() {
         try {
-            // 지속적인 추적 알림 취소
             NotificationManagerCompat.from(context).cancel(ONGOING_NOTIFICATION_ID)
-            
-            // 관련된 버스 알림도 모두 취소 (선택적)
-            // 주의: 모든 알림을 취소하면 다른 앱의 알림에 영향을 줄 수 있으므로,
-            // 이 앱에서 생성한 알림만 취소하는 것이 바람직합니다.
-            // NotificationManagerCompat.from(context).cancelAll()
-            
-            // 메서드 채널을 통해 Flutter에 알림 취소를 알림
             _methodChannel?.invokeMethod("onTrackingCancelled", null)
-            
-            Log.d(TAG, "🚌 지속적인 추적 알림 및 관련 알림 취소 완료")
+            Log.d(TAG, "🚌 지속적인 추적 알림 취소 완료")
         } catch (e: Exception) {
             Log.e(TAG, "🚌 지속적인 추적 알림 취소 오류: ${e.message}", e)
         }
     }
     
-    /**
-     * 모든 알림 취소
-     */
     fun cancelAllNotifications() {
         try {
             NotificationManagerCompat.from(context).cancelAll()
@@ -388,9 +428,6 @@ class BusAlertService : Service() {
         }
     }
     
-    /**
-     * 테스트 알림 전송
-     */
     fun showTestNotification() {
         showNotification(
             id = 9999,
@@ -401,25 +438,28 @@ class BusAlertService : Service() {
         )
     }
     
-    /**
-     * 네이티브 서비스 중지 명령: 추적 중지 버튼 클릭 시 호출됩니다.
-     * 지속적인 추적 알림을 취소하고, 네이티브 BusAlertService를 중지합니다.
-     */
     fun stopTracking() {
         cancelOngoingTracking()
         try {
-            // 네이티브 BusAlertService 중지 명령 전달 (예: MethodChannel을 통한 호출)
             _methodChannel?.invokeMethod("stopBusMonitoringService", null)
+            monitoringJob?.cancel()
+            monitoredRoutes.clear()
+            timer.cancel()
+            Log.d(TAG, "stopTracking() 호출됨: 버스 추적 서비스 중지됨")
         } catch (e: Exception) {
             Log.e(TAG, "버스 모니터링 서비스 중지 오류: ${e.message}", e)
         }
-        Log.d(TAG, "stopTracking() 호출됨: 버스 추적 서비스 중지됨")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        monitoringJob?.cancel()
+        timer.cancel()
+        serviceScope.cancel()
+        Log.d(TAG, "🔔 BusAlertService 종료")
     }
 }
 
-/**
- * 알림 닫기 버튼에 대한 BroadcastReceiver
- */
 class NotificationDismissReceiver : android.content.BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val notificationId = intent.getIntExtra("NOTIFICATION_ID", -1)
@@ -428,19 +468,14 @@ class NotificationDismissReceiver : android.content.BroadcastReceiver() {
         if (notificationId != -1) {
             val busAlertService = BusAlertService.getInstance(context)
             busAlertService.cancelNotification(notificationId)
-            
             if (stopTracking) {
                 busAlertService.stopTracking()
             }
-            
             Log.d("NotificationDismiss", "알림 ID: $notificationId 해제됨")
         }
     }
 }
 
-/**
- * 알림 채널 목록 가져오기
- */
 fun getNotificationChannels(context: Context): List<NotificationChannel>? {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         val notificationManager = 
