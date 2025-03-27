@@ -2,113 +2,181 @@ package com.example.daegu_bus_app
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 
-class DatabaseHelper(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class DatabaseHelper private constructor(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
     companion object {
-        private const val DATABASE_NAME = "bus_stops.db"
-        private const val DATABASE_VERSION = 4
         private const val TAG = "DatabaseHelper"
+        private const val DATABASE_NAME = "bus_stops.db"
+        private const val DATABASE_VERSION = 4 // 현재 버전을 4로 설정 (기존 버전과 맞춤)
+
+        private var instance: DatabaseHelper? = null
+
+        @Synchronized
+        fun getInstance(context: Context): DatabaseHelper {
+            return instance ?: DatabaseHelper(context.applicationContext).also { instance = it }
+        }
     }
 
     init {
-        copyDatabaseIfNeeded()
+        initializeDatabase(context)
     }
 
-    // assets에 있는 pre-populated DB 파일을 기기의 DB 경로로 복사하는 메서드
-    private fun copyDatabaseIfNeeded() {
+    // 데이터베이스 초기화 및 무결성 확인
+    private fun initializeDatabase(context: Context) {
         val dbPath = context.getDatabasePath(DATABASE_NAME)
-        if (!dbPath.exists()) {
+        Log.d(TAG, "데이터베이스 경로: ${dbPath.absolutePath}")
+    
+        // 상위 디렉토리 생성 확인
+        if (!dbPath.parentFile?.exists()!!) {
             dbPath.parentFile?.mkdirs()
-            try {
-                context.assets.open(DATABASE_NAME).use { inputStream ->
-                    FileOutputStream(dbPath).use { outputStream ->
-                        val buffer = ByteArray(1024)
-                        var length: Int
-                        while (inputStream.read(buffer).also { length = it } > 0) {
-                            outputStream.write(buffer, 0, length)
-                        }
-                        outputStream.flush()
-                    }
-                }
-                Log.d(TAG, "DB 파일 복사 완료")
-            } catch (e: Exception) {
-                Log.e(TAG, "DB 파일 복사 오류: ${e.message}", e)
+        }
+    
+        if (!dbPath.exists()) {
+            copyDatabaseFromAssets(context, dbPath)
+        } else if (!isDatabaseValid(dbPath)) {
+            // 기존 DB가 유효하지 않은 경우, 삭제 후 재복사
+            Log.w(TAG, "기존 데이터베이스가 유효하지 않아 재생성합니다")
+            dbPath.delete()
+            copyDatabaseFromAssets(context, dbPath)
+        }
+    
+        // 데이터베이스 확인
+        try {
+            val db = SQLiteDatabase.openDatabase(dbPath.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+            val count = db.rawQuery("SELECT COUNT(*) FROM bus_stops", null).use { cursor ->
+                cursor.moveToFirst()
+                cursor.getInt(0)
             }
-        } else {
-            Log.d(TAG, "DB 파일이 이미 존재함")
+            Log.d(TAG, "데이터베이스 초기화 성공: ${count}개의 정류장 정보 확인")
+            db.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "데이터베이스 확인 실패: ${e.message}", e)
+            // 실패시 복구 시도
+            dbPath.delete()
+            copyDatabaseFromAssets(context, dbPath)
+        }
+    }
+
+    // assets에서 데이터베이스 파일 복사
+    private fun copyDatabaseFromAssets(context: Context, dbPath: File) {
+        Log.d(TAG, "데이터베이스 복사 시작")
+        dbPath.parentFile?.mkdirs()
+        try {
+            context.assets.open(DATABASE_NAME).use { inputStream ->
+                FileOutputStream(dbPath).use { outputStream ->
+                    val buffer = ByteArray(1024)
+                    var length: Int
+                    var totalBytes = 0
+                    while (inputStream.read(buffer).also { length = it } > 0) {
+                        outputStream.write(buffer, 0, length)
+                        totalBytes += length
+                    }
+                    outputStream.flush()
+                    Log.d(TAG, "데이터베이스 복사 완료. 크기: $totalBytes bytes")
+                }
+            }
+            if (!dbPath.exists() || dbPath.length() == 0L) {
+                Log.e(TAG, "데이터베이스 복사 실패: 파일이 생성되지 않음")
+                throw IOException("Failed to copy database from assets")
+            }
+        } catch (e: IOException) {
+            Log.e(TAG, "데이터베이스 복사 오류: ${e.message}", e)
+            throw RuntimeException("Failed to copy database: $DATABASE_NAME", e)
+        }
+    }
+
+    // 데이터베이스 무결성 확인
+    private fun isDatabaseValid(dbPath: File): Boolean {
+        return try {
+            SQLiteDatabase.openDatabase(dbPath.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                db.isOpen
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "데이터베이스 유효성 검사 실패: ${e.message}")
+            false
         }
     }
 
     override fun onCreate(db: SQLiteDatabase) {
-        // assets에서 복사한 DB 파일을 사용하는 경우 onCreate()에서 테이블 생성이나 초기 데이터 삽입이 필요 없습니다.
+        // pre-populated 데이터베이스를 사용하므로 테이블 생성 불필요
+        Log.d(TAG, "onCreate 호출됨 - pre-populated DB 사용")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // DB 버전 업그레이드 로직 구현
         Log.d(TAG, "데이터베이스 업그레이드: $oldVersion -> $newVersion")
-        
-        // 기존 DB 삭제 후 재복사
-        context.getDatabasePath(DATABASE_NAME).delete()
-        copyDatabaseIfNeeded()
+        val dbPath = context.getDatabasePath(DATABASE_NAME)
+        if (dbPath.exists()) {
+            dbPath.delete()
+            Log.d(TAG, "기존 데이터베이스 삭제됨")
+        }
+        copyDatabaseFromAssets(context, dbPath)
     }
 
-    // 데이터베이스 테이블 정보 확인 - 디버깅용
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        Log.w(TAG, "데이터베이스 다운그레이드 요청: $oldVersion -> $newVersion")
+        // 다운그레이드 대신 데이터베이스 재설치
+        val dbPath = context.getDatabasePath(DATABASE_NAME)
+        if (dbPath.exists()) {
+            dbPath.delete()
+            Log.d(TAG, "기존 데이터베이스 삭제됨 (다운그레이드 처리)")
+        }
+        copyDatabaseFromAssets(context, dbPath)
+    }
+
+    // 데이터베이스 정보 확인 (디버깅용)
     fun checkDatabaseInfo() {
         val db = readableDatabase
         try {
-            // 테이블 목록 확인
             val tablesCursor = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null)
             Log.d(TAG, "데이터베이스 내 테이블 목록:")
-            if (tablesCursor.moveToFirst()) {
-                do {
-                    val tableName = tablesCursor.getString(0)
-                    Log.d(TAG, "- $tableName")
-                    
-                    // bus_stops 테이블의 경우 구조 확인
-                    if (tableName == "bus_stops") {
-                        val structureCursor = db.rawQuery("PRAGMA table_info(bus_stops)", null)
-                        Log.d(TAG, "  bus_stops 테이블 구조:")
-                        if (structureCursor.moveToFirst()) {
-                            do {
-                                val columnName = structureCursor.getString(1)
-                                val columnType = structureCursor.getString(2)
-                                Log.d(TAG, "  - $columnName ($columnType)")
-                            } while (structureCursor.moveToNext())
-                        }
-                        structureCursor.close()
-                        
-                        // 행 수 확인
-                        val countCursor = db.rawQuery("SELECT COUNT(*) FROM bus_stops", null)
-                        if (countCursor.moveToFirst()) {
-                            Log.d(TAG, "  총 정류장 수: ${countCursor.getInt(0)}개")
-                        }
-                        countCursor.close()
-                        
-                        // 샘플 데이터 확인
-                        val sampleCursor = db.rawQuery("SELECT * FROM bus_stops LIMIT 3", null)
-                        if (sampleCursor.moveToFirst()) {
+            tablesCursor.use {
+                if (it.moveToFirst()) {
+                    do {
+                        val tableName = it.getString(0)
+                        Log.d(TAG, "- $tableName")
+                        if (tableName == "bus_stops") {
+                            val structureCursor = db.rawQuery("PRAGMA table_info(bus_stops)", null)
+                            Log.d(TAG, "  bus_stops 테이블 구조:")
+                            structureCursor.use { cursor ->
+                                if (cursor.moveToFirst()) {
+                                    do {
+                                        val columnName = cursor.getString(1)
+                                        val columnType = cursor.getString(2)
+                                        Log.d(TAG, "  - $columnName ($columnType)")
+                                    } while (cursor.moveToNext())
+                                }
+                            }
+                            val countCursor = db.rawQuery("SELECT COUNT(*) FROM bus_stops", null)
+                            countCursor.use { cursor ->
+                                if (cursor.moveToFirst()) {
+                                    Log.d(TAG, "  총 정류장 수: ${cursor.getInt(0)}개")
+                                }
+                            }
+                            val sampleCursor = db.rawQuery("SELECT * FROM bus_stops LIMIT 3", null)
                             Log.d(TAG, "  샘플 데이터:")
-                            val columnCount = sampleCursor.columnCount
-                            do {
-                                val bsId = sampleCursor.getString(sampleCursor.getColumnIndex("bsId"))
-                                val stopName = sampleCursor.getString(sampleCursor.getColumnIndex("stop_name"))
-                                val lat = if (sampleCursor.getColumnIndex("latitude") >= 0) 
-                                    sampleCursor.getDouble(sampleCursor.getColumnIndex("latitude")) else 0.0
-                                val lon = if (sampleCursor.getColumnIndex("longitude") >= 0) 
-                                    sampleCursor.getDouble(sampleCursor.getColumnIndex("longitude")) else 0.0
-                                Log.d(TAG, "  - $bsId: $stopName, 좌표: ($lon, $lat)")
-                            } while (sampleCursor.moveToNext())
+                            sampleCursor.use { cursor ->
+                                if (cursor.moveToFirst()) {
+                                    do {
+                                        val bsId = cursor.getString(cursor.getColumnIndexOrThrow("bsId"))
+                                        val stopName = cursor.getString(cursor.getColumnIndexOrThrow("stop_name"))
+                                        val lat = cursor.getDouble(cursor.getColumnIndexOrThrow("latitude"))
+                                        val lon = cursor.getDouble(cursor.getColumnIndexOrThrow("longitude"))
+                                        Log.d(TAG, "  - $bsId: $stopName, 좌표: ($lon, $lat)")
+                                    } while (cursor.moveToNext())
+                                }
+                            }
                         }
-                        sampleCursor.close()
-                    }
-                } while (tablesCursor.moveToNext())
+                    } while (it.moveToNext())
+                }
             }
-            tablesCursor.close()
         } catch (e: Exception) {
             Log.e(TAG, "데이터베이스 정보 확인 오류: ${e.message}", e)
         } finally {
@@ -116,162 +184,114 @@ class DatabaseHelper(private val context: Context) : SQLiteOpenHelper(context, D
         }
     }
 
-    // 정류장 검색 메서드: 검색어가 비어있거나 "*" 또는 "all"이면 전체 데이터를 반환
-    suspend fun searchStations(searchText: String, latitude: Double = 0.0, longitude: Double = 0.0, radiusInMeters: Double = 0.0): List<LocalStationSearchResult> {
-        // 디버깅을 위해 데이터베이스 정보 출력
+    // 정류장 검색 메서드
+    suspend fun searchStations(
+        searchText: String,
+        latitude: Double = 0.0,
+        longitude: Double = 0.0,
+        radiusInMeters: Double = 0.0
+    ): List<LocalStationSearchResult> = withContext(Dispatchers.IO) {
         if (latitude != 0.0 && longitude != 0.0 && radiusInMeters > 0) {
             Log.d(TAG, "데이터베이스 정보 확인 시작...")
             checkDatabaseInfo()
             Log.d(TAG, "데이터베이스 정보 확인 완료")
         }
-        
+
         val db = readableDatabase
         val stations = mutableListOf<LocalStationSearchResult>()
-        val query: String
-        val args: Array<String>?
-
         try {
-            // 좌표 및 반경이 제공된 경우 모든 정류장 가져와서 메모리에서 필터링
-            if (latitude != 0.0 && longitude != 0.0 && radiusInMeters > 0) {
-                // 간단한 쿼리로 먼저 정류장 데이터를 가져옴
+            val (query, args) = if (latitude != 0.0 && longitude != 0.0 && radiusInMeters > 0) {
                 if (searchText.isEmpty() || searchText == "*" || searchText.equals("all", ignoreCase = true)) {
-                    query = "SELECT bsId, stop_name, latitude, longitude FROM bus_stops"
-                    args = null
+                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops" to null
                 } else {
-                    query = "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE stop_name LIKE ? OR bsId LIKE ?"
-                    args = arrayOf("%$searchText%", "%$searchText%")
+                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE stop_name LIKE ? OR bsId LIKE ?" to
+                            arrayOf("%$searchText%", "%$searchText%")
                 }
-                
-                Log.d(TAG, "실행 쿼리: $query")
-                Log.d(TAG, "좌표 검색 파라미터: lat=$latitude, lon=$longitude, radius=$radiusInMeters")
-                
-                val cursor = db.rawQuery(query, args)
+            } else {
+                if (searchText.isEmpty() || searchText == "*" || searchText.equals("all", ignoreCase = true)) {
+                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops LIMIT 100" to null
+                } else {
+                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE stop_name LIKE ? OR bsId LIKE ?" to
+                            arrayOf("%$searchText%", "%$searchText%")
+                }
+            }
+
+            Log.d(TAG, "실행 쿼리: $query")
+            if (args != null) Log.d(TAG, "쿼리 인자: ${args.joinToString()}")
+
+            db.rawQuery(query, args).use { cursor ->
                 Log.d(TAG, "쿼리 결과 행 수: ${cursor.count}개")
-                
                 if (cursor.moveToFirst()) {
-                    // 결과 처리를 위한 컬럼 인덱스 확인
-                    val bsIdIndex = cursor.getColumnIndex("bsId")
-                    val stopNameIndex = cursor.getColumnIndex("stop_name")
-                    val latitudeIndex = cursor.getColumnIndex("latitude")
-                    val longitudeIndex = cursor.getColumnIndex("longitude")
-                    
-                    // 컬럼 인덱스 로깅
-                    Log.d(TAG, "컬럼 인덱스: bsId=${bsIdIndex}, stop_name=${stopNameIndex}, " +
-                                "latitude=${latitudeIndex}, longitude=${longitudeIndex}")
-                    
-                    if (bsIdIndex < 0 || stopNameIndex < 0 || latitudeIndex < 0 || longitudeIndex < 0) {
-                        Log.e(TAG, "필요한 컬럼이 데이터베이스에 없습니다.")
-                        // 컬럼 이름 확인하여 로깅
-                        for (i in 0 until cursor.columnCount) {
-                            Log.d(TAG, "컬럼 ${i}: ${cursor.getColumnName(i)}")
-                        }
-                    }
-                    
-                    // 데이터베이스에서 결과 처리
+                    val bsIdIndex = cursor.getColumnIndexOrThrow("bsId")
+                    val stopNameIndex = cursor.getColumnIndexOrThrow("stop_name")
+                    val latitudeIndex = cursor.getColumnIndexOrThrow("latitude")
+                    val longitudeIndex = cursor.getColumnIndexOrThrow("longitude")
+
                     do {
-                        try {
-                            val bsId = cursor.getString(bsIdIndex)
-                            val stopName = cursor.getString(stopNameIndex)
-                            val lat = cursor.getDouble(latitudeIndex)
-                            val lon = cursor.getDouble(longitudeIndex)
-                            
-                            // 좌표 로깅
-                            Log.d(TAG, "정류장: $stopName (${bsId}), 좌표: ($lon, $lat)")
-                            
-                            // 좌표가 0이 아닌 경우만 거리 계산
+                        val bsId = cursor.getString(bsIdIndex)
+                        val stopName = cursor.getString(stopNameIndex)
+                        val lat = cursor.getDouble(latitudeIndex)
+                        val lon = cursor.getDouble(longitudeIndex)
+
+                        if (latitude != 0.0 && longitude != 0.0 && radiusInMeters > 0) {
                             if (lat != 0.0 && lon != 0.0) {
-                                // 코드에서 직접 거리 계산
                                 val distance = calculateHaversineDistance(latitude, longitude, lat, lon)
-                                
-                                // 지정된 반경 내에 있는지 확인
                                 if (distance <= radiusInMeters) {
-                                    // 결과 객체 생성 및 리스트에 추가
-                                    val result = LocalStationSearchResult(
-                                        bsId = bsId,
-                                        bsNm = stopName,
-                                        latitude = lat,
-                                        longitude = lon,
-                                        stationId = bsId, // 임시로 bsId를 stationId로 사용
-                                        distance = distance
+                                    stations.add(
+                                        LocalStationSearchResult(
+                                            bsId = bsId,
+                                            bsNm = stopName,
+                                            latitude = lat,
+                                            longitude = lon,
+                                            stationId = bsId,
+                                            distance = distance
+                                        )
                                     )
-                                    stations.add(result)
-                                    
                                     Log.d(TAG, "정류장 추가: $stopName, bsId: $bsId, 거리: ${distance}m")
                                 }
-                            } else {
-                                Log.d(TAG, "정류장 좌표가 0입니다: $stopName (${bsId})")
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "행 처리 중 오류 발생: ${e.message}", e)
+                        } else {
+                            stations.add(
+                                LocalStationSearchResult(
+                                    bsId = bsId,
+                                    bsNm = stopName,
+                                    latitude = lat,
+                                    longitude = lon,
+                                    stationId = bsId
+                                )
+                            )
+                            Log.d(TAG, "정류장 추가: $stopName, bsId: $bsId")
                         }
                     } while (cursor.moveToNext())
-                } else {
-                    Log.d(TAG, "쿼리 결과가 없습니다: $query")
                 }
-                cursor.close()
-                
-                // 거리에 따라 정렬하고 상위 30개만 유지
-                val sortedStations = stations.sortedBy { it.distance }.take(30)
-                stations.clear()
-                stations.addAll(sortedStations)
-            } else {
-                // 기존 검색 로직 (좌표가 없는 경우)
-                if (searchText.isEmpty() || searchText == "*" || searchText.equals("all", ignoreCase = true)) {
-                    query = "SELECT bsId, stop_name, latitude, longitude FROM bus_stops LIMIT 100"
-                    args = null
-                } else {
-                    query = "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE stop_name LIKE ? OR bsId LIKE ?"
-                    args = arrayOf("%$searchText%", "%$searchText%")
-                }
-                
-                Log.d(TAG, "실행 쿼리: $query")
-                
-                val cursor = db.rawQuery(query, args)
-                if (cursor.moveToFirst()) {
-                    do {
-                        val bsId = cursor.getString(cursor.getColumnIndexOrThrow("bsId"))
-                        val stopName = cursor.getString(cursor.getColumnIndexOrThrow("stop_name"))
-                        val lat = cursor.getDouble(cursor.getColumnIndexOrThrow("latitude"))
-                        val lon = cursor.getDouble(cursor.getColumnIndexOrThrow("longitude"))
-                        
-                        // 결과 객체 생성 및 리스트에 추가
-                        val result = LocalStationSearchResult(
-                            bsId = bsId,
-                            bsNm = stopName,
-                            latitude = lat,
-                            longitude = lon,
-                            stationId = bsId // 임시로 bsId를 stationId로 사용
-                        )
-                        stations.add(result)
-                        
-                        Log.d(TAG, "정류장: $stopName, bsId: $bsId")
-                    } while (cursor.moveToNext())
-                }
-                cursor.close()
             }
-            
-            Log.d(TAG, "정류장 검색 결과: ${stations.size}개")
+
+            if (latitude != 0.0 && longitude != 0.0 && radiusInMeters > 0) {
+                stations.sortBy { it.distance }
+                return@withContext stations.take(30)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "정류장 검색 오류: ${e.message}", e)
+            throw e // 예외를 상위로 전달
         } finally {
             db.close()
         }
-        
-        return stations
+        Log.d(TAG, "정류장 검색 결과: ${stations.size}개")
+        return@withContext stations
     }
 
-    // DB 강제 재설치 메서드
+    // 데이터베이스 강제 재설치
     fun forceReinstallDatabase() {
         val dbPath = context.getDatabasePath(DATABASE_NAME)
         if (dbPath.exists()) {
             dbPath.delete()
-            Log.d(TAG, "기존 DB 파일 삭제됨")
+            Log.d(TAG, "기존 데이터베이스 삭제됨")
         }
-        copyDatabaseIfNeeded()
-        Log.d(TAG, "DB 파일 재설치 완료")
+        copyDatabaseFromAssets(context, dbPath)
+        Log.d(TAG, "데이터베이스 재설치 완료")
     }
 
-    // Haversine 공식을 사용한 두 지점 간의 거리 계산 (미터 단위)
+    // Haversine 공식으로 거리 계산 (미터 단위)
     private fun calculateHaversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val R = 6371000.0 // 지구 반지름(미터)
         val dLat = Math.toRadians(lat2 - lat1)
