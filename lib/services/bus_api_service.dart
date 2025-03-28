@@ -139,7 +139,7 @@ class BusApiService {
         isLowFloor: isLowFloor,
         currentStation: busInfo.currentStation,
         remainingStops: remainingStops.toString(),
-        arrivalTime: arrivalTime,
+        estimatedTime: arrivalTime,
         isOutOfService: isOutOfService,
       );
     }).toList();

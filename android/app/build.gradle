@@ -30,30 +30,31 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // multidex 활성화 (필요한 경우)
+        multiDexEnabled true
     }
 
     buildTypes {
         release {
             signingConfig signingConfigs.debug
-            minifyEnabled false  // 비활성화로 변경
-            shrinkResources false  // 비활성화로 변경
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             
-            // 이 라인은 릴리즈 빌드에 모순되므로 제거
-            // debuggable true  
+            // R8 동작 방식 완화 설정 추가
+            crunchPngs false // PNG 최적화 비활성화
             
+            // proguardOptions 블록 제거
+            // 대신 다음과 같이 설정
             ndk {
                 abiFilters 'armeabi-v7a', 'arm64-v8a'
             }
             
-            // 릴리즈 모드에서 로깅 활성화 (문제 해결 후 제거 가능)
             buildConfigField "boolean", "ENABLE_LOGGING", "true"
-            // 릴리즈 모드에서도 일부 로그 허용
             buildConfigField "boolean", "ENABLE_LOGS", "true"
         }
         
         debug {
-            // 디버그 모드 설정
             buildConfigField "boolean", "ENABLE_LOGGING", "true"
         }
     }
@@ -93,6 +94,9 @@ dependencies {
     // 추가된 종속성
     implementation 'androidx.window:window-java:1.0.0'
     implementation 'com.google.android.play:core:1.10.3'
+
+    // Multidex 지원 추가 (필요한 경우)
+    implementation 'androidx.multidex:multidex:2.0.1'
 }
 
 flutter {

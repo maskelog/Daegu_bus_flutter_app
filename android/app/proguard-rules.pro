@@ -1,160 +1,64 @@
-# ===== Flutter 관련 규칙 =====
+# Flutter 및 플러그인 관련 클래스 보존
 -keep class io.flutter.** { *; }
--keep class io.flutter.app.** { *; }
--keep class io.flutter.plugin.**  { *; }
--keep class io.flutter.util.**  { *; }
--keep class io.flutter.view.**  { *; }
--keep class io.flutter.plugins.**  { *; }
--keep class io.flutter.embedding.** { *; }
+-keep class io.flutter.plugins.** { *; }
+-keep class io.flutter.plugin.** { *; }
 
-# ===== 메서드 채널 및 앱 패키지 보존 =====
-# 앱 패키지 전체 보존
+# 메소드 채널 보존
+-keepclassmembers class * {
+    @io.flutter.plugin.common.MethodChannel.Method *;
+}
+
+# 앱 코드 보존
 -keep class com.example.daegu_bus_app.** { *; }
 
-# 특히 중요한 클래스들 명시적 보존
--keep class com.example.daegu_bus_app.MainActivity { *; }
--keep class com.example.daegu_bus_app.BusAlertService { *; }
--keep class com.example.daegu_bus_app.NotificationDismissReceiver { *; }
+# 모델 클래스 보존
+-keep class com.example.daegu_bus_app.models.** { *; }
 -keep class com.example.daegu_bus_app.BusApiService { *; }
+-keep class com.example.daegu_bus_app.BusAlertService { *; }
 -keep class com.example.daegu_bus_app.DatabaseHelper { *; }
 
-# 모델 클래스 보존 (이미 앱 패키지 전체 보존에 포함되지만 명시적으로 추가)
--keep class com.example.daegu_bus_app.models.** { *; }
+# JSON 및 파싱 관련 클래스
+-keep class org.json.** { *; }
+-keep class com.google.gson.** { *; }
+-keep class org.jsoup.** { *; }
 
-# MethodChannel 클래스 보존
--keep class io.flutter.plugin.common.MethodChannel { *; }
--keep class io.flutter.plugin.common.MethodChannel$* { *; }
--keep class io.flutter.plugin.common.MethodCall { *; }
--keep class io.flutter.plugin.common.MethodCodec { *; }
--keep class io.flutter.plugin.common.StandardMethodCodec { *; }
+# 네트워크 라이브러리
+-keep class okhttp3.** { *; }
+-keep class retrofit2.** { *; }
+-keep class okio.** { *; }
 
-# ===== 외부 라이브러리 보존 규칙 =====
-# androidx.window
--keep class androidx.window.** { *; }
--dontwarn androidx.window.**
+# 노티피케이션 관련 클래스
+-keep class androidx.core.app.** { *; }
 
-# Play Core
--keep class com.google.android.play.core.** { *; }
--dontwarn com.google.android.play.core.**
+# Kotlin 관련 규칙
+-keep class kotlin.** { *; }
+-keep class kotlinx.** { *; }
+-keepclassmembers class **$WhenMappings {
+    <fields>;
+}
+-keepclassmembers class kotlin.Metadata {
+    public <methods>;
+}
 
-# 보안 라이브러리
--keep class org.bouncycastle.** { *; }
--keep class org.conscrypt.** { *; }
--keep class org.openjsse.** { *; }
--dontwarn org.bouncycastle.jsse.**
+# Enums 클래스 보존
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# 안드로이드 컴포넌트
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
+
+# Window Extensions 관련 클래스 (오류 해결)
+-dontwarn androidx.window.extensions.**
+-dontwarn androidx.window.sidecar.**
+
+# SSL/TLS 관련 라이브러리
+-dontwarn org.bouncycastle.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
 
-# OkHttp 및 Retrofit
--keep class okhttp3.** { *; }
--keep class okio.** { *; }
--keep class retrofit2.** { *; }
--dontwarn okhttp3.**
--dontwarn okio.**
--dontwarn javax.annotation.**
--keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
-
-# OkHttp 관련 규칙
--keepattributes Signature
--keepattributes *Annotation*
--keep class okhttp3.** { *; }
--keep interface okhttp3.** { *; }
--dontwarn okhttp3.**
--dontwarn okio.**
-
-# Gson
--keep class com.google.gson.** { *; }
--keep class com.google.gson.reflect.TypeToken { *; }
-
-# Jsoup
--keep class org.jsoup.** { *; }
--keep class org.jsoup.parser.** { *; }
--keep class org.jsoup.nodes.** { *; }
--keep class org.jsoup.select.** { *; }
-
-# Jsoup 관련 규칙
--keep public class org.jsoup.** {
-    public *;
-}
-
-# JSON 파싱 관련 규칙
--keep class org.json.** { *; }
-
-# OkHttp/Retrofit 관련 규칙
--keepattributes Signature
--keepattributes *Annotation*
--keep class okhttp3.** { *; }
--keep interface okhttp3.** { *; }
--dontwarn okhttp3.**
--dontwarn okio.**
-
-# Gson 관련 규칙
--keep class com.google.gson.** { *; }
-
-# 앱 모델 클래스 보존
--keep class com.example.daegu_bus_app.** { *; }
-
-# JSON 파싱 관련 규칙
--keep class org.json.** { *; }
-
-# SQLite
--keep class android.database.sqlite.** { *; }
-
-# 코루틴
--keep class kotlinx.coroutines.** { *; }
--dontwarn kotlinx.coroutines.**
-
-# WorkManager
--keep class androidx.work.** { *; }
-
-# AlarmManager
--keep class dev.fluttercommunity.plus.androidalarmmanager.** { *; }
-
-# ===== 특수 규칙 =====
-# 네이티브 메서드 보존
--keepclasseswithmembernames class * {
-    native <methods>;
-}
-
-# JavaScript 인터페이스 보존
--keepclassmembers class * {
-    @android.webkit.JavascriptInterface <methods>;
-}
-
-# Serializable 클래스 보존
--keepclassmembers class * implements java.io.Serializable {
-    static final long serialVersionUID;
-    private static final java.io.ObjectStreamField[] serialPersistentFields;
-    !static !transient <fields>;
-    !private <fields>;
-    !private <methods>;
-    private void writeObject(java.io.ObjectOutputStream);
-    private void readObject(java.io.ObjectInputStream);
-    java.lang.Object writeReplace();
-    java.lang.Object readResolve();
-}
-
-# ===== 속성 및 최적화 설정 =====
-# 중요 속성 보존
--keepattributes Signature
--keepattributes *Annotation*
--keepattributes SourceFile,LineNumberTable
--keepattributes InnerClasses
--keepattributes Exceptions
-
-# 코드 최적화 설정
--optimizations !code/simplification/arithmetic,!code/simplification/cast,!field/*,!class/merging/*
--optimizationpasses 5
--allowaccessmodification
--renamesourcefileattribute SourceFile
-
-# 네트워크 관련 추가 보존 규칙
--keepclassmembers class com.example.daegu_bus_app.BusApiService {
-    public * searchStations(java.lang.String);
-    private * parseJsonBusRoutes(java.lang.String);
-    private * convertToBusArrival(*, *);
-}
-
-# EUC-KR 인코딩 관련 클래스 보존
--keep class java.nio.charset.** { *; }
--keep class sun.nio.cs.** { *; }
+# 속성 보존
+-keepattributes Exceptions,InnerClasses,Signature,Deprecated,SourceFile,LineNumberTable,*Annotation*,EnclosingMethod
