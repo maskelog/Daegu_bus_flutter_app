@@ -143,8 +143,11 @@ class BusApiService(private val context: Context) {
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .retryOnConnectionFailure(true)
         .build()
-
+        
     private val retrofit = Retrofit.Builder()
         .baseUrl(BASE_URL)
         .client(okHttpClient)
@@ -161,8 +164,18 @@ class BusApiService(private val context: Context) {
             Log.d(TAG, "정류장 검색 요청 URL: $url")
             
             val response = busInfoApi.getStationSearchResult(url)
-            val html = String(response.bytes(), Charset.forName("EUC-KR"))
+            // 명시적 Charset 객체 사용
+            val eucKrCharset = Charset.forName("EUC-KR") 
+            val responseBytes = response.bytes()
+            Log.d(TAG, "응답 바이트 길이: ${responseBytes.size}")
+            
+            val html = String(responseBytes, eucKrCharset)
             Log.d(TAG, "정류장 검색 응답 (길이: ${html.length}): ${html.take(200)}...")
+            
+            if (html.isEmpty() || !html.contains("arrResultBsPanel")) {
+                Log.w(TAG, "유효한 응답이 아닙니다. 직접 HTTP 요청을 시도합니다.")
+                return@withContext searchStationsFallback(searchText)
+            }
             
             val document = Jsoup.parse(html)
             val elements = document.select("#arrResultBsPanel td.body_col1")
@@ -190,7 +203,57 @@ class BusApiService(private val context: Context) {
             results
         } catch (e: Exception) {
             Log.e(TAG, "정류장 검색 오류: ${e.message}", e)
-            emptyList()
+            searchStationsFallback(searchText)
+        }
+    }
+
+    // 대체 검색 방법 구현
+    private suspend fun searchStationsFallback(searchText: String): List<WebStationSearchResult> = withContext(Dispatchers.IO) {
+        try {
+            Log.i(TAG, "대체 정류장 검색 시작: $searchText")
+            val encodedText = URLEncoder.encode(searchText, "EUC-KR")
+            val url = "$SEARCH_URL?act=findByBS2&bsNm=$encodedText"
+            
+            val request = Request.Builder().url(url).build()
+            val response = okHttpClient.newCall(request).execute()
+            
+            if (!response.isSuccessful) {
+                Log.e(TAG, "대체 검색 실패: ${response.code}")
+                return@withContext emptyList()
+            }
+            
+            val responseBytes = response.body?.bytes() ?: return@withContext emptyList()
+            Log.i(TAG, "대체 검색 응답 바이트 길이: ${responseBytes.size}")
+            
+            val eucKrCharset = Charset.forName("EUC-KR")
+            val html = String(responseBytes, eucKrCharset)
+            
+            if (html.isEmpty()) {
+                Log.e(TAG, "대체 검색 응답이 비어있습니다")
+                return@withContext emptyList()
+            }
+            
+            // 정규식으로 파싱 (HTML 파싱 라이브러리가 난독화로 인해 문제가 있을 경우)
+            val results = mutableListOf<WebStationSearchResult>()
+            
+            val regex = "onclick=\"showStationInfo\\('([^']+)'\\)\"[^>]*>([^<]+)".toRegex()
+            val matches = regex.findAll(html)
+            
+            matches.forEach { match ->
+                val bsId = match.groupValues[1]
+                var bsNm = match.groupValues[2].trim()
+                if (bsNm.length > 7) {
+                    bsNm = bsNm.substring(0, bsNm.length - 7).trim()
+                }
+                results.add(WebStationSearchResult(bsId = bsId, bsNm = bsNm))
+                Log.i(TAG, "대체 검색으로 추가된 정류장: $bsId, $bsNm")
+            }
+            
+            Log.i(TAG, "대체 검색 결과: ${results.size}개")
+            return@withContext results
+        } catch (e: Exception) {
+            Log.e(TAG, "대체 정류장 검색 오류: ${e.message}", e)
+            return@withContext emptyList()
         }
     }
 
