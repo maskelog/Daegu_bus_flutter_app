@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
@@ -15,6 +16,12 @@ class TTSHelper {
       await _flutterTts.setVolume(1.0); // 볼륨 (0.0~1.0)
       await _flutterTts.setPitch(1.0); // 피치 (0.5~2.0)
 
+      // 백그라운드에서 작동하도록 설정 (안드로이드 전용)
+      if (Platform.isAndroid) {
+        await _flutterTts.setQueueMode(1); // 큐 모드 설정 (이전 음성 완료 후 실행)
+        await _flutterTts.setSharedInstance(true); // 공유 인스턴스 사용 (iOS)
+      }
+
       // 완료 콜백 설정
       _flutterTts.setCompletionHandler(() {
         _isSpeaking = false;
@@ -29,6 +36,23 @@ class TTSHelper {
         _isPrioritySpeaking = false;
       });
 
+      // 현재 엔진 상태 출력
+      final engines = await _flutterTts.getEngines;
+      debugPrint('사용 가능한 TTS 엔진: $engines');
+
+      // 언어 설정 확인 대신 사용 가능한 언어 목록 확인
+      try {
+        final languages = await _flutterTts.getLanguages;
+        debugPrint('사용 가능한 TTS 언어: $languages');
+
+        // 한국어 지원 확인
+        final koSupported = languages.toString().contains('ko') ||
+            languages.toString().contains('ko-KR');
+        debugPrint('한국어 TTS 지원 여부: $koSupported');
+      } catch (e) {
+        debugPrint('TTS 언어 목록 확인 오류: $e');
+      }
+
       _isInitialized = true;
       debugPrint('TTS 초기화 완료');
     } catch (e) {
@@ -39,9 +63,12 @@ class TTSHelper {
 
   /// TTS 엔진이 초기화되었는지 확인하고, 필요시 재초기화합니다.
   static Future<bool> ensureInitialized() async {
+    debugPrint('TTS 초기화 상태 확인: $_isInitialized');
+
     if (!_isInitialized) {
       try {
         await initialize();
+        debugPrint('TTS 초기화 완료: $_isInitialized');
         return _isInitialized;
       } catch (e) {
         debugPrint('TTS 재초기화 실패: $e');
@@ -49,18 +76,19 @@ class TTSHelper {
       }
     }
 
-    // 이미 초기화되었지만 연결 상태 확인
+    // 추가 검증
     try {
-      final voices = await _flutterTts.getVoices;
-      if (voices == null) {
-        // 엔진에 연결되지 않은 상태
-        debugPrint('TTS 엔진 재연결 시도');
+      final available = await _flutterTts.isLanguageAvailable("ko-KR");
+      debugPrint('한국어 TTS 가용성: $available');
+
+      if (available != 1) {
+        debugPrint('한국어 TTS 불가능, 재초기화 시도');
         await initialize();
       }
+
       return _isInitialized;
     } catch (e) {
-      debugPrint('TTS 엔진 상태 확인 실패: $e');
-      await initialize();
+      debugPrint('TTS 언어 확인 오류: $e');
       return _isInitialized;
     }
   }
@@ -108,8 +136,11 @@ class TTSHelper {
     String? currentStation,
     bool priority = false,
   }) async {
-    String message;
     try {
+      // 오디오 볼륨 최대화 재확인
+      await _flutterTts.setVolume(1.0);
+
+      String message;
       if (remainingMinutes <= 0) {
         // 곧 도착 시 특별한 메시지로 처리
         message = '$busNo번 버스가 $stationName에 곧 도착합니다! 탑승 준비하세요.';
@@ -133,6 +164,18 @@ class TTSHelper {
       }
 
       debugPrint('버스 알림 TTS 메시지: $message');
+
+      // 우선순위 설정
+      if (remainingMinutes <= 1) {
+        priority = true;
+      }
+
+      // 중요 알림인 경우 주의 환기용 사운드 먼저 재생
+      if (priority) {
+        await _flutterTts.speak("알림. 알림.");
+        await Future.delayed(const Duration(milliseconds: 1000));
+      }
+
       await speak(message, priority: priority);
     } catch (e) {
       debugPrint('버스 알림 TTS 오류: $e');
@@ -145,9 +188,11 @@ class TTSHelper {
     required String stationName,
     String? currentStation,
   }) async {
-    String message;
     try {
-      message = '$busNo번 버스가 곧 $stationName에 도착합니다! ';
+      // 오디오 볼륨 최대화
+      await _flutterTts.setVolume(1.0);
+
+      String message = '$busNo번 버스가 곧 $stationName에 도착합니다! ';
       if (currentStation != null && currentStation.isNotEmpty) {
         message += '현재 $currentStation에 있습니다.';
       } else {
@@ -155,6 +200,11 @@ class TTSHelper {
       }
 
       debugPrint('버스 도착 강제 TTS 메시지: $message');
+
+      // 주의 환기용 사운드 먼저 재생
+      await _flutterTts.speak("중요 알림. 중요 알림.");
+      await Future.delayed(const Duration(milliseconds: 1000));
+
       // 우선순위 true로 발화
       await speak(message, priority: true);
     } catch (e) {
