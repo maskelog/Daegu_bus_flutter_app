@@ -109,6 +109,50 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "updateBusTrackingNotification" -> {
+                    val busNo = call.argument<String>("busNo") ?: ""
+                    val stationName = call.argument<String>("stationName") ?: ""
+                    val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                    val currentStation = call.argument<String>("currentStation") ?: ""
+                    
+                    try {
+                        Log.d(TAG, "Flutter에서 버스 추적 알림 업데이트 요청: $busNo, 남은 시간: $remainingMinutes 분")
+                        busAlertService?.showOngoingBusTracking(
+                            busNo = busNo,
+                            stationName = stationName,
+                            remainingMinutes = remainingMinutes,
+                            currentStation = currentStation,
+                            isUpdate = true
+                        )
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "버스 추적 알림 업데이트 오류: ${e.message}", e)
+                        result.error("NOTIFICATION_ERROR", "버스 추적 알림 업데이트 중 오류 발생: ${e.message}", null)
+                    }
+                }
+                // ✅ 실시간 추적 등록 메서드
+                "registerBusArrivalReceiver" -> {
+                    try {
+                        busAlertService?.registerBusArrivalReceiver()
+                        result.success("등록 완료")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "BusArrivalReceiver 등록 오류: ${e.message}", e)
+                        result.error("REGISTER_ERROR", "버스 도착 리시버 등록 실패: ${e.message}", null)
+                    }
+                }
+
+                "startBusMonitoring" -> {
+                    val routeId = call.argument<String>("routeId")
+                    val stationId = call.argument<String>("stationId")
+                    val stationName = call.argument<String>("stationName")
+                    try {
+                        busAlertService?.addMonitoredRoute(routeId!!, stationId!!, stationName!!)
+                        result.success("추적 시작됨")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "버스 추적 시작 오류: ${e.message}", e)
+                        result.error("MONITOR_ERROR", "버스 추적 실패: ${e.message}", null)
+                    }
+                }
                 "findNearbyStations" -> {
                     val latitude = call.argument<Double>("latitude") ?: 0.0
                     val longitude = call.argument<Double>("longitude") ?: 0.0
