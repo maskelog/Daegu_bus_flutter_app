@@ -51,13 +51,18 @@ class NotificationService {
         'isAutoAlarm': true, // 자동 알람 식별자
       });
 
-      // TTS를 통한 음성 안내 (선택적)
-      await TTSHelper.speakAlarmSet(busNo);
+      // 알림 표시 후 실시간 추적 시작
+      await showOngoingBusTracking(
+        busNo: busNo,
+        stationName: stationName,
+        remainingMinutes: remainingMinutes,
+        currentStation: '자동 알람 작동 중',
+      );
 
       debugPrint('🔔 자동 알람 알림 표시 완료: $id');
       return result;
-    } on PlatformException catch (e) {
-      debugPrint('🔔 자동 알람 알림 표시 오류: ${e.message}');
+    } catch (e) {
+      debugPrint('🔔 자동 알람 알림 표시 오류: ${e.toString()}');
       return false;
     }
   }
