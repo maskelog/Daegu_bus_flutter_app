@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:daegu_bus_app/models/bus_route.dart';
 import 'package:daegu_bus_app/models/route_station.dart';
 import 'package:daegu_bus_app/models/bus_stop.dart';
@@ -310,7 +311,6 @@ class ApiService {
   }
 
 // 정류장 도착 정보 조회
-// 정류장 도착 정보 조회
   static Future<List<BusArrival>> getStationInfo(String stationId) async {
     if (stationId.isEmpty) {
       debugPrint('정류장 ID가 비어 있습니다.');
@@ -490,5 +490,62 @@ class ApiService {
       debugPrint('노선별 도착 정보 조회 오류: $e');
       return null;
     }
+  }
+
+  // 버스 실시간 정보 가져오기
+  Future<Map<String, dynamic>> fetchRealtimeBusInfo(
+      String routeId, String stationId) async {
+    try {
+      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
+
+      // 실시간 버스 도착 정보 요청
+      final arrivalInfoJson =
+          await platform.invokeMethod('getBusArrivalByRouteId', {
+        'stationId': stationId,
+        'routeId': routeId,
+      });
+
+      debugPrint(
+          '실시간 버스 도착 정보 수신: ${arrivalInfoJson.substring(0, min(100, arrivalInfoJson.length as int))}...');
+
+      final arrivalInfo = json.decode(arrivalInfoJson);
+      int remainingMinutes = 0;
+      String currentStation = "";
+
+      if (arrivalInfo != null &&
+          arrivalInfo['bus'] != null &&
+          arrivalInfo['bus'].isNotEmpty) {
+        final busInfo = arrivalInfo['bus'][0];
+        remainingMinutes = _parseRemainingTime(busInfo['estimatedTime']);
+        currentStation = busInfo['currentStation'] ?? "";
+
+        debugPrint('실시간 정보: 남은 시간: $remainingMinutes분, 현재 위치: $currentStation');
+
+        return {
+          'remainingMinutes': remainingMinutes,
+          'currentStation': currentStation,
+          'success': true
+        };
+      }
+
+      return {'success': false};
+    } catch (e) {
+      debugPrint('실시간 버스 정보 가져오기 오류: $e');
+      return {'success': false};
+    }
+  }
+
+  // 도착 시간 문자열을 분 단위로 변환
+  int _parseRemainingTime(String timeStr) {
+    if (timeStr.isEmpty) return 0;
+    if (timeStr == "전") return 1;
+    if (timeStr.contains("분")) {
+      final regex = RegExp(r'(\d+)');
+      final match = regex.firstMatch(timeStr);
+      if (match != null) {
+        return int.parse(match.group(1)!);
+      }
+    }
+    return 0;
   }
 }
