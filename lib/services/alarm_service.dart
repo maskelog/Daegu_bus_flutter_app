@@ -84,12 +84,41 @@ class AlarmData {
   }
 }
 
+// 캐시된 버스 정보 클래스
+class CachedBusInfo {
+  final String busNo;
+  final String routeId;
+  int remainingMinutes;
+  String currentStation;
+  DateTime lastUpdated;
+
+  CachedBusInfo({
+    required this.busNo,
+    required this.routeId,
+    required this.remainingMinutes,
+    required this.currentStation,
+    required this.lastUpdated,
+  });
+
+  int getRemainingMinutes() {
+    // 마지막 업데이트로부터 경과 시간 계산
+    final elapsedMinutes = DateTime.now().difference(lastUpdated).inMinutes;
+
+    // 현재 예상 남은 시간 = 마지막으로 알려진 남은 시간 - 경과 시간
+    final currentEstimate = remainingMinutes - elapsedMinutes;
+
+    // 음수가 되지 않도록 함
+    return currentEstimate > 0 ? currentEstimate : 0;
+  }
+}
+
 class AlarmService extends ChangeNotifier {
   List<AlarmData> _activeAlarms = [];
   Timer? _refreshTimer;
   final List<AlarmData> _alarmCache = [];
   bool _initialized = false;
-  final Map<String, BusInfo> _busInfoCache = {};
+  // BusInfo 객체 대신 CachedBusInfo 객체 사용
+  final Map<String, CachedBusInfo> _cachedBusInfo = {};
   MethodChannel? _methodChannel;
 
   static final AlarmService _instance = AlarmService._internal();
@@ -119,42 +148,80 @@ class AlarmService extends ChangeNotifier {
   void _setupMethodChannel() {
     _methodChannel = const MethodChannel('com.example.daegu_bus_app/bus_api');
     _methodChannel?.setMethodCallHandler((call) async {
-      if (call.method == 'onBusArrival') {
-        try {
-          final Map<String, dynamic> data =
-              jsonDecode(call.arguments as String);
-          final busNumber = data['busNumber'] as String;
-          final stationName = data['stationName'] as String;
-          final currentStation = data['currentStation'] as String;
-          final routeId = data['routeId'] as String? ?? '';
+      switch (call.method) {
+        case 'onBusArrival':
+          try {
+            final Map<String, dynamic> data =
+                jsonDecode(call.arguments as String);
+            final busNumber = data['busNumber'] as String;
+            final stationName = data['stationName'] as String;
+            final currentStation = data['currentStation'] as String;
+            final routeId = data['routeId'] as String? ?? '';
 
-          debugPrint('버스 도착 이벤트 수신: $busNumber, $stationName, $currentStation');
+            debugPrint(
+                '버스 도착 이벤트 수신: $busNumber, $stationName, $currentStation');
 
-          final notificationKey = '${busNumber}_${stationName}_$routeId';
-          if (_isNotificationProcessed(busNumber, stationName, routeId)) {
-            debugPrint('이미 처리된 알림입니다: $notificationKey');
+            final notificationKey = '${busNumber}_${stationName}_$routeId';
+            if (_isNotificationProcessed(busNumber, stationName, routeId)) {
+              debugPrint('이미 처리된 알림입니다: $notificationKey');
+              return true;
+            }
+
+            await NotificationService().showBusArrivingSoon(
+              busNo: busNumber,
+              stationName: stationName,
+              currentStation: currentStation,
+            );
+            await TTSHelper.speakBusAlert(
+              busNo: busNumber,
+              stationName: stationName,
+              remainingMinutes: 0,
+              currentStation: currentStation,
+              priority: true,
+            );
+            _markNotificationAsProcessed(busNumber, stationName, routeId);
             return true;
+          } catch (e) {
+            debugPrint('버스 도착 이벤트 처리 오류: $e');
+            return false;
           }
 
-          await NotificationService().showBusArrivingSoon(
-            busNo: busNumber,
-            stationName: stationName,
-            currentStation: currentStation,
-          );
-          await TTSHelper.speakBusAlert(
-            busNo: busNumber,
-            stationName: stationName,
-            remainingMinutes: 0,
-            currentStation: currentStation,
-            priority: true,
-          );
-          _markNotificationAsProcessed(busNumber, stationName, routeId);
+        case 'onBusLocationUpdate':
+          try {
+            final Map<String, dynamic> data =
+                jsonDecode(call.arguments as String);
+            final String busNumber = data['busNumber'] ?? '';
+            final String currentStation = data['currentStation'] ?? '';
+            final int remainingMinutes = data['remainingMinutes'] ?? 0;
+            final String routeId = data['routeId'] ?? '';
+
+            debugPrint(
+                '버스 위치 업데이트: $busNumber, 남은 시간: $remainingMinutes분, 현재 위치: $currentStation');
+
+            // 캐시 업데이트
+            _updateBusLocationCache(
+                busNumber, routeId, remainingMinutes, currentStation);
+
+            // UI 갱신 알림
+            notifyListeners();
+            return true;
+          } catch (e) {
+            debugPrint('버스 위치 업데이트 처리 오류: $e');
+            return false;
+          }
+
+        case 'onTrackingCancelled':
+          _isInTrackingMode = false;
+          _processedNotifications.clear();
+          notifyListeners();
           return true;
-        } catch (e) {
-          debugPrint('버스 도착 이벤트 처리 오류: $e');
-          return false;
-        }
+
+        case 'stopBusMonitoringService':
+          _isInTrackingMode = false;
+          notifyListeners();
+          return true;
       }
+
       return null;
     });
   }
@@ -245,21 +312,38 @@ class AlarmService extends ChangeNotifier {
 
   List<AlarmData> get activeAlarms => _activeAlarms;
 
-  BusInfo? getCachedBusInfo(String busNo, String routeId) {
+  // BusInfo 클래스가 아닌 CachedBusInfo를 반환하도록 수정
+  CachedBusInfo? getCachedBusInfo(String busNo, String routeId) {
     final key = "${busNo}_$routeId";
-    return _busInfoCache[key];
+    return _cachedBusInfo[key];
   }
 
+  // BusArrival.dart의 BusInfo 객체를 사용하는 메서드
   void updateBusInfoCache(
       String busNo, String routeId, BusInfo busInfo, int remainingTime) {
     final key = "${busNo}_$routeId";
-    BusInfo? existingInfo = _busInfoCache[key];
-    bool shouldUpdate = existingInfo == null ||
-        existingInfo.getRemainingMinutes() != remainingTime ||
-        existingInfo.currentStation != busInfo.currentStation;
+
+    // CachedBusInfo로 변환하여 저장
+    CachedBusInfo cachedInfo = CachedBusInfo(
+      busNo: busNo,
+      routeId: routeId,
+      remainingMinutes: remainingTime,
+      currentStation: busInfo.currentStation,
+      lastUpdated: DateTime.now(),
+    );
+
+    bool shouldUpdate = true;
+    CachedBusInfo? existingInfo = _cachedBusInfo[key];
+
+    if (existingInfo != null) {
+      shouldUpdate = existingInfo.getRemainingMinutes() != remainingTime ||
+          existingInfo.currentStation != busInfo.currentStation;
+    }
+
     if (shouldUpdate) {
-      _busInfoCache[key] = busInfo;
+      _cachedBusInfo[key] = cachedInfo;
       bool alarmUpdated = false;
+
       for (var alarm in _activeAlarms) {
         if ("${alarm.busNo}_${alarm.routeId}" == key) {
           alarm.updateRemainingMinutes(remainingTime);
@@ -268,10 +352,104 @@ class AlarmService extends ChangeNotifier {
           alarmUpdated = true;
         }
       }
+
       if (alarmUpdated) {
         debugPrint('BusInfo Cache 업데이트: $busNo, 남은 시간: $remainingTime분');
+        // 알림도 업데이트
+        _updateTrackingNotification(busNo, routeId);
         notifyListeners();
       }
+    }
+  }
+
+  // 버스 위치 정보 캐시 업데이트 헬퍼 메서드
+  void _updateBusLocationCache(String busNo, String routeId,
+      int remainingMinutes, String currentStation) {
+    // 캐시 키 생성
+    final cacheKey = "${busNo}_$routeId";
+
+    // 기존 캐시 정보 확인
+    final existingBusInfo = _cachedBusInfo[cacheKey];
+
+    // 캐시 업데이트
+    if (existingBusInfo != null) {
+      // 기존 정보 업데이트
+      existingBusInfo.remainingMinutes = remainingMinutes;
+      existingBusInfo.currentStation = currentStation;
+      existingBusInfo.lastUpdated = DateTime.now();
+      _cachedBusInfo[cacheKey] = existingBusInfo;
+
+      debugPrint(
+          '버스 위치 캐시 업데이트: $busNo, 남은 시간: $remainingMinutes분, 위치: $currentStation');
+    } else {
+      // 새 정보 생성 및 저장
+      final cachedInfo = CachedBusInfo(
+        busNo: busNo,
+        routeId: routeId,
+        remainingMinutes: remainingMinutes,
+        currentStation: currentStation,
+        lastUpdated: DateTime.now(),
+      );
+      _cachedBusInfo[cacheKey] = cachedInfo;
+
+      debugPrint(
+          '버스 위치 캐시 생성: $busNo, 남은 시간: $remainingMinutes분, 위치: $currentStation');
+    }
+
+    // 관련 알람의 남은 시간 업데이트
+    for (var alarm in _activeAlarms) {
+      if (alarm.busNo == busNo && alarm.routeId == routeId) {
+        alarm.updateRemainingMinutes(remainingMinutes);
+        alarm.updateTargetArrivalTime(
+            DateTime.now().add(Duration(minutes: remainingMinutes)));
+        debugPrint('알람 정보 업데이트: ${alarm.busNo}, 남은 시간: $remainingMinutes분');
+      }
+    }
+
+    // 알림도 업데이트
+    _updateTrackingNotification(busNo, routeId);
+  }
+
+  // 추적 알림 업데이트 요청
+  Future<void> _updateTrackingNotification(String busNo, String routeId) async {
+    try {
+      final cacheKey = "${busNo}_$routeId";
+      final cachedInfo = _cachedBusInfo[cacheKey];
+      if (cachedInfo == null) {
+        debugPrint('캐시된 버스 정보 없음: $cacheKey');
+        return;
+      }
+
+      // 관련 알람 찾기
+      AlarmData? relatedAlarm;
+      for (var alarm in _activeAlarms) {
+        if (alarm.busNo == busNo && alarm.routeId == routeId) {
+          relatedAlarm = alarm;
+          break;
+        }
+      }
+
+      if (relatedAlarm != null) {
+        debugPrint(
+            '버스 추적 알림 업데이트 호출: $busNo, 남은 시간: ${cachedInfo.remainingMinutes}분, 위치: ${cachedInfo.currentStation}');
+
+        try {
+          // 이제 bus_api 채널에 메서드가 있음
+          await _methodChannel?.invokeMethod('updateBusTrackingNotification', {
+            'busNo': busNo,
+            'stationName': relatedAlarm.stationName,
+            'remainingMinutes': cachedInfo.remainingMinutes,
+            'currentStation': cachedInfo.currentStation,
+          });
+          debugPrint('버스 추적 알림 업데이트 성공: $busNo');
+        } catch (e) {
+          debugPrint('버스 추적 알림 업데이트 오류: $e');
+        }
+      } else {
+        debugPrint('관련 알람을 찾을 수 없음: $busNo, $routeId');
+      }
+    } catch (e) {
+      debugPrint('버스 추적 알림 업데이트 요청 오류: $e');
     }
   }
 
@@ -368,9 +546,18 @@ class AlarmService extends ChangeNotifier {
         targetArrivalTime: alarmTime,
         currentStation: currentStation,
       );
+
       if (busInfo != null) {
-        _busInfoCache["${busNo}_$routeId"] = busInfo;
+        // BusInfo를 CachedBusInfo로 변환하여 저장
+        _cachedBusInfo["${busNo}_$routeId"] = CachedBusInfo(
+          busNo: busNo,
+          routeId: routeId,
+          remainingMinutes: busInfo.getRemainingMinutes(),
+          currentStation: busInfo.currentStation,
+          lastUpdated: DateTime.now(),
+        );
       }
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('alarm_$id', jsonEncode(alarmData.toJson()));
       if (notificationTime.isBefore(DateTime.now()) && !skipNotification) {
@@ -552,7 +739,7 @@ class AlarmService extends ChangeNotifier {
         alarm.routeId == routeId);
 
     final key = "${busNo}_$routeId";
-    _busInfoCache.remove(key);
+    _cachedBusInfo.remove(key);
 
     notifyListeners();
   }
@@ -613,9 +800,6 @@ class AlarmService extends ChangeNotifier {
       // 공휴일 정보 가져오기
       final holidays = await _fetchHolidays(now.year, now.month);
 
-      // 이미 설정된 자동 알람 취소 (진행 중인 알람은 취소하지 않음)
-      // 새로운 알람 설정만 처리하고, ActiveAlarmPanel에는 표시하지 않음
-
       for (var alarm in autoAlarms) {
         if (!alarm.isActive) continue;
 
@@ -651,33 +835,49 @@ class AlarmService extends ChangeNotifier {
           scheduledTime = scheduledTime.add(const Duration(days: 1));
         }
 
-        // 자동 알람 ID에 특별한 접두사 사용 - 일반 도착 알람과 구분
+        // 자동 알람 ID에 특별한 접두사 사용
         final autoAlarmId = "auto_$alarmId";
 
-        // 자동 알람용 WorkManager 등록
-        // 일반 도착 알람과 다른 태스크 이름 사용
-        final uniqueTaskName = 'autoAlarm_$alarmId';
-        final initialDelay = scheduledTime
-            .subtract(Duration(minutes: alarm.beforeMinutes))
-            .difference(now);
+        // 알림 시간 계산 (지정된 시간 - 미리 알림 시간)
+        final notificationTime =
+            scheduledTime.subtract(Duration(minutes: alarm.beforeMinutes));
+        final initialDelay = notificationTime.difference(now);
 
-        // 자동 알람용 메타데이터
+        // 자동 알람용 WorkManager 태스크 등록
         final inputData = {
           'alarmId': alarmId,
           'busNo': alarm.routeNo,
           'stationName': alarm.stationName,
           'remainingMinutes': alarm.beforeMinutes,
           'routeId': alarm.routeId,
-          'isAutoAlarm': true, // 자동 알람 식별자 추가
+          'isAutoAlarm': true,
+          'showNotification': true, // 명시적으로 알림 표시 활성화
+          'startTracking': true, // 실시간 추적 시작 플래그 추가
+          'stationId': alarm.stationId, // 정류장 ID 추가
+          'shouldFetchRealtime': true, // 실시간 데이터 가져오기 플래그
+          'useTTS': true, // TTS 사용 플래그
+          'notificationTime':
+              notificationTime.millisecondsSinceEpoch, // 알림 시간 저장
         };
 
+        // 실시간 버스 도착 모니터링을 위한 사전 등록
+        try {
+          await _methodChannel?.invokeMethod('registerBusArrivalReceiver', {
+            'stationId': alarm.stationId,
+            'stationName': alarm.stationName,
+            'routeId': alarm.routeId,
+          });
+        } catch (e) {
+          debugPrint('버스 도착 이벤트 리시버 등록 오류: $e');
+        }
+
         await Workmanager().registerOneOffTask(
-          uniqueTaskName,
-          'autoAlarmTask', // 별도의 태스크 이름 사용
+          'autoAlarm_$alarmId',
+          'autoAlarmTask',
           initialDelay: initialDelay,
           inputData: inputData,
           constraints: Constraints(
-            networkType: NetworkType.not_required,
+            networkType: NetworkType.connected, // 네트워크 연결 필요
             requiresBatteryNotLow: false,
             requiresCharging: false,
             requiresDeviceIdle: false,
@@ -686,8 +886,7 @@ class AlarmService extends ChangeNotifier {
           existingWorkPolicy: ExistingWorkPolicy.replace,
         );
 
-        // 중요: activeAlarms에 직접 추가하지 않음
-        // 대신 별도의 저장소에 자동 알람 정보만 저장
+        // 알람 정보 저장
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(autoAlarmId, jsonEncode(alarm.toJson()));
 
@@ -695,7 +894,6 @@ class AlarmService extends ChangeNotifier {
             '자동 알람 예약: ${alarm.routeNo}, ${alarm.stationName}, ${alarm.hour}:${alarm.minute}, ${initialDelay.inMinutes}분 후 알림');
       }
 
-      // 여기서 loadAlarms()를 호출하지 않음 - 자동 알람은 activeAlarms에 포함되지 않음
       notifyListeners();
     } catch (e) {
       debugPrint('자동 알람 갱신 오류: $e');
