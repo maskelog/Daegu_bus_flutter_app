@@ -109,6 +109,25 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "startTtsTracking" -> {
+                    val routeId = call.argument<String>("routeId") ?: ""
+                    val stationId = call.argument<String>("stationId") ?: ""
+                    val busNo = call.argument<String>("busNo") ?: ""
+                    val stationName = call.argument<String>("stationName") ?: ""
+
+                    if (routeId.isEmpty() || stationId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
+                        result.error("INVALID_ARGUMENT", "필수 인자 누락", null)
+                        return@setMethodCallHandler
+                    }
+
+                    try {
+                        busAlertService?.startTtsTracking(routeId, stationId, busNo, stationName)
+                        result.success("TTS 추적 시작됨")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
+                        result.error("TTS_ERROR", "TTS 추적 시작 실패: ${e.message}", null)
+                    }
+                }
                 "updateBusTrackingNotification" -> {
                     val busNo = call.argument<String>("busNo") ?: ""
                     val stationName = call.argument<String>("stationName") ?: ""
