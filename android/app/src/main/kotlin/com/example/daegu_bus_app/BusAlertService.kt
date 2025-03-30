@@ -47,7 +47,8 @@ class BusAlertService : Service() {
     private var monitoringJob: Job? = null
     private val monitoredRoutes = mutableMapOf<String, Pair<String, String>>() // routeId -> (stationId, stationName)
     private val timer = Timer()
-    
+    private var ttsJob: Job? = null
+
     // 추적 모드 상태 변수 추가
     private var _isInTrackingMode = false
     val isInTrackingMode: Boolean
@@ -238,6 +239,21 @@ class BusAlertService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "🔔 버스 도착 정보 확인 오류: ${e.message}", e)
+        }
+    }
+
+    private fun speakTts(text: String) {
+        try {
+            val tts = android.speech.tts.TextToSpeech(context) { status ->
+                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                    tts.language = java.util.Locale.KOREAN
+                    tts.setSpeechRate(1.0f)
+                    tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "BUS_TTS_TRACKING")
+                    Log.d(TAG, "🔊 TTS 실행: $text")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ TTS 오류: ${e.message}", e)
         }
     }
 
@@ -461,6 +477,37 @@ class BusAlertService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "🚨 버스 도착 임박 알림 오류: ${e.message}", e)
             }
+        }
+    }
+
+    fun startTtsTracking(routeId: String, stationId: String, busNo: String, stationName: String) {
+        Log.d(TAG, "🗣️ TTS 추적 시작: $busNo - $stationName")
+
+        ttsJob?.cancel()
+        ttsJob = serviceScope.launch(Dispatchers.IO) {
+            repeat(10) { count -> // 최대 10분 추적
+                val arrivalInfo = busApiService.getBusArrivalInfoByRouteId(stationId, routeId)
+                val remaining = parseEstimatedTime(arrivalInfo?.bus?.firstOrNull()?.estimatedTime ?: "-")
+                val currentStation = arrivalInfo?.bus?.firstOrNull()?.currentStation ?: "정보 없음"
+
+                Log.d(TAG, "🗣️ TTS 갱신 [$count]: $busNo - 남은 $remaining분 (현재: $currentStation)")
+
+                if (remaining in 1..10) {
+                    withContext(Dispatchers.Main) {
+                        speakTts("$busNo번 버스, 약 $remaining분 후 도착 예정입니다. 현재 위치: $currentStation")
+                    }
+                } else if (remaining == 0) {
+                    withContext(Dispatchers.Main) {
+                        speakTts("곧 도착합니다. 탑승 준비하세요.")
+                        showBusArrivingSoon(busNo, stationName, currentStation)
+                    }
+                    break // 도착 시 종료
+                }
+
+                delay(60_000L) // 1분 간격
+            }
+
+            Log.d(TAG, "🛑 TTS 추적 종료: $busNo")
         }
     }
     
