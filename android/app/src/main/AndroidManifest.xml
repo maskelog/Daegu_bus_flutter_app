@@ -21,6 +21,7 @@
 
     <!-- 포그라운드 권한 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <queries>
         <package android:name="com.android.settings"/>
