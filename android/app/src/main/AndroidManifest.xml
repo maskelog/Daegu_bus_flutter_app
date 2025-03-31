@@ -6,11 +6,17 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- 블루투스 권한-->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+
     <!-- Android 10 이상을 위한 백그라운드 위치 권한 -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <!-- 알림 권한 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- 진동 권한-->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- AlarmManager 관련 권한 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
