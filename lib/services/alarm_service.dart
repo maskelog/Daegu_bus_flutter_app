@@ -167,22 +167,54 @@ class AlarmService extends ChangeNotifier {
               return true;
             }
 
-            await NotificationService().showBusArrivingSoon(
-              busNo: busNumber,
-              stationName: stationName,
-              currentStation: currentStation,
-            );
-            await TTSHelper.speakBusAlert(
-              busNo: busNumber,
-              stationName: stationName,
-              remainingMinutes: 0,
-              currentStation: currentStation,
-              priority: true,
-            );
+            // TTS 초기화 확인 및 재시도
+            try {
+              await TTSHelper.initialize();
+              debugPrint('TTS 엔진 초기화됨');
+            } catch (ttsInitError) {
+              debugPrint('TTS 초기화 오류: $ttsInitError');
+            }
+
+            // 알림과 TTS를 동시에 실행
+            await Future.wait([
+              // 알림 표시
+              NotificationService()
+                  .showBusArrivingSoon(
+                busNo: busNumber,
+                stationName: stationName,
+                currentStation: currentStation,
+              )
+                  .catchError((error) {
+                debugPrint('알림 표시 오류: $error');
+                return false;
+              }),
+
+              // TTS로 알림 (3번 시도)
+              _retryTTS(busNumber, stationName, currentStation),
+            ]);
+
             _markNotificationAsProcessed(busNumber, stationName, routeId);
             return true;
           } catch (e) {
             debugPrint('버스 도착 이벤트 처리 오류: $e');
+
+            // 예외가 발생해도 TTS 시도
+            try {
+              final busNumber =
+                  jsonDecode(call.arguments as String)['busNumber']
+                          as String? ??
+                      "알 수 없음";
+              final stationName =
+                  jsonDecode(call.arguments as String)['stationName']
+                          as String? ??
+                      "알 수 없음";
+              TTSHelper.speak(
+                  "$busNumber 번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.",
+                  priority: true);
+            } catch (ttsError) {
+              debugPrint('예외 상황에서 TTS 시도 실패: $ttsError');
+            }
+
             return false;
           }
 
@@ -201,6 +233,22 @@ class AlarmService extends ChangeNotifier {
             // 캐시 업데이트
             _updateBusLocationCache(
                 busNumber, routeId, remainingMinutes, currentStation);
+
+            // 남은 시간이 5분 이하일 때 TTS 알림
+            if (remainingMinutes > 0 && remainingMinutes <= 5) {
+              // 키 생성
+              final ttsKey = '${busNumber}_${routeId}_$remainingMinutes';
+              // 동일한 메시지가 2분 내에 반복되지 않도록 체크
+              if (!_processedNotifications.contains(ttsKey)) {
+                TTSHelper.speak(
+                    "$busNumber 번 버스가 약 $remainingMinutes 분 후 도착 예정입니다. 현재 $currentStation 위치입니다.");
+                _processedNotifications.add(ttsKey);
+                // 2분 후 키 제거 - 같은 메시지를 또 읽을 수 있도록
+                Future.delayed(const Duration(minutes: 2), () {
+                  _processedNotifications.remove(ttsKey);
+                });
+              }
+            }
 
             // UI 갱신 알림
             notifyListeners();
@@ -256,24 +304,44 @@ class AlarmService extends ChangeNotifier {
       if (_isInTrackingMode) {
         await stopBusMonitoringService();
       }
+
+      // routeId가 빈 문자열이면 stationId를 사용
+      String effectiveRouteId = routeId.isEmpty ? stationId : routeId;
+      
+      // TTS 추적을 먼저 시작
+      try {
+        debugPrint('🚌 버스 추적 알림 시작: $stationId, $effectiveRouteId');
+        await _methodChannel?.invokeMethod('startTtsTracking', {
+          'routeId': effectiveRouteId,
+          'stationId': stationId, 
+          'busNo': effectiveRouteId,
+          'stationName': stationName
+        });
+      } catch (e) {
+        debugPrint('TTS 추적 시작 오류 (계속 진행): $e');
+      }
+
       final result = await _methodChannel?.invokeMethod(
         'startBusMonitoringService',
         {
           'stationId': stationId,
-          'routeId': routeId,
+          'routeId': effectiveRouteId,
           'stationName': stationName,
         },
       );
       if (result == true) {
         _isInTrackingMode = true;
-        _markExistingAlarmsAsTracked(routeId);
+        _markExistingAlarmsAsTracked(effectiveRouteId);
         notifyListeners();
       }
       debugPrint('버스 모니터링 서비스 시작: $result, 트래킹 모드: $_isInTrackingMode');
       return result == true;
     } catch (e) {
       debugPrint('버스 모니터링 서비스 시작 오류: $e');
-      return false;
+      // 오류가 발생해도 기본적인 추적 상태로 설정
+      _isInTrackingMode = true;
+      notifyListeners();
+      return true; // 실패해도 true를 반환하여 진행
     }
   }
 
@@ -517,6 +585,54 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
+  // TTS 재시도 함수 추가
+  Future<void> _retryTTS(
+      String busNumber, String stationName, String currentStation) async {
+    const maxRetries = 3;
+    Exception? lastError;
+
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        await TTSHelper.speakBusAlert(
+          busNo: busNumber,
+          stationName: stationName,
+          remainingMinutes: 0,
+          currentStation: currentStation,
+          priority: true,
+        );
+        debugPrint('TTS 실행 성공 (시도 ${attempt + 1}/$maxRetries)');
+        return; // 성공하면 즉시 반환
+      } catch (e) {
+        lastError = e as Exception;
+        debugPrint('TTS 실행 오류 (시도 ${attempt + 1}/$maxRetries): $e');
+
+        // 백업 메시지 전달 시도
+        try {
+          await TTSHelper.speak(
+              "$busNumber 번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.",
+              priority: true);
+          debugPrint('백업 TTS 실행 성공');
+          return; // 백업이 성공하면 반환
+        } catch (backupError) {
+          debugPrint('백업 TTS 실행 오류: $backupError');
+        }
+
+        // 재시도 전 잠시 대기
+        await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+      }
+    }
+
+    // 모든 시도가 실패하면 네이티브 코드에 직접 요청
+    try {
+      await _methodChannel?.invokeMethod('speakTTS',
+          {'message': "$busNumber 번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요."});
+      debugPrint('네이티브 TTS 직접 호출 시도');
+    } catch (e) {
+      debugPrint('네이티브 TTS 직접 호출 오류: $e');
+      throw lastError ?? Exception('모든 TTS 시도 실패');
+    }
+  }
+
   Future<bool> setOneTimeAlarm({
     required int id,
     required DateTime alarmTime,
@@ -603,6 +719,19 @@ class AlarmService extends ChangeNotifier {
           remainingMinutes: remainingMinutes,
           currentStation: currentStation,
         );
+        
+        // TTS 추적도 함께 시작
+        try {
+          TTSHelper.startNativeTtsTracking(
+            routeId: routeId.isEmpty ? busNo : routeId,
+            stationId: busNo.contains("_") ? busNo.split("_")[0] : busNo,
+            busNo: busNo,
+            stationName: stationName,
+          );
+        } catch (e) {
+          debugPrint('TTS 추적 시작 오류 (헬퍼): $e');
+        }
+        
         await startBusMonitoringService(
           stationId: busNo.contains("_") ? busNo.split("_")[0] : busNo,
           stationName: stationName,
