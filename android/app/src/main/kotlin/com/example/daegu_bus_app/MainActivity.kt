@@ -15,9 +15,9 @@ import kotlinx.coroutines.launch
 import android.content.Intent
 import org.json.JSONArray
 import org.json.JSONObject
-import android.media.AudioManager // AudioManager 임포트 추가
-import android.speech.tts.TextToSpeech // TextToSpeech 임포트 추가
-import java.util.Locale // Locale 임포트 추가
+import android.media.AudioManager
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 
 class MainActivity : FlutterActivity() {
     private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
