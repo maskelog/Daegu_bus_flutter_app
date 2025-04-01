@@ -12,22 +12,36 @@ import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import android.content.Intent
 import org.json.JSONArray
 import org.json.JSONObject
+import android.media.AudioManager // AudioManager 임포트 추가
+import android.speech.tts.TextToSpeech // TextToSpeech 임포트 추가
+import java.util.Locale // Locale 임포트 추가
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.example.daegu_bus_app/bus_api"
+    private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
     private val NOTIFICATION_CHANNEL = "com.example.daegu_bus_app/notification"
+    private val TTS_CHANNEL = "com.example.daegu_bus_app/tts"
     private val TAG = "MainActivity"
     private lateinit var busApiService: BusApiService
     private var busAlertService: BusAlertService? = null
     private val NOTIFICATION_PERMISSION_REQUEST_CODE = 123
+    private lateinit var audioManager: AudioManager
+    private lateinit var tts: TextToSpeech
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         busApiService = BusApiService(this)
+        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts.language = Locale.KOREAN
+                Log.d(TAG, "TTS 초기화 성공")
+            } else {
+                Log.e(TAG, "TTS 초기화 실패")
+            }
+        }
 
         try {
             val serviceIntent = Intent(this, BusAlertService::class.java)
@@ -55,7 +69,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "searchStations" -> {
                     val searchText = call.argument<String>("searchText") ?: ""
@@ -114,14 +128,22 @@ class MainActivity : FlutterActivity() {
                     val stationId = call.argument<String>("stationId") ?: ""
                     val busNo = call.argument<String>("busNo") ?: ""
                     val stationName = call.argument<String>("stationName") ?: ""
-
-                    if (routeId.isEmpty() || stationId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
+                    
+                    // 유효성 검사 - 빈 인자를 대체 값으로 채우기
+                    val effectiveRouteId = routeId.takeIf { it.isNotEmpty() } ?: busNo
+                    val effectiveStationId = stationId.takeIf { it.isNotEmpty() } ?: effectiveRouteId
+                    val effectiveBusNo = busNo.takeIf { it.isNotEmpty() } ?: effectiveRouteId
+                    
+                    if (effectiveRouteId.isEmpty() || effectiveStationId.isEmpty() || 
+                        effectiveBusNo.isEmpty() || stationName.isEmpty()) {
+                        Log.e(TAG, "필수 인자 오류 - routeId:$routeId, stationId:$stationId, busNo:$busNo, stationName:$stationName")
                         result.error("INVALID_ARGUMENT", "필수 인자 누락", null)
                         return@setMethodCallHandler
                     }
-
+                    
                     try {
-                        busAlertService?.startTtsTracking(routeId, stationId, busNo, stationName)
+                        Log.d(TAG, "TTS 추적 시작 요청: $effectiveBusNo, $stationName")
+                        busAlertService?.startTtsTracking(effectiveRouteId, effectiveStationId, effectiveBusNo, stationName)
                         result.success("TTS 추적 시작됨")
                     } catch (e: Exception) {
                         Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
@@ -133,7 +155,6 @@ class MainActivity : FlutterActivity() {
                     val stationName = call.argument<String>("stationName") ?: ""
                     val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
                     val currentStation = call.argument<String>("currentStation") ?: ""
-                    
                     try {
                         Log.d(TAG, "Flutter에서 버스 추적 알림 업데이트 요청: $busNo, 남은 시간: $remainingMinutes 분")
                         busAlertService?.showOngoingBusTracking(
@@ -149,7 +170,6 @@ class MainActivity : FlutterActivity() {
                         result.error("NOTIFICATION_ERROR", "버스 추적 알림 업데이트 중 오류 발생: ${e.message}", null)
                     }
                 }
-                // ✅ 실시간 추적 등록 메서드
                 "registerBusArrivalReceiver" -> {
                     try {
                         busAlertService?.registerBusArrivalReceiver()
@@ -159,7 +179,6 @@ class MainActivity : FlutterActivity() {
                         result.error("REGISTER_ERROR", "버스 도착 리시버 등록 실패: ${e.message}", null)
                     }
                 }
-
                 "startBusMonitoring" -> {
                     val routeId = call.argument<String>("routeId")
                     val stationId = call.argument<String>("stationId")
@@ -267,13 +286,11 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGUMENT", "bsId가 비어있습니다", null)
                         return@setMethodCallHandler
                     }
-                    
                     if (bsId.startsWith("7") && bsId.length == 10) {
                         Log.d(TAG, "bsId '$bsId'는 이미 stationId 형식입니다")
                         result.success(bsId)
                         return@setMethodCallHandler
                     }
-                    
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
                             val stationId = busApiService.getStationIdFromBsId(bsId)
@@ -459,6 +476,110 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "forceEarphoneOutput" -> {
+                    try {
+                        audioManager.isSpeakerphoneOn = false
+                        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                        Log.d(TAG, "이어폰 출력 강제 설정")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "이어폰 출력 설정 오류: ${e.message}", e)
+                        result.error("AUDIO_ERROR", "이어폰 출력 설정 실패: ${e.message}", null)
+                    }
+                }
+                "speakTTS" -> {
+                    val message = call.argument<String>("message") ?: ""
+                    if (message.isEmpty()) {
+                        result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        audioManager.isSpeakerphoneOn = false
+                        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                        tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
+                        Log.d(TAG, "네이티브 TTS 발화: $message")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "네이티브 TTS 발화 오류: ${e.message}", e)
+                        result.error("TTS_ERROR", "TTS 발화 실패: ${e.message}", null)
+                    }
+                }
+                "speakEarphoneOnly" -> {
+                    val message = call.argument<String>("message") ?: ""
+                    if (message.isEmpty()) {
+                        result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        audioManager.isSpeakerphoneOn = false
+                        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                        if (audioManager.isWiredHeadsetOn || audioManager.isBluetoothA2dpOn) {
+                            // 긴 문장은 나눠서 발화
+                            if (message.length > 20) {
+                                val sentences = splitIntoSentences(message)
+                                for (sentence in sentences) {
+                                    tts.speak(sentence, TextToSpeech.QUEUE_ADD, null, "EARPHONE_${sentences.indexOf(sentence)}")
+                                    Log.d(TAG, "이어폰 TTS 분할 발화 (${sentences.indexOf(sentence) + 1}/${sentences.size}): $sentence")
+                                    Thread.sleep(300) // 문장 사이에 약간의 지연
+                                }
+                            } else {
+                                tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
+                                Log.d(TAG, "이어폰 전용 TTS 발화: $message")
+                            }
+                            result.success(true)
+                        } else {
+                            Log.d(TAG, "이어폰/블루투스 연결 없음, TTS 발화 생략")
+                            result.success(false)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "이어폰 전용 TTS 발화 오류: ${e.message}", e)
+                        result.error("TTS_ERROR", "이어폰 TTS 발화 실패: ${e.message}", null)
+                    }
+                }
+                "startTtsTracking" -> {
+                    val routeId = call.argument<String>("routeId") ?: ""
+                    val stationId = call.argument<String>("stationId") ?: ""
+                    val busNo = call.argument<String>("busNo") ?: ""
+                    val stationName = call.argument<String>("stationName") ?: ""
+                    if (routeId.isEmpty() || stationId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
+                        result.error("INVALID_ARGUMENT", "필수 인자 누락", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        busAlertService?.startTtsTracking(routeId, stationId, busNo, stationName)
+                        result.success("TTS 추적 시작됨")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
+                        result.error("TTS_ERROR", "TTS 추적 시작 실패: ${e.message}", null)
+                    }
+                }
+                "stopTtsTracking" -> {
+                    try {
+                        busAlertService?.stopTtsTracking() // BusAlertService에서 호출
+                        tts.stop()
+                        Log.d(TAG, "TTS 추적 중지")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "TTS 추적 중지 오류: ${e.message}", e)
+                        result.error("TTS_ERROR", "TTS 추적 중지 실패: ${e.message}", null)
+                    }
+                }
+                "stopTTS" -> {
+                    try {
+                        tts.stop()
+                        Log.d(TAG, "네이티브 TTS 정지")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "네이티브 TTS 정지 오류: ${e.message}", e)
+                        result.error("TTS_ERROR", "TTS 정지 실패: ${e.message}", null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         try {
             busAlertService?.initialize(this, flutterEngine)
         } catch (e: Exception) {
@@ -470,16 +591,22 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "알림 권한이 허용됨")
+                Log.d(TAG, "알림 권한 허용됨")
                 try {
                     busAlertService?.initialize(this)
                 } catch (e: Exception) {
                     Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
                 }
             } else {
-                Log.d(TAG, "알림 권한이 거부됨")
+                Log.d(TAG, "알림 권한 거부됨")
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        tts.shutdown()
+        Log.d(TAG, "TTS 자원 해제")
     }
 
     private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
@@ -491,6 +618,54 @@ class MainActivity : FlutterActivity() {
                 Math.sin(dLon / 2) * Math.sin(dLon / 2)
         val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
         return earthRadius * c
+    }
+
+    private fun splitIntoSentences(text: String): List<String> {
+        val sentences = mutableListOf<String>()
+        
+        // 문장 구분자
+        val sentenceDelimiters = "[.!?]".toRegex()
+        val parts = text.split(sentenceDelimiters)
+        
+        if (parts.size > 1) {
+            // 문장 구분자가 있으면 그대로 분할
+            for (part in parts) {
+                if (part.trim().isNotEmpty()) {
+                    sentences.add(part.trim())
+                }
+            }
+        } else {
+            // 쉼표로 분할 시도
+            val commaDelimited = text.split(",")
+            if (commaDelimited.size > 1) {
+                for (part in commaDelimited) {
+                    if (part.trim().isNotEmpty()) {
+                        sentences.add(part.trim())
+                    }
+                }
+            } else {
+                // 길이에 따라 임의로 분할
+                val maxLength = 20
+                var remaining = text
+                while (remaining.length > maxLength) {
+                    // 공백을 기준으로 적절한 분할 지점 찾기
+                    var cutPoint = maxLength
+                    while (cutPoint > 0 && remaining[cutPoint] != ' ') {
+                        cutPoint--
+                    }
+                    // 공백을 찾지 못했으면 그냥 maxLength에서 자르기
+                    if (cutPoint == 0) cutPoint = maxLength
+                    
+                    sentences.add(remaining.substring(0, cutPoint).trim())
+                    remaining = remaining.substring(cutPoint).trim()
+                }
+                if (remaining.isNotEmpty()) {
+                    sentences.add(remaining)
+                }
+            }
+        }
+        
+        return sentences.filter { it.isNotEmpty() }
     }
 }
 
