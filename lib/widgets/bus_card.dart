@@ -25,6 +25,24 @@ class BusCard extends StatefulWidget {
   State<BusCard> createState() => _BusCardState();
 }
 
+void safeStartNativeTtsTracking({
+  required String routeId,
+  required String stationId,
+  required String busNo,
+  required String stationName,
+}) {
+  if ([routeId, stationId, busNo, stationName].any((e) => e.isEmpty)) {
+    debugPrint("❌ TTS 추적 호출 생략 - 인자 누락");
+    return;
+  }
+  TTSHelper.startNativeTtsTracking(
+    routeId: routeId,
+    stationId: stationId,
+    busNo: busNo,
+    stationName: stationName,
+  );
+}
+
 class _BusCardState extends State<BusCard> {
   bool hasBoarded = false;
   final int defaultPreNotificationMinutes = 3;
@@ -176,8 +194,9 @@ class _BusCardState extends State<BusCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('승차 알람이 취소되었습니다.')),
         );
-        TTSHelper.speakAlarmCancel(widget.busArrival.routeNo);
+        // TTSHelper.speakAlarmCancel 제거
         await _notificationService.cancelOngoingTracking();
+        await TTSHelper.stopNativeTtsTracking(); // TTS 추적 중단
         alarmService.refreshAlarms();
       }
     } else {
@@ -220,6 +239,12 @@ class _BusCardState extends State<BusCard> {
             remainingMinutes: remainingTime,
             currentStation: firstBus.currentStation,
           );
+          await TTSHelper.startNativeTtsTracking(
+            routeId: widget.busArrival.routeId,
+            stationId: widget.stationId,
+            busNo: widget.busArrival.routeNo,
+            stationName: widget.stationName ?? "정류장 정보 없음",
+          );
           alarmService.refreshAlarms();
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -245,8 +270,9 @@ class _BusCardState extends State<BusCard> {
           widget.busArrival.routeId,
         );
         if (success && mounted) {
-          TTSHelper.speakAlarmCancel(widget.busArrival.routeNo);
+          // TTSHelper.speakAlarmCancel 제거
           await _notificationService.cancelOngoingTracking();
+          await TTSHelper.stopNativeTtsTracking(); // TTS 추적 중단
           alarmService.refreshAlarms();
         }
       },
