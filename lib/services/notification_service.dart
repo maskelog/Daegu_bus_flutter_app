@@ -147,6 +147,7 @@ class NotificationService {
         currentStation: currentStation,
         priority: true,
       );
+      debugPrint('TTS 실행 요청: $busNo, $stationName');
 
       return result;
     } on PlatformException catch (e) {
