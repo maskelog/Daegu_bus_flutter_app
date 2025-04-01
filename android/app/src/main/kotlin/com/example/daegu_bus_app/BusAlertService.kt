@@ -48,11 +48,13 @@ class BusAlertService : Service() {
     private val monitoredRoutes = mutableMapOf<String, Pair<String, String>>() // routeId -> (stationId, stationName)
     private val timer = Timer()
     private var ttsJob: Job? = null
+    private var ttsEngine: android.speech.tts.TextToSpeech? = null
+    private var isTtsTrackingActive = false // TTS 추적 상태 변수
 
-    // 추적 모드 상태 변수 추가
-    private var _isInTrackingMode = false
+    // 추적 모드 상태 변수
+    private var isInTrackingModePrivate = false
     val isInTrackingMode: Boolean
-        get() = _isInTrackingMode || monitoredRoutes.isNotEmpty()
+        get() = isInTrackingModePrivate || monitoredRoutes.isNotEmpty()
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -84,8 +86,23 @@ class BusAlertService : Service() {
             } else {
                 Log.d(TAG, "⚠️ FlutterEngine이 전달되지 않아 메서드 채널을 초기화할 수 없습니다")
             }
+
+            initializeTts()
         } catch (e: Exception) {
             Log.e(TAG, "🔔 알림 서비스 초기화 중 오류 발생: ${e.message}", e)
+        }
+    }
+
+    private fun initializeTts() {
+        ttsEngine?.shutdown()
+        ttsEngine = android.speech.tts.TextToSpeech(context) { status ->
+            if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                ttsEngine?.language = java.util.Locale.KOREAN
+                ttsEngine?.setSpeechRate(1.0f)
+                Log.d(TAG, "🔊 TTS 엔진 초기화 성공")
+            } else {
+                Log.e(TAG, "❌ TTS 엔진 초기화 실패: $status")
+            }
         }
     }
         
@@ -140,7 +157,6 @@ class BusAlertService : Service() {
         try {
             Log.d(TAG, "🔔 버스 도착 이벤트 리시버 등록 시작")
             
-            // 현재 모니터링 중인 노선 로깅
             if (monitoredRoutes.isEmpty()) {
                 Log.e(TAG, "🔔 모니터링할 노선이 없습니다. 서비스를 시작하지 않습니다.")
                 return
@@ -159,7 +175,7 @@ class BusAlertService : Service() {
                 }, 0, 15000)
             }
             
-            _isInTrackingMode = true
+            isInTrackingModePrivate = true // 수정: _isInTrackingMode 대신 사용
             _methodChannel?.invokeMethod("onBusMonitoringStarted", null)
             Log.d(TAG, "🔔 버스 도착 이벤트 리시버 등록 완료")
         } catch (e: Exception) {
@@ -192,14 +208,13 @@ class BusAlertService : Service() {
 
                 val arrivalInfo = busApiService.getBusArrivalInfoByRouteId(stationId, routeId)
                 if (arrivalInfo != null && arrivalInfo.bus.isNotEmpty()) {
-                    val busInfo = arrivalInfo.bus[0] // 첫 번째 버스 정보 사용
+                    val busInfo = arrivalInfo.bus[0]
                     val busNo = arrivalInfo.name
                     val currentStation = busInfo.currentStation
                     val remainingTime = parseEstimatedTime(busInfo.estimatedTime)
 
                     Log.d(TAG, "🔔 도착 정보: $busNo, $stationName, 남은 시간: $remainingTime 분, 현재 위치: $currentStation")
                     
-                    // 도착 임박 알림 (0~2분)
                     if (remainingTime in 0..2) {
                         withContext(Dispatchers.Main) {
                             showBusArrivingSoon(busNo, stationName, currentStation)
@@ -212,15 +227,11 @@ class BusAlertService : Service() {
                                     "routeId" to routeId
                                 ).toString()
                             )
+                            speakTts("$busNo 버스가 곧 도착합니다.")
                         }
-                    } 
-                    // 실시간 추적 알림 업데이트 (2분 이상)
-                    else if (remainingTime > 2) {
+                    } else if (remainingTime > 2) {
                         withContext(Dispatchers.Main) {
-                            // isUpdate를 true로 설정하여 기존 알림 업데이트
                             showOngoingBusTracking(busNo, stationName, remainingTime, currentStation, true)
-                            
-                            // 앱에도 업데이트된 정보 전달
                             _methodChannel?.invokeMethod(
                                 "onBusLocationUpdate",
                                 mapOf(
@@ -244,21 +255,79 @@ class BusAlertService : Service() {
 
     private fun speakTts(text: String) {
         try {
-            val tts = android.speech.tts.TextToSpeech(context) { status ->
-                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
-                    tts.language = java.util.Locale.KOREAN
-                    tts.setSpeechRate(1.0f)
-                    tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "BUS_TTS_TRACKING")
-                    Log.d(TAG, "🔊 TTS 실행: $text")
+            if (ttsEngine == null) {
+                initializeTts()
+                Thread.sleep(100)
+            }
+            
+            // 긴 문장은 나눠서 발화 (한국어 TTS가 긴 문장을 잘 처리하지 못하는 문제)
+            if (text.length > 20) {
+                // 문장 분할
+                val sentences = splitIntoSentences(text)
+                for (sentence in sentences) {
+                    ttsEngine?.speak(sentence, android.speech.tts.TextToSpeech.QUEUE_ADD, null, "BUS_TTS_TRACKING_${sentences.indexOf(sentence)}")
+                    Log.d(TAG, "🔊 TTS 분할 발화 (${sentences.indexOf(sentence) + 1}/${sentences.size}): $sentence")
+                    Thread.sleep(300) // 문장 사이에 약간의 지연
                 }
+            } else {
+                ttsEngine?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "BUS_TTS_TRACKING")
+                Log.d(TAG, "🔊 TTS 발화: $text")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ TTS 오류: ${e.message}", e)
+            Log.e(TAG, "❌ TTS 발화 오류: ${e.message}", e)
         }
+    }
+    
+    // 문장 분할 헬퍼 메서드
+    private fun splitIntoSentences(text: String): List<String> {
+        val sentences = mutableListOf<String>()
+        
+        // 문장 구분자
+        val sentenceDelimiters = "[.!?]".toRegex()
+        val parts = text.split(sentenceDelimiters)
+        
+        if (parts.size > 1) {
+            // 문장 구분자가 있으면 그대로 분할
+            for (part in parts) {
+                if (part.trim().isNotEmpty()) {
+                    sentences.add(part.trim())
+                }
+            }
+        } else {
+            // 쉼표로 분할 시도
+            val commaDelimited = text.split(",")
+            if (commaDelimited.size > 1) {
+                for (part in commaDelimited) {
+                    if (part.trim().isNotEmpty()) {
+                        sentences.add(part.trim())
+                    }
+                }
+            } else {
+                // 길이에 따라 임의로 분할
+                val maxLength = 20
+                var remaining = text
+                while (remaining.length > maxLength) {
+                    // 공백을 기준으로 적절한 분할 지점 찾기
+                    var cutPoint = maxLength
+                    while (cutPoint > 0 && remaining[cutPoint] != ' ') {
+                        cutPoint--
+                    }
+                    // 공백을 찾지 못했으면 그냥 maxLength에서 자르기
+                    if (cutPoint == 0) cutPoint = maxLength
+                    
+                    sentences.add(remaining.substring(0, cutPoint).trim())
+                    remaining = remaining.substring(cutPoint).trim()
+                }
+                if (remaining.isNotEmpty()) {
+                    sentences.add(remaining)
+                }
+            }
+        }
+        
+        return sentences.filter { it.isNotEmpty() }
     }
 
     fun addMonitoredRoute(routeId: String, stationId: String, stationName: String) {
-        // 로그 추가
         Log.d(TAG, "🔔 모니터링 노선 추가 요청: routeId=$routeId, stationId=$stationId, stationName=$stationName")
         
         if (routeId.isEmpty() || stationId.isEmpty() || stationName.isEmpty()) {
@@ -270,13 +339,11 @@ class BusAlertService : Service() {
         Log.d(TAG, "🔔 모니터링 노선 추가 완료: routeId=$routeId, stationId=$stationId, stationName=$stationName")
         Log.d(TAG, "🔔 현재 모니터링 중인 노선 수: ${monitoredRoutes.size}개")
         
-        // 모니터링 노선 추가 후 즉시 서비스 상태 확인
-        if (!_isInTrackingMode) {
+        if (!isInTrackingMode) { // 수정: _isInTrackingMode 대신 getter 사용
             registerBusArrivalReceiver()
         }
     }
     
-    // 추가 도우미 메서드
     fun getMonitoredRoutesCount(): Int {
         return monitoredRoutes.size
     }
@@ -356,7 +423,6 @@ class BusAlertService : Service() {
         isUpdate: Boolean = false
     ) {
         try {
-            // 기록 남기기 - 디버그용
             Log.d(TAG, "🚌 버스 추적 알림 ${if (isUpdate) "업데이트" else "시작"}: $busNo, $stationName, 남은 시간: $remainingMinutes 분, 현재 위치: $currentStation, 업데이트: $isUpdate")
 
             val title = "${busNo}번 버스 실시간 추적"
@@ -371,7 +437,6 @@ class BusAlertService : Service() {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 putExtra("NOTIFICATION_ID", ONGOING_NOTIFICATION_ID)
                 putExtra("PAYLOAD", "bus_tracking_$busNo")
-                // 추가 정보도 Intent에 포함
                 putExtra("BUS_NUMBER", busNo)
                 putExtra("STATION_NAME", stationName)
                 putExtra("REMAINING_MINUTES", remainingMinutes)
@@ -395,7 +460,6 @@ class BusAlertService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            // 남은 시간에 따라 진행률 계산 (최대 30분을 100%로 설정)
             val progress = 100 - (if (remainingMinutes > 30) 0 else remainingMinutes * 3)
 
             val builder = NotificationCompat.Builder(context, CHANNEL_BUS_ONGOING)
@@ -410,13 +474,11 @@ class BusAlertService : Service() {
                 .setColorized(true)
                 .setAutoCancel(false)
                 .setOngoing(true)
-                .setOnlyAlertOnce(false) // 알림 변경 시 소리/진동 설정 (false면 매번 알림)
+                .setOnlyAlertOnce(false)
                 .setContentIntent(pendingIntent)
                 .setProgress(100, progress, false)
                 .addAction(R.drawable.ic_stop, "추적 중지", stopTrackingPendingIntent)
-                // 타이머 표시 - 추적 시작 시간부터 경과 시간을 보여줌
                 .setUsesChronometer(true)
-                // 알림 시간 설정 - 매번 현재 시간으로 업데이트하여 최신 정보임을 표시
                 .setWhen(System.currentTimeMillis())
 
             NotificationManagerCompat.from(context).notify(ONGOING_NOTIFICATION_ID, builder.build())
@@ -428,86 +490,81 @@ class BusAlertService : Service() {
         }
     }
 
-    fun showBusArrivingSoon(
-        busNo: String,
-        stationName: String,
-        currentStation: String? = null
-    ) {
-        serviceScope.launch {
-            try {
-                Log.d(TAG, "🚨 버스 도착 임박 알림 표시 시도: $busNo")
-                val title = "⚠️ ${busNo}번 버스 곧 도착!"
-                var body = "$stationName 정류장에 곧 도착합니다! 탑승 준비하세요."
-                if (!currentStation.isNullOrEmpty()) {
-                    body += " 현재 위치: $currentStation"
-                }
-                val intent = Intent(context, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                }
-                val pendingIntent = PendingIntent.getActivity(
-                    context, 
-                    busNo.hashCode(), 
-                    intent, 
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                val builder = NotificationCompat.Builder(context, CHANNEL_BUS_ALERTS)
-                    .setSmallIcon(R.drawable.ic_bus_notification)
-                    .setContentTitle(title)
-                    .setContentText(body)
-                    .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-                    .setPriority(NotificationCompat.PRIORITY_MAX)
-                    .setCategory(NotificationCompat.CATEGORY_ALARM)
-                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                    .setColor(Color.RED)
-                    .setColorized(true)
-                    .setAutoCancel(false)
-                    .setContentIntent(pendingIntent)
-                    .setSound(Uri.parse("android.resource://${context.packageName}/raw/alarm_sound"))
-                    .setVibrate(longArrayOf(0, 500, 200, 500, 200, 500))
-                    .setLights(Color.RED, 1000, 500)
-                    .setFullScreenIntent(pendingIntent, true)
-                with(NotificationManagerCompat.from(context)) {
-                    try {
-                        notify(busNo.hashCode(), builder.build())
-                        Log.d(TAG, "🚨 버스 도착 임박 알림 표시 완료: $busNo")
-                    } catch (e: SecurityException) {
-                        Log.e(TAG, "🚨 알림 권한 없음: ${e.message}", e)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "🚨 버스 도착 임박 알림 오류: ${e.message}", e)
+    fun showBusArrivingSoon(busNo: String, stationName: String, currentStation: String? = null) {
+        try {
+            Log.d(TAG, "🔔 버스 곧 도착 알림 표시: $busNo, $stationName")
+            val title = "$busNo 번 버스 곧 도착"
+            var body = "$stationName 정류장에 곧 도착합니다."
+            if (!currentStation.isNullOrEmpty()) {
+                body += " (현재 위치: $currentStation)"
             }
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val builder = NotificationCompat.Builder(context, CHANNEL_BUS_ALERTS)
+                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+            NotificationManagerCompat.from(context).notify(System.currentTimeMillis().toInt(), builder.build())
+            Log.d(TAG, "🔔 버스 곧 도착 알림 표시 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "🔔 버스 곧 도착 알림 표시 오류: ${e.message}", e)
         }
     }
 
     fun startTtsTracking(routeId: String, stationId: String, busNo: String, stationName: String) {
-        Log.d(TAG, "🗣️ TTS 추적 시작: $busNo - $stationName")
+        if (isTtsTrackingActive) {
+            Log.d(TAG, "🔊 기존 TTS 추적 작업이 실행 중입니다. 중지 후 재시작합니다.")
+            stopTtsTracking()
+        }
 
-        ttsJob?.cancel()
+        // Foreground 서비스 시작 확인
+        if (!isInTrackingMode) {
+            registerBusArrivalReceiver()
+        }
+
         ttsJob = serviceScope.launch(Dispatchers.IO) {
-            repeat(10) { count -> // 최대 10분 추적
-                val arrivalInfo = busApiService.getBusArrivalInfoByRouteId(stationId, routeId)
-                val remaining = parseEstimatedTime(arrivalInfo?.bus?.firstOrNull()?.estimatedTime ?: "-")
-                val currentStation = arrivalInfo?.bus?.firstOrNull()?.currentStation ?: "정보 없음"
+            isTtsTrackingActive = true
+            Log.d(TAG, "🔊 TTS 추적 시작: $busNo, $stationName (routeId: $routeId, stationId: $stationId)")
+            
+            while (isTtsTrackingActive) {
+                try {
+                    val arrivalInfo = busApiService.getBusArrivalInfoByRouteId(stationId, routeId)
+                    val remaining = arrivalInfo?.bus?.firstOrNull()?.estimatedTime
+                        ?.filter { it.isDigit() }?.toIntOrNull() ?: -1
+                    val currentStation = arrivalInfo?.bus?.firstOrNull()?.currentStation ?: "정보 없음"
 
-                Log.d(TAG, "🗣️ TTS 갱신 [$count]: $busNo - 남은 $remaining분 (현재: $currentStation)")
+                    val message = when {
+                        remaining == -1 -> "도착 정보가 없습니다."
+                        remaining == 0 -> "$busNo 버스가 $stationName 에 곧 도착합니다. 탑승 준비하세요."
+                        remaining in 1..10 -> "$busNo 버스가 $stationName 에 약 ${remaining}분 후 도착 예정입니다. 현재 위치: $currentStation"
+                        else -> null
+                    }
 
-                if (remaining in 1..10) {
-                    withContext(Dispatchers.Main) {
-                        speakTts("$busNo번 버스, 약 $remaining분 후 도착 예정입니다. 현재 위치: $currentStation")
+                    if (message != null) {
+                        withContext(Dispatchers.Main) {
+                            speakTts(message)
+                            if (remaining == 0) {
+                                showBusArrivingSoon(busNo, stationName, currentStation) // stationName 올바르게 사용
+                                stopTtsTracking()
+                            }
+                        }
                     }
-                } else if (remaining == 0) {
+                    delay(60_000)
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ TTS 추적 중 오류: ${e.message}", e)
                     withContext(Dispatchers.Main) {
-                        speakTts("곧 도착합니다. 탑승 준비하세요.")
-                        showBusArrivingSoon(busNo, stationName, currentStation)
+                        stopTtsTracking()
                     }
-                    break // 도착 시 종료
+                    break
                 }
-
-                delay(60_000L) // 1분 간격
             }
-
-            Log.d(TAG, "🛑 TTS 추적 종료: $busNo")
         }
     }
     
@@ -556,15 +613,35 @@ class BusAlertService : Service() {
             monitoringJob?.cancel()
             monitoredRoutes.clear()
             timer.cancel()
-            _isInTrackingMode = false
+            isInTrackingModePrivate = false // 수정: _isInTrackingMode 대신 사용
             Log.d(TAG, "stopTracking() 호출됨: 버스 추적 서비스 중지됨")
         } catch (e: Exception) {
             Log.e(TAG, "버스 모니터링 서비스 중지 오류: ${e.message}", e)
         }
     }
 
+    fun stopTtsTracking() {
+        if (!isTtsTrackingActive) {
+            Log.d(TAG, "🔊 TTS 추적이 이미 중지된 상태입니다.")
+            return
+        }
+
+        try {
+            ttsJob?.cancel()
+            ttsEngine?.stop()
+            isTtsTrackingActive = false
+            ttsJob = null
+            Log.d(TAG, "🔊 TTS 추적 중지 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ TTS 추적 중지 오류: ${e.message}", e)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        stopTtsTracking()
+        ttsEngine?.shutdown()
+        ttsEngine = null
         monitoringJob?.cancel()
         timer.cancel()
         serviceScope.cancel()
