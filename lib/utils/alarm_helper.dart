@@ -32,48 +32,42 @@ class AlarmData {
 
 /// 최상위 함수: 별도의 isolate에서 실행되어야 합니다.
 /// 예약된 알람 데이터(SharedPreferences에 저장된)를 불러와 OS 알림과 TTS 음성 안내를 실행합니다.
+@pragma('vm:entry-point')
 void alarmCallback(int alarmId) async {
   final prefs = await SharedPreferences.getInstance();
   final String? alarmJson = prefs.getString('alarm_$alarmId');
+  print('알람 콜백 실행: ID $alarmId, 데이터: $alarmJson');
+
   if (alarmJson != null) {
     final alarmData = AlarmData.fromJson(jsonDecode(alarmJson));
 
-    // NotificationService 인스턴스 생성 및 사용
     final notificationService = NotificationService();
-    await notificationService.initialize(); // 초기화 필요
-
-    // OS 알림 표시
+    await notificationService.initialize();
     await notificationService.showNotification(
       id: alarmId,
       busNo: alarmData.busNo,
       stationName: alarmData.stationName,
       remainingMinutes: alarmData.remainingMinutes,
     );
+    print('알림 표시 완료: ${alarmData.busNo}');
 
-    // TTS 음성 안내 실행
     await TTSHelper.speakBusAlert(
       busNo: alarmData.busNo,
       stationName: alarmData.stationName,
       remainingMinutes: alarmData.remainingMinutes,
     );
+    print('TTS 실행 완료');
 
-    print('알람 실행: $alarmId');
-    // 사용 후 알람 데이터 삭제
     await prefs.remove('alarm_$alarmId');
+    print('알람 데이터 삭제: alarm_$alarmId');
   } else {
-    print('알람 데이터가 없습니다. 알람 ID: $alarmId');
+    print('알람 데이터 없음: ID $alarmId');
   }
 }
 
-/// AlarmHelper 클래스: AndroidAlarmManager를 사용하여 알람을 예약하거나 취소합니다.
 class AlarmHelper {
-  // NotificationService 인스턴스 생성
   static final NotificationService _notificationService = NotificationService();
 
-  /// 일회성 알람 설정
-  /// [alarmTime]은 버스 도착 예정 시각이며, [preNotificationTime]을 뺀 시각에 알람이 울립니다.
-  /// 예약 시, [busNo], [stationName], [remainingMinutes] 데이터를 저장하여 예약된 시각에
-  /// alarmCallback()에서 사용하도록 합니다.
   static Future<bool> setOneTimeAlarm({
     required int id,
     required DateTime alarmTime,
@@ -82,25 +76,28 @@ class AlarmHelper {
     required String stationName,
     required int remainingMinutes,
   }) async {
-    // 예약 알람 시각 계산
-    DateTime notificationTime = alarmTime.subtract(preNotificationTime);
+    final notificationTime = alarmTime.subtract(preNotificationTime);
+    final prefs = await SharedPreferences.getInstance();
 
-    // 알람 데이터를 SharedPreferences에 저장 (키: 'alarm_<id>')
     final alarmData = AlarmData(
       busNo: busNo,
       stationName: stationName,
       remainingMinutes: remainingMinutes,
     );
 
-    final prefs = await SharedPreferences.getInstance();
     await prefs.setString('alarm_$id', jsonEncode(alarmData.toJson()));
+    print('알람 데이터 저장: ${prefs.getString('alarm_$id')}');
 
-    // 예약 시간이 이미 지난 경우, 즉시 알림 실행 후 데이터를 삭제합니다.
     if (notificationTime.isBefore(DateTime.now())) {
-      // NotificationService 초기화 및 사용
+      print('과거 시간 알람 즉시 실행: $notificationTime');
       await _notificationService.initialize();
       await _notificationService.showNotification(
         id: id,
+        busNo: busNo,
+        stationName: stationName,
+        remainingMinutes: remainingMinutes,
+      );
+      await TTSHelper.speakBusAlert(
         busNo: busNo,
         stationName: stationName,
         remainingMinutes: remainingMinutes,
@@ -109,25 +106,23 @@ class AlarmHelper {
       return true;
     }
 
-    // 예약된 시각에 alarmCallback()을 호출하도록 알람 예약
-    bool success = await AndroidAlarmManager.oneShotAt(
+    final success = await AndroidAlarmManager.oneShotAt(
       notificationTime,
       id,
       alarmCallback,
       exact: true,
       wakeup: true,
       rescheduleOnReboot: true,
+      alarmClock: true,
     );
-
+    print('알람 예약 결과: $success, 시간: $notificationTime');
     return success;
   }
 
-  /// 고정된 알람 ID 생성 함수: 버스 번호와 정류장 이름을 조합하여 생성합니다.
   static int getAlarmId(String busNo, String stationName) {
     return (busNo + stationName).hashCode;
   }
 
-  /// 예약된 알람 취소
   static Future<bool> cancelAlarm(int id) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('alarm_$id');
