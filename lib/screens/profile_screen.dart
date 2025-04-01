@@ -1,4 +1,6 @@
 import 'package:daegu_bus_app/services/api_service.dart';
+import 'package:daegu_bus_app/utils/alarm_helper.dart';
+import 'package:daegu_bus_app/utils/tts_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
@@ -226,30 +228,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  void _addCommuteAlarmExample() {
+  void _addCommuteAlarmExample() async {
+    // 고유 ID 생성 (routeNo와 stationName 조합으로 간단히)
+    final String alarmId = AlarmHelper.getAlarmId('401', '동대구역').toString();
+
+    // 현재 날짜를 기준으로 다음 알람 시간 계산
+    final now = DateTime.now();
+    DateTime alarmTime =
+        DateTime(now.year, now.month, now.day, 19, 30); // 07:30 PM
+    if (alarmTime.isBefore(now)) {
+      alarmTime = alarmTime.add(const Duration(days: 1)); // 이미 지난 시간이면 다음 날로 설정
+    }
+
+    // AutoAlarm 객체 생성
     final commuteAlarm = AutoAlarm(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: alarmId,
       hour: 8,
       minute: 0,
       stationId: '1',
       stationName: '동대구역',
       routeId: '101',
       routeNo: '401',
-      repeatDays: [1, 2, 3, 4, 5],
+      repeatDays: [1, 2, 3, 4, 5], // 월~금 (1: 월요일, 7: 일요일)
       excludeWeekends: true,
       excludeHolidays: true,
       beforeMinutes: 10,
       isActive: true,
     );
 
-    setState(() {
-      _autoAlarms.add(commuteAlarm);
-      _saveAutoAlarms();
-    });
+    // 알람 예약
+    try {
+      final success = await AlarmHelper.setOneTimeAlarm(
+        id: int.parse(alarmId),
+        alarmTime: alarmTime,
+        preNotificationTime: Duration(minutes: commuteAlarm.beforeMinutes),
+        busNo: commuteAlarm.routeNo,
+        stationName: commuteAlarm.stationName,
+        remainingMinutes: commuteAlarm.beforeMinutes,
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('출근 알람 예시가 추가되었습니다')),
-    );
+      print('출퇴근 알람 예약 결과: $success, ID: $alarmId, 시간: $alarmTime');
+
+      // TTS로 사용자에게 알림 설정 확인
+      await TTSHelper.speakAlarmSet(commuteAlarm.routeNo);
+    } catch (e) {
+      print('출퇴근 알람 설정 중 오류: $e');
+    }
   }
 
   @override
