@@ -307,13 +307,13 @@ class AlarmService extends ChangeNotifier {
 
       // routeId가 빈 문자열이면 stationId를 사용
       String effectiveRouteId = routeId.isEmpty ? stationId : routeId;
-      
+
       // TTS 추적을 먼저 시작
       try {
         debugPrint('🚌 버스 추적 알림 시작: $stationId, $effectiveRouteId');
         await _methodChannel?.invokeMethod('startTtsTracking', {
           'routeId': effectiveRouteId,
-          'stationId': stationId, 
+          'stationId': stationId,
           'busNo': effectiveRouteId,
           'stationName': stationName
         });
@@ -384,6 +384,76 @@ class AlarmService extends ChangeNotifier {
   CachedBusInfo? getCachedBusInfo(String busNo, String routeId) {
     final key = "${busNo}_$routeId";
     return _cachedBusInfo[key];
+  }
+  
+  // 현재 추적 중인 버스 정보 가져오기
+  Map<String, dynamic>? getTrackingBusInfo() {
+    if (!_isInTrackingMode) return null;
+    
+    // 해당 알람 정보가 있는 경우 우선 사용
+    if (_activeAlarms.isNotEmpty) {
+      final alarm = _activeAlarms.first;
+      final key = "${alarm.busNo}_${alarm.routeId}";
+      final cachedInfo = _cachedBusInfo[key];
+      
+      // 캐시된 실시간 정보가 있는 경우
+      if (cachedInfo != null) {
+        final remainingMinutes = cachedInfo.getRemainingMinutes();
+        final isRecent = DateTime.now().difference(cachedInfo.lastUpdated).inMinutes < 10;
+        
+        if (isRecent) {
+          return {
+            'busNumber': alarm.busNo,
+            'stationName': alarm.stationName,
+            'remainingMinutes': remainingMinutes,
+            'currentStation': cachedInfo.currentStation,
+            'routeId': alarm.routeId,
+          };
+        }
+      }
+      
+      // 캐시된 정보가 없거나 최신 정보가 아니면 알람에서 가져오기
+      return {
+        'busNumber': alarm.busNo,
+        'stationName': alarm.stationName,
+        'remainingMinutes': alarm.getCurrentArrivalMinutes(),
+        'currentStation': alarm.currentStation ?? '',
+        'routeId': alarm.routeId,
+      };
+    }
+    
+    // 알람이 없는 경우, 캡시된 정보에서 최신 것 찾기
+    for (var entry in _cachedBusInfo.entries) {
+      final key = entry.key;
+      final cachedInfo = entry.value;
+      
+      // 현재 시간 기준으로 남은 시간 계산
+      final remainingMinutes = cachedInfo.getRemainingMinutes();
+      
+      // 만약 정보가 10분 이내로 업데이트되었다면 유효한 정보로 간주 
+      final isRecent = DateTime.now().difference(cachedInfo.lastUpdated).inMinutes < 10;
+      
+      if (isRecent) {
+        final parts = key.split('_');
+        if (parts.length >= 1) {
+          final busNumber = parts[0];
+          final routeId = parts.length > 1 ? parts[1] : '';
+          
+          // 정류장 이름 찾기 (없는 경우 기본값)
+          String stationName = '정류장';
+          
+          return {
+            'busNumber': busNumber,
+            'stationName': stationName,
+            'remainingMinutes': remainingMinutes,
+            'currentStation': cachedInfo.currentStation,
+            'routeId': routeId,
+          };
+        }
+      }
+    }
+    
+    return null;
   }
 
   // BusArrival.dart의 BusInfo 객체를 사용하는 메서드
@@ -645,13 +715,20 @@ class AlarmService extends ChangeNotifier {
     BusInfo? busInfo,
   }) async {
     try {
+      // 디버그 로그 추가
+      debugPrint('❗ 알람 설정 시도: busNo=$busNo, stationName=$stationName');
+      debugPrint('❗ 알람 시간: $alarmTime, 사전 알림 시간: $preNotificationTime');
+
+      // 트래킹 모드 확인 로직 개선
       bool skipNotification = _isInTrackingMode &&
           _activeAlarms.any((alarm) => alarm.routeId == routeId);
+
       if (skipNotification) {
-        debugPrint('트래킹 모드에서 알람 예약 (알림 없음): $busNo, $stationName');
+        debugPrint('❗ 트래킹 모드에서 알람 예약 (알림 없음): $busNo, $stationName');
         final notificationKey = '${busNo}_${stationName}_$routeId';
         _processedNotifications.add(notificationKey);
       }
+
       DateTime notificationTime = alarmTime.subtract(preNotificationTime);
       final alarmData = AlarmData(
         busNo: busNo,
@@ -663,20 +740,20 @@ class AlarmService extends ChangeNotifier {
         currentStation: currentStation,
       );
 
-      if (busInfo != null) {
-        // BusInfo를 CachedBusInfo로 변환하여 저장
-        _cachedBusInfo["${busNo}_$routeId"] = CachedBusInfo(
-          busNo: busNo,
-          routeId: routeId,
-          remainingMinutes: busInfo.getRemainingMinutes(),
-          currentStation: busInfo.currentStation,
-          lastUpdated: DateTime.now(),
-        );
-      }
+      // 디버그 로그 추가
+      debugPrint('❗ 알림 예정 시간: $notificationTime');
+      debugPrint('❗ 현재 시간: ${DateTime.now()}');
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('alarm_$id', jsonEncode(alarmData.toJson()));
-      if (notificationTime.isBefore(DateTime.now()) && !skipNotification) {
+
+      // 알람 목록 최신화
+      await loadAlarms();
+      notifyListeners();
+
+      // 알림 즉시 트리거 조건
+      if (notificationTime.isBefore(DateTime.now()) || !skipNotification) {
+        debugPrint('❗ 즉시 알림 트리거');
         await NotificationService().showNotification(
           id: id,
           busNo: busNo,
@@ -684,9 +761,16 @@ class AlarmService extends ChangeNotifier {
           remainingMinutes: remainingMinutes,
           currentStation: currentStation,
         );
-        await prefs.remove('alarm_$id');
+        // 하단 코드 제거 - 알람 데이터를 삭제하지 않음
+        // await prefs.remove('alarm_$id');
+        notifyListeners();
+
+        // 트래킹 모드 설정 추가
+        _isInTrackingMode = true;
         return true;
       }
+
+      // WorkManager 작업 등록
       final uniqueTaskName = 'busAlarm_$id';
       final initialDelay = notificationTime.difference(DateTime.now());
       final inputData = {
@@ -698,6 +782,10 @@ class AlarmService extends ChangeNotifier {
         'routeId': routeId,
         'skipNotification': skipNotification,
       };
+
+      // 디버그 로그 추가
+      debugPrint('❗ WorkManager 작업 등록: 초기 지연 시간 = ${initialDelay.inMinutes}분');
+
       await Workmanager().registerOneOffTask(
         uniqueTaskName,
         'busAlarmTask',
@@ -712,39 +800,30 @@ class AlarmService extends ChangeNotifier {
         ),
         existingWorkPolicy: ExistingWorkPolicy.replace,
       );
+
+      // 트래킹 모드가 아닌 경우 백그라운드 서비스 시작
       if (!_isInTrackingMode) {
-        await NotificationService().showOngoingBusTracking(
+        await NotificationService().showNotification(
+          id: id,
           busNo: busNo,
           stationName: stationName,
           remainingMinutes: remainingMinutes,
           currentStation: currentStation,
         );
-        
-        // TTS 추적도 함께 시작
-        try {
-          TTSHelper.startNativeTtsTracking(
-            routeId: routeId.isEmpty ? busNo : routeId,
-            stationId: busNo.contains("_") ? busNo.split("_")[0] : busNo,
-            busNo: busNo,
-            stationName: stationName,
-          );
-        } catch (e) {
-          debugPrint('TTS 추적 시작 오류 (헬퍼): $e');
-        }
-        
+
         await startBusMonitoringService(
           stationId: busNo.contains("_") ? busNo.split("_")[0] : busNo,
           stationName: stationName,
           routeId: routeId,
         );
-        debugPrint('포그라운드 서비스 시작 요청: stationId=$busNo, routeId=$routeId');
       }
+
       debugPrint(
-          '버스 알람 예약 성공: $busNo, $stationName, ${initialDelay.inMinutes}분 후 실행${skipNotification ? ' (알림 없음)' : ''}');
+          '❗ 버스 알람 예약 성공: $busNo, $stationName, ${initialDelay.inMinutes}분 후 실행');
       await loadAlarms();
       return true;
     } catch (e) {
-      debugPrint('알람 설정 오류: $e');
+      debugPrint('❗ 알람 설정 오류: $e');
       return false;
     }
   }
