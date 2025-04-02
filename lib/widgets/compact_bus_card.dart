@@ -175,16 +175,22 @@ class _CompactBusCardState extends State<CompactBusCard> {
               ),
               // 알람 버튼 (정류장 이름이 있는 경우에만 표시, 운행종료 시 비활성화)
               if (widget.stationName != null && !firstBus.isOutOfService)
-                IconButton(
-                  icon: Icon(
-                    hasAlarm
-                        ? Icons.notifications_active
-                        : Icons.notifications_none,
-                    color: hasAlarm ? Colors.amber : Colors.grey,
+                Container(
+                  decoration: BoxDecoration(
+                    color: hasAlarm ? Colors.amber : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  onPressed: () => _setAlarm(firstBus, remainingMinutes),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  child: IconButton(
+                    icon: Icon(
+                      hasAlarm
+                          ? Icons.notifications_active
+                          : Icons.notifications_none,
+                      color: hasAlarm ? Colors.white : Colors.grey,
+                    ),
+                    onPressed: () => _setAlarm(firstBus, remainingMinutes),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
                 ),
             ],
           ),
@@ -244,16 +250,19 @@ class _CompactBusCardState extends State<CompactBusCard> {
         );
 
         if (success && mounted) {
-          await notificationService.showOngoingBusTracking(
+          await notificationService.showNotification(
+            id: DateTime.now().millisecondsSinceEpoch,
             busNo: widget.busArrival.routeNo,
             stationName: widget.stationName!,
             remainingMinutes: remainingMinutes,
             currentStation: busInfo.currentStation,
           );
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('승차 알람이 설정되었습니다')),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('승차 알람이 설정되었습니다')),
+            );
+          }
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('승차 알람 설정에 실패했습니다')),

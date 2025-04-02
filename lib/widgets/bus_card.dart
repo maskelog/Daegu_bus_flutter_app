@@ -5,7 +5,7 @@ import '../models/bus_arrival.dart';
 import '../services/alarm_service.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
-import '../utils/tts_helper.dart';
+import '../utils/tts_switcher.dart';
 
 class BusCard extends StatefulWidget {
   final BusArrival busArrival;
@@ -30,16 +30,21 @@ void safeStartNativeTtsTracking({
   required String stationId,
   required String busNo,
   required String stationName,
+  int remainingMinutes = 5,
+  Future<int> Function()? getRemainingTimeCallback,
 }) {
   if ([routeId, stationId, busNo, stationName].any((e) => e.isEmpty)) {
     debugPrint("❌ TTS 추적 호출 생략 - 인자 누락");
     return;
   }
-  TTSHelper.startNativeTtsTracking(
+  // TTSSwitcher 사용 - 가장 안전한 방법으로 TTS 발화
+  TTSSwitcher.startTtsTracking(
     routeId: routeId,
     stationId: stationId,
     busNo: busNo,
     stationName: stationName,
+    remainingMinutes: remainingMinutes, // 남은 시간 전달
+    getRemainingTimeCallback: getRemainingTimeCallback,
   );
 }
 
@@ -173,7 +178,8 @@ class _BusCardState extends State<BusCard> {
       busInfo: nextBus,
     );
 
-    if (success) TTSHelper.speakAlarmSet(widget.busArrival.routeNo);
+    if (success)
+      TTSSwitcher.speakSafely('${widget.busArrival.routeNo}번 버스 알람이 설정되었습니다');
   }
 
   Future<void> _toggleBoardingAlarm() async {
@@ -204,10 +210,11 @@ class _BusCardState extends State<BusCard> {
           const SnackBar(content: Text('승차 알람이 취소되었습니다.')),
         );
 
-        debugPrint('🚌 진행 중인 추적 알림 및 TTS 추적 중단');
+        debugPrint('🚌 지속 알림 중단');
 
         await _notificationService.cancelOngoingTracking();
-        await TTSHelper.stopNativeTtsTracking(); // TTS 추적 중단
+        await TTSSwitcher.stopTtsTracking(
+            widget.busArrival.routeNo); // TTS 추적 중단
         alarmService.refreshAlarms();
       }
     } else {
@@ -255,21 +262,41 @@ class _BusCardState extends State<BusCard> {
             const SnackBar(content: Text('승차 알람이 설정되었습니다.')),
           );
 
-          debugPrint('🚌 지속 알림 및 TTS 추적 시작');
+          debugPrint('🚌 지속 알림 시작');
 
-          await _notificationService.showOngoingBusTracking(
+          await _notificationService.showNotification(
+            id: DateTime.now().millisecondsSinceEpoch,
             busNo: widget.busArrival.routeNo,
             stationName: widget.stationName ?? '정류장 정보 없음',
             remainingMinutes: remainingTime,
             currentStation: firstBus.currentStation,
           );
 
-          await TTSHelper.startNativeTtsTracking(
-            routeId: widget.busArrival.routeId,
-            stationId: widget.stationId,
-            busNo: widget.busArrival.routeNo,
-            stationName: widget.stationName ?? "정류장 정보 없음",
-          );
+          await TTSSwitcher.startTtsTracking(
+              routeId: widget.busArrival.routeId,
+              stationId: widget.stationId,
+              busNo: widget.busArrival.routeNo,
+              stationName: widget.stationName ?? "정류장 정보 없음",
+              remainingMinutes: remainingTime, // 실제 남은 시간 전달
+              getRemainingTimeCallback: () async {
+                // 실시간으로 버스 도착 정보 업데이트
+                try {
+                  final updatedBusArrival =
+                      await ApiService.getBusArrivalByRouteId(
+                    widget.stationId,
+                    widget.busArrival.routeId,
+                  );
+
+                  if (updatedBusArrival != null &&
+                      updatedBusArrival.buses.isNotEmpty) {
+                    final latestBus = updatedBusArrival.buses.first;
+                    return latestBus.getRemainingMinutes();
+                  }
+                } catch (e) {
+                  debugPrint('실시간 도착 시간 업데이트 오류: $e');
+                }
+                return remainingTime - 1; // 오류 발생 시 기본값
+              });
 
           alarmService.refreshAlarms();
         } else if (mounted) {
@@ -300,7 +327,8 @@ class _BusCardState extends State<BusCard> {
         if (success && mounted) {
           // TTSHelper.speakAlarmCancel 제거
           await _notificationService.cancelOngoingTracking();
-          await TTSHelper.stopNativeTtsTracking(); // TTS 추적 중단
+          await TTSSwitcher.stopTtsTracking(
+              widget.busArrival.routeNo); // TTS 추적 중단
           alarmService.refreshAlarms();
         }
       },
@@ -511,7 +539,7 @@ class _BusCardState extends State<BusCard> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: firstBus.isOutOfService
                             ? Colors.grey
-                            : (alarmEnabled ? Colors.blue[700] : Colors.blue),
+                            : (alarmEnabled ? Colors.yellow[700] : Colors.blue),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 0),
                         minimumSize: const Size(80, 36),
