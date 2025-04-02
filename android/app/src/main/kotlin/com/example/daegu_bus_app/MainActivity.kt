@@ -18,30 +18,32 @@ import org.json.JSONObject
 import android.media.AudioManager
 import android.speech.tts.TextToSpeech
 import java.util.Locale
+import android.content.Context
+import android.media.AudioDeviceInfo
+import android.speech.tts.UtteranceProgressListener
+import java.util.concurrent.ConcurrentHashMap
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
     private val NOTIFICATION_CHANNEL = "com.example.daegu_bus_app/notification"
     private val TTS_CHANNEL = "com.example.daegu_bus_app/tts"
     private val TAG = "MainActivity"
+    private val ONGOING_NOTIFICATION_ID = 10000
     private lateinit var busApiService: BusApiService
     private var busAlertService: BusAlertService? = null
     private val NOTIFICATION_PERMISSION_REQUEST_CODE = 123
     private lateinit var audioManager: AudioManager
     private lateinit var tts: TextToSpeech
 
+    // TTS 중복 방지를 위한 트래킹 맵
+    private val ttsTracker = ConcurrentHashMap<String, Long>()
+    private val TTS_DUPLICATE_THRESHOLD_MS = 500 // 0.5초 이내 중복 발화 방지 - 시간 값 줄임
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         busApiService = BusApiService(this)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-        tts = TextToSpeech(this) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts.language = Locale.KOREAN
-                Log.d(TAG, "TTS 초기화 성공")
-            } else {
-                Log.e(TAG, "TTS 초기화 실패")
-            }
-        }
+        tts = TextToSpeech(this, this)
 
         try {
             val serviceIntent = Intent(this, BusAlertService::class.java)
@@ -63,6 +65,34 @@ class MainActivity : FlutterActivity() {
                     NOTIFICATION_PERMISSION_REQUEST_CODE
                 )
             }
+        }
+    }
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            val result = tts.setLanguage(Locale.KOREAN)
+
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.e(TAG, "Korean language is not supported")
+            }
+
+            // TTS 진행 상태 리스너 설정
+            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    Log.d(TAG, "네이티브 TTS 발화 시작: $utteranceId")
+                }
+
+                override fun onDone(utteranceId: String?) {
+                    Log.d(TAG, "네이티브 TTS 발화 완료: $utteranceId")
+                }
+
+                override fun onError(utteranceId: String?) {
+                    Log.e(TAG, "네이티브 TTS 발화 오류: $utteranceId")
+                }
+            })
+            Log.d(TAG, "TTS 초기화 성공")
+        } else {
+            Log.e(TAG, "TTS 초기화 실패")
         }
     }
 
@@ -153,16 +183,18 @@ class MainActivity : FlutterActivity() {
                 "updateBusTrackingNotification" -> {
                     val busNo = call.argument<String>("busNo") ?: ""
                     val stationName = call.argument<String>("stationName") ?: ""
+                    // Ensure remainingMinutes is an Integer
                     val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
                     val currentStation = call.argument<String>("currentStation") ?: ""
                     try {
                         Log.d(TAG, "Flutter에서 버스 추적 알림 업데이트 요청: $busNo, 남은 시간: $remainingMinutes 분")
-                        busAlertService?.showOngoingBusTracking(
+                        busAlertService?.showNotification(
+                            id = ONGOING_NOTIFICATION_ID,
                             busNo = busNo,
                             stationName = stationName,
                             remainingMinutes = remainingMinutes,
                             currentStation = currentStation,
-                            isUpdate = true
+                            isOngoing = true
                         )
                         result.success(true)
                     } catch (e: Exception) {
@@ -431,7 +463,15 @@ class MainActivity : FlutterActivity() {
                     val currentStation = call.argument<String>("currentStation")
                     val isUpdate = call.argument<Boolean>("isUpdate") ?: false
                     try {
-                        busAlertService?.showOngoingBusTracking(busNo, stationName, remainingMinutes, currentStation, isUpdate)
+                        busAlertService?.showNotification(
+                            id = ONGOING_NOTIFICATION_ID,
+                            busNo = busNo,
+                            stationName = stationName,
+                            remainingMinutes = remainingMinutes,
+                            currentStation = currentStation,
+                            payload = "bus_tracking_$busNo",
+                            isOngoing = true
+                        )
                         result.success(true)
                     } catch (e: Exception) {
                         Log.e(TAG, "지속 알림 표시 오류: ${e.message}", e)
@@ -463,15 +503,6 @@ class MainActivity : FlutterActivity() {
                     busAlertService?.cancelAllNotifications()
                     result.success(true)
                 }
-                "showTestNotification" -> {
-                    try {
-                        busAlertService?.showTestNotification()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "테스트 알림 표시 오류: ${e.message}", e)
-                        result.error("NOTIFICATION_ERROR", "테스트 알림 표시 중 오류 발생: ${e.message}", null)
-                    }
-                }
                 else -> result.notImplemented()
             }
         }
@@ -491,19 +522,24 @@ class MainActivity : FlutterActivity() {
                 }
                 "speakTTS" -> {
                     val message = call.argument<String>("message") ?: ""
-                    if (message.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    try {
-                        audioManager.isSpeakerphoneOn = false
-                        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                        tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
-                        Log.d(TAG, "네이티브 TTS 발화: $message")
+                    val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false
+
+                    // 중복 발화 방지 로직 추가
+                    val currentTime = System.currentTimeMillis()
+                    val lastSpeakTime = ttsTracker[message] ?: 0
+
+                    if (currentTime - lastSpeakTime > TTS_DUPLICATE_THRESHOLD_MS) {
+                        // 중복 아니면 발화 진행
+                        speakTTS(message, isHeadphoneMode)
+
+                        // 발화 시간 기록
+                        ttsTracker[message] = currentTime
+
                         result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "네이티브 TTS 발화 오류: ${e.message}", e)
-                        result.error("TTS_ERROR", "TTS 발화 실패: ${e.message}", null)
+                    } else {
+                        // 중복 발화 방지
+                        Log.d(TAG, "중복 TTS 발화 방지: $message")
+                        result.success(false)
                     }
                 }
                 "speakEarphoneOnly" -> {
@@ -515,7 +551,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         audioManager.isSpeakerphoneOn = false
                         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                        if (audioManager.isWiredHeadsetOn || audioManager.isBluetoothA2dpOn) {
+                        if (isWiredHeadsetOn() || isBluetoothHeadsetConnected()) {
                             // 긴 문장은 나눠서 발화
                             if (message.length > 20) {
                                 val sentences = splitIntoSentences(message)
@@ -557,7 +593,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "stopTtsTracking" -> {
                     try {
-                        busAlertService?.stopTtsTracking() // BusAlertService에서 호출
+                        busAlertService?.stopTtsTracking(forceStop = true) // forceStop = true로 설정
                         tts.stop()
                         Log.d(TAG, "TTS 추적 중지")
                         result.success(true)
@@ -587,6 +623,65 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun speakTTS(text: String, isHeadphoneMode: Boolean) {
+        // 이어폰 연결 확인
+        val isHeadphoneConnected = isWiredHeadsetOn() || isBluetoothHeadsetConnected()
+
+        Log.d(TAG, "이어폰 모드: $isHeadphoneMode, 이어폰 연결 상태: $isHeadphoneConnected")
+
+        val utteranceId = System.currentTimeMillis().toString()
+
+        // 이어폰 모드 및 이어폰 연결 시 오디오 스트림 및 포커스 조정
+        if (isHeadphoneMode && isHeadphoneConnected) {
+            Log.d(TAG, "이어폰 출력 강제 설정")
+
+            // 오디오 포커스 요청
+            val audioFocusResult = audioManager.requestAudioFocus(
+                AudioManager.OnAudioFocusChangeListener { focusChange ->
+                    Log.d(TAG, "오디오 포커스 변경: $focusChange")
+                },
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            )
+
+            if (audioFocusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                // TTS 설정
+                val params = Bundle().apply {
+                    putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+                    putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
+                }
+
+                // 메인 스레드에서 TTS 발화
+                runOnUiThread {
+                    val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                    Log.d(TAG, "네이티브 TTS 발화: $text, 결과: $result")
+                }
+            } else {
+                Log.e(TAG, "오디오 포커스 요청 실패")
+            }
+        } else {
+            // 일반 모드 또는 이어폰 미연결 시
+            runOnUiThread {
+                val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+                Log.d(TAG, "일반 모드 TTS 발화: $text, 결과: $result")
+            }
+        }
+    }
+
+    // 유선 이어폰 연결 확인
+    private fun isWiredHeadsetOn(): Boolean {
+        return audioManager.isWiredHeadsetOn.also {
+            Log.d(TAG, "유선 이어폰 연결 상태: $it")
+        }
+    }
+
+    // 블루투스 이어폰 연결 확인
+    private fun isBluetoothHeadsetConnected(): Boolean {
+        return audioManager.isBluetoothA2dpOn.also {
+            Log.d(TAG, "블루투스 이어폰 연결 상태: $it")
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) {
@@ -604,9 +699,13 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        // TTS 종료
+        if (::tts.isInitialized) {
+            tts.stop()
+            tts.shutdown()
+            Log.d(TAG, "TTS 자원 해제")
+        }
         super.onDestroy()
-        tts.shutdown()
-        Log.d(TAG, "TTS 자원 해제")
     }
 
     private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
