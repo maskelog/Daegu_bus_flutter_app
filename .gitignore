@@ -165,6 +165,7 @@ app.*.symbols
 # CMake related
 CMakeLists.txt
 **/CMakeLists.txt
+android/app/.cxx/Debug
 
 .metadata
 .env
