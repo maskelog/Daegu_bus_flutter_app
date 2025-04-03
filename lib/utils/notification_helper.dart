@@ -261,16 +261,4 @@ class NotificationService {
       return false;
     }
   }
-
-  /// 테스트 알림 전송
-  Future<bool> showTestNotification() async {
-    try {
-      final bool result = await _channel.invokeMethod('showTestNotification');
-      debugPrint('🔔 테스트 알림 전송');
-      return result;
-    } on PlatformException catch (e) {
-      debugPrint('🔔 테스트 알림 오류: ${e.message}');
-      return false;
-    }
-  }
 }
