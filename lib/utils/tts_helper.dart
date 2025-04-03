@@ -12,6 +12,10 @@ class TTSHelper {
   static bool _speaking = false;
   static final List<String> _messageQueue = [];
 
+  // 중복 발화 방지를 위한 맵
+  static final Map<String, DateTime> _lastSpokenMessages = {};
+  static const Duration _duplicateThreshold = Duration(seconds: 1);
+
   /// TTS 초기화
   static Future<void> initialize() async {
     try {
@@ -60,6 +64,28 @@ class TTSHelper {
       debugPrint('TTS 초기화 중 오류: $e');
       _initialized = false;
     }
+  }
+
+  /// 중복 발화 체크 메서드
+  static bool _isMessageDuplicate(String message) {
+    final now = DateTime.now();
+    final lastSpoken = _lastSpokenMessages[message];
+
+    if (lastSpoken == null) {
+      // 처음 발화하는 메시지
+      _lastSpokenMessages[message] = now;
+      return false;
+    }
+
+    // 임계값 내에 동일 메시지 발화 방지
+    final isDuplicate = now.difference(lastSpoken) < _duplicateThreshold;
+
+    if (!isDuplicate) {
+      // 시간 초과시 새로운 타임스탬프로 갱신
+      _lastSpokenMessages[message] = now;
+    }
+
+    return isDuplicate;
   }
 
   /// 문장을 작은 단위로 분할하는 헬퍼 메서드
@@ -169,6 +195,12 @@ class TTSHelper {
     if (!_initialized) await initialize();
     if (_flutterTts == null) return;
 
+    // 중복 발화 체크
+    if (_isMessageDuplicate(message)) {
+      debugPrint('중복 발화 방지: $message');
+      return;
+    }
+
     if (priority) {
       _messageQueue.clear();
       if (_speaking) {
@@ -181,8 +213,11 @@ class TTSHelper {
     if (message.length > 20) {
       final sentences = _splitIntoSentences(message);
       for (var sentence in sentences) {
-        _messageQueue.add(sentence.trim());
-        debugPrint('TTS 대기열에 추가 (분할): ${sentence.trim()}');
+        // 각 문장도 중복 체크
+        if (!_isMessageDuplicate(sentence.trim())) {
+          _messageQueue.add(sentence.trim());
+          debugPrint('TTS 대기열에 추가 (분할): ${sentence.trim()}');
+        }
       }
     } else {
       _messageQueue.add(message);
@@ -370,12 +405,24 @@ class TTSHelper {
           'TTS 추적 요청 - routeId: $routeId, stationId: $stationId, busNo: $busNo, stationName: $stationName');
 
       // 분할된 초기 메시지 발화
-      final part1 = '$busNo번 버스, $stationName 정류장';
-      const part2 = '승차 알림을 시작합니다. 추적을 시작합니다.';
+      try {
+        // 먼저 아래와 같이 분할해서 발화
+        await speakEarphoneOnly('$busNo번 버스', priority: true);
+        await Future.delayed(const Duration(milliseconds: 500));
+        await speakEarphoneOnly('$stationName 정류장', priority: false);
 
-      await speakEarphoneOnly(part1, priority: true);
-      await Future.delayed(const Duration(milliseconds: 300));
-      await speakEarphoneOnly(part2, priority: false);
+        // 전체 문장을 시작 메시지로 발화
+        try {
+          await _channel.invokeMethod('speakTTS', {
+            'message': '$busNo번 버스 승차 알림 시작.',
+          });
+          debugPrint('백업 TTS 발화 결과: true');
+        } catch (e) {
+          debugPrint('백업 TTS 발화 오류: $e');
+        }
+      } catch (e) {
+        debugPrint('TTS 초기 발화 오류: $e');
+      }
 
       // 네이티브 추적 시작
       await _channel.invokeMethod('startTtsTracking', {
@@ -392,7 +439,7 @@ class TTSHelper {
       try {
         await Future.delayed(const Duration(milliseconds: 500));
         final result = await _channel.invokeMethod('speakTTS', {
-          'message': '$busNo번 버스 승차 알림을 시작합니다. 현재 추적 중입니다.',
+          'message': '$busNo번 버스 승차 알림 시작.',
         });
         debugPrint('백업 TTS 발화 결과: $result');
       } catch (backupError) {
