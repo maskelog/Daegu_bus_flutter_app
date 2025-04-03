@@ -460,28 +460,61 @@ class TTSHelper {
 
   /// 일반 발화
   static Future<void> speak(String message, {bool priority = false}) async {
-    await speakEarphoneOnly(message, priority: priority);
-  }
-
-  /// TTS 정지
-  static Future<void> stop() async {
-    _speaking = false;
-    _messageQueue.clear();
-
-    if (_flutterTts != null) {
+    if (!_initialized) {
       try {
-        await _flutterTts!.stop();
-        debugPrint('Flutter TTS 정지');
+        await initialize();
       } catch (e) {
-        debugPrint('Flutter TTS 정지 오류: $e');
+        debugPrint('TTS 초기화 오류 (무시하고 계속): $e');
       }
     }
 
+    // 중복 발화 체크
+    if (_isMessageDuplicate(message)) {
+      debugPrint('중복 발화 방지: $message');
+      return;
+    }
+
+    // 여러 접근 방식 사용
+
+    // 1. 채널 직접 호출 (가장 안정적)
     try {
-      await _channel.invokeMethod('stopTTS');
-      debugPrint('네이티브 TTS 정지');
+      final result =
+          await _channel.invokeMethod('speakTTS', {'message': message});
+      debugPrint('네이티브 TTS 채널 직접 호출 결과: $result');
+      if (result == true) {
+        return; // 성공하면 리턴
+      }
     } catch (e) {
-      debugPrint('네이티브 TTS 정지 오류: $e');
+      debugPrint('네이티브 TTS 채널 직접 호출 오류 (다음 방법 시도): $e');
+    }
+
+    // 2. 이어폰 전용 발화 시도
+    try {
+      await speakEarphoneOnly(message, priority: priority);
+      return;
+    } catch (e) {
+      debugPrint('이어폰 전용 TTS 발화 오류 (다음 방법 시도): $e');
+    }
+
+    // 3. Flutter TTS 직접 호출
+    if (_flutterTts != null) {
+      try {
+        if (priority && _speaking) {
+          await _flutterTts!.stop();
+          _speaking = false;
+        }
+
+        _speaking = true;
+        final result = await _flutterTts!.speak(message);
+        debugPrint('Flutter TTS 직접 호출 결과: $result');
+
+        // 완료 대기를 위한 짧은 딜레이
+        await Future.delayed(const Duration(milliseconds: 300));
+        _speaking = false;
+      } catch (e) {
+        debugPrint('Flutter TTS 직접 호출 오류: $e');
+        _speaking = false;
+      }
     }
   }
 
