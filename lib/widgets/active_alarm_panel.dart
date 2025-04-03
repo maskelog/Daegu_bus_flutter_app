@@ -92,8 +92,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
       arrivalMinutes = alarm.getCurrentArrivalMinutes();
     }
 
-    final arrivalText =
-        arrivalMinutes <= 1 ? '곧 도착' : '$arrivalMinutes분 후 도착';
+    final arrivalText = arrivalMinutes <= 1 ? '곧 도착' : '$arrivalMinutes분 후 도착';
 
     // 버스 현재 위치 정보 (캐시에서 최신 정보 가져오기)
     String? currentStation =
@@ -163,7 +162,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
   }
 
   // 알람 취소 다이얼로그 표시 메서드
-  Future<void> _showCancelDialog(AlarmData alarm, AlarmService alarmService) async {
+  Future<void> _showCancelDialog(
+      AlarmData alarm, AlarmService alarmService) async {
     bool? confirmDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -238,7 +238,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
 
         // 알람이 있는 경우 - 첫 번째 알람에 대한 상세 패널 표시
         final firstAlarm = activeAlarms.first;
-        
+
         // 캐시된 정보를 가져와서 최신화
         final cachedBusInfo = alarmService.getCachedBusInfo(
           firstAlarm.busNo,
@@ -254,26 +254,28 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         }
 
         final isArrivingSoon = remainingMinutes <= 2;
-        final progress = (remainingMinutes > 30) ? 0.0 : (30 - remainingMinutes) / 30.0;
+        final progress =
+            (remainingMinutes > 30) ? 0.0 : (30 - remainingMinutes) / 30.0;
         final arrivalText = isArrivingSoon ? '곧 도착' : '$remainingMinutes분 후 도착';
 
         // 버스 현재 위치 정보
-        String currentStation = cachedBusInfo?.currentStation ?? firstAlarm.currentStation ?? '';
+        String currentStation =
+            cachedBusInfo?.currentStation ?? firstAlarm.currentStation ?? '';
 
         // 메인 패널 생성
         final mainPanel = Container(
           width: double.infinity,
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: isArrivingSoon 
-                ? [Colors.red.shade100, Colors.red.shade50]
-                : [Colors.blue.shade100, Colors.blue.shade50],
+              colors: isArrivingSoon
+                  ? [Colors.red.shade100, Colors.red.shade50]
+                  : [Colors.blue.shade100, Colors.blue.shade50],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 25.5),
                 blurRadius: 4,
                 offset: const Offset(0, 2),
               ),
@@ -290,7 +292,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                     children: [
                       Icon(
                         Icons.directions_bus_rounded,
-                        color: isArrivingSoon ? Colors.red[700] : Colors.blue[700],
+                        color:
+                            isArrivingSoon ? Colors.red[700] : Colors.blue[700],
                         size: 22,
                       ),
                       const SizedBox(width: 8),
@@ -299,7 +302,9 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: isArrivingSoon ? Colors.red[700] : Colors.blue[700],
+                          color: isArrivingSoon
+                              ? Colors.red[700]
+                              : Colors.blue[700],
                         ),
                       ),
                     ],
@@ -328,7 +333,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                           color: Colors.red[700],
                           size: 20,
                         ),
-                        onPressed: () => _showCancelDialog(firstAlarm, alarmService),
+                        onPressed: () =>
+                            _showCancelDialog(firstAlarm, alarmService),
                         tooltip: '추적 중지',
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -342,9 +348,10 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
 
               // 정류장 및 도착 정보
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withValues(alpha: 178.5),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -374,7 +381,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: isArrivingSoon ? Colors.red : Colors.blue[700],
+                            color:
+                                isArrivingSoon ? Colors.red : Colors.blue[700],
                           ),
                         ),
                       ],
@@ -423,7 +431,9 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                         // 진행 프로그레스 바
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
-                          width: MediaQuery.of(context).size.width * progress * 0.85,
+                          width: MediaQuery.of(context).size.width *
+                              progress *
+                              0.85,
                           height: 6,
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -438,7 +448,10 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                         ),
                         // 버스 위치 애니메이션
                         Positioned(
-                          left: MediaQuery.of(context).size.width * progress * 0.85 - 8,
+                          left: MediaQuery.of(context).size.width *
+                                  progress *
+                                  0.85 -
+                              8,
                           top: -4,
                           child: Container(
                             width: 14,
@@ -448,7 +461,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.3),
+                                  color: Colors.black.withValues(alpha: 77),
                                   blurRadius: 2,
                                   offset: const Offset(0, 1),
                                 ),
@@ -463,7 +476,10 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                         ),
                         // 버스 애니메이션 효과 - 시간에 따라 부드럽게 움직이는 버스
                         Positioned(
-                          left: MediaQuery.of(context).size.width * _progress * 0.85 - 8,
+                          left: MediaQuery.of(context).size.width *
+                                  _progress *
+                                  0.85 -
+                              8,
                           top: -4 + (math.sin(_progress * 4 * 3.14159) * 0.7),
                           child: Container(
                             width: 14,
@@ -473,7 +489,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
+                                  color: Colors.black.withValues(alpha: 51),
                                   blurRadius: 2,
                                   offset: const Offset(0, 1),
                                 ),
@@ -504,16 +520,19 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
               Container(
                 width: double.infinity,
                 color: Colors.yellow[100],
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       '추가 알람',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    ...activeAlarms.skip(1).map((alarm) => _buildAlarmListItem(alarm, alarmService)),
+                    ...activeAlarms.skip(1).map(
+                        (alarm) => _buildAlarmListItem(alarm, alarmService)),
                   ],
                 ),
               ),
