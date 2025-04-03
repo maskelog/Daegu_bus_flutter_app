@@ -230,24 +230,91 @@ class AlarmService extends ChangeNotifier {
             debugPrint(
                 '버스 위치 업데이트: $busNumber, 남은 시간: $remainingMinutes분, 현재 위치: $currentStation');
 
-            // 캐시 업데이트
+            // 이전 남은 시간 가져오기
+            final cacheKey = "${busNumber}_$routeId";
+            final previousInfo = _cachedBusInfo[cacheKey];
+            final int previousMinutes = previousInfo?.remainingMinutes ?? -1;
+
+            // 캐시 업데이트 - 중요: 캐시 업데이트는 TTS 처리 전에 수행
             _updateBusLocationCache(
                 busNumber, routeId, remainingMinutes, currentStation);
 
-            // 남은 시간이 5분 이하일 때 TTS 알림
-            if (remainingMinutes > 0 && remainingMinutes <= 5) {
-              // 키 생성
-              final ttsKey = '${busNumber}_${routeId}_$remainingMinutes';
-              // 동일한 메시지가 2분 내에 반복되지 않도록 체크
-              if (!_processedNotifications.contains(ttsKey)) {
-                TTSHelper.speak(
-                    "$busNumber 번 버스가 약 $remainingMinutes 분 후 도착 예정입니다. 현재 $currentStation 위치입니다.");
-                _processedNotifications.add(ttsKey);
-                // 2분 후 키 제거 - 같은 메시지를 또 읽을 수 있도록
-                Future.delayed(const Duration(minutes: 2), () {
-                  _processedNotifications.remove(ttsKey);
-                });
+            // 주요 시간대 정의 (TTS를 발화할 중요 시점)
+            final List<int> importantTimes = [10, 8, 5, 3, 2, 1, 0];
+
+            // 시간이 변경되었을 때만 처리
+            if (previousMinutes != remainingMinutes) {
+              debugPrint('시간 변경 감지: $previousMinutes분 -> $remainingMinutes분');
+
+              // 1. 주요 시간대에 도달했을 때 TTS 발화
+              if (importantTimes.contains(remainingMinutes)) {
+                final ttsKey = '${busNumber}_${routeId}_$remainingMinutes';
+
+                if (!_processedNotifications.contains(ttsKey)) {
+                  debugPrint('주요 시간대 TTS 발화 트리거: $remainingMinutes분');
+
+                  // 메시지 생성
+                  String message;
+                  if (remainingMinutes <= 0) {
+                    message = "$busNumber 번 버스가 곧 도착합니다. 탑승 준비하세요.";
+                  } else {
+                    message =
+                        "$busNumber 번 버스가 약 $remainingMinutes 분 후 도착 예정입니다. 현재 $currentStation 위치입니다.";
+                  }
+
+                  // TTS 발화 시도
+                  try {
+                    await TTSHelper.speak(message,
+                        priority: remainingMinutes <= 3);
+                    debugPrint('TTS 발화 성공: $message');
+                  } catch (ttsError) {
+                    debugPrint('TTS 발화 오류, 네이티브 채널 직접 시도: $ttsError');
+                    try {
+                      await _methodChannel
+                          ?.invokeMethod('speakTTS', {'message': message});
+                    } catch (e) {
+                      debugPrint('네이티브 TTS 발화 오류: $e');
+                    }
+                  }
+
+                  // 처리된 알림으로 표시
+                  _processedNotifications.add(ttsKey);
+
+                  // 30초 후 키 제거 (짧은 시간으로 설정하여 중요 시점마다 발화 보장)
+                  Future.delayed(const Duration(seconds: 30), () {
+                    _processedNotifications.remove(ttsKey);
+                  });
+                }
               }
+              // 2. 주요 시간대가 아니더라도 큰 폭으로 시간이 변경되었을 때 TTS 발화
+              else if (previousMinutes - remainingMinutes >= 3) {
+                final ttsKey = '${busNumber}_${routeId}_jump_$remainingMinutes';
+
+                if (!_processedNotifications.contains(ttsKey)) {
+                  debugPrint(
+                      '시간 점프 TTS 발화 트리거: $previousMinutes분 -> $remainingMinutes분');
+
+                  try {
+                    await TTSHelper.speak(
+                        "$busNumber 번 버스 도착 시간이 업데이트 되었습니다. 약 $remainingMinutes 분 후 도착 예정입니다.",
+                        priority: remainingMinutes <= 3);
+                  } catch (e) {
+                    debugPrint('시간 점프 TTS 발화 오류: $e');
+                  }
+
+                  _processedNotifications.add(ttsKey);
+
+                  // 1분 후 키 제거
+                  Future.delayed(const Duration(minutes: 1), () {
+                    _processedNotifications.remove(ttsKey);
+                  });
+                }
+              }
+            }
+
+            // 오래된 알림 키 정리 (20개 이상이면 가장 오래된 것 제거)
+            if (_processedNotifications.length > 20) {
+              _processedNotifications.remove(_processedNotifications.first);
             }
 
             // UI 갱신 알림
@@ -385,22 +452,23 @@ class AlarmService extends ChangeNotifier {
     final key = "${busNo}_$routeId";
     return _cachedBusInfo[key];
   }
-  
+
   // 현재 추적 중인 버스 정보 가져오기
   Map<String, dynamic>? getTrackingBusInfo() {
     if (!_isInTrackingMode) return null;
-    
+
     // 해당 알람 정보가 있는 경우 우선 사용
     if (_activeAlarms.isNotEmpty) {
       final alarm = _activeAlarms.first;
       final key = "${alarm.busNo}_${alarm.routeId}";
       final cachedInfo = _cachedBusInfo[key];
-      
+
       // 캐시된 실시간 정보가 있는 경우
       if (cachedInfo != null) {
         final remainingMinutes = cachedInfo.getRemainingMinutes();
-        final isRecent = DateTime.now().difference(cachedInfo.lastUpdated).inMinutes < 10;
-        
+        final isRecent =
+            DateTime.now().difference(cachedInfo.lastUpdated).inMinutes < 10;
+
         if (isRecent) {
           return {
             'busNumber': alarm.busNo,
@@ -411,7 +479,7 @@ class AlarmService extends ChangeNotifier {
           };
         }
       }
-      
+
       // 캐시된 정보가 없거나 최신 정보가 아니면 알람에서 가져오기
       return {
         'busNumber': alarm.busNo,
@@ -421,27 +489,28 @@ class AlarmService extends ChangeNotifier {
         'routeId': alarm.routeId,
       };
     }
-    
+
     // 알람이 없는 경우, 캡시된 정보에서 최신 것 찾기
     for (var entry in _cachedBusInfo.entries) {
       final key = entry.key;
       final cachedInfo = entry.value;
-      
+
       // 현재 시간 기준으로 남은 시간 계산
       final remainingMinutes = cachedInfo.getRemainingMinutes();
-      
-      // 만약 정보가 10분 이내로 업데이트되었다면 유효한 정보로 간주 
-      final isRecent = DateTime.now().difference(cachedInfo.lastUpdated).inMinutes < 10;
-      
+
+      // 만약 정보가 10분 이내로 업데이트되었다면 유효한 정보로 간주
+      final isRecent =
+          DateTime.now().difference(cachedInfo.lastUpdated).inMinutes < 10;
+
       if (isRecent) {
         final parts = key.split('_');
-        if (parts.length >= 1) {
+        if (parts.isNotEmpty) {
           final busNumber = parts[0];
           final routeId = parts.length > 1 ? parts[1] : '';
-          
+
           // 정류장 이름 찾기 (없는 경우 기본값)
           String stationName = '정류장';
-          
+
           return {
             'busNumber': busNumber,
             'stationName': stationName,
@@ -452,7 +521,7 @@ class AlarmService extends ChangeNotifier {
         }
       }
     }
-    
+
     return null;
   }
 
