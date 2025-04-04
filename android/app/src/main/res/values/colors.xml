@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <!-- 알림 관련 색상 -->
-  <color name="notification_color">#FF5722</color>
-  <color name="tracking_color">#2196F3</color>
+  <color name="notification_color">#2196F3</color>
+  <color name="tracking_color">#1976D2</color>
+  <color name="ic_launcher_background">#2196F3</color>
 </resources>
