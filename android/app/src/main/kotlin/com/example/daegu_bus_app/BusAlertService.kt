@@ -38,6 +38,12 @@ class BusAlertService : Service() {
                 }
             }
         }
+        
+        // 알람음 설정 관련 상수
+        private const val PREF_ALARM_SOUND = "alarm_sound_preference"
+        private const val PREF_ALARM_SOUND_FILENAME = "alarm_sound_filename"
+        private const val PREF_ALARM_USE_TTS = "alarm_use_tts"
+        private const val DEFAULT_ALARM_SOUND = "alarm_sound"
     }
     
     private var _methodChannel: MethodChannel? = null
@@ -59,6 +65,10 @@ class BusAlertService : Service() {
     val isInTrackingMode: Boolean
         get() = isInTrackingModePrivate || monitoredRoutes.isNotEmpty()
 
+    // 현재 설정된 알람음
+    private var currentAlarmSound = DEFAULT_ALARM_SOUND
+    private var useTextToSpeech = false // TTS 사용 여부 플래그
+
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
@@ -77,6 +87,10 @@ class BusAlertService : Service() {
             }
             this.context = actualContext.applicationContext
             Log.d(TAG, "🔔 알림 서비스 초기화")
+            
+            // 알람음 설정 불러오기
+            loadAlarmSoundSettings()
+            
             createNotificationChannels()
             checkNotificationPermission()
             
@@ -120,9 +134,6 @@ class BusAlertService : Service() {
                         
                         ttsEngine?.setSpeechRate(1.0f)
                         Log.d(TAG, "🔊 TTS 엔진 초기화 성공")
-                        
-                        // 여기서 TTS 엔진이 제대로 작동하는지 테스트
-                        ttsEngine?.speak("테스트 발화", android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "TTS_TEST")
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ TTS 언어 및 속성 설정 중 오류: ${e.message}", e)
                     }
@@ -140,6 +151,9 @@ class BusAlertService : Service() {
             try {
                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 
+                // 기존 채널 삭제 (알람음 변경 적용을 위해)
+                notificationManager.deleteNotificationChannel(CHANNEL_BUS_ALERTS)
+                
                 val busAlertsChannel = NotificationChannel(
                     CHANNEL_BUS_ALERTS,
                     "Bus Alerts",
@@ -149,12 +163,19 @@ class BusAlertService : Service() {
                     enableLights(true)
                     lightColor = Color.RED
                     enableVibration(true)
-                    val soundUri = Uri.parse("android.resource://${context.packageName}/raw/alarm_sound")
-                    val audioAttributes = AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
-                        .build()
-                    setSound(soundUri, audioAttributes)
+                    
+                    // 알람음 설정 적용
+                    if (currentAlarmSound.isNotEmpty()) {
+                        val soundUri = Uri.parse("android.resource://${context.packageName}/raw/$currentAlarmSound")
+                        val audioAttributes = AudioAttributes.Builder()
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                            .build()
+                        setSound(soundUri, audioAttributes)
+                    } else {
+                        // 무음 설정 (진동만)
+                        setSound(null, null)
+                    }
                 }
                 
                 val busOngoingChannel = NotificationChannel(
@@ -482,6 +503,18 @@ private suspend fun checkBusArrivals() {
                     if (!currentStation.isNullOrEmpty()) " (현재 위치: $currentStation)" else ""
                 }
 
+                // TTS 사용이 설정되어 있고 알람 상황이면 TTS 발화 (지속적인 추적이 아닌 경우)
+                if (useTextToSpeech && !isOngoing) {
+                    val ttsMessage = if (displayMinutes <= 0) {
+                        "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
+                    } else {
+                        "$busNo 번 버스가 $stationName 정류장에 약 ${displayMinutes}분 후 도착 예정입니다."
+                    }
+                    
+                    Log.d(TAG, "🔊 TTS 알람 발화 시도: $ttsMessage")
+                    speakTts(ttsMessage)
+                }
+
                 val intent = Intent(context, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     putExtra("NOTIFICATION_ID", id)
@@ -515,10 +548,16 @@ private suspend fun checkBusArrivals() {
                     .setAutoCancel(!isOngoing)
                     .setOngoing(isOngoing)
                     .setContentIntent(pendingIntent)
-                    .setSound(Uri.parse("android.resource://${context.packageName}/raw/alarm_sound"))
-                    .setVibrate(longArrayOf(0, 500, 200, 500, 200, 500))
                     .addAction(R.drawable.ic_dismiss, "알람 종료", dismissPendingIntent)
                     .setFullScreenIntent(pendingIntent, true)
+
+                // TTS를 사용하지 않을 때만 소리 설정
+                if (!useTextToSpeech) {
+                    builder.setSound(Uri.parse("android.resource://${context.packageName}/raw/$currentAlarmSound"))
+                }
+                
+                // 진동 설정은 항상 유지
+                builder.setVibrate(longArrayOf(0, 500, 200, 500, 200, 500))
 
                 if (isOngoing) {
                     val progress = 100 - (if (displayMinutes > 30) 0 else displayMinutes * 3)
@@ -770,6 +809,50 @@ private suspend fun checkBusArrivals() {
     fun getCachedBusInfo(busNo: String, routeId: String): BusInfo? {
         val cacheKey = "$busNo-$routeId"
         return cachedBusInfo[cacheKey]
+    }
+
+    // 알람음 설정 불러오기
+    private fun loadAlarmSoundSettings() {
+        try {
+            val sharedPreferences = context.getSharedPreferences(PREF_ALARM_SOUND, Context.MODE_PRIVATE)
+            currentAlarmSound = sharedPreferences.getString(PREF_ALARM_SOUND_FILENAME, DEFAULT_ALARM_SOUND) ?: DEFAULT_ALARM_SOUND
+            useTextToSpeech = sharedPreferences.getBoolean(PREF_ALARM_USE_TTS, false)
+            Log.d(TAG, "🔔 알람음 설정 불러오기 성공: $currentAlarmSound, TTS 사용: $useTextToSpeech")
+        } catch (e: Exception) {
+            Log.e(TAG, "🔔 알람음 설정 불러오기 오류: ${e.message}", e)
+            currentAlarmSound = DEFAULT_ALARM_SOUND
+            useTextToSpeech = false
+        }
+    }
+    
+    // 알람음 설정
+    fun setAlarmSound(filename: String, useTts: Boolean = false) {
+        try {
+            currentAlarmSound = if (filename.isBlank()) {
+                // 빈 파일명은 무음 또는 진동만 사용
+                ""
+            } else {
+                filename
+            }
+            
+            useTextToSpeech = useTts
+            
+            // SharedPreferences에 저장
+            val sharedPreferences = context.getSharedPreferences(PREF_ALARM_SOUND, Context.MODE_PRIVATE)
+            sharedPreferences.edit()
+                .putString(PREF_ALARM_SOUND_FILENAME, currentAlarmSound)
+                .putBoolean(PREF_ALARM_USE_TTS, useTextToSpeech)
+                .apply()
+            
+            // 알림 채널 재생성 (알람음 변경을 적용하기 위함)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                createNotificationChannels()
+            }
+            
+            Log.d(TAG, "🔔 알람음 설정 완료: $currentAlarmSound, TTS 사용: $useTextToSpeech")
+        } catch (e: Exception) {
+            Log.e(TAG, "🔔 알람음 설정 오류: ${e.message}", e)
+        }
     }
 }
 
