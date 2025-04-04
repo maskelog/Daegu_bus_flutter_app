@@ -174,12 +174,102 @@ class _TimePickerSpinnerState extends State<TimePickerSpinner> {
 
   Widget _buildTimeItem(String text, bool isSelected) {
     return Center(
-      child: Text(
-        text,
-        style:
-            isSelected ? widget.highlightedTextStyle : widget.normalTextStyle,
-        textAlign: TextAlign.center,
+      child: GestureDetector(
+        onTap: () {
+          // AM/PM은 직접 입력 불가능
+          if (text == 'AM' || text == 'PM') return;
+
+          _showNumberInputDialog(text);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            color:
+                isSelected ? Colors.blue.withOpacity(0.1) : Colors.transparent,
+          ),
+          child: Text(
+            text,
+            style: isSelected
+                ? widget.highlightedTextStyle
+                : widget.normalTextStyle,
+            textAlign: TextAlign.center,
+          ),
+        ),
       ),
+    );
+  }
+
+  // 숫자 직접 입력 다이얼로그
+  void _showNumberInputDialog(String currentValue) {
+    final TextEditingController controller =
+        TextEditingController(text: currentValue.replaceAll(RegExp(r'^0'), ''));
+    final bool isHour =
+        _currentHourIndex.toString().padLeft(2, '0') == currentValue;
+    final int maxValue = isHour ? (widget.is24HourMode ? 23 : 12) : 59;
+    final String title = isHour ? '시간 입력' : '분 입력';
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: '0-$maxValue 사이의 숫자 입력',
+              suffixText: isHour ? '시' : '분',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('취소'),
+            ),
+            TextButton(
+              onPressed: () {
+                final String value = controller.text;
+                int? inputValue = int.tryParse(value);
+
+                if (inputValue != null &&
+                    inputValue >= 0 &&
+                    inputValue <= maxValue) {
+                  Navigator.pop(context);
+
+                  if (isHour) {
+                    if (!widget.is24HourMode && inputValue == 0) {
+                      inputValue = 12; // 12시간 모드에서 0시는 12시로 표시
+                    }
+
+                    _hourController.animateToItem(
+                      widget.is24HourMode
+                          ? inputValue
+                          : (inputValue % 12 == 0 ? 0 : inputValue % 12) -
+                              (widget.is24HourMode ? 0 : 1),
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                    );
+                  } else {
+                    _minuteController.animateToItem(
+                      inputValue,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                    );
+                  }
+                } else {
+                  // 잘못된 입력 알림
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('0-$maxValue 사이의 유효한 숫자를 입력하세요')),
+                  );
+                }
+              },
+              child: const Text('확인'),
+            ),
+          ],
+        );
+      },
     );
   }
 
