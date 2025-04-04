@@ -12,6 +12,7 @@ import 'services/notification_service.dart';
 import 'services/permission_service.dart';
 import 'screens/home_screen.dart';
 import 'utils/tts_helper.dart';
+import 'package:daegu_bus_app/services/settings_service.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -60,6 +61,13 @@ Future<void> main() async {
     log('TTS 초기화 오류: $e', level: LogLevel.error);
   }
 
+  try {
+    await SettingsService().initialize();
+    log('SettingsService 초기화 성공', level: LogLevel.info);
+  } catch (e) {
+    log('SettingsService 초기화 오류: $e', level: LogLevel.error);
+  }
+
   if (Platform.isAndroid) {
     try {
       await PermissionService.requestNotificationPermission();
@@ -72,6 +80,7 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AlarmService()),
+        ChangeNotifierProvider(create: (_) => SettingsService()),
       ],
       child: const MyApp(),
     ),
