@@ -12,6 +12,7 @@ import 'package:xml/xml.dart' as xml;
 import '../models/bus_arrival.dart';
 import '../services/notification_service.dart';
 import '../utils/tts_helper.dart';
+import '../utils/tts_switcher.dart';
 
 class AlarmData {
   final String busNo;
@@ -602,6 +603,9 @@ class AlarmService extends ChangeNotifier {
       debugPrint(
           '버스 위치 캐시 생성: $busNo, 남은 시간: $remainingMinutes분, 위치: $currentStation');
     }
+
+    // TTSSwitcher에 강제 시간 업데이트 전달
+    TTSSwitcher.updateTrackedBusTime(remainingMinutes);
 
     // 관련 알람의 남은 시간 업데이트
     for (var alarm in _activeAlarms) {
