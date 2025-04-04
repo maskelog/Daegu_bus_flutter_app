@@ -38,7 +38,13 @@ class SimpleTTSHelper {
   /// 직접 네이티브 TTS 발화 - 안전한 구현
   static Future<bool> speak(String message) async {
     if (!_initialized) await initialize();
-    if (_speaking) return false;
+    if (_speaking) {
+      debugPrint('이미 발화 중입니다. 발화 생략: $message');
+      return false;
+    }
+
+    // 발화 직전 화면이 갱신된 최신 정보 로그 출력
+    debugPrint('최신 정보 기반 TTS 발화 시도: $message');
 
     try {
       _speaking = true;
