@@ -503,6 +503,18 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     busAlertService?.cancelAllNotifications()
                     result.success(true)
                 }
+                "setAlarmSound" -> {
+                    try {
+                        val filename = call.argument<String>("filename") ?: ""
+                        val useTts = call.argument<Boolean>("useTts") ?: false
+                        Log.d(TAG, "알람음 설정 요청: $filename, TTS 사용: $useTts")
+                        busAlertService?.setAlarmSound(filename, useTts)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "알람음 설정 오류: ${e.message}", e)
+                        result.error("ALARM_SOUND_ERROR", "알람음 설정 중 오류 발생: ${e.message}", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
