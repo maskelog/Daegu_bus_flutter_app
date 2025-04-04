@@ -56,19 +56,40 @@ class _BusCardState extends State<BusCard> {
   int remainingTime = 0;
   bool _isUpdating = false;
   final NotificationService _notificationService = NotificationService();
+  Timer? _updateTimer;
 
   @override
   void initState() {
     super.initState();
     if (widget.busArrival.buses.isNotEmpty) {
       firstBus = widget.busArrival.buses.first;
-      remainingTime = firstBus.getRemainingMinutes();
+      remainingTime =
+          firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
       _updateAlarmServiceCache();
-      _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
-        if (!mounted) return;
-        _updateBusArrivalInfo();
+      _updateTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+        if (_shouldUpdate()) {
+          _updateBusArrivalInfo();
+        }
       });
     }
+  }
+
+  @override
+  void didUpdateWidget(BusCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.busArrival.buses.isNotEmpty) {
+      firstBus = widget.busArrival.buses.first;
+      remainingTime =
+          firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
+    }
+  }
+
+  bool _shouldUpdate() {
+    // 중요 시간대이거나 마지막 업데이트로부터 일정 시간이 지났을 때만 업데이트
+    return remainingTime <= 10 ||
+        remainingTime <= 5 ||
+        remainingTime <= 3 ||
+        remainingTime <= 1;
   }
 
   Future<void> _updateBusArrivalInfo() async {
@@ -86,7 +107,8 @@ class _BusCardState extends State<BusCard> {
           updatedBusArrival.buses.isNotEmpty) {
         setState(() {
           firstBus = updatedBusArrival.buses.first;
-          remainingTime = firstBus.getRemainingMinutes();
+          remainingTime =
+              firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
           debugPrint('BusCard - 업데이트된 남은 시간: $remainingTime');
           _updateAlarmServiceCache();
 
@@ -136,6 +158,7 @@ class _BusCardState extends State<BusCard> {
   @override
   void dispose() {
     _timer?.cancel();
+    _updateTimer?.cancel();
     super.dispose();
   }
 
@@ -350,6 +373,8 @@ class _BusCardState extends State<BusCard> {
     }
 
     firstBus = widget.busArrival.buses.first;
+    remainingTime =
+        firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
     final String currentStationText = firstBus.currentStation.trim().isNotEmpty
         ? firstBus.currentStation
         : (widget.stationName ?? "정류장 정보 없음");

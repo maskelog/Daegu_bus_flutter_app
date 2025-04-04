@@ -4,12 +4,10 @@ import 'package:daegu_bus_app/screens/profile_screen.dart';
 import 'package:daegu_bus_app/screens/reoute_map_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:provider/provider.dart';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
-import '../services/alarm_service.dart';
 import '../widgets/active_alarm_panel.dart';
 import '../widgets/bus_card.dart';
 import '../widgets/compact_bus_card.dart';
@@ -25,87 +23,114 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final TextEditingController _searchController = TextEditingController();
+  bool _isLoading = true;
+  bool _isLoadingNearby = false;
+  String? _errorMessage;
+  Timer? _refreshTimer;
+  Timer? _smartRefreshTimer;
   final List<BusStop> _favoriteStops = [];
   List<BusStop> _nearbyStops = [];
   BusStop? _selectedStop;
   List<BusArrival> _busArrivals = [];
-  bool _isLoading = false;
-  bool _isLoadingNearby = false;
-  String? _errorMessage;
-  Timer? _refreshTimer;
+  Map<String, List<BusArrival>> _stationArrivals = {};
 
   @override
   void initState() {
     super.initState();
-    debugPrint('HomeScreen initState called');
-    _loadFavoriteStops();
-    _loadNearbyStations();
-    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
-      if (mounted && _selectedStop != null) {
-        _loadBusArrivals();
-      }
-    });
+    _initializeData();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _refreshTimer?.cancel();
+    _smartRefreshTimer?.cancel();
     super.dispose();
   }
 
-// 주변 정류장 로드 (500m 이내)
-  Future<void> _loadNearbyStations() async {
-    setState(() => _isLoadingNearby = true);
+  Future<void> _initializeData() async {
+    setState(() {
+      _isLoading = true;
+      _isLoadingNearby = true;
+      _errorMessage = null;
+    });
+
     try {
-      // 500미터로 변경 (1000에서 500으로 수정)
-      final nearbyStations =
-          await LocationService.getNearbyStations(500, context: context);
+      // 병렬로 데이터 로딩
+      await Future.wait([
+        _loadFavoriteStops(),
+        _loadNearbyStations(),
+      ]);
+
+      // 버스 도착 정보 로딩
+      await _loadBusArrivals();
+
+      // 주기적 새로고침 설정
+      _setupPeriodicRefresh();
+    } catch (e) {
+      setState(() {
+        _errorMessage = '데이터를 불러오는 중 오류가 발생했습니다: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+        _isLoadingNearby = false;
+      });
+    }
+  }
+
+  // 즐겨찾기 불러오기 최적화
+  Future<void> _loadFavoriteStops() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final favorites = prefs.getStringList('favorites') ?? [];
+
+      if (!mounted) return;
+
+      setState(() {
+        _favoriteStops.clear();
+        for (var json in favorites) {
+          final data = jsonDecode(json);
+          final stop = BusStop.fromJson(data);
+          _favoriteStops.add(stop);
+          debugPrint('Loaded favorite stop: ${stop.id}, ${stop.name}');
+        }
+
+        if (_favoriteStops.isNotEmpty && _selectedStop == null) {
+          _selectedStop = _favoriteStops.first;
+          debugPrint(
+              'Selected stop: ${_selectedStop!.id}, ${_selectedStop!.name}');
+        }
+      });
+    } catch (e) {
+      debugPrint('Error loading favorites: $e');
       if (!mounted) return;
       setState(() {
+        _errorMessage = '즐겨찾기를 불러오는 중 오류가 발생했습니다.';
+      });
+    }
+  }
+
+  // 주변 정류장 로드 최적화
+  Future<void> _loadNearbyStations() async {
+    try {
+      final nearbyStations =
+          await LocationService.getNearbyStations(500, context: context);
+
+      if (!mounted) return;
+
+      setState(() {
         _nearbyStops = nearbyStations;
-        _isLoadingNearby = false;
         if (_nearbyStops.isNotEmpty && _selectedStop == null) {
           _selectedStop = _nearbyStops.first;
-          _loadBusArrivals();
         }
       });
     } catch (e) {
       debugPrint('Error loading nearby stations: $e');
       if (!mounted) return;
       setState(() {
-        _isLoadingNearby = false;
         _errorMessage = '주변 정류장을 불러오는 중 오류가 발생했습니다: $e';
       });
-    }
-  }
-
-  // 즐겨찾기 불러오기
-  Future<void> _loadFavoriteStops() async {
-    setState(() => _isLoading = true);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final favorites = prefs.getStringList('favorites') ?? [];
-      _favoriteStops.clear();
-      for (var json in favorites) {
-        final data = jsonDecode(json);
-        final stop = BusStop.fromJson(data);
-        _favoriteStops.add(stop);
-        debugPrint('Loaded favorite stop: ${stop.id}, ${stop.name}');
-      }
-      if (_favoriteStops.isNotEmpty && _selectedStop == null) {
-        _selectedStop = _favoriteStops.first;
-        debugPrint(
-            'Selected stop: ${_selectedStop!.id}, ${_selectedStop!.name}');
-        _loadBusArrivals();
-      }
-    } catch (e) {
-      debugPrint('Error loading favorites: $e');
-      setState(() {
-        _errorMessage = '즐겨찾기를 불러오는 중 오류가 발생했습니다.';
-      });
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -162,62 +187,83 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 버스 도착 정보 로드
   Future<void> _loadBusArrivals() async {
-    if (_selectedStop == null) return;
+    if (_nearbyStops.isEmpty && _favoriteStops.isEmpty) return;
 
+    debugPrint('🔍 버스 도착 정보 로드 시작');
+
+    if (_selectedStop == null) {
+      debugPrint('❌ 선택된 정류장이 없음');
+      return;
+    }
+
+    final String busStationId = _selectedStop!.stationId ?? _selectedStop!.id;
     debugPrint(
-        'Loading bus arrivals for station: ${_selectedStop!.id}, ${_selectedStop!.name}');
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+        '📌 선택된 정류장: ${_selectedStop!.name} (id: ${_selectedStop!.id}, stationId: $busStationId)');
 
     try {
-      final arrivalsData =
-          await ApiService.getStationInfo(_selectedStop!.id); // bsId 사용
-      debugPrint('Bus arrivals loaded: ${arrivalsData.length} routes');
-
-      if (!mounted) return;
-
       setState(() {
-        _busArrivals = arrivalsData;
+        _isLoading = true;
+        _errorMessage = null;
       });
 
-      _updateAlarmServiceCache();
-    } catch (e) {
-      debugPrint('Error loading arrivals: $e');
-      setState(() {
-        _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
-      });
+      final allStops = [..._nearbyStops, ..._favoriteStops];
+
+      // 선택된 정류장의 도착 정보 로드
+      debugPrint('🚌 선택된 정류장의 도착 정보 로드 중: $busStationId');
+      final stopArrivals = await ApiService.getStationInfo(busStationId);
+      debugPrint('✅ 도착 정보 로드 완료: ${stopArrivals.length}개 버스 발견');
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('버스 도착 정보를 불러오지 못했습니다: $e')),
-        );
+        setState(() {
+          _stationArrivals[_selectedStop!.id] = stopArrivals;
+          _busArrivals = stopArrivals;
+          _isLoading = false;
+          debugPrint('🔄 UI 업데이트: ${_busArrivals.length}개 버스 도착 정보 설정');
+        });
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
 
-  // AlarmService 캐시 업데이트 메소드
-  void _updateAlarmServiceCache() {
-    if (_busArrivals.isEmpty || !mounted) return;
+      // 백그라운드에서 다른 모든 정류장 정보 로드
+      final List<List<BusArrival>> arrivals = await Future.wait(
+        allStops.map((stop) async {
+          try {
+            // 이미 로드한 선택된 정류장은 건너뛰기
+            if (_selectedStop != null && stop.id == _selectedStop!.id) {
+              return _stationArrivals[stop.id] ?? <BusArrival>[];
+            }
 
-    final alarmService = Provider.of<AlarmService>(context, listen: false);
-    final Set<String> updatedBuses = {};
+            final stationId = stop.stationId ?? stop.id;
+            if (stationId.isNotEmpty) {
+              return await ApiService.getStationInfo(stationId);
+            }
+            return <BusArrival>[];
+          } catch (e) {
+            debugPrint('${stop.id} 도착 정보 로딩 오류: $e');
+            return <BusArrival>[];
+          }
+        }),
+      );
 
-    for (var busArrival in _busArrivals) {
-      if (busArrival.buses.isNotEmpty) {
-        final firstBus = busArrival.buses.first;
-        final remainingTime = firstBus.getRemainingMinutes();
-        final busKey = "${busArrival.routeNo}:${busArrival.routeId}";
-        if (updatedBuses.contains(busKey)) continue;
-        updatedBuses.add(busKey);
-        alarmService.updateBusInfoCache(
-            busArrival.routeNo, busArrival.routeId, firstBus, remainingTime);
-        debugPrint(
-            '홈스크린에서 캐시 업데이트: ${busArrival.routeNo}, 남은 시간: $remainingTime분');
+      if (mounted) {
+        setState(() {
+          _stationArrivals = Map.fromIterables(
+            allStops.map((stop) => stop.id),
+            arrivals,
+          );
+
+          // 선택된 정류장이 있으면 해당 정류장의 도착 정보 업데이트
+          if (_selectedStop != null) {
+            _busArrivals = _stationArrivals[_selectedStop!.id] ?? [];
+            debugPrint('📊 전체 업데이트 후 버스 도착 정보: ${_busArrivals.length}개');
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ 버스 도착 정보 로딩 오류: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
+        });
       }
     }
   }
@@ -441,8 +487,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                   onTap: () {
                                     setState(() {
                                       _selectedStop = stop;
-                                      _loadBusArrivals();
                                     });
+                                    // 정류장 선택 후 즉시 도착 정보 로드
+                                    _loadBusArrivals();
                                   },
                                   borderRadius: BorderRadius.circular(12),
                                   child: Padding(
@@ -575,8 +622,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           onTap: () {
                             setState(() {
                               _selectedStop = stop;
-                              _loadBusArrivals();
                             });
+                            // 정류장 선택 후 즉시 도착 정보 로드
+                            _loadBusArrivals();
                           },
                           borderRadius: BorderRadius.circular(12),
                           child: Padding(
@@ -712,6 +760,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               (context, index) {
                                 return CompactBusCard(
                                   busArrival: _busArrivals[index],
+                                  stationName: _selectedStop?.name,
                                   onTap: () {
                                     _showBusDetailModal(_busArrivals[index]);
                                   },
@@ -804,5 +853,13 @@ class _HomeScreenState extends State<HomeScreen> {
         NavigationDestination(icon: Icon(Icons.person), label: '내정보'),
       ],
     );
+  }
+
+  void _setupPeriodicRefresh() {
+    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted && _selectedStop != null) {
+        _loadBusArrivals();
+      }
+    });
   }
 }

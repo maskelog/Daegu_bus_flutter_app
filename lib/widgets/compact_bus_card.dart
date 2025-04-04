@@ -36,7 +36,9 @@ class _CompactBusCardState extends State<CompactBusCard> {
     }
 
     // 남은 시간 계산 (getRemainingMinutes()는 정수값을 반환)
-    final int remainingMinutes = firstBus.getRemainingMinutes();
+    // 운행 종료인 경우 0분으로 처리
+    final int remainingMinutes =
+        firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
 
     // 버스 상태에 따른 도착 정보 텍스트 설정
     String arrivalTimeText;
