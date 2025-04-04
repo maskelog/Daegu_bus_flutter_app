@@ -6,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import '../models/bus_stop.dart';
+import '../models/alarm_sound.dart';
 import '../services/alarm_service.dart';
+import '../services/settings_service.dart';
 import '../widgets/time_picker_spinner.dart';
 import 'search_screen.dart';
 
@@ -113,11 +115,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final List<AutoAlarm> _autoAlarms = [];
   bool _isLoading = false;
   final List<String> _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
+  late SettingsService _settingsService;
 
   @override
   void initState() {
     super.initState();
+    _settingsService = SettingsService();
     _loadAutoAlarms();
+    _initSettings();
+  }
+
+  Future<void> _initSettings() async {
+    await _settingsService.initialize();
+    setState(() {}); // UI 업데이트
   }
 
   Future<void> _loadAutoAlarms() async {
@@ -304,7 +314,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             color: Colors.grey[600],
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 24),
+
+                        // 알람음 설정 섹션 추가
+                        const Text(
+                          '알람 설정',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildAlarmSoundSection(),
+                        const SizedBox(height: 24),
+
                         TextButton(
                           onPressed: _addCommuteAlarmExample,
                           child: const Text('출근 알람 예시 추가'),
@@ -528,6 +551,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (alarm.excludeHolidays) excludes.add('공휴일 제외');
     return excludes.join(', ');
   }
+
+  // 알람음 설정 섹션 위젯
+  Widget _buildAlarmSoundSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '알람음',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: AlarmSound.allSounds.map((sound) {
+              final isSelected = _settingsService.alarmSoundId == sound.id;
+              return ListTile(
+                leading: Icon(
+                  sound.icon,
+                  color: isSelected ? Colors.blue : Colors.grey,
+                ),
+                title: Text(sound.name),
+                trailing: isSelected
+                    ? const Icon(Icons.check_circle, color: Colors.blue)
+                    : null,
+                selected: isSelected,
+                selectedTileColor: Colors.blue.shade50,
+                onTap: () {
+                  _settingsService.setAlarmSound(sound.id);
+                  setState(() {}); // UI 갱신
+
+                  // 선택 피드백
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('알람음이 "${sound.name}"으로 변경되었습니다'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class AutoAlarmEditScreen extends StatefulWidget {
@@ -585,7 +660,10 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
           id: alarm.stationId, name: alarm.stationName, isFavorite: false);
       _selectedRouteId = alarm.routeId;
       _selectedRouteNo = alarm.routeNo;
-      _loadRouteOptions();
+      _loadRouteOptions().then((_) {
+        // 노선이 하나 이상 있으면 자동으로 첫 번째 노선 선택 대신,
+        // 모든 노선 목록을 표시하도록 하고 팝업은 표시하지 않음
+      });
     } else {
       final now = DateTime.now();
       _hour = now.hour;
@@ -595,57 +673,11 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
         _selectedStation = widget.selectedStation;
         _stationController.text = _selectedStation!.name;
         _loadRouteOptions().then((_) {
-          // 정류장 선택 후 노선이 로드되면 자동으로 노선 선택 다이얼로그 표시
-          if (_routeOptions.length > 1) {
-            // 1개 이상의 노선이 있으면 다이얼로그 표시
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _showRouteSelectionDialog();
-            });
-          } else if (_routeOptions.length == 1) {
-            // 노선이 하나만 있으면 자동 선택
-            _selectRoute(_routeOptions[0]['id']!, _routeOptions[0]['routeNo']!);
-          }
+          // 노선이 하나 이상 있으면 자동으로 첫 번째 노선 선택 대신,
+          // 모든 노선 목록을 표시하도록 하고 팝업은 표시하지 않음
         });
       }
     }
-  }
-
-  // 노선 선택 다이얼로그를 표시하는 새로운 메서드 추가
-  void _showRouteSelectionDialog() {
-    debugPrint('노선 선택 다이얼로그 표시 시작: ${_routeOptions.length}개 노선');
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('노선 선택'),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 300, // 높이 제한
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: _routeOptions.length,
-            itemBuilder: (context, index) {
-              final route = _routeOptions[index];
-              debugPrint('다이얼로그 항목 빌드: ${route['routeNo']}');
-              return ListTile(
-                title: Text(route['routeNo']!),
-                onTap: () {
-                  debugPrint('노선 선택됨: ${route['routeNo']}');
-                  _selectRoute(route['id']!, route['routeNo']!);
-                  Navigator.pop(context);
-                },
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -694,16 +726,6 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
         for (var route in _routeOptions) {
           debugPrint('노선 옵션: ${route['routeNo']} (ID: ${route['id']})');
         }
-
-        // 노선이 여러 개인 경우 다이얼로그 표시
-        if (_routeOptions.length > 1) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _showRouteSelectionDialog();
-          });
-        } else if (_routeOptions.length == 1) {
-          // 노선이 하나만 있으면 자동 선택
-          _selectRoute(_routeOptions[0]['id']!, _routeOptions[0]['routeNo']!);
-        }
       }
     } catch (e) {
       debugPrint('노선 정보 로드 오류: $e');
@@ -725,6 +747,15 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       _selectedRouteNo = routeNo;
       _routeController.text = routeNo;
     });
+
+    // 선택 피드백 제공
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$routeNo 노선이 선택되었습니다'),
+        duration: const Duration(seconds: 1),
+        backgroundColor: Colors.green[700],
+      ),
+    );
   }
 
   void _toggleDay(int day) {
@@ -905,69 +936,67 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
             TextField(
               controller: _routeController,
               readOnly: true,
+              enabled: false,
               decoration: InputDecoration(
-                hintText: '정류장을 먼저 선택하세요',
+                hintText: '아래 노선 목록에서 선택하세요',
                 border:
                     OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                suffixIcon: const Icon(Icons.arrow_drop_down),
+                fillColor:
+                    _selectedRouteId != null ? Colors.blue.shade50 : null,
+                filled: _selectedRouteId != null,
               ),
-              onTap: () {
-                if (_selectedStation == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('정류장을 먼저 선택해주세요')),
-                  );
-                  return;
-                }
-                if (_isLoadingRoutes) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('노선 정보를 불러오는 중입니다')),
-                  );
-                  return;
-                }
-                if (_routeOptions.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('해당 정류장에 노선 정보가 없습니다')),
-                  );
-                  return;
-                }
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('노선 선택'),
-                    content: SizedBox(
-                      width: double.maxFinite,
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: _routeOptions.length,
-                        itemBuilder: (context, index) {
-                          final route = _routeOptions[index];
-                          return ListTile(
-                            title: Text(route['routeNo']!),
-                            onTap: () {
-                              _selectRoute(route['id']!, route['routeNo']!);
-                              Navigator.pop(context);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('취소'),
-                      ),
-                    ],
-                  ),
-                );
-              },
             ),
             if (_isLoadingRoutes)
               const Center(
                   child: Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: CircularProgressIndicator())),
+            if (!_isLoadingRoutes && _routeOptions.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 12),
+                  const Text('노선 목록',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.blue,
+                      )),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    height: _routeOptions.length > 4 ? 200 : null, // 높이 제한
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      physics: _routeOptions.length > 4
+                          ? const AlwaysScrollableScrollPhysics()
+                          : const NeverScrollableScrollPhysics(),
+                      itemCount: _routeOptions.length,
+                      separatorBuilder: (context, index) =>
+                          Divider(height: 1, color: Colors.grey.shade300),
+                      itemBuilder: (context, index) {
+                        final route = _routeOptions[index];
+                        final isSelected = _selectedRouteId == route['id'];
+                        return ListTile(
+                          title: Text(route['routeNo']!),
+                          selected: isSelected,
+                          selectedTileColor: Colors.blue.shade50,
+                          dense: true,
+                          visualDensity: VisualDensity.compact,
+                          textColor: isSelected ? Colors.blue.shade700 : null,
+                          onTap: () =>
+                              _selectRoute(route['id']!, route['routeNo']!),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             const SizedBox(height: 24),
             const Text('버스 도착 전 알림',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
