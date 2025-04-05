@@ -1,5 +1,6 @@
-import 'dart:io';
+// 안드로이드 전용 앱
 import 'package:daegu_bus_app/services/backgroud_service.dart';
+import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
@@ -11,7 +12,6 @@ import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
 import 'services/permission_service.dart';
 import 'screens/home_screen.dart';
-import 'utils/tts_helper.dart';
 import 'package:daegu_bus_app/services/settings_service.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -43,8 +43,20 @@ Future<void> main() async {
   }
 
   try {
-    await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+    await Workmanager().initialize(callbackDispatcher, isInDebugMode: true);
     log('Workmanager 초기화 완료', level: LogLevel.info);
+    
+    // 자동 알람 등록을 위한 WorkManager 처리
+    await Workmanager().registerOneOffTask(
+      'init_auto_alarms',
+      'initAutoAlarms',
+      initialDelay: const Duration(seconds: 10),
+      constraints: Constraints(
+        networkType: NetworkType.connected,
+        requiresBatteryNotLow: false,
+      ),
+    );
+    log('자동 알람 초기화 작업 등록 완료', level: LogLevel.info);
   } catch (e) {
     log('Workmanager 초기화 오류: $e', level: LogLevel.error);
   }
@@ -56,7 +68,7 @@ Future<void> main() async {
   }
 
   try {
-    await TTSHelper.initialize();
+    await SimpleTTSHelper.initialize();
   } catch (e) {
     log('TTS 초기화 오류: $e', level: LogLevel.error);
   }
@@ -68,12 +80,12 @@ Future<void> main() async {
     log('SettingsService 초기화 오류: $e', level: LogLevel.error);
   }
 
-  if (Platform.isAndroid) {
-    try {
-      await PermissionService.requestNotificationPermission();
-    } catch (e) {
-      log('알림 권한 요청 오류: $e', level: LogLevel.warning);
-    }
+  // 안드로이드 전용 앱이므로 권한 요청 진행
+  try {
+    await PermissionService.requestNotificationPermission();
+    log('알림 권한 요청 완료', level: LogLevel.info);
+  } catch (e) {
+    log('알림 권한 요청 오류: $e', level: LogLevel.warning);
   }
 
   runApp(
@@ -114,7 +126,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
       log('포그라운드 전환됨 → TTS 재초기화', level: LogLevel.info);
-      TTSHelper.initialize()
+      SimpleTTSHelper.initialize()
           .then(
             (_) => log('TTS 재초기화 완료', level: LogLevel.info),
           )
