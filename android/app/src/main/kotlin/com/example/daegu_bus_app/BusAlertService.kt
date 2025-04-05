@@ -44,6 +44,12 @@ class BusAlertService : Service() {
         private const val PREF_ALARM_SOUND_FILENAME = "alarm_sound_filename"
         private const val PREF_ALARM_USE_TTS = "alarm_use_tts"
         private const val DEFAULT_ALARM_SOUND = "alarm_sound"
+        
+        // 오디오 출력 모드 상수
+        private const val PREF_SPEAKER_MODE = "speaker_mode"
+        private const val OUTPUT_MODE_HEADSET = 0   // 이어폰 전용
+        private const val OUTPUT_MODE_SPEAKER = 1   // 스피커 전용
+        private const val OUTPUT_MODE_AUTO = 2      // 자동 감지 (기본값)
     }
     
     private var _methodChannel: MethodChannel? = null
@@ -68,6 +74,9 @@ class BusAlertService : Service() {
     // 현재 설정된 알람음
     private var currentAlarmSound = DEFAULT_ALARM_SOUND
     private var useTextToSpeech = false // TTS 사용 여부 플래그
+
+    // 클래스 멤버 변수로 추가
+    private var audioOutputMode = OUTPUT_MODE_AUTO  // 기본값: 자동 감지
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -132,7 +141,26 @@ class BusAlertService : Service() {
                                 Log.d(TAG, "🔊 한국어 설정 성공: $result")
                         }
                         
-                        ttsEngine?.setSpeechRate(1.0f)
+                        // 발화 속도 최적화
+                        ttsEngine?.setSpeechRate(1.2f)
+                        // 피치 최적화
+                        ttsEngine?.setPitch(1.1f)
+                        
+                        // 진행 상태 리스너 추가
+                        ttsEngine?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) {
+                                Log.d(TAG, "🔊 TTS 발화 시작: $utteranceId")
+                            }
+                            
+                            override fun onDone(utteranceId: String?) {
+                                Log.d(TAG, "🔊 TTS 발화 완료: $utteranceId")
+                            }
+                            
+                            override fun onError(utteranceId: String?) {
+                                Log.e(TAG, "❌ TTS 발화 오류: $utteranceId")
+                            }
+                        })
+                        
                         Log.d(TAG, "🔊 TTS 엔진 초기화 성공")
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ TTS 언어 및 속성 설정 중 오류: ${e.message}", e)
@@ -297,7 +325,7 @@ private suspend fun checkBusArrivals() {
                                 ).toString()
                             )
                             Log.d(TAG, "🔊 도착 임박 TTS 발화 시도: $busNo 버스")
-                            speakTts("$busNo 버스가 곧 도착합니다.")
+                            speakTts("$busNo 버스가 곧 도착합니다.", showNotification = true, busInfo = mapOf("busNo" to busNo, "stationName" to stationName, "remainingMinutes" to remainingTime, "currentStation" to currentStation, "routeId" to routeId))
                             lastRemainingTimes[routeId] = remainingTime
                         }
                     } else if (remainingTime > 2) {
@@ -328,7 +356,7 @@ private suspend fun checkBusArrivals() {
                                 System.currentTimeMillis() - (lastTimestamps[routeId] ?: 0L) > 120_000)) {
                                 
                                 Log.d(TAG, "🔊 남은 시간 TTS 발화 시도: $busNo 버스, $remainingTime 분 남음")
-                                speakTts("$busNo 버스가 약 ${remainingTime}분 후 도착 예정입니다.")
+                                speakTts("$busNo 버스가 약 ${remainingTime}분 후 도착 예정입니다.", showNotification = true, busInfo = mapOf("busNo" to busNo, "stationName" to stationName, "remainingMinutes" to remainingTime, "currentStation" to currentStation, "routeId" to routeId))
                                 
                                 lastRemainingTimes[routeId] = remainingTime
                                 lastTimestamps[routeId] = System.currentTimeMillis()
@@ -344,48 +372,105 @@ private suspend fun checkBusArrivals() {
         }
     }
 
-    private fun speakTts(text: String) {
+    // speakTts 함수 수정 - 오디오 출력 모드에 따른 처리 로직 추가
+    private fun speakTts(text: String, earphoneOnly: Boolean = false, showNotification: Boolean = true, busInfo: Map<String, Any?>? = null) {
         try {
-            Log.d(TAG, "🔊 TTS 발화 시도: $text")
+            // TTS 모드 상세 로그 추가
+            Log.d(TAG, "🔊 TTS 발화 시작 ==========================================")
+            Log.d(TAG, "🔊 발화 텍스트: \"$text\"")
+            Log.d(TAG, "🔊 파라미터 - 이어폰 전용 요청: $earphoneOnly, 알림 표시: $showNotification")
+            Log.d(TAG, "🔊 설정된 오디오 모드: $audioOutputMode (0=이어폰전용, 1=스피커전용, 2=자동감지)")
+            Log.d(TAG, "🔊 TTS 사용 설정: $useTextToSpeech")
             
+            // TTS 엔진 초기화 확인
             if (ttsEngine == null) {
                 Log.d(TAG, "🔊 TTS 엔진 초기화 필요")
                 initializeTts()
-                Thread.sleep(200) // 초기화에 더 많은 시간 부여
+                Thread.sleep(100) // 초기화 대기 시간 줄임
             }
             
-            val result = if (text.length > 20) {
-                // 문장 분할
-                val sentences = splitIntoSentences(text)
-                for (sentence in sentences) {
-                    val utteranceId = "BUS_TTS_TRACKING_${sentences.indexOf(sentence)}"
-                    Log.d(TAG, "🔊 TTS 분할 발화 시도 (${sentences.indexOf(sentence) + 1}/${sentences.size}): $sentence, ID: $utteranceId")
+            // 이어폰 연결 상태 확인
+            val headsetConnected = isHeadsetConnected()
+            Log.d(TAG, "🎧 이어폰 연결 상태: $headsetConnected")
+            
+            // 출력 모드 결정 (earphoneOnly 파라미터와 audioOutputMode 설정 통합)
+            // earphoneOnly 파라미터가 true면 이어폰 전용 모드로 처리 (기존 호환성 유지)
+            val effectiveMode = if (earphoneOnly) OUTPUT_MODE_HEADSET else audioOutputMode
+            Log.d(TAG, "🔊 최종 적용 오디오 모드: $effectiveMode (0=이어폰전용, 1=스피커전용, 2=자동감지)")
+            
+            // 출력 모드에 따른 발화 여부 결정
+            val shouldSpeak = when (effectiveMode) {
+                OUTPUT_MODE_HEADSET -> headsetConnected  // 이어폰 전용: 이어폰 연결된 경우만 발화
+                OUTPUT_MODE_SPEAKER -> true               // 스피커 전용: 항상 발화
+                OUTPUT_MODE_AUTO -> true                  // 자동 감지: 항상 발화 (AudioManager가 자동으로 출력 장치 선택)
+                else -> true                             // 기본: 항상 발화
+            }
+            
+            // 조건에 따른 발화 처리 결과 로그
+            Log.d(TAG, "🔊 발화 실행 여부: $shouldSpeak")
+            
+            // 알림 표시 여부 결정 및 노티피케이션 표시
+            if (showNotification && busInfo != null) {
+                try {
+                    // 버스 정보 추출
+                    val busNo = busInfo["busNo"] as? String ?: ""
+                    val stationName = busInfo["stationName"] as? String ?: ""
+                    val remainingMinutes = busInfo["remainingMinutes"] as? Int ?: 0
+                    val currentStation = busInfo["currentStation"] as? String
+                    val routeId = busInfo["routeId"] as? String
                     
-                    val speakResult = ttsEngine?.speak(sentence, android.speech.tts.TextToSpeech.QUEUE_ADD, null, utteranceId)
-                    Log.d(TAG, "🔊 TTS 분할 발화 결과: $speakResult (0은 성공)")
+                    // 알림 ID 생성 (고유한 값이어야 함)
+                    val notificationId = kotlin.math.abs((busNo + stationName).hashCode())
                     
-                    Thread.sleep(500) // 문장 사이에 더 긴 지연 시간 부여
+                    // 알림 표시
+                    showNotification(
+                        id = notificationId,
+                        busNo = busNo,
+                        stationName = stationName,
+                        remainingMinutes = remainingMinutes,
+                        currentStation = currentStation,
+                        payload = "auto_alert_${busNo}_${notificationId}",
+                        isOngoing = false,
+                        routeId = routeId
+                    )
+                    
+                    Log.d(TAG, "🔔 자동 버스 알림 노티피케이션 표시: $busNo, $stationName, ${remainingMinutes}분")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 자동 알림 노티피케이션 표시 오류: ${e.message}", e)
                 }
-                0 // 성공으로 간주
-            } else {
-                val utteranceId = "BUS_TTS_TRACKING_${System.currentTimeMillis()}"
-                Log.d(TAG, "🔊 TTS 단일 발화 시도: $text, ID: $utteranceId")
-                ttsEngine?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, utteranceId)
             }
             
-            Log.d(TAG, "🔊 TTS 발화 명령 완료: $text (결과: $result, 0은 성공)")
-            
-            // 디버깅을 위한 TTS 엔진 상태 로깅
-            if (ttsEngine?.isSpeaking == true) {
-                Log.d(TAG, "🔊 TTS 엔진이 현재 말하는 중")
-            } else {
-                Log.d(TAG, "🔊 TTS 엔진이 현재 말하지 않음")
+            // 조건에 따라 발화 처리
+            if (!shouldSpeak) {
+                Log.d(TAG, "🔊 이어폰 전용 모드에서 이어폰이 연결되지 않아 발화하지 않음")
+                return
             }
+            
+            // TTS 알람(useTts=true)과 일반 알람 구분
+            val audioStream = if (effectiveMode == OUTPUT_MODE_HEADSET || useTextToSpeech) {
+                // 이어폰 전용 또는 TTS 알람은 MUSIC 스트림으로 설정
+                android.media.AudioManager.STREAM_MUSIC
+            } else {
+                // 그 외에는 NOTIFICATION 스트림으로 설정
+                android.media.AudioManager.STREAM_NOTIFICATION
+            }
+            Log.d(TAG, "🔊 오디오 스트림: ${if (audioStream == android.media.AudioManager.STREAM_MUSIC) "MUSIC (이어폰/TTS)" else "NOTIFICATION (스피커/일반)"}")
+            
+            // 발화 설정 및 실행
+            val utteranceId = "BUS_TTS_${System.currentTimeMillis()}"
+            val params = android.os.Bundle()
+            params.putString(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            params.putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, audioStream)
+            params.putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+            
+            val result = ttsEngine?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+            Log.d(TAG, "🔊 TTS 발화 명령 완료: 결과=$result (0은 성공)")
+            Log.d(TAG, "🔊 TTS 발화 종료 ==========================================")
+            
         } catch (e: Exception) {
             Log.e(TAG, "❌ TTS 발화 오류: ${e.message}", e)
-            // 오류 발생 시 다시 초기화 시도
+            // 오류 발생 시 간소화된 재초기화
             try {
-                Log.d(TAG, "🔊 TTS 엔진 재초기화 시도")
                 ttsEngine?.shutdown()
                 ttsEngine = null
                 initializeTts()
@@ -511,8 +596,18 @@ private suspend fun checkBusArrivals() {
                         "$busNo 번 버스가 $stationName 정류장에 약 ${displayMinutes}분 후 도착 예정입니다."
                     }
                     
+                    // 버스 정보를 맵으로 구성
+                    val busInfoMap = mapOf<String, Any?>(
+                        "busNo" to busNo,
+                        "stationName" to stationName,
+                        "remainingMinutes" to displayMinutes,
+                        "currentStation" to currentStation,
+                        "routeId" to routeId
+                    )
+                    
                     Log.d(TAG, "🔊 TTS 알람 발화 시도: $ttsMessage")
-                    speakTts(ttsMessage)
+                    // 이어폰 전용 모드로 설정 (TTS 알람은 이어폰에서만 동작)
+                    speakTts(ttsMessage, earphoneOnly = true, showNotification = true, busInfo = busInfoMap)
                 }
 
                 val intent = Intent(context, MainActivity::class.java).apply {
@@ -707,6 +802,15 @@ private suspend fun checkBusArrivals() {
                         ?.filter { it.isDigit() }?.toIntOrNull() ?: -1
                     val currentStation = arrivalInfo?.bus?.firstOrNull()?.currentStation ?: "정보 없음"
 
+                    // 버스 정보를 맵으로 구성 (노티피케이션에 사용)
+                    val busInfoMap = mapOf<String, Any?>(
+                        "busNo" to busNo,
+                        "stationName" to stationName,
+                        "remainingMinutes" to remaining,
+                        "currentStation" to currentStation,
+                        "routeId" to routeId
+                    )
+
                     val message = when {
                         remaining == -1 -> "도착 정보가 없습니다."
                         remaining == 0 -> "$busNo 버스가 $stationName 에 곧 도착합니다. 탑승 준비하세요."
@@ -716,9 +820,10 @@ private suspend fun checkBusArrivals() {
 
                     if (message != null) {
                         withContext(Dispatchers.Main) {
-                            speakTts(message)
+                            // 자동 알람은 이어폰 전용 모드가 아님 (스피커와 이어폰 모두에서 재생)
+                            speakTts(message, earphoneOnly = false, showNotification = true, busInfo = busInfoMap)
                             if (remaining == 0) {
-                                showBusArrivingSoon(busNo, stationName, currentStation) // stationName 올바르게 사용
+                                showBusArrivingSoon(busNo, stationName, currentStation)
                                 stopTtsTracking()
                             }
                         }
@@ -817,11 +922,16 @@ private suspend fun checkBusArrivals() {
             val sharedPreferences = context.getSharedPreferences(PREF_ALARM_SOUND, Context.MODE_PRIVATE)
             currentAlarmSound = sharedPreferences.getString(PREF_ALARM_SOUND_FILENAME, DEFAULT_ALARM_SOUND) ?: DEFAULT_ALARM_SOUND
             useTextToSpeech = sharedPreferences.getBoolean(PREF_ALARM_USE_TTS, false)
-            Log.d(TAG, "🔔 알람음 설정 불러오기 성공: $currentAlarmSound, TTS 사용: $useTextToSpeech")
+            
+            // 오디오 출력 모드 불러오기 추가
+            audioOutputMode = sharedPreferences.getInt(PREF_SPEAKER_MODE, OUTPUT_MODE_AUTO)
+            
+            Log.d(TAG, "🔔 알람음 설정 불러오기 성공: $currentAlarmSound, TTS 사용: $useTextToSpeech, 오디오 모드: $audioOutputMode")
         } catch (e: Exception) {
             Log.e(TAG, "🔔 알람음 설정 불러오기 오류: ${e.message}", e)
             currentAlarmSound = DEFAULT_ALARM_SOUND
             useTextToSpeech = false
+            audioOutputMode = OUTPUT_MODE_AUTO
         }
     }
     
@@ -852,6 +962,49 @@ private suspend fun checkBusArrivals() {
             Log.d(TAG, "🔔 알람음 설정 완료: $currentAlarmSound, TTS 사용: $useTextToSpeech")
         } catch (e: Exception) {
             Log.e(TAG, "🔔 알람음 설정 오류: ${e.message}", e)
+        }
+    }
+
+    // 오디오 모드 설정 함수 추가
+    fun setAudioOutputMode(mode: Int) {
+        try {
+            if (mode in OUTPUT_MODE_HEADSET..OUTPUT_MODE_AUTO) {
+                audioOutputMode = mode
+                
+                // SharedPreferences에 저장
+                val sharedPreferences = context.getSharedPreferences(PREF_ALARM_SOUND, Context.MODE_PRIVATE)
+                sharedPreferences.edit()
+                    .putInt(PREF_SPEAKER_MODE, audioOutputMode)
+                    .apply()
+                
+                Log.d(TAG, "🔔 오디오 출력 모드 설정 완료: $audioOutputMode")
+            } else {
+                Log.e(TAG, "🔔 잘못된 오디오 출력 모드: $mode")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "🔔 오디오 출력 모드 설정 오류: ${e.message}", e)
+        }
+    }
+
+    // 오디오 모드 가져오기 함수 추가 (MainActivity에서 로깅용으로 사용)
+    fun getAudioOutputMode(): Int {
+        return audioOutputMode
+    }
+
+    // 이어폰 연결 상태 확인 함수
+    private fun isHeadsetConnected(): Boolean {
+        try {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            val isWiredHeadsetOn = audioManager.isWiredHeadsetOn
+            val isBluetoothA2dpOn = audioManager.isBluetoothA2dpOn
+            
+            val isConnected = isWiredHeadsetOn || isBluetoothA2dpOn
+            Log.d(TAG, "🎧 이어폰 연결 상태: 유선=${isWiredHeadsetOn}, 블루투스=${isBluetoothA2dpOn}")
+            
+            return isConnected
+        } catch (e: Exception) {
+            Log.e(TAG, "🎧 이어폰 연결 상태 확인 오류: ${e.message}", e)
+            return false  // 오류 시 연결되지 않은 것으로 간주
         }
     }
 }
