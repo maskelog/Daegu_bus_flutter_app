@@ -706,4 +706,51 @@ class BusApiService(private val context: Context) {
         val matches = koreanPattern.findAll(text)
         return matches.count() == 0 && text.contains("�")
     }
+
+    suspend fun getCurrentBusInfo(stationId: String, routeId: String): BusInfo? = withContext(Dispatchers.IO) {
+        try {
+            val response = busInfoApi.getBusArrivalInfo(stationId)
+            if (response.header.success && response.body.list != null) {
+                val routeInfo = response.body.list.find { it.routeNo == routeId }
+                if (routeInfo != null && routeInfo.arrList != null && routeInfo.arrList.isNotEmpty()) {
+                    val arrivalInfo = routeInfo.arrList[0]
+                    BusInfo(
+                        busNumber = arrivalInfo.vhcNo2,
+                        currentStation = arrivalInfo.bsNm ?: "정보 없음",
+                        remainingStops = arrivalInfo.bsGap.toString(),
+                        estimatedTime = arrivalInfo.bsGap.toString(),
+                        isLowFloor = arrivalInfo.busTCd2 == "1",
+                        isOutOfService = arrivalInfo.busTCd3 == "1"
+                    )
+                } else null
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "버스 정보 조회 중 오류: ${e.message}", e)
+            null
+        }
+    }
+
+    suspend fun getBusArrivals(stationId: String, routeId: String): List<BusInfo> = withContext(Dispatchers.IO) {
+        try {
+            val response = busInfoApi.getBusArrivalInfo(stationId)
+            if (response.header.success && response.body.list != null) {
+                val routeInfo = response.body.list.find { it.routeNo == routeId }
+                if (routeInfo != null && routeInfo.arrList != null) {
+                    routeInfo.arrList.map { arrivalInfo ->
+                        BusInfo(
+                            busNumber = arrivalInfo.vhcNo2,
+                            currentStation = arrivalInfo.bsNm ?: "정보 없음",
+                            remainingStops = arrivalInfo.bsGap.toString(),
+                            estimatedTime = arrivalInfo.bsGap.toString(),
+                            isLowFloor = arrivalInfo.busTCd2 == "1",
+                            isOutOfService = arrivalInfo.busTCd3 == "1"
+                        )
+                    }
+                } else emptyList()
+            } else emptyList()
+        } catch (e: Exception) {
+            Log.e(TAG, "버스 도착 정보 조회 중 오류: ${e.message}", e)
+            emptyList()
+        }
+    }
 }
