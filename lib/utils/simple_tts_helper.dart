@@ -49,8 +49,7 @@ class SimpleTTSHelper {
   /// 버스 알람 시작을 위한 단순화된 메서드
   static Future<bool> speakBusAlarmStart(
       String busNo, String stationName) async {
-    final message =
-        '$busNo 번 버스 $stationName 정류장 알림이 설정되었습니다. 알림을 정지하려면 알림창에서 취소하세요.';
+    final message = '$busNo 번 버스 알림이 설정되었습니다.';
     try {
       debugPrint('🔔 버스 알람 시작 TTS 요청: "$message"');
       debugPrint('🔊 TTS 모드는 네이티브 로그를 확인하세요');
@@ -188,6 +187,23 @@ class SimpleTTSHelper {
     } catch (e) {
       debugPrint('❌ 이어폰 전용 TTS 발화 오류: $e');
       return false;
+    }
+  }
+
+  /// 승차 완료 처리
+  static Future<void> handleBoardingComplete() async {
+    try {
+      debugPrint('✅ 승차 완료 처리 시작');
+
+      // TTS 중지
+      await stop();
+
+      // 네이티브 추적 중지
+      await stopNativeTtsTracking();
+
+      debugPrint('✅ 승차 완료 처리 완료');
+    } catch (e) {
+      debugPrint('❌ 승차 완료 처리 오류: $e');
     }
   }
 
