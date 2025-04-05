@@ -19,6 +19,14 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import java.util.Timer
 import java.util.TimerTask
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.media.AudioManager
+import android.os.Bundle
+
 
 class BusAlertService : Service() {
     companion object {
@@ -128,26 +136,27 @@ class BusAlertService : Service() {
                 ttsEngine = null
             }
             
-            ttsEngine = android.speech.tts.TextToSpeech(context) { status ->
-                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+            ttsEngine = TextToSpeech(context) { status ->
+                if (status == TextToSpeech.SUCCESS) {
                     try {
-                        val result = ttsEngine?.setLanguage(java.util.Locale.KOREAN)
+                        // 한국어 설정
+                        val result = ttsEngine?.setLanguage(Locale.KOREAN)
                         when (result) {
-                            android.speech.tts.TextToSpeech.LANG_MISSING_DATA -> 
+                            TextToSpeech.LANG_MISSING_DATA -> 
                                 Log.e(TAG, "❌ 한국어 언어 데이터 없음")
-                            android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED -> 
+                            TextToSpeech.LANG_NOT_SUPPORTED -> 
                                 Log.e(TAG, "❌ 한국어가 지원되지 않음")
                             else -> 
                                 Log.d(TAG, "🔊 한국어 설정 성공: $result")
                         }
                         
-                        // 발화 속도 최적화
-                        ttsEngine?.setSpeechRate(1.2f)
-                        // 피치 최적화
-                        ttsEngine?.setPitch(1.1f)
+                        // 발화 속도 최적화 (1.0이 기본값)
+                        ttsEngine?.setSpeechRate(1.0f)
+                        // 피치 최적화 (1.0이 기본값)
+                        ttsEngine?.setPitch(1.0f)
                         
-                        // 진행 상태 리스너 추가
-                        ttsEngine?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                        // TTS 리스너 구현
+                        ttsEngine?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                             override fun onStart(utteranceId: String?) {
                                 Log.d(TAG, "🔊 TTS 발화 시작: $utteranceId")
                             }
@@ -156,8 +165,12 @@ class BusAlertService : Service() {
                                 Log.d(TAG, "🔊 TTS 발화 완료: $utteranceId")
                             }
                             
+                            override fun onError(utteranceId: String?, errorCode: Int) {
+                                Log.e(TAG, "❌ TTS 발화 오류: $utteranceId, errorCode: $errorCode")
+                            }
+
                             override fun onError(utteranceId: String?) {
-                                Log.e(TAG, "❌ TTS 발화 오류: $utteranceId")
+                                Log.e(TAG, "❌ TTS 발화 오류 (Deprecated): $utteranceId")
                             }
                         })
                         
@@ -195,14 +208,10 @@ class BusAlertService : Service() {
                     // 알람음 설정 적용
                     if (currentAlarmSound.isNotEmpty()) {
                         val soundUri = Uri.parse("android.resource://${context.packageName}/raw/$currentAlarmSound")
-                        val audioAttributes = AudioAttributes.Builder()
+                        setSound(soundUri, AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
-                            .build()
-                        setSound(soundUri, audioAttributes)
-                    } else {
-                        // 무음 설정 (진동만)
-                        setSound(null, null)
+                            .build())
                     }
                 }
                 
@@ -273,341 +282,142 @@ class BusAlertService : Service() {
         }
     }
 
-private suspend fun checkBusArrivals() {
+    private suspend fun checkBusArrivals() {
+        Log.d(TAG, "🚌 버스 도착 확인 시작")
         try {
-            if (monitoredRoutes.isEmpty()) {
-                Log.d(TAG, "🔔 모니터링할 노선이 없습니다")
-                return
-            }
+            // Create a copy of keys to avoid ConcurrentModificationException
+            val routeIdsToCheck = monitoredRoutes.keys.toList()
+            for (routeId in routeIdsToCheck) {
+                val stationInfo = monitoredRoutes[routeId] ?: continue // Skip if route was removed concurrently
+                val (stationId, stationName) = stationInfo
 
-            for ((routeId, pair) in monitoredRoutes) {
-                val (stationId, stationName) = pair
-                Log.d(TAG, "🔔 버스 도착 정보 확인: routeId=$routeId, stationId=$stationId")
+                // Ensure calls are within the coroutine scope implicitly provided by launch
+                val currentBusInfoResult = busApiService.getCurrentBusInfo(stationId, routeId)
+                val arrivalsResult = busApiService.getBusArrivals(stationId, routeId)
 
-                val arrivalInfo = busApiService.getBusArrivalInfoByRouteId(stationId, routeId)
-                if (arrivalInfo != null && arrivalInfo.bus.isNotEmpty()) {
-                    val busInfo = arrivalInfo.bus[0]
-                    val busNo = arrivalInfo.name
-                    val currentStation = busInfo.currentStation
-                    val remainingTime = parseEstimatedTime(busInfo.estimatedTime)
+                Log.d(TAG, "🚌 [$routeId@$stationId] 현재 버스 정보: $currentBusInfoResult")
+                Log.d(TAG, "🚌 [$routeId@$stationId] 도착 예정 버스: $arrivalsResult")
 
-                    val correctBusInfo = BusInfo(
-                        busNumber = busNo,
-                        currentStation = currentStation,
-                        remainingStops = "",
-                        estimatedTime = busInfo.estimatedTime,
-                        isLowFloor = false,
-                        isOutOfService = false
-                    )
+                // 도착 예정 버스 처리
+                arrivalsResult.forEach { arrival ->
+                    // Corrected variable names and added parsing
+                    val remainingTimeStr = arrival.estimatedTime
+                    val remainingTime = parseEstimatedTime(remainingTimeStr) // Use existing parsing function
+                    val busNo = arrival.busNumber // Corrected variable name
 
-                    val cacheKey = "$busNo-$routeId"
-                    cachedBusInfo[cacheKey] = correctBusInfo
+                    Log.d(TAG, "🚌 버스 $busNo 도착까지 ${remainingTimeStr} ($remainingTime 분) 남음")
 
-                    Log.d(TAG, "🔔 도착 정보: $busNo, $stationName, 남은 시간: $remainingTime 분, 현재 위치: $currentStation")
-                    Log.d(TAG, "🔔 Cache Key: $cacheKey")
-                    Log.d(TAG, "🔔 Cached BusInfo: $correctBusInfo")
-
-                    val lastTime = lastRemainingTimes[routeId] ?: -100
-                    val timeDifference = Math.abs(remainingTime - lastTime)
-
-                    Log.d(TAG, "🔊 TTS 추적 상태: 추적 활성화=$isTtsTrackingActive, 남은 시간=$remainingTime, 이전 시간=$lastTime, 시간 차이=$timeDifference")
-
-                    if (remainingTime in 0..2) {
-                        withContext(Dispatchers.Main) {
-                            // 도착 임박 알림 사용자 정보 맵 생성
-                            val arrivingBusInfo = mapOf(
-                                "busNo" to busNo,
-                                "stationName" to stationName,
-                                "remainingMinutes" to remainingTime,
-                                "currentStation" to currentStation,
-                                "routeId" to routeId,
-                                "isArrivingSoon" to true
-                            )
-                            
-                            // 도착 임박 알림 표시
-                            showBusArrivingSoon(busNo, stationName, currentStation)
-                            
-                            // Flutter에 버스 도착 이벤트 전달
-                            _methodChannel?.invokeMethod(
-                                "onBusArrival",
-                                mapOf(
-                                    "busNumber" to busNo,
-                                    "stationName" to stationName,
-                                    "currentStation" to currentStation,
-                                    "routeId" to routeId,
-                                    "isArrivingSoon" to true
-                                ).toString()
-                            )
-                            
-                            // TTS 안내 메시지 발화
-                            Log.d(TAG, "🔊 도착 임박 TTS 발화 시도: $busNo 버스")
-                            val ttsMessage = if (currentStation.isNullOrEmpty()) {
-                                "$busNo 버스가 $stationName 정류장에 곧 도착합니다. 승차 준비하세요."
-                            } else {
-                                "$busNo 버스가 $stationName 정류장에 곧 도착합니다. 현재 $currentStation 지점에 있습니다. 승차 준비하세요."
-                            }
-                            
-                            // TTS 발화 및 자동 알림 표시
-                            speakTts(
-                                text = ttsMessage, 
-                                showNotification = true, 
-                                busInfo = arrivingBusInfo
-                            )
-                            
-                            lastRemainingTimes[routeId] = remainingTime
-                        }
-                    } else if (remainingTime > 2) {
-                        withContext(Dispatchers.Main) {
-                            showNotification(
-                                ONGOING_NOTIFICATION_ID,
-                                busNo,
-                                stationName,
-                                remainingTime,
-                                currentStation,
-                                "bus_tracking_$busNo",
-                                true,
-                                routeId
-                            )
-                            _methodChannel?.invokeMethod(
-                                "onBusLocationUpdate",
-                                mapOf(
-                                    "busNumber" to busNo,
-                                    "stationName" to stationName,
-                                    "currentStation" to currentStation,
-                                    "remainingMinutes" to remainingTime,
-                                    "routeId" to routeId
-                                ).toString()
-                            )
-
-                            if (timeDifference >= 2 || lastTime == -100 ||
-                                (lastRemainingTimes.containsKey(routeId) &&
-                                System.currentTimeMillis() - (lastTimestamps[routeId] ?: 0L) > 120_000)) {
-                                
-                                Log.d(TAG, "🔊 남은 시간 TTS 발화 시도: $busNo 버스, $remainingTime 분 남음")
-                                speakTts("$busNo 버스가 약 ${remainingTime}분 후 도착 예정입니다.", showNotification = true, busInfo = mapOf("busNo" to busNo, "stationName" to stationName, "remainingMinutes" to remainingTime, "currentStation" to currentStation, "routeId" to routeId))
-                                
-                                lastRemainingTimes[routeId] = remainingTime
-                                lastTimestamps[routeId] = System.currentTimeMillis()
-                            }
-                        }
+                    // 알림 조건 확인 (Handle cases where remainingTime is -1)
+                    if (remainingTime in 0..5) {
+                        showBusArrivalNotification(stationName, busNo, remainingTime)
+                        // Ensure TTS message uses parsed time
+                         val ttsMessage = if (remainingTime == 0) {
+                            "$stationName 정류장에 $busNo 번 버스가 곧 도착합니다."
+                         } else {
+                             "$stationName 정류장에 $busNo 번 버스가 약 ${remainingTime}분 후에 도착합니다."
+                         }
+                         speakTts(ttsMessage, showNotification = true, busInfo = arrival.toMap()) // Pass parsed info
                     }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 버스 도착 확인 중 오류: ${e.message}", e)
+        }
+    }
+
+    private fun showBusArrivalNotification(stationName: String, busNo: String, remainingTime: Int) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channelId = "bus_arrival_channel" // Consider using CHANNEL_BUS_ALERTS constant
+            val notificationId = System.currentTimeMillis().toInt()
+
+            // 알림 채널 생성 (Ensure this happens correctly, maybe reuse CHANNEL_BUS_ALERTS)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val existingChannel = notificationManager.getNotificationChannel(channelId)
+                if (existingChannel == null) {
+                     val channel = NotificationChannel(
+                        channelId,
+                        "버스 도착 알림", // Use a more descriptive name if creating a new channel
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "버스 도착 예정 알림"
+                        // Corrected syntax
+                        enableVibration(true)
+                        enableLights(true)
+                        lightColor = Color.BLUE
+                        setShowBadge(true)
+                         // Set sound consistent with main channel setup
+                        if (currentAlarmSound.isNotEmpty()) {
+                            val soundUri = Uri.parse("android.resource://${context.packageName}/raw/$currentAlarmSound")
+                             setSound(soundUri, AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ALARM)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build())
+                         } else {
+                             setSound(null, null) // Explicitly null if no sound
+                         }
+                    }
+                    notificationManager.createNotificationChannel(channel)
+                    Log.d(TAG, "🔔 알림 채널 생성됨: $channelId")
                 } else {
-                    Log.d(TAG, "🔔 도착 정보가 없습니다: routeId=$routeId, stationId=$stationId")
+                     Log.d(TAG, "🔔 기존 알림 채널 사용: $channelId")
                 }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "🔔 버스 도착 정보 확인 오류: ${e.message}", e)
-        }
-    }
 
-    // speakTts 함수 수정 - 오디오 출력 모드에 따른 처리 로직 추가
-    private fun speakTts(text: String, earphoneOnly: Boolean = false, showNotification: Boolean = true, busInfo: Map<String, Any?>? = null) {
-        try {
-            // TTS 모드 상세 로그 추가
-            Log.d(TAG, "🔊 TTS 발화 시작 ==========================================")
-            Log.d(TAG, "🔊 발화 텍스트: \"$text\"")
-            Log.d(TAG, "🔊 파라미터 - 이어폰 전용 요청: $earphoneOnly, 알림 표시: $showNotification")
-            Log.d(TAG, "🔊 설정된 오디오 모드: $audioOutputMode (0=이어폰전용, 1=스피커전용, 2=자동감지)")
-            Log.d(TAG, "🔊 TTS 사용 설정: $useTextToSpeech")
-            
-            // TTS 엔진 초기화 확인
-            if (ttsEngine == null) {
-                Log.d(TAG, "🔊 TTS 엔진 초기화 필요")
-                initializeTts()
-                Thread.sleep(100) // 초기화 대기 시간 줄임
+            // 알림 스타일 설정
+            val style = NotificationCompat.BigTextStyle()
+                .setBigContentTitle(
+                    "🚌 $busNo 번 버스가 곧 도착합니다!"
+                )
+                .bigText(
+                    "$stationName 정류장\n" +
+                    (if (remainingTime == 0) "⏰ 곧 도착" else "⏰ 남은 시간: $remainingTime 분") +
+                    "\n📍 현재 위치: 정보 없음"
+                )
+
+            // 알림 액션 버튼 추가 (Intents seem okay)
+            val boardingIntent = Intent(context, MainActivity::class.java).apply {
+                action = "com.example.daegu_bus_app.BOARDING_COMPLETE"
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
-            
-            // 이어폰 연결 상태 확인
-            val headsetConnected = isHeadsetConnected()
-            Log.d(TAG, "🎧 이어폰 연결 상태: $headsetConnected")
-            
-            // 출력 모드 결정 (earphoneOnly 파라미터와 audioOutputMode 설정 통합)
-            // earphoneOnly 파라미터가 true면 이어폰 전용 모드로 처리 (기존 호환성 유지)
-            val effectiveMode = if (earphoneOnly) OUTPUT_MODE_HEADSET else audioOutputMode
-            Log.d(TAG, "🔊 최종 적용 오디오 모드: $effectiveMode (0=이어폰전용, 1=스피커전용, 2=자동감지)")
-            
-            // 출력 모드에 따른 발화 여부 결정
-            val shouldSpeak = when (effectiveMode) {
-                OUTPUT_MODE_HEADSET -> headsetConnected  // 이어폰 전용: 이어폰 연결된 경우만 발화
-                OUTPUT_MODE_SPEAKER -> true               // 스피커 전용: 항상 발화
-                OUTPUT_MODE_AUTO -> true                  // 자동 감지: 항상 발화 (AudioManager가 자동으로 출력 장치 선택)
-                else -> true                             // 기본: 항상 발화
+            val boardingPendingIntent = PendingIntent.getActivity(
+                context,
+                0,
+                boardingIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val viewIntent = Intent(context, MainActivity::class.java).apply {
+                action = "com.example.daegu_bus_app.VIEW_BUS_INFO"
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
-            
-            // 조건에 따른 발화 처리 결과 로그
-            Log.d(TAG, "🔊 발화 실행 여부: $shouldSpeak")
-            
-            // 알림 표시 여부 결정 및 노티피케이션 표시
-            if (showNotification && busInfo != null) {
-                try {
-                    // 버스 정보 추출
-                    val busNo = busInfo["busNo"] as? String ?: ""
-                    val stationName = busInfo["stationName"] as? String ?: ""
-                    val remainingMinutes = busInfo["remainingMinutes"] as? Int ?: 0
-                    val currentStation = busInfo["currentStation"] as? String
-                    val routeId = busInfo["routeId"] as? String
-                    
-                    // 알림 ID 생성 (고유한 값이어야 함)
-                    val notificationId = kotlin.math.abs((busNo + stationName + System.currentTimeMillis()).hashCode())
-                    
-                    // 알림 제목과 내용 설정
-                    val isArriving = remainingMinutes <= 2
-                    val title = if (isArriving) 
-                        "🚨 자동 알림: $busNo번 버스 곧 도착" 
-                    else 
-                        "🔔 자동 알림: $busNo번 버스 정보"
-                    
-                    val body = if (isArriving)
-                        "🚏 $stationName 정류장에 곧 도착합니다!" +
-                        (if (!currentStation.isNullOrEmpty()) "\n(현재 위치: $currentStation)" else "")
-                    else
-                        "🚏 $stationName 정류장까지 약 ${remainingMinutes}분 남았습니다." +
-                        (if (!currentStation.isNullOrEmpty()) "\n(현재 위치: $currentStation)" else "")
-                    
-                    // 앱으로 이동하는 인텐트
-                    val intent = Intent(context, MainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        putExtra("NOTIFICATION_ID", notificationId)
-                        putExtra("BUS_NUMBER", busNo)
-                        putExtra("STATION_NAME", stationName)
-                        putExtra("ROUTE_ID", routeId)
-                        putExtra("AUTO_ALERT", true)
-                    }
-                    val pendingIntent = PendingIntent.getActivity(
-                        context, 
-                        notificationId, 
-                        intent, 
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                    )
-                    
-                    // 알림 닫기 인텐트
-                    val dismissIntent = Intent(context, NotificationDismissReceiver::class.java).apply {
-                        putExtra("NOTIFICATION_ID", notificationId)
-                    }
-                    val dismissPendingIntent = PendingIntent.getBroadcast(
-                        context,
-                        notificationId + 1000,
-                        dismissIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                    )
-                    
-                    // 노티피케이션 빌더 설정
-                    val builder = NotificationCompat.Builder(context, CHANNEL_BUS_ALERTS)
-                        .setSmallIcon(R.drawable.ic_bus_notification)
-                        .setContentTitle(title)
-                        .setContentText(body)
-                        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-                        .setPriority(if (isArriving) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
-                        .setCategory(NotificationCompat.CATEGORY_ALARM)
-                        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                        .setAutoCancel(true)
-                        .setColor(if (isArriving) Color.RED else ContextCompat.getColor(context, R.color.notification_color))
-                        .setColorized(true)
-                        .setVibrate(longArrayOf(0, 500, 200, 500))
-                        .setLights(if (isArriving) Color.RED else Color.BLUE, 500, 500)
-                        .setContentIntent(pendingIntent)
-                        .addAction(android.R.drawable.ic_menu_close_clear_cancel, "닫기", dismissPendingIntent)
-                        
-                    // TTS 사용하지 않을 경우 알람음 설정
-                    if (!useTextToSpeech) {
-                        builder.setSound(Uri.parse("android.resource://${context.packageName}/raw/$currentAlarmSound"))
-                    }
-                    
-                    // 알림 표시
-                    NotificationManagerCompat.from(context).notify(notificationId, builder.build())
-                    Log.d(TAG, "🔔 자동 알림 노티피케이션 표시 완료: $busNo, $stationName, ${remainingMinutes}분")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ 자동 알림 노티피케이션 표시 오류: ${e.message}", e)
-                }
-            }
-            
-            // 조건에 따라 발화 처리
-            if (!shouldSpeak) {
-                Log.d(TAG, "🔊 이어폰 전용 모드에서 이어폰이 연결되지 않아 발화하지 않음")
-                return
-            }
-            
-            // TTS 알람(useTts=true)과 일반 알람 구분
-            val audioStream = if (effectiveMode == OUTPUT_MODE_HEADSET || useTextToSpeech) {
-                // 이어폰 전용 또는 TTS 알람은 MUSIC 스트림으로 설정
-                android.media.AudioManager.STREAM_MUSIC
-            } else {
-                // 그 외에는 NOTIFICATION 스트림으로 설정
-                android.media.AudioManager.STREAM_NOTIFICATION
-            }
-            Log.d(TAG, "🔊 오디오 스트림: ${if (audioStream == android.media.AudioManager.STREAM_MUSIC) "MUSIC (이어폰/TTS)" else "NOTIFICATION (스피커/일반)"}")
-            
-            // 발화 설정 및 실행
-            val utteranceId = "BUS_TTS_${System.currentTimeMillis()}"
-            val params = android.os.Bundle()
-            params.putString(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-            params.putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, audioStream)
-            params.putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-            
-            val result = ttsEngine?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-            Log.d(TAG, "🔊 TTS 발화 명령 완료: 결과=$result (0은 성공)")
-            Log.d(TAG, "🔊 TTS 발화 종료 ==========================================")
-            
+            val viewPendingIntent = PendingIntent.getActivity(
+                context,
+                1,
+                viewIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // 알림 빌더 설정
+            val notification = NotificationCompat.Builder(context, channelId) // Use correct channelId
+                .setSmallIcon(R.drawable.ic_bus_notification) // Ensure this drawable exists
+                .setStyle(style)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setAutoCancel(true)
+                .setOngoing(false) // Arrival notifications shouldn't be ongoing typically
+                .setVibrate(longArrayOf(0, 500, 200, 500)) // Standard vibration
+                .setLights(Color.BLUE, 3000, 3000)
+                .setContentIntent(viewPendingIntent) // Set content intent to view details
+                .addAction(0, "승차 완료", boardingPendingIntent)
+                .build()
+
+            // 알림 표시
+            notificationManager.notify(notificationId, notification)
+            Log.d(TAG, "🔔 알림 표시됨: $busNo 번 버스 (남은 시간: $remainingTime 분)")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ TTS 발화 오류: ${e.message}", e)
-            // 오류 발생 시 간소화된 재초기화
-            try {
-                ttsEngine?.shutdown()
-                ttsEngine = null
-                initializeTts()
-            } catch (e2: Exception) {
-                Log.e(TAG, "❌ TTS 엔진 재초기화 실패: ${e2.message}", e2)
-            }
+            Log.e(TAG, "❌ 알림 표시 중 오류: ${e.message}")
         }
-    }
-    
-    // 문장 분할 헬퍼 메서드
-    private fun splitIntoSentences(text: String): List<String> {
-        val sentences = mutableListOf<String>()
-        
-        // 문장 구분자
-        val sentenceDelimiters = "[.!?]".toRegex()
-        val parts = text.split(sentenceDelimiters)
-        
-        if (parts.size > 1) {
-            // 문장 구분자가 있으면 그대로 분할
-            for (part in parts) {
-                if (part.trim().isNotEmpty()) {
-                    sentences.add(part.trim())
-                }
-            }
-        } else {
-            // 쉼표로 분할 시도
-            val commaDelimited = text.split(",")
-            if (commaDelimited.size > 1) {
-                for (part in commaDelimited) {
-                    if (part.trim().isNotEmpty()) {
-                        sentences.add(part.trim())
-                    }
-                }
-            } else {
-                // 길이에 따라 임의로 분할
-                val maxLength = 20
-                var remaining = text
-                while (remaining.length > maxLength) {
-                    // 공백을 기준으로 적절한 분할 지점 찾기
-                    var cutPoint = maxLength
-                    while (cutPoint > 0 && remaining[cutPoint] != ' ') {
-                        cutPoint--
-                    }
-                    // 공백을 찾지 못했으면 그냥 maxLength에서 자르기
-                    if (cutPoint == 0) cutPoint = maxLength
-                    
-                    sentences.add(remaining.substring(0, cutPoint).trim())
-                    remaining = remaining.substring(cutPoint).trim()
-                }
-                if (remaining.isNotEmpty()) {
-                    sentences.add(remaining)
-                }
-            }
-        }
-        
-        return sentences.filter { it.isNotEmpty() }
     }
 
     fun addMonitoredRoute(routeId: String, stationId: String, stationName: String) {
@@ -1123,6 +933,66 @@ private suspend fun checkBusArrivals() {
         } catch (e: Exception) {
             Log.e(TAG, "🎧 이어폰 연결 상태 확인 오류: ${e.message}", e)
             return false  // 오류 시 연결되지 않은 것으로 간주
+        }
+    }
+
+    private fun speakTts(text: String, earphoneOnly: Boolean = false, showNotification: Boolean = false, busInfo: Map<String, Any?>? = null) {
+        if (ttsEngine != null && ttsEngine?.isLanguageAvailable(Locale.KOREAN) == TextToSpeech.LANG_AVAILABLE) {
+            try {
+                // Use provided text directly, or construct from busInfo if needed and text is empty/generic
+                val message = if (text.isNotBlank()) {
+                    text
+                } else busInfo?.let {
+                    val busNo = it["busNo"] as? String ?: "버스"
+                    val stationName = it["stationName"] as? String ?: "정류장"
+                    val remainingMinutes = (it["remainingMinutes"] as? Int) ?: -1
+
+                    when {
+                        remainingMinutes == 0 -> "$busNo 번이 $stationName 에 곧 도착합니다."
+                        remainingMinutes > 0 -> "$busNo 번이 $stationName 에 약 ${remainingMinutes}분 후에 도착합니다."
+                        else -> "$busNo 번 도착 정보 없음"
+                    }
+                } ?: "TTS 메시지 오류"
+
+                // Determine audio stream based on mode and connection status
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val useSpeaker = when (audioOutputMode) {
+                    OUTPUT_MODE_SPEAKER -> true
+                    OUTPUT_MODE_HEADSET -> false
+                    OUTPUT_MODE_AUTO -> !isHeadsetConnected()
+                    else -> !isHeadsetConnected()
+                }
+
+                val streamType = if (useSpeaker) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
+
+                Log.d(TAG, "🔊 TTS 발화 시도: \"$message\" (Stream: ${if(useSpeaker) "ALARM" else "MUSIC"}, EarphoneOnly: $earphoneOnly)")
+
+                val params = Bundle().apply {
+                    putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "tts_${System.currentTimeMillis()}")
+                    putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, streamType)
+                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+                }
+
+                val utteranceId = params.getString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID)
+                ttsEngine?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                Log.d(TAG, "🔊 TTS speak() 호출됨. utteranceId: $utteranceId")
+
+                // 알림 표시
+                if (showNotification && busInfo != null) {
+                    val busNo = busInfo["busNo"] as? String
+                    val stationName = busInfo["stationName"] as? String
+                    val remainingMinutes = (busInfo["remainingMinutes"] as? Int) ?: -1
+                    val currentStation = busInfo["currentStation"] as? String
+
+                    if (busNo != null && stationName != null && remainingMinutes != -1) {
+                        showBusArrivingSoon(busNo, stationName, currentStation)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ TTS 발화 중 오류 발생: ${e.message}", e)
+            }
+        } else {
+            Log.e(TAG, "🔊 TTS 엔진 준비 안됨 또는 한국어 미지원")
         }
     }
 }
