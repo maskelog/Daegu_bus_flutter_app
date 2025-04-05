@@ -2,8 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:provider/provider.dart';
-import '../services/settings_service.dart';
 
 /// 단순화된 TTS 헬퍼 클래스
 /// 이 클래스는 기존 TTSHelper의 복잡한 로직을 단순화하여
@@ -13,7 +11,6 @@ class SimpleTTSHelper {
   static const MethodChannel _channel =
       MethodChannel('com.example.daegu_bus_app/tts');
   static const bool _initialized = false;
-  static const bool _speaking = false;
 
   /// TTS 초기화
   static Future<bool> initialize() async {
