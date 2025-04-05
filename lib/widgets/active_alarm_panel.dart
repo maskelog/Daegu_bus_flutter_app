@@ -88,8 +88,10 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     int arrivalMinutes;
     if (cachedBusInfo != null) {
       arrivalMinutes = cachedBusInfo.getRemainingMinutes();
+      debugPrint('🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 마지막 갱신 시간=${cachedBusInfo.lastUpdated.toString()}, 남은 시간=$arrivalMinutes분');
     } else {
       arrivalMinutes = alarm.getCurrentArrivalMinutes();
+      debugPrint('🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 캐시 없음, 알람 시간=$arrivalMinutes분');
     }
 
     final arrivalText = arrivalMinutes <= 1 ? '곧 도착' : '$arrivalMinutes분 후 도착';
