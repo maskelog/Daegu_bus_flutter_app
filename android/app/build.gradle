@@ -32,6 +32,12 @@ android {
         versionName = flutter.versionName
         // multidex 활성화 (필요한 경우)
         multiDexEnabled true
+        externalNativeBuild {
+            cmake {
+                cppFlags ""
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
     }
 
     buildTypes {
@@ -97,6 +103,9 @@ dependencies {
 
     // Multidex 지원 추가 (필요한 경우)
     implementation 'androidx.multidex:multidex:2.0.1'
+
+    // Material Design
+    implementation 'com.google.android.material:material:1.11.0'
 }
 
 flutter {
