@@ -314,18 +314,46 @@ private suspend fun checkBusArrivals() {
 
                     if (remainingTime in 0..2) {
                         withContext(Dispatchers.Main) {
+                            // 도착 임박 알림 사용자 정보 맵 생성
+                            val arrivingBusInfo = mapOf(
+                                "busNo" to busNo,
+                                "stationName" to stationName,
+                                "remainingMinutes" to remainingTime,
+                                "currentStation" to currentStation,
+                                "routeId" to routeId,
+                                "isArrivingSoon" to true
+                            )
+                            
+                            // 도착 임박 알림 표시
                             showBusArrivingSoon(busNo, stationName, currentStation)
+                            
+                            // Flutter에 버스 도착 이벤트 전달
                             _methodChannel?.invokeMethod(
                                 "onBusArrival",
                                 mapOf(
                                     "busNumber" to busNo,
                                     "stationName" to stationName,
                                     "currentStation" to currentStation,
-                                    "routeId" to routeId
+                                    "routeId" to routeId,
+                                    "isArrivingSoon" to true
                                 ).toString()
                             )
+                            
+                            // TTS 안내 메시지 발화
                             Log.d(TAG, "🔊 도착 임박 TTS 발화 시도: $busNo 버스")
-                            speakTts("$busNo 버스가 곧 도착합니다.", showNotification = true, busInfo = mapOf("busNo" to busNo, "stationName" to stationName, "remainingMinutes" to remainingTime, "currentStation" to currentStation, "routeId" to routeId))
+                            val ttsMessage = if (currentStation.isNullOrEmpty()) {
+                                "$busNo 버스가 $stationName 정류장에 곧 도착합니다. 승차 준비하세요."
+                            } else {
+                                "$busNo 버스가 $stationName 정류장에 곧 도착합니다. 현재 $currentStation 지점에 있습니다. 승차 준비하세요."
+                            }
+                            
+                            // TTS 발화 및 자동 알림 표시
+                            speakTts(
+                                text = ttsMessage, 
+                                showNotification = true, 
+                                busInfo = arrivingBusInfo
+                            )
+                            
                             lastRemainingTimes[routeId] = remainingTime
                         }
                     } else if (remainingTime > 2) {
@@ -420,21 +448,74 @@ private suspend fun checkBusArrivals() {
                     val routeId = busInfo["routeId"] as? String
                     
                     // 알림 ID 생성 (고유한 값이어야 함)
-                    val notificationId = kotlin.math.abs((busNo + stationName).hashCode())
+                    val notificationId = kotlin.math.abs((busNo + stationName + System.currentTimeMillis()).hashCode())
                     
-                    // 알림 표시
-                    showNotification(
-                        id = notificationId,
-                        busNo = busNo,
-                        stationName = stationName,
-                        remainingMinutes = remainingMinutes,
-                        currentStation = currentStation,
-                        payload = "auto_alert_${busNo}_${notificationId}",
-                        isOngoing = false,
-                        routeId = routeId
+                    // 알림 제목과 내용 설정
+                    val isArriving = remainingMinutes <= 2
+                    val title = if (isArriving) 
+                        "🚨 자동 알림: $busNo번 버스 곧 도착" 
+                    else 
+                        "🔔 자동 알림: $busNo번 버스 정보"
+                    
+                    val body = if (isArriving)
+                        "🚏 $stationName 정류장에 곧 도착합니다!" +
+                        (if (!currentStation.isNullOrEmpty()) "\n(현재 위치: $currentStation)" else "")
+                    else
+                        "🚏 $stationName 정류장까지 약 ${remainingMinutes}분 남았습니다." +
+                        (if (!currentStation.isNullOrEmpty()) "\n(현재 위치: $currentStation)" else "")
+                    
+                    // 앱으로 이동하는 인텐트
+                    val intent = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        putExtra("NOTIFICATION_ID", notificationId)
+                        putExtra("BUS_NUMBER", busNo)
+                        putExtra("STATION_NAME", stationName)
+                        putExtra("ROUTE_ID", routeId)
+                        putExtra("AUTO_ALERT", true)
+                    }
+                    val pendingIntent = PendingIntent.getActivity(
+                        context, 
+                        notificationId, 
+                        intent, 
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
                     
-                    Log.d(TAG, "🔔 자동 버스 알림 노티피케이션 표시: $busNo, $stationName, ${remainingMinutes}분")
+                    // 알림 닫기 인텐트
+                    val dismissIntent = Intent(context, NotificationDismissReceiver::class.java).apply {
+                        putExtra("NOTIFICATION_ID", notificationId)
+                    }
+                    val dismissPendingIntent = PendingIntent.getBroadcast(
+                        context,
+                        notificationId + 1000,
+                        dismissIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    
+                    // 노티피케이션 빌더 설정
+                    val builder = NotificationCompat.Builder(context, CHANNEL_BUS_ALERTS)
+                        .setSmallIcon(R.drawable.ic_bus_notification)
+                        .setContentTitle(title)
+                        .setContentText(body)
+                        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                        .setPriority(if (isArriving) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
+                        .setCategory(NotificationCompat.CATEGORY_ALARM)
+                        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                        .setAutoCancel(true)
+                        .setColor(if (isArriving) Color.RED else ContextCompat.getColor(context, R.color.notification_color))
+                        .setColorized(true)
+                        .setVibrate(longArrayOf(0, 500, 200, 500))
+                        .setLights(if (isArriving) Color.RED else Color.BLUE, 500, 500)
+                        .setContentIntent(pendingIntent)
+                        .addAction(android.R.drawable.ic_menu_close_clear_cancel, "닫기", dismissPendingIntent)
+                        
+                    // TTS 사용하지 않을 경우 알람음 설정
+                    if (!useTextToSpeech) {
+                        builder.setSound(Uri.parse("android.resource://${context.packageName}/raw/$currentAlarmSound"))
+                    }
+                    
+                    // 알림 표시
+                    NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+                    Log.d(TAG, "🔔 자동 알림 노티피케이션 표시 완료: $busNo, $stationName, ${remainingMinutes}분")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ 자동 알림 노티피케이션 표시 오류: ${e.message}", e)
                 }
@@ -755,26 +836,63 @@ private suspend fun checkBusArrivals() {
     fun showBusArrivingSoon(busNo: String, stationName: String, currentStation: String? = null) {
         try {
             Log.d(TAG, "🔔 버스 곧 도착 알림 표시: $busNo, $stationName")
-            val title = "$busNo 번 버스 곧 도착"
-            var body = "$stationName 정류장에 곧 도착합니다."
+            val notificationId = System.currentTimeMillis().toInt()
+            val title = "⚠️ $busNo 번 버스 곧 도착"
+            var body = "🚏 $stationName 정류장에 곧 도착합니다."
             if (!currentStation.isNullOrEmpty()) {
                 body += " (현재 위치: $currentStation)"
             }
+            
             val intent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                putExtra("NOTIFICATION_ID", notificationId)
+                putExtra("BUS_NUMBER", busNo)
+                putExtra("STATION_NAME", stationName)
+                putExtra("SHOW_ARRIVING", true)
             }
+            
             val pendingIntent = PendingIntent.getActivity(
-                context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                context, notificationId, intent, 
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
+            
+            // 앱에서 보기 액션 추가
+            val viewInAppIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                putExtra("NOTIFICATION_ID", notificationId)
+                putExtra("VIEW_IN_APP", true)
+                putExtra("BUS_NUMBER", busNo)
+                putExtra("STATION_NAME", stationName)
+            }
+            
+            val viewInAppPendingIntent = PendingIntent.getActivity(
+                context, notificationId + 100, viewInAppIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            
             val builder = NotificationCompat.Builder(context, CHANNEL_BUS_ALERTS)
                 .setSmallIcon(R.drawable.ic_bus_notification)
                 .setContentTitle(title)
                 .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
                 .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
+                .setColor(ContextCompat.getColor(context, android.R.color.holo_red_light))
+                .setColorized(true)
+                .setVibrate(longArrayOf(0, 500, 200, 500, 200, 500))
+                .setLights(Color.RED, 500, 500)
                 .setContentIntent(pendingIntent)
-            NotificationManagerCompat.from(context).notify(System.currentTimeMillis().toInt(), builder.build())
-            Log.d(TAG, "🔔 버스 곧 도착 알림 표시 완료")
+                .addAction(R.drawable.ic_bus_notification, "앱에서 보기", viewInAppPendingIntent)
+                
+            // TTS 사용하지 않을 경우 알람음 설정
+            if (!useTextToSpeech) {
+                builder.setSound(Uri.parse("android.resource://${context.packageName}/raw/$currentAlarmSound"))
+            }
+            
+            NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+            Log.d(TAG, "🔔 버스 곧 도착 알림 표시 완료: $notificationId")
         } catch (e: Exception) {
             Log.e(TAG, "🔔 버스 곧 도착 알림 표시 오류: ${e.message}", e)
         }
