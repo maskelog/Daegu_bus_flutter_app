@@ -37,67 +37,97 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
     // TTS 중복 방지를 위한 트래킹 맵
     private val ttsTracker = ConcurrentHashMap<String, Long>()
-    private val TTS_DUPLICATE_THRESHOLD_MS = 500 // 0.5초 이내 중복 발화 방지 - 시간 값 줄임
+    private val TTS_DUPLICATE_THRESHOLD_MS = 300 // 0.3초 이내 중복 발화 방지
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        busApiService = BusApiService(this)
-        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-        tts = TextToSpeech(this, this)
-
         try {
-            val serviceIntent = Intent(this, BusAlertService::class.java)
-            startService(serviceIntent)
-            busAlertService = BusAlertService.getInstance(this)
-        } catch (e: Exception) {
-            Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
-        }
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    NOTIFICATION_PERMISSION_REQUEST_CODE
-                )
+            super.onCreate(savedInstanceState)
+            busApiService = BusApiService(this)
+            audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+            
+            // TTS 초기화
+            try {
+                tts = TextToSpeech(this, this)
+            } catch (e: Exception) {
+                Log.e(TAG, "TTS 초기화 오류: ${e.message}", e)
             }
+
+            try {
+                val serviceIntent = Intent(this, BusAlertService::class.java)
+                startService(serviceIntent)
+                busAlertService = BusAlertService.getInstance(this)
+            } catch (e: Exception) {
+                Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
+            }
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                        NOTIFICATION_PERMISSION_REQUEST_CODE
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "MainActivity onCreate 오류: ${e.message}", e)
         }
     }
 
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            val result = tts.setLanguage(Locale.KOREAN)
+        try {
+            if (status == TextToSpeech.SUCCESS) {
+                try {
+                    val result = tts.setLanguage(Locale.KOREAN)
+                    if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        Log.e(TAG, "Korean language is not supported")
+                    }
+                    
+                    // 발화 속도와 피치 최적화
+                    tts.setSpeechRate(1.2f)  // 0.9f에서 1.2f로 증가
+                    tts.setPitch(1.1f)       // 피치 추가
+                    
+                    // TTS 리스너 설정
+                    tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {
+                            Log.d(TAG, "TTS 발화 시작: $utteranceId")
+                        }
 
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Log.e(TAG, "Korean language is not supported")
+                        override fun onDone(utteranceId: String?) {
+                            Log.d(TAG, "TTS 발화 완료: $utteranceId")
+                        }
+
+                        override fun onError(utteranceId: String?) {
+                            Log.e(TAG, "TTS 발화 오류: $utteranceId")
+                        }
+                    })
+                    Log.d(TAG, "TTS 초기화 성공")
+                } catch (e: Exception) {
+                    Log.e(TAG, "TTS 설정 오류: ${e.message}", e)
+                }
+            } else {
+                Log.e(TAG, "TTS 초기화 실패: $status")
             }
-
-            // TTS 진행 상태 리스너 설정
-            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {
-                    Log.d(TAG, "네이티브 TTS 발화 시작: $utteranceId")
-                }
-
-                override fun onDone(utteranceId: String?) {
-                    Log.d(TAG, "네이티브 TTS 발화 완료: $utteranceId")
-                }
-
-                override fun onError(utteranceId: String?) {
-                    Log.e(TAG, "네이티브 TTS 발화 오류: $utteranceId")
-                }
-            })
-            Log.d(TAG, "TTS 초기화 성공")
-        } else {
-            Log.e(TAG, "TTS 초기화 실패")
+        } catch (e: Exception) {
+            Log.e(TAG, "TTS onInit 오류: ${e.message}", e)
         }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
+        try {
+            super.configureFlutterEngine(flutterEngine)
+            setupMethodChannels(flutterEngine)
+        } catch (e: Exception) {
+            Log.e(TAG, "configureFlutterEngine 오류: ${e.message}", e)
+        }
+    }
+    
+    private fun setupMethodChannels(flutterEngine: FlutterEngine) {
+        try {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -523,13 +553,18 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             when (call.method) {
                 "forceEarphoneOutput" -> {
                     try {
-                        audioManager.isSpeakerphoneOn = false
-                        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                        Log.d(TAG, "이어폰 출력 강제 설정")
+                        // 미디어 출력으로 고정
+                        audioManager.mode = AudioManager.MODE_NORMAL
+                        audioManager.setStreamVolume(
+                            AudioManager.STREAM_MUSIC,
+                            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC),
+                            0
+                        )
+                        Log.d(TAG, "미디어 출력 고정 완료")
                         result.success(true)
                     } catch (e: Exception) {
-                        Log.e(TAG, "이어폰 출력 설정 오류: ${e.message}", e)
-                        result.error("AUDIO_ERROR", "이어폰 출력 설정 실패: ${e.message}", null)
+                        Log.e(TAG, "오디오 출력 설정 오류: ${e.message}", e)
+                        result.error("AUDIO_ERROR", "오디오 출력 설정 실패: ${e.message}", null)
                     }
                 }
                 "speakTTS" -> {
@@ -554,6 +589,17 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.success(false)
                     }
                 }
+                "setAudioOutputMode" -> {
+                    val mode = call.argument<Int>("mode") ?: 2  // 기본값: 자동 감지
+                    try {
+                        busAlertService?.setAudioOutputMode(mode)
+                        Log.d(TAG, "오디오 출력 모드 설정: $mode")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "오디오 출력 모드 설정 오류: ${e.message}", e)
+                        result.error("AUDIO_MODE_ERROR", "오디오 출력 모드 설정 실패: ${e.message}", null)
+                    }
+                }
                 "speakEarphoneOnly" -> {
                     val message = call.argument<String>("message") ?: ""
                     if (message.isEmpty()) {
@@ -561,28 +607,29 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         return@setMethodCallHandler
                     }
                     try {
-                        audioManager.isSpeakerphoneOn = false
-                        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                        if (isWiredHeadsetOn() || isBluetoothHeadsetConnected()) {
-                            // 긴 문장은 나눠서 발화
-                            if (message.length > 20) {
-                                val sentences = splitIntoSentences(message)
-                                for (sentence in sentences) {
-                                    tts.speak(sentence, TextToSpeech.QUEUE_ADD, null, "EARPHONE_${sentences.indexOf(sentence)}")
-                                    Log.d(TAG, "이어폰 TTS 분할 발화 (${sentences.indexOf(sentence) + 1}/${sentences.size}): $sentence")
-                                    Thread.sleep(300) // 문장 사이에 약간의 지연
-                                }
-                            } else {
-                                tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
-                                Log.d(TAG, "이어폰 전용 TTS 발화: $message")
-                            }
-                            result.success(true)
-                        } else {
-                            Log.d(TAG, "이어폰/블루투스 연결 없음, TTS 발화 생략")
-                            result.success(false)
+                        // 미디어 출력으로 고정
+                        audioManager.mode = AudioManager.MODE_NORMAL
+                        
+                        // 감시 가능한 발화 ID 생성
+                        val utteranceId = "EARPHONE_${System.currentTimeMillis()}"
+                        val params = Bundle().apply {
+                            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+                            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
                         }
+                        
+                        // UI 스레드에서 실행
+                        runOnUiThread {
+                            try {
+                                val ttsResult = tts.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                                Log.d(TAG, "TTS 이어폰 발화 시작: $message, 결과: $ttsResult")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "TTS 이어폰 발화 오류: ${e.message}", e)
+                            }
+                        }
+                        
+                        result.success(true)
                     } catch (e: Exception) {
-                        Log.e(TAG, "이어폰 전용 TTS 발화 오류: ${e.message}", e)
+                        Log.e(TAG, "이어폰 TTS 실행 오류: ${e.message}", e)
                         result.error("TTS_ERROR", "이어폰 TTS 발화 실패: ${e.message}", null)
                     }
                 }
@@ -628,96 +675,82 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             }
         }
 
-        try {
-            busAlertService?.initialize(this, flutterEngine)
+            // 초기화 시도
+            try {
+                busAlertService?.initialize(this, flutterEngine)
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
+            Log.e(TAG, "Method 채널 설정 오류: ${e.message}", e)
         }
     }
 
     private fun speakTTS(text: String, isHeadphoneMode: Boolean) {
-        // 이어폰 연결 확인
-        val isHeadphoneConnected = isWiredHeadsetOn() || isBluetoothHeadsetConnected()
-
-        Log.d(TAG, "이어폰 모드: $isHeadphoneMode, 이어폰 연결 상태: $isHeadphoneConnected")
-
-        val utteranceId = System.currentTimeMillis().toString()
-
-        // 이어폰 모드 및 이어폰 연결 시 오디오 스트림 및 포커스 조정
-        if (isHeadphoneMode && isHeadphoneConnected) {
-            Log.d(TAG, "이어폰 출력 강제 설정")
-
-            // 오디오 포커스 요청
-            val audioFocusResult = audioManager.requestAudioFocus(
-                AudioManager.OnAudioFocusChangeListener { focusChange ->
-                    Log.d(TAG, "오디오 포커스 변경: $focusChange")
-                },
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-            )
-
-            if (audioFocusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                // TTS 설정
-                val params = Bundle().apply {
-                    putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-                    putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
+        try {
+            // 오디오 출력 모드 정보 로깅 (추가)
+            val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+            val isWiredHeadsetConnected = audioManager.isWiredHeadsetOn
+            val isBluetoothConnected = audioManager.isBluetoothA2dpOn
+            Log.d(TAG, "🎧🔊 TTS 오디오 상태 확인 ==========================================")
+            Log.d(TAG, "🎧 이어폰 연결 상태: 유선=${isWiredHeadsetConnected}, 블루투스=${isBluetoothConnected}")
+            Log.d(TAG, "🎧 요청된 모드: ${if (isHeadphoneMode) "이어폰 전용" else "일반 모드"}")
+            if (busAlertService != null) {
+                val mode = busAlertService?.getAudioOutputMode() ?: -1
+                val modeName = when(mode) {
+                    0 -> "이어폰 전용"
+                    1 -> "스피커 전용"
+                    2 -> "자동 감지"
+                    else -> "알 수 없음"
                 }
-
-                // 메인 스레드에서 TTS 발화
-                runOnUiThread {
-                    val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-                    Log.d(TAG, "네이티브 TTS 발화: $text, 결과: $result")
-                }
+                Log.d(TAG, "🎧 현재 설정된 오디오 모드: $modeName ($mode)")
             } else {
-                Log.e(TAG, "오디오 포커스 요청 실패")
+                Log.d(TAG, "🎧 busAlertService가 null이어서 오디오 모드를 확인할 수 없습니다")
             }
-        } else {
-            // 일반 모드 또는 이어폰 미연결 시
+            Log.d(TAG, "🎧 발화 텍스트: \"$text\"")
+            
+            // 간소화된 파라미터 설정
+            val utteranceId = "TTS_${System.currentTimeMillis()}"
+            val params = Bundle().apply {
+                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+                // 알림 스트림으로 변경하여 우선순위 높임
+                putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_NOTIFICATION)
+                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+            }
+            
+            // UI 스레드에서 직접 실행
             runOnUiThread {
-                val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-                Log.d(TAG, "일반 모드 TTS 발화: $text, 결과: $result")
-            }
-        }
-    }
-
-    // 유선 이어폰 연결 확인
-    private fun isWiredHeadsetOn(): Boolean {
-        return audioManager.isWiredHeadsetOn.also {
-            Log.d(TAG, "유선 이어폰 연결 상태: $it")
-        }
-    }
-
-    // 블루투스 이어폰 연결 확인
-    private fun isBluetoothHeadsetConnected(): Boolean {
-        return audioManager.isBluetoothA2dpOn.also {
-            Log.d(TAG, "블루투스 이어폰 연결 상태: $it")
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "알림 권한 허용됨")
                 try {
-                    busAlertService?.initialize(this)
+                    // 항상 QUEUE_FLUSH 모드로 실행하여 지연 없이 즉시 발화
+                    val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                    Log.d(TAG, "🔊 TTS 발화 결과: $result (0=성공)")
+                    Log.d(TAG, "🎧🔊 TTS 발화 요청 완료 ==========================================")
                 } catch (e: Exception) {
-                    Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
+                    Log.e(TAG, "TTS 발화 오류: ${e.message}", e)
                 }
-            } else {
-                Log.d(TAG, "알림 권한 거부됨")
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "speakTTS 호출 오류: ${e.message}", e)
         }
     }
 
     override fun onDestroy() {
-        // TTS 종료
-        if (::tts.isInitialized) {
-            tts.stop()
-            tts.shutdown()
-            Log.d(TAG, "TTS 자원 해제")
+        try {
+            // TTS 종료
+            if (::tts.isInitialized) {
+                try {
+                    tts.stop()
+                    tts.shutdown()
+                    Log.d(TAG, "TTS 자원 해제")
+                } catch (e: Exception) {
+                    Log.e(TAG, "TTS 자원 해제 오류: ${e.message}", e)
+                }
+            }
+            super.onDestroy()
+        } catch (e: Exception) {
+            Log.e(TAG, "onDestroy 오류: ${e.message}", e)
+            super.onDestroy()
         }
-        super.onDestroy()
     }
 
     private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
