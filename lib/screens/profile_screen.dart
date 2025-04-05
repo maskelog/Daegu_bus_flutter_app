@@ -1,6 +1,6 @@
 import 'package:daegu_bus_app/services/api_service.dart';
 import 'package:daegu_bus_app/utils/alarm_helper.dart';
-import 'package:daegu_bus_app/utils/tts_helper.dart';
+import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
@@ -177,10 +177,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       );
       if (alarmResult != null && alarmResult is AutoAlarm) {
-        setState(() {
-          _autoAlarms.add(alarmResult);
-          _saveAutoAlarms();
-        });
+        if (mounted) {
+          setState(() {
+            _autoAlarms.add(alarmResult);
+            _saveAutoAlarms();
+          });
+        }
       }
     }
   }
@@ -195,7 +197,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
-    if (result != null && result is AutoAlarm) {
+    if (result != null && result is AutoAlarm && mounted) {
       setState(() {
         _autoAlarms[index] = result;
         _saveAutoAlarms();
@@ -277,12 +279,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         remainingMinutes: commuteAlarm.beforeMinutes,
       );
 
-      print('출퇴근 알람 예약 결과: $success, ID: $alarmId, 시간: $alarmTime');
+      debugPrint('출퇴근 알람 예약 결과: $success, ID: $alarmId, 시간: $alarmTime');
 
-      // TTS로 사용자에게 알림 설정 확인
-      await TTSHelper.speakAlarmSet(commuteAlarm.routeNo);
+      // TTS 알림
+      await SimpleTTSHelper.speak("${commuteAlarm.routeNo}번 버스 알람이 설정되었습니다.");
     } catch (e) {
-      print('출퇴근 알람 설정 중 오류: $e');
+      debugPrint('출퇴근 알람 설정 중 오류: $e');
     }
   }
 

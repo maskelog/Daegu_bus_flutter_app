@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:daegu_bus_app/utils/tts_helper.dart';
+import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 
 /// NotificationService: 네이티브 BusAlertService와 통신하는 Flutter 서비스
 class NotificationService {
@@ -110,14 +110,9 @@ class NotificationService {
 
       debugPrint('🚨 버스 도착 임박 알림 표시: $busNo');
 
-      // TTS 발화를 통해 버스 도착 임박 메시지를 음성으로 안내
-      await TTSHelper.speakBusAlert(
-        busNo: busNo,
-        stationName: stationName,
-        remainingMinutes: 0, // 도착 임박이므로 0분으로 처리
-        currentStation: currentStation,
-        priority: true,
-      );
+      // TTS 알림
+      await SimpleTTSHelper.speak(
+          "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
       debugPrint('TTS 실행 요청: $busNo, $stationName');
 
       return result;

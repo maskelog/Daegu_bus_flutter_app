@@ -3,19 +3,27 @@ import 'package:daegu_bus_app/services/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
-import 'package:daegu_bus_app/utils/tts_helper.dart';
+import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
+
+// 이 파일은 안드로이드 시스템과 연동하는 유틸리티 클래스를 제공합니다.
+// 처음부터 NotificationService와 기능이 중복됩니다.
+// 디프리케이션 경고: 이 클래스 대신 services/notification_service.dart를 사용하세요.
 
 /// NotificationService: 네이티브 BusAlertService와 통신하는 Flutter 서비스
-class NotificationService {
+// 디프리케이션 경고: 이 클래스 대신 services/notification_service.dart를 사용하세요.
+@Deprecated(
+    'Use NotificationService from services/notification_service.dart instead')
+class NotificationHelperService {
   static const MethodChannel _channel =
       MethodChannel('com.example.daegu_bus_app/notification');
 
   // 싱글톤 패턴 구현
-  static final NotificationService _instance = NotificationService._internal();
+  static final NotificationHelperService _instance =
+      NotificationHelperService._internal();
 
-  factory NotificationService() => _instance;
+  factory NotificationHelperService() => _instance;
 
-  NotificationService._internal();
+  NotificationHelperService._internal();
 
   Timer? _trackingTimer; // 실시간 추적용 타이머
 
@@ -63,15 +71,17 @@ class NotificationService {
               '🚌 버스 추적 알림 시작: $busNo, $stationName, 남은 시간: $remainingTime 분, 현재 위치: $currentStation';
           debugPrint(message);
 
-          // TTS 메시지 (이어폰/블루투스 전용)
-          String ttsMessage =
-              '$busNo번 버스 $stationName 도착 $remainingTime분 전입니다.';
-          await TTSHelper.speakEarphoneOnly(ttsMessage);
+          // TTS 메시지 생성
+          final ttsMessage =
+              '$busNo번 버스 $stationName에 $remainingTime 후 도착 예정입니다.';
+          debugPrint('TTS 발화: $ttsMessage');
+
+          await SimpleTTSHelper.speak(ttsMessage);
 
           // "곧 도착" 시 진동 및 TTS
           if (remainingTime <= 1) {
             await _triggerVibration();
-            await TTSHelper.speakEarphoneOnly('곧 도착합니다.');
+            await SimpleTTSHelper.speak('곧 도착합니다.');
             timer.cancel();
             onTrackingStopped();
           }
@@ -212,7 +222,7 @@ class NotificationService {
       });
 
       debugPrint('🚨 버스 도착 임박 알림 표시: $busNo');
-      await TTSHelper.speakEarphoneOnly('$busNo번 버스 $stationName 곧 도착합니다.');
+      await SimpleTTSHelper.speak('$busNo번 버스 $stationName 곧 도착합니다.');
       await _triggerVibration();
       return result;
     } on PlatformException catch (e) {

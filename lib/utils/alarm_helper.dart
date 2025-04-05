@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
-import 'package:daegu_bus_app/utils/tts_helper.dart';
+import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 
 /// AlarmData 모델: 알람에 필요한 정보를 저장합니다.
 class AlarmData {
@@ -36,7 +37,7 @@ class AlarmData {
 void alarmCallback(int alarmId) async {
   final prefs = await SharedPreferences.getInstance();
   final String? alarmJson = prefs.getString('alarm_$alarmId');
-  print('알람 콜백 실행: ID $alarmId, 데이터: $alarmJson');
+  debugPrint('알람 콜백 실행: ID $alarmId, 데이터: $alarmJson');
 
   if (alarmJson != null) {
     final alarmData = AlarmData.fromJson(jsonDecode(alarmJson));
@@ -49,19 +50,16 @@ void alarmCallback(int alarmId) async {
       stationName: alarmData.stationName,
       remainingMinutes: alarmData.remainingMinutes,
     );
-    print('알림 표시 완료: ${alarmData.busNo}');
+    debugPrint('알림 표시 완료: ${alarmData.busNo}');
 
-    await TTSHelper.speakBusAlert(
-      busNo: alarmData.busNo,
-      stationName: alarmData.stationName,
-      remainingMinutes: alarmData.remainingMinutes,
-    );
-    print('TTS 실행 완료');
+    await SimpleTTSHelper.speak(
+        "${alarmData.busNo}번 버스가 ${alarmData.stationName} 정류장에 곧 도착합니다. 탑승 준비하세요.");
+    debugPrint('TTS 실행 완료');
 
     await prefs.remove('alarm_$alarmId');
-    print('알람 데이터 삭제: alarm_$alarmId');
+    debugPrint('알람 데이터 삭제: alarm_$alarmId');
   } else {
-    print('알람 데이터 없음: ID $alarmId');
+    debugPrint('알람 데이터 없음: ID $alarmId');
   }
 }
 
@@ -86,10 +84,10 @@ class AlarmHelper {
     );
 
     await prefs.setString('alarm_$id', jsonEncode(alarmData.toJson()));
-    print('알람 데이터 저장: ${prefs.getString('alarm_$id')}');
+    debugPrint('알람 데이터 저장: ${prefs.getString('alarm_$id')}');
 
     if (notificationTime.isBefore(DateTime.now())) {
-      print('과거 시간 알람 즉시 실행: $notificationTime');
+      debugPrint('과거 시간 알람 즉시 실행: $notificationTime');
       await _notificationService.initialize();
       await _notificationService.showNotification(
         id: id,
@@ -97,11 +95,8 @@ class AlarmHelper {
         stationName: stationName,
         remainingMinutes: remainingMinutes,
       );
-      await TTSHelper.speakBusAlert(
-        busNo: busNo,
-        stationName: stationName,
-        remainingMinutes: remainingMinutes,
-      );
+      await SimpleTTSHelper.speak(
+          "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
       await prefs.remove('alarm_$id');
       return true;
     }
@@ -115,7 +110,7 @@ class AlarmHelper {
       rescheduleOnReboot: true,
       alarmClock: true,
     );
-    print('알람 예약 결과: $success, 시간: $notificationTime');
+    debugPrint('알람 예약 결과: $success, 시간: $notificationTime');
     return success;
   }
 
