@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'simple_tts_helper.dart';
-import 'tts_helper.dart';
 
 // 버스 실시간 정보 업데이트 콜백 함수 타입
 typedef BusRemainingTimeCallback = Future<int> Function();
@@ -103,11 +102,11 @@ class TTSSwitcher {
 
     // TTSHelper 방식으로 시도
     try {
-      await TTSHelper.speakEarphoneOnly(message, priority: isPriority);
-      debugPrint('🔊 TTSHelper.speakEarphoneOnly 발화 성공');
+      await SimpleTTSHelper.speak(message);
+      debugPrint('🔊 SimpleTTSHelper.speak 발화 성공');
       return true;
     } catch (e2) {
-      debugPrint('TTSHelper.speakEarphoneOnly 발화 오류: $e2');
+      debugPrint('SimpleTTSHelper.speak 발화 오류: $e2');
     }
 
     // 네이티브 채널 직접 호출
@@ -342,7 +341,6 @@ class TTSSwitcher {
       }
 
       await SimpleTTSHelper.stopNativeTtsTracking();
-      await TTSHelper.stopNativeTtsTracking();
 
       debugPrint('TTS 추적 완전히 중지됨');
 

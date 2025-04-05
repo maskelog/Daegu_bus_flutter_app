@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:provider/provider.dart';
+import '../services/settings_service.dart';
 
 /// 단순화된 TTS 헬퍼 클래스
 /// 이 클래스는 기존 TTSHelper의 복잡한 로직을 단순화하여
@@ -11,117 +12,141 @@ class SimpleTTSHelper {
   static FlutterTts? _flutterTts;
   static const MethodChannel _channel =
       MethodChannel('com.example.daegu_bus_app/tts');
-  static bool _initialized = false;
-  static bool _speaking = false;
+  static const bool _initialized = false;
+  static const bool _speaking = false;
 
   /// TTS 초기화
-  static Future<void> initialize() async {
+  static Future<bool> initialize() async {
     try {
-      if (_initialized) return;
-
-      _flutterTts = FlutterTts();
-      if (Platform.isAndroid) {
-        await _flutterTts!.setLanguage('ko-KR');
-        await _flutterTts!.setSpeechRate(0.9);
-        await _flutterTts!.setVolume(1.0);
-        await _flutterTts!.setPitch(1.0);
-      }
-
-      _initialized = true;
-      debugPrint('SimpleTTS 초기화 완료');
+      await _channel.invokeMethod('forceEarphoneOutput');
+      debugPrint('🔊 TTS 초기화 성공');
+      return true;
     } catch (e) {
-      debugPrint('SimpleTTS 초기화 오류: $e');
-      _initialized = false;
+      debugPrint('❌ TTS 초기화 오류: $e');
+      return false;
     }
   }
 
-  /// 직접 네이티브 TTS 발화 - 안전한 구현
+  /// TTS 발화
   static Future<bool> speak(String message) async {
-    if (!_initialized) await initialize();
-    if (_speaking) {
-      debugPrint('이미 발화 중입니다. 발화 생략: $message');
-      return false;
-    }
-
-    // 발화 직전 화면이 갱신된 최신 정보 로그 출력
-    debugPrint('최신 정보 기반 TTS 발화 시도: $message');
-
     try {
-      _speaking = true;
-      
-      // 네이티브 채널 직접 호출
-      try {
-        final result = await _channel.invokeMethod('speakTTS', {
-          'message': message,
-        });
-        debugPrint('네이티브 TTS 발화: $message, 결과: $result');
-        return result == true;
-      } catch (e) {
-        debugPrint('네이티브 TTS 발화 오류: $e');
-        
-        // 네이티브 채널 실패시 Flutter TTS 사용
-        if (_flutterTts != null) {
-          final result = await _flutterTts!.speak(message);
-          debugPrint('Flutter TTS 발화: $message, 결과: $result');
-          return result == 1;
-        }
-      }
-      
+      debugPrint('🔊 TTS 발화 요청: "$message"');
+      debugPrint('🔊 TTS 모드는 네이티브 로그를 확인하세요');
+
+      final result = await _channel.invokeMethod('speakTTS', {
+        'message': message,
+        'isHeadphoneMode': false, // 기본 발화는 스피커 모드 사용
+      });
+
+      // 발화 후 알림창에 안내 메시지 추가
+      debugPrint('🔊 TTS 발화 완료: 결과=$result');
+      debugPrint('🔔 알림이 표시된 경우 설정 > 알림 또는 알림창에서 취소할 수 있습니다');
+
+      return result == true;
+    } catch (e) {
+      debugPrint('❌ TTS 발화 오류: $e');
       return false;
-    } finally {
-      _speaking = false;
     }
   }
 
   /// 버스 알람 시작을 위한 단순화된 메서드
-  static Future<void> speakBusAlarmStart(String busNo, String stationName) async {
+  static Future<bool> speakBusAlarmStart(
+      String busNo, String stationName) async {
+    final message =
+        '$busNo 번 버스 $stationName 정류장 알림이 설정되었습니다. 알림을 정지하려면 알림창에서 취소하세요.';
     try {
-      // 단순화된 알림 메시지 발화
-      await speak('$busNo번 승차알림 시작합니다');
+      debugPrint('🔔 버스 알람 시작 TTS 요청: "$message"');
+      debugPrint('🔊 TTS 모드는 네이티브 로그를 확인하세요');
+
+      final result = await _channel.invokeMethod('speakTTS', {
+        'message': message,
+        'isHeadphoneMode': false, // 알람 설정 시에는 스피커 우선
+      });
+
+      debugPrint('🔔 버스 알람 시작 TTS 완료: 결과=$result');
+      return result == true;
     } catch (e) {
-      debugPrint('알람 시작 발화 오류: $e');
-      
-      // 오류 발생시 더 짧은 메시지로 재시도
-      try {
-        await speak('$busNo번 승차알림');
-      } catch (fallbackError) {
-        debugPrint('알람 시작 재시도 오류: $fallbackError');
-      }
+      debugPrint('❌ 버스 알람 시작 TTS 오류: $e');
+      return false;
     }
   }
 
   /// 버스 도착 알림을 위한 단순화된 메서드
   static Future<void> speakBusArriving(String busNo, String stationName) async {
     try {
-      // 첫 번째 부분 발화
-      await speak('$busNo번 버스');
-      await Future.delayed(const Duration(milliseconds: 800));
-      
-      // 두 번째 부분 발화
-      await speak('$stationName 정류장에 곧 도착합니다');
+      // 버스 번호만 사용하여 도착 안내
+      await speak('$busNo번 버스가 곧 도착합니다');
     } catch (e) {
       debugPrint('버스 도착 발화 오류: $e');
+    }
+  }
+
+  /// 버스 도착 발화 - 단순화
+  static Future<void> speakBusAlert({
+    required String busNo,
+    required String stationName,
+    required int remainingMinutes,
+    String? currentStation,
+  }) async {
+    try {
+      // 단순화된 방식으로 처리
+      String message;
+      if (remainingMinutes <= 0) {
+        message = '$busNo번 버스가 곧 도착합니다.';
+      } else {
+        message = '$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.';
+      }
+
+      // 현재 위치 정보가 있으면 추가
+      if (currentStation != null && currentStation.isNotEmpty) {
+        message += ' 현재 $currentStation 위치입니다.';
+      }
+
+      await speak(message);
+    } catch (e) {
+      debugPrint('버스 알림 발화 오류: $e');
+    }
+  }
+
+  /// 알람 취소 발화
+  static Future<void> speakAlarmCancel(String busNo) async {
+    try {
+      final message = '$busNo번 버스 알림이 취소되었습니다.';
+      await speak(message);
+    } catch (e) {
+      debugPrint('알림 취소 발화 오류: $e');
+    }
+  }
+
+  /// 알람 설정 발화
+  static Future<void> speakAlarmSet(String busNo) async {
+    try {
+      final message = '$busNo번 버스 승차 알람이 설정되었습니다.';
+      await speak(message);
+    } catch (e) {
+      debugPrint('알람 설정 발화 오류: $e');
     }
   }
 
   /// 네이티브 TTS 추적 시작 - 안전하게 구현
   static Future<void> startNativeTtsTracking({
     required String routeId,
-    required String stationId, 
+    required String stationId,
     required String busNo,
     required String stationName,
   }) async {
     try {
       if (!_initialized) await initialize();
-      
+
       // 입력값 검증
       String effectiveBusNo = busNo.isEmpty ? routeId : busNo;
       String effectiveStationId = stationId.isEmpty ? routeId : stationId;
       String effectiveRouteId = routeId.isEmpty ? busNo : routeId;
-      
-      // 안전한 발화 처리
-      await speakBusAlarmStart(effectiveBusNo, stationName);
-      
+
+      // 보아수 알림, 방법 채널을 통해 시작되는 경우가 많으니 발화 생략
+      // 여기서 발화를 하면 두 번 발화되는 문제가 발생함
+      debugPrint('네이티브 TTS 추적 시작 - 발화 생략');
+
       // 네이티브 추적 시작
       try {
         await _channel.invokeMethod('startTtsTracking', {
@@ -149,6 +174,35 @@ class SimpleTTSHelper {
       debugPrint('TTS 추적 중지됨');
     } catch (e) {
       debugPrint('TTS 추적 중지 오류: $e');
+    }
+  }
+
+  /// 이어폰 전용 발화
+  static Future<bool> speakToHeadphone(String message) async {
+    try {
+      debugPrint('🎧 이어폰 전용 TTS 발화 요청: "$message"');
+
+      final result = await _channel.invokeMethod('speakEarphoneOnly', {
+        'message': message,
+      });
+
+      debugPrint('🎧 이어폰 전용 TTS 발화 완료: 결과=$result');
+      return result == true;
+    } catch (e) {
+      debugPrint('❌ 이어폰 전용 TTS 발화 오류: $e');
+      return false;
+    }
+  }
+
+  /// TTS 중지
+  static Future<bool> stop() async {
+    try {
+      await _channel.invokeMethod('stopTTS');
+      debugPrint('🔊 TTS 중지 성공');
+      return true;
+    } catch (e) {
+      debugPrint('❌ TTS 중지 오류: $e');
+      return false;
     }
   }
 }
