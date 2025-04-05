@@ -17,7 +17,7 @@ class AlarmSound {
 
   static const defaultSound = AlarmSound(
     id: 'default',
-    name: '기본 알람',
+    name: '일반 알람 (소리+진동)',
     filename: 'alarm_sound',
     icon: Icons.notifications_active,
   );
@@ -31,7 +31,7 @@ class AlarmSound {
 
   static const silent = AlarmSound(
     id: 'silent',
-    name: '무음',
+    name: '무음 (노티알람만)',
     filename: 'silent',
     icon: Icons.notifications_off,
   );
@@ -46,8 +46,8 @@ class AlarmSound {
 
   // 모든 알람음 목록
   static const List<AlarmSound> allSounds = [
-    defaultSound,
     ttsAlarm,
+    defaultSound,
     vibrationOnly,
     silent,
   ];
