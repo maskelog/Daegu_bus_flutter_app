@@ -22,6 +22,23 @@ import android.content.Context
 import android.media.AudioDeviceInfo
 import android.speech.tts.UtteranceProgressListener
 import java.util.concurrent.ConcurrentHashMap
+import android.app.NotificationManager
+import android.widget.Toast
+import androidx.annotation.NonNull
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import android.view.View
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Button
+import android.widget.ImageButton
+import android.os.Build
+import android.app.NotificationChannel
+import android.graphics.Color
+import android.media.AudioAttributes
+import android.net.Uri
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 
 class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
@@ -34,14 +51,31 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val NOTIFICATION_PERMISSION_REQUEST_CODE = 123
     private lateinit var audioManager: AudioManager
     private lateinit var tts: TextToSpeech
+    private var _methodChannel: MethodChannel? = null
+    private var bottomSheetDialog: BottomSheetDialog? = null
+    private var bottomSheetBehavior: BottomSheetBehavior<View>? = null
 
     // TTS 중복 방지를 위한 트래킹 맵
     private val ttsTracker = ConcurrentHashMap<String, Long>()
     private val TTS_DUPLICATE_THRESHOLD_MS = 300 // 0.3초 이내 중복 발화 방지
 
+    override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        _methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL)
+        Log.d("MainActivity", "🔌 메서드 채널 초기화 완료")
+        setupMethodChannels(flutterEngine)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             super.onCreate(savedInstanceState)
+            Log.d("MainActivity", " MainActivity 생성")
+
+            // 승차 완료 액션 처리
+            if (intent?.action == "com.example.daegu_bus_app.BOARDING_COMPLETE") {
+                handleBoardingComplete()
+            }
+
             busApiService = BusApiService(this)
             audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
             
@@ -117,563 +151,553 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        try {
-            super.configureFlutterEngine(flutterEngine)
-            setupMethodChannels(flutterEngine)
-        } catch (e: Exception) {
-            Log.e(TAG, "configureFlutterEngine 오류: ${e.message}", e)
-        }
-    }
-    
     private fun setupMethodChannels(flutterEngine: FlutterEngine) {
         try {
-
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "searchStations" -> {
-                    val searchText = call.argument<String>("searchText") ?: ""
-                    if (searchText.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "검색어가 비어있습니다", null)
-                        return@setMethodCallHandler
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL).setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "searchStations" -> {
+                        val searchText = call.argument<String>("searchText") ?: ""
+                        if (searchText.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "검색어가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        val searchType = call.argument<String>("searchType") ?: "web"
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                if (searchType == "local") {
+                                    val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
+                                    val stations = databaseHelper.searchStations(searchText)
+                                    Log.d(TAG, "로컬 정류장 검색 결과: ${stations.size}개")
+                                    val jsonArray = JSONArray()
+                                    stations.forEach { station ->
+                                        val jsonObj = JSONObject().apply {
+                                            put("id", station.bsId)
+                                            put("name", station.bsNm)
+                                            put("isFavorite", false)
+                                            put("wincId", station.bsId)
+                                            put("ngisXPos", station.longitude)
+                                            put("ngisYPos", station.latitude)
+                                            put("routeList", JSONArray())
+                                        }
+                                        jsonArray.put(jsonObj)
+                                    }
+                                    result.success(jsonArray.toString())
+                                } else {
+                                    val stations = busApiService.searchStations(searchText)
+                                    Log.d(TAG, "웹 정류장 검색 결과: ${stations.size}개")
+                                    val jsonArray = JSONArray()
+                                    stations.forEach { station ->
+                                        Log.d(TAG, "Station - ID: ${station.bsId}, Name: ${station.bsNm}")
+                                        val jsonObj = JSONObject().apply {
+                                            put("id", station.bsId)
+                                            put("name", station.bsNm)
+                                            put("isFavorite", false)
+                                            put("wincId", station.bsId)
+                                            put("ngisXPos", 0.0)
+                                            put("ngisYPos", 0.0)
+                                            put("routeList", JSONArray())
+                                        }
+                                        jsonArray.put(jsonObj)
+                                    }
+                                    result.success(jsonArray.toString())
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "정류장 검색 오류: ${e.message}", e)
+                                result.error("API_ERROR", "정류장 검색 중 오류 발생: ${e.message}", null)
+                            }
+                        }
                     }
-                    val searchType = call.argument<String>("searchType") ?: "web"
-                    CoroutineScope(Dispatchers.Main).launch {
+                    "startTtsTracking" -> {
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        val stationId = call.argument<String>("stationId") ?: ""
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        
+                        // 유효성 검사 - 빈 인자를 대체 값으로 채우기
+                        val effectiveRouteId = routeId.takeIf { it.isNotEmpty() } ?: busNo
+                        val effectiveStationId = stationId.takeIf { it.isNotEmpty() } ?: effectiveRouteId
+                        val effectiveBusNo = busNo.takeIf { it.isNotEmpty() } ?: effectiveRouteId
+                        
+                        if (effectiveRouteId.isEmpty() || effectiveStationId.isEmpty() || 
+                            effectiveBusNo.isEmpty() || stationName.isEmpty()) {
+                            Log.e(TAG, "필수 인자 오류 - routeId:$routeId, stationId:$stationId, busNo:$busNo, stationName:$stationName")
+                            result.error("INVALID_ARGUMENT", "필수 인자 누락", null)
+                            return@setMethodCallHandler
+                        }
+                        
                         try {
-                            if (searchType == "local") {
+                            Log.d(TAG, "TTS 추적 시작 요청: $effectiveBusNo, $stationName")
+                            busAlertService?.startTtsTracking(effectiveRouteId, effectiveStationId, effectiveBusNo, stationName)
+                            result.success("TTS 추적 시작됨")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
+                            result.error("TTS_ERROR", "TTS 추적 시작 실패: ${e.message}", null)
+                        }
+                    }
+                    "updateBusTrackingNotification" -> {
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        // Ensure remainingMinutes is an Integer
+                        val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                        val currentStation = call.argument<String>("currentStation") ?: ""
+                        try {
+                            Log.d(TAG, "Flutter에서 버스 추적 알림 업데이트 요청: $busNo, 남은 시간: $remainingMinutes 분")
+                            busAlertService?.showNotification(
+                                id = ONGOING_NOTIFICATION_ID,
+                                busNo = busNo,
+                                stationName = stationName,
+                                remainingMinutes = remainingMinutes,
+                                currentStation = currentStation,
+                                isOngoing = true
+                            )
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "버스 추적 알림 업데이트 오류: ${e.message}", e)
+                            result.error("NOTIFICATION_ERROR", "버스 추적 알림 업데이트 중 오류 발생: ${e.message}", null)
+                        }
+                    }
+                    "registerBusArrivalReceiver" -> {
+                        try {
+                            busAlertService?.registerBusArrivalReceiver()
+                            result.success("등록 완료")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "BusArrivalReceiver 등록 오류: ${e.message}", e)
+                            result.error("REGISTER_ERROR", "버스 도착 리시버 등록 실패: ${e.message}", null)
+                        }
+                    }
+                    "startBusMonitoring" -> {
+                        val routeId = call.argument<String>("routeId")
+                        val stationId = call.argument<String>("stationId")
+                        val stationName = call.argument<String>("stationName")
+                        try {
+                            busAlertService?.addMonitoredRoute(routeId!!, stationId!!, stationName!!)
+                            result.success("추적 시작됨")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "버스 추적 시작 오류: ${e.message}", e)
+                            result.error("MONITOR_ERROR", "버스 추적 실패: ${e.message}", null)
+                        }
+                    }
+                    "findNearbyStations" -> {
+                        val latitude = call.argument<Double>("latitude") ?: 0.0
+                        val longitude = call.argument<Double>("longitude") ?: 0.0
+                        val radiusMeters = call.argument<Double>("radiusMeters") ?: 500.0
+                        if (latitude == 0.0 || longitude == 0.0) {
+                            result.error("INVALID_ARGUMENT", "위도 또는 경도가 유효하지 않습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                Log.d(TAG, "주변 정류장 검색 요청: lat=$latitude, lon=$longitude, radius=${radiusMeters}m")
                                 val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
-                                val stations = databaseHelper.searchStations(searchText)
-                                Log.d(TAG, "로컬 정류장 검색 결과: ${stations.size}개")
+                                val nearbyStations = databaseHelper.searchStations(
+                                    searchText = "",
+                                    latitude = latitude,
+                                    longitude = longitude,
+                                    radiusInMeters = radiusMeters
+                                )
+                                Log.d(TAG, "주변 정류장 검색 결과: ${nearbyStations.size}개 (검색 반경: ${radiusMeters}m)")
                                 val jsonArray = JSONArray()
-                                stations.forEach { station ->
+                                nearbyStations.forEach { station ->
                                     val jsonObj = JSONObject().apply {
-                                        put("id", station.bsId)
+                                        put("id", station.stationId ?: station.bsId)
                                         put("name", station.bsNm)
                                         put("isFavorite", false)
                                         put("wincId", station.bsId)
+                                        put("distance", station.distance)
                                         put("ngisXPos", station.longitude)
                                         put("ngisYPos", station.latitude)
-                                        put("routeList", JSONArray())
+                                        put("routeList", "[]")
                                     }
                                     jsonArray.put(jsonObj)
+                                    Log.d(TAG, "정류장 정보 - 이름: ${station.bsNm}, ID: ${station.bsId}, 위치: (${station.longitude}, ${station.latitude}), 거리: ${station.distance}m")
                                 }
                                 result.success(jsonArray.toString())
-                            } else {
-                                val stations = busApiService.searchStations(searchText)
-                                Log.d(TAG, "웹 정류장 검색 결과: ${stations.size}개")
-                                val jsonArray = JSONArray()
-                                stations.forEach { station ->
-                                    Log.d(TAG, "Station - ID: ${station.bsId}, Name: ${station.bsNm}")
-                                    val jsonObj = JSONObject().apply {
-                                        put("id", station.bsId)
-                                        put("name", station.bsNm)
-                                        put("isFavorite", false)
-                                        put("wincId", station.bsId)
-                                        put("ngisXPos", 0.0)
-                                        put("ngisYPos", 0.0)
-                                        put("routeList", JSONArray())
-                                    }
-                                    jsonArray.put(jsonObj)
-                                }
-                                result.success(jsonArray.toString())
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "정류장 검색 오류: ${e.message}", e)
-                            result.error("API_ERROR", "정류장 검색 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                "startTtsTracking" -> {
-                    val routeId = call.argument<String>("routeId") ?: ""
-                    val stationId = call.argument<String>("stationId") ?: ""
-                    val busNo = call.argument<String>("busNo") ?: ""
-                    val stationName = call.argument<String>("stationName") ?: ""
-                    
-                    // 유효성 검사 - 빈 인자를 대체 값으로 채우기
-                    val effectiveRouteId = routeId.takeIf { it.isNotEmpty() } ?: busNo
-                    val effectiveStationId = stationId.takeIf { it.isNotEmpty() } ?: effectiveRouteId
-                    val effectiveBusNo = busNo.takeIf { it.isNotEmpty() } ?: effectiveRouteId
-                    
-                    if (effectiveRouteId.isEmpty() || effectiveStationId.isEmpty() || 
-                        effectiveBusNo.isEmpty() || stationName.isEmpty()) {
-                        Log.e(TAG, "필수 인자 오류 - routeId:$routeId, stationId:$stationId, busNo:$busNo, stationName:$stationName")
-                        result.error("INVALID_ARGUMENT", "필수 인자 누락", null)
-                        return@setMethodCallHandler
-                    }
-                    
-                    try {
-                        Log.d(TAG, "TTS 추적 시작 요청: $effectiveBusNo, $stationName")
-                        busAlertService?.startTtsTracking(effectiveRouteId, effectiveStationId, effectiveBusNo, stationName)
-                        result.success("TTS 추적 시작됨")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
-                        result.error("TTS_ERROR", "TTS 추적 시작 실패: ${e.message}", null)
-                    }
-                }
-                "updateBusTrackingNotification" -> {
-                    val busNo = call.argument<String>("busNo") ?: ""
-                    val stationName = call.argument<String>("stationName") ?: ""
-                    // Ensure remainingMinutes is an Integer
-                    val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
-                    val currentStation = call.argument<String>("currentStation") ?: ""
-                    try {
-                        Log.d(TAG, "Flutter에서 버스 추적 알림 업데이트 요청: $busNo, 남은 시간: $remainingMinutes 분")
-                        busAlertService?.showNotification(
-                            id = ONGOING_NOTIFICATION_ID,
-                            busNo = busNo,
-                            stationName = stationName,
-                            remainingMinutes = remainingMinutes,
-                            currentStation = currentStation,
-                            isOngoing = true
-                        )
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "버스 추적 알림 업데이트 오류: ${e.message}", e)
-                        result.error("NOTIFICATION_ERROR", "버스 추적 알림 업데이트 중 오류 발생: ${e.message}", null)
-                    }
-                }
-                "registerBusArrivalReceiver" -> {
-                    try {
-                        busAlertService?.registerBusArrivalReceiver()
-                        result.success("등록 완료")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "BusArrivalReceiver 등록 오류: ${e.message}", e)
-                        result.error("REGISTER_ERROR", "버스 도착 리시버 등록 실패: ${e.message}", null)
-                    }
-                }
-                "startBusMonitoring" -> {
-                    val routeId = call.argument<String>("routeId")
-                    val stationId = call.argument<String>("stationId")
-                    val stationName = call.argument<String>("stationName")
-                    try {
-                        busAlertService?.addMonitoredRoute(routeId!!, stationId!!, stationName!!)
-                        result.success("추적 시작됨")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "버스 추적 시작 오류: ${e.message}", e)
-                        result.error("MONITOR_ERROR", "버스 추적 실패: ${e.message}", null)
-                    }
-                }
-                "findNearbyStations" -> {
-                    val latitude = call.argument<Double>("latitude") ?: 0.0
-                    val longitude = call.argument<Double>("longitude") ?: 0.0
-                    val radiusMeters = call.argument<Double>("radiusMeters") ?: 500.0
-                    if (latitude == 0.0 || longitude == 0.0) {
-                        result.error("INVALID_ARGUMENT", "위도 또는 경도가 유효하지 않습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            Log.d(TAG, "주변 정류장 검색 요청: lat=$latitude, lon=$longitude, radius=${radiusMeters}m")
-                            val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
-                            val nearbyStations = databaseHelper.searchStations(
-                                searchText = "",
-                                latitude = latitude,
-                                longitude = longitude,
-                                radiusInMeters = radiusMeters
-                            )
-                            Log.d(TAG, "주변 정류장 검색 결과: ${nearbyStations.size}개 (검색 반경: ${radiusMeters}m)")
-                            val jsonArray = JSONArray()
-                            nearbyStations.forEach { station ->
-                                val jsonObj = JSONObject().apply {
-                                    put("id", station.stationId ?: station.bsId)
-                                    put("name", station.bsNm)
-                                    put("isFavorite", false)
-                                    put("wincId", station.bsId)
-                                    put("distance", station.distance)
-                                    put("ngisXPos", station.longitude)
-                                    put("ngisYPos", station.latitude)
-                                    put("routeList", "[]")
-                                }
-                                jsonArray.put(jsonObj)
-                                Log.d(TAG, "정류장 정보 - 이름: ${station.bsNm}, ID: ${station.bsId}, 위치: (${station.longitude}, ${station.latitude}), 거리: ${station.distance}m")
-                            }
-                            result.success(jsonArray.toString())
-                        } catch (e: Exception) {
-                            Log.e(TAG, "주변 정류장 검색 오류: ${e.message}", e)
-                            result.error("DB_ERROR", "주변 정류장 검색 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                "getBusRouteDetails" -> {
-                    val routeId = call.argument<String>("routeId") ?: ""
-                    if (routeId.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "노선 ID가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val searchRoutes = busApiService.searchBusRoutes(routeId)
-                            val routeInfo = busApiService.getBusRouteInfo(routeId)
-                            val mergedRoute = routeInfo ?: searchRoutes.firstOrNull()
-                            result.success(busApiService.convertToJson(mergedRoute ?: "{}"))
-                        } catch (e: Exception) {
-                            Log.e(TAG, "버스 노선 상세 정보 조회 오류: ${e.message}", e)
-                            result.error("API_ERROR", "버스 노선 상세 정보 조회 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                "searchBusRoutes" -> {
-                    val searchText = call.argument<String>("searchText") ?: ""
-                    if (searchText.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "검색어가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val routes = busApiService.searchBusRoutes(searchText)
-                            Log.d(TAG, "노선 검색 결과: ${routes.size}개")
-                            if (routes.isEmpty()) Log.d(TAG, "검색 결과 없음: $searchText")
-                            val jsonArray = JSONArray()
-                            routes.forEach { route ->
-                                val jsonObj = JSONObject().apply {
-                                    put("id", route.id)
-                                    put("routeNo", route.routeNo)
-                                    put("routeTp", route.routeTp)
-                                    put("startPoint", route.startPoint)
-                                    put("endPoint", route.endPoint)
-                                    put("routeDescription", route.routeDescription)
-                                }
-                                jsonArray.put(jsonObj)
-                            }
-                            result.success(jsonArray.toString())
-                        } catch (e: Exception) {
-                            Log.e(TAG, "노선 검색 오류: ${e.message}", e)
-                            result.error("API_ERROR", "노선 검색 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                "getStationIdFromBsId" -> {
-                    val bsId = call.argument<String>("bsId") ?: ""
-                    if (bsId.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "bsId가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    if (bsId.startsWith("7") && bsId.length == 10) {
-                        Log.d(TAG, "bsId '$bsId'는 이미 stationId 형식입니다")
-                        result.success(bsId)
-                        return@setMethodCallHandler
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val stationId = busApiService.getStationIdFromBsId(bsId)
-                            if (stationId != null && stationId.isNotEmpty()) {
-                                Log.d(TAG, "bsId '${bsId}'에 대한 stationId '$stationId' 조회 성공")
-                                result.success(stationId)
-                            } else {
-                                Log.e(TAG, "stationId 조회 실패: $bsId")
-                                result.error("NOT_FOUND", "stationId를 찾을 수 없습니다: $bsId", null)
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "정류장 ID 변환 오류: ${e.message}", e)
-                            result.error("API_ERROR", "stationId 변환 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                "getStationInfo" -> {
-                    val stationId = call.argument<String>("stationId") ?: ""
-                    if (stationId.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "정류장 ID가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val stationInfoJson = busApiService.getStationInfo(stationId)
-                            Log.d(TAG, "정류장 정보 조회 완료: $stationId")
-                            result.success(stationInfoJson)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "정류장 정보 조회 오류: ${e.message}", e)
-                            result.error("API_ERROR", "정류장 정보 조회 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                "getBusArrivalByRouteId" -> {
-                    val stationId = call.argument<String>("stationId") ?: ""
-                    val routeId = call.argument<String>("routeId") ?: ""
-                    if (stationId.isEmpty() || routeId.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "정류장 ID 또는 노선 ID가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val arrivalInfo = busApiService.getBusArrivalInfoByRouteId(stationId, routeId)
-                            result.success(busApiService.convertToJson(arrivalInfo ?: "{}"))
-                        } catch (e: Exception) {
-                            Log.e(TAG, "노선별 버스 도착 정보 조회 오류: ${e.message}", e)
-                            result.error("API_ERROR", "노선별 버스 도착 정보 조회 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                "getBusRouteInfo" -> {
-                    val routeId = call.argument<String>("routeId") ?: ""
-                    if (routeId.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "노선 ID가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val routeInfo = busApiService.getBusRouteInfo(routeId)
-                            result.success(busApiService.convertToJson(routeInfo ?: "{}"))
-                        } catch (e: Exception) {
-                            Log.e(TAG, "버스 노선 정보 조회 오류: ${e.message}", e)
-                            result.error("API_ERROR", "버스 노선 정보 조회 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                "getBusPositionInfo" -> {
-                    val routeId = call.argument<String>("routeId") ?: ""
-                    if (routeId.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "노선 ID가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val positionInfo = busApiService.getBusPositionInfo(routeId)
-                            result.success(positionInfo)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "실시간 버스 위치 정보 조회 오류: ${e.message}", e)
-                            result.error("API_ERROR", "실시간 버스 위치 정보 조회 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                "getRouteStations" -> {
-                    val routeId = call.argument<String>("routeId") ?: ""
-                    if (routeId.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "routeId가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val stations = busApiService.getBusRouteMap(routeId)
-                            Log.d(TAG, "노선도 조회 결과: ${stations.size}개 정류장")
-                            result.success(busApiService.convertRouteStationsToJson(stations))
-                        } catch (e: Exception) {
-                            Log.e(TAG, "노선도 조회 오류: ${e.message}", e)
-                            result.error("API_ERROR", "노선도 조회 중 오류 발생: ${e.message}", null)
-                        }
-                    }
-                }
-                else -> result.notImplemented()
-            }
-        }
-
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
-            if (busAlertService == null) {
-                result.error("SERVICE_UNAVAILABLE", "알림 서비스가 초기화되지 않았습니다", null)
-                return@setMethodCallHandler
-            }
-            when (call.method) {
-                "initialize" -> {
-                    try {
-                        busAlertService?.initialize(this, flutterEngine)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
-                        result.error("INIT_ERROR", "알림 서비스 초기화 중 오류 발생: ${e.message}", null)
-                    }
-                }
-                "showNotification" -> {
-                    val id = call.argument<Int>("id") ?: 0
-                    val busNo = call.argument<String>("busNo") ?: ""
-                    val stationName = call.argument<String>("stationName") ?: ""
-                    val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
-                    val currentStation = call.argument<String>("currentStation")
-                    val payload = call.argument<String>("payload")
-                    try {
-                        busAlertService?.showNotification(id, busNo, stationName, remainingMinutes, currentStation, payload)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "알림 표시 오류: ${e.message}", e)
-                        result.error("NOTIFICATION_ERROR", "알림 표시 중 오류 발생: ${e.message}", null)
-                    }
-                }
-                "showOngoingBusTracking" -> {
-                    val busNo = call.argument<String>("busNo") ?: ""
-                    val stationName = call.argument<String>("stationName") ?: ""
-                    val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
-                    val currentStation = call.argument<String>("currentStation")
-                    val isUpdate = call.argument<Boolean>("isUpdate") ?: false
-                    try {
-                        busAlertService?.showNotification(
-                            id = ONGOING_NOTIFICATION_ID,
-                            busNo = busNo,
-                            stationName = stationName,
-                            remainingMinutes = remainingMinutes,
-                            currentStation = currentStation,
-                            payload = "bus_tracking_$busNo",
-                            isOngoing = true
-                        )
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "지속 알림 표시 오류: ${e.message}", e)
-                        result.error("NOTIFICATION_ERROR", "지속 알림 표시 중 오류 발생: ${e.message}", null)
-                    }
-                }
-                "showBusArrivingSoon" -> {
-                    val busNo = call.argument<String>("busNo") ?: ""
-                    val stationName = call.argument<String>("stationName") ?: ""
-                    val currentStation = call.argument<String>("currentStation")
-                    try {
-                        busAlertService?.showBusArrivingSoon(busNo, stationName, currentStation)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "도착 임박 알림 표시 오류: ${e.message}", e)
-                        result.error("NOTIFICATION_ERROR", "도착 임박 알림 표시 중 오류 발생: ${e.message}", null)
-                    }
-                }
-                "cancelNotification" -> {
-                    val id = call.argument<Int>("id") ?: 0
-                    busAlertService?.cancelNotification(id)
-                    result.success(true)
-                }
-                "cancelOngoingTracking" -> {
-                    busAlertService?.cancelOngoingTracking()
-                    result.success(true)
-                }
-                "cancelAllNotifications" -> {
-                    busAlertService?.cancelAllNotifications()
-                    result.success(true)
-                }
-                "setAlarmSound" -> {
-                    try {
-                        val filename = call.argument<String>("filename") ?: ""
-                        val useTts = call.argument<Boolean>("useTts") ?: false
-                        Log.d(TAG, "알람음 설정 요청: $filename, TTS 사용: $useTts")
-                        busAlertService?.setAlarmSound(filename, useTts)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "알람음 설정 오류: ${e.message}", e)
-                        result.error("ALARM_SOUND_ERROR", "알람음 설정 중 오류 발생: ${e.message}", null)
-                    }
-                }
-                else -> result.notImplemented()
-            }
-        }
-
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "forceEarphoneOutput" -> {
-                    try {
-                        // 미디어 출력으로 고정
-                        audioManager.mode = AudioManager.MODE_NORMAL
-                        audioManager.setStreamVolume(
-                            AudioManager.STREAM_MUSIC,
-                            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC),
-                            0
-                        )
-                        Log.d(TAG, "미디어 출력 고정 완료")
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "오디오 출력 설정 오류: ${e.message}", e)
-                        result.error("AUDIO_ERROR", "오디오 출력 설정 실패: ${e.message}", null)
-                    }
-                }
-                "speakTTS" -> {
-                    val message = call.argument<String>("message") ?: ""
-                    val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false
-
-                    // 중복 발화 방지 로직 추가
-                    val currentTime = System.currentTimeMillis()
-                    val lastSpeakTime = ttsTracker[message] ?: 0
-
-                    if (currentTime - lastSpeakTime > TTS_DUPLICATE_THRESHOLD_MS) {
-                        // 중복 아니면 발화 진행
-                        speakTTS(message, isHeadphoneMode)
-
-                        // 발화 시간 기록
-                        ttsTracker[message] = currentTime
-
-                        result.success(true)
-                    } else {
-                        // 중복 발화 방지
-                        Log.d(TAG, "중복 TTS 발화 방지: $message")
-                        result.success(false)
-                    }
-                }
-                "setAudioOutputMode" -> {
-                    val mode = call.argument<Int>("mode") ?: 2  // 기본값: 자동 감지
-                    try {
-                        busAlertService?.setAudioOutputMode(mode)
-                        Log.d(TAG, "오디오 출력 모드 설정: $mode")
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "오디오 출력 모드 설정 오류: ${e.message}", e)
-                        result.error("AUDIO_MODE_ERROR", "오디오 출력 모드 설정 실패: ${e.message}", null)
-                    }
-                }
-                "speakEarphoneOnly" -> {
-                    val message = call.argument<String>("message") ?: ""
-                    if (message.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
-                        return@setMethodCallHandler
-                    }
-                    try {
-                        // 미디어 출력으로 고정
-                        audioManager.mode = AudioManager.MODE_NORMAL
-                        
-                        // 감시 가능한 발화 ID 생성
-                        val utteranceId = "EARPHONE_${System.currentTimeMillis()}"
-                        val params = Bundle().apply {
-                            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-                            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
-                        }
-                        
-                        // UI 스레드에서 실행
-                        runOnUiThread {
-                            try {
-                                val ttsResult = tts.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-                                Log.d(TAG, "TTS 이어폰 발화 시작: $message, 결과: $ttsResult")
                             } catch (e: Exception) {
-                                Log.e(TAG, "TTS 이어폰 발화 오류: ${e.message}", e)
+                                Log.e(TAG, "주변 정류장 검색 오류: ${e.message}", e)
+                                result.error("DB_ERROR", "주변 정류장 검색 중 오류 발생: ${e.message}", null)
                             }
                         }
-                        
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "이어폰 TTS 실행 오류: ${e.message}", e)
-                        result.error("TTS_ERROR", "이어폰 TTS 발화 실패: ${e.message}", null)
                     }
+                    "getBusRouteDetails" -> {
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        if (routeId.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "노선 ID가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val searchRoutes = busApiService.searchBusRoutes(routeId)
+                                val routeInfo = busApiService.getBusRouteInfo(routeId)
+                                val mergedRoute = routeInfo ?: searchRoutes.firstOrNull()
+                                result.success(busApiService.convertToJson(mergedRoute ?: "{}"))
+                            } catch (e: Exception) {
+                                Log.e(TAG, "버스 노선 상세 정보 조회 오류: ${e.message}", e)
+                                result.error("API_ERROR", "버스 노선 상세 정보 조회 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
+                    "searchBusRoutes" -> {
+                        val searchText = call.argument<String>("searchText") ?: ""
+                        if (searchText.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "검색어가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val routes = busApiService.searchBusRoutes(searchText)
+                                Log.d(TAG, "노선 검색 결과: ${routes.size}개")
+                                if (routes.isEmpty()) Log.d(TAG, "검색 결과 없음: $searchText")
+                                val jsonArray = JSONArray()
+                                routes.forEach { route ->
+                                    val jsonObj = JSONObject().apply {
+                                        put("id", route.id)
+                                        put("routeNo", route.routeNo)
+                                        put("routeTp", route.routeTp)
+                                        put("startPoint", route.startPoint)
+                                        put("endPoint", route.endPoint)
+                                        put("routeDescription", route.routeDescription)
+                                    }
+                                    jsonArray.put(jsonObj)
+                                }
+                                result.success(jsonArray.toString())
+                            } catch (e: Exception) {
+                                Log.e(TAG, "노선 검색 오류: ${e.message}", e)
+                                result.error("API_ERROR", "노선 검색 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
+                    "getStationIdFromBsId" -> {
+                        val bsId = call.argument<String>("bsId") ?: ""
+                        if (bsId.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "bsId가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        if (bsId.startsWith("7") && bsId.length == 10) {
+                            Log.d(TAG, "bsId '$bsId'는 이미 stationId 형식입니다")
+                            result.success(bsId)
+                            return@setMethodCallHandler
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val stationId = busApiService.getStationIdFromBsId(bsId)
+                                if (stationId != null && stationId.isNotEmpty()) {
+                                    Log.d(TAG, "bsId '${bsId}'에 대한 stationId '$stationId' 조회 성공")
+                                    result.success(stationId)
+                                } else {
+                                    Log.e(TAG, "stationId 조회 실패: $bsId")
+                                    result.error("NOT_FOUND", "stationId를 찾을 수 없습니다: $bsId", null)
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "정류장 ID 변환 오류: ${e.message}", e)
+                                result.error("API_ERROR", "stationId 변환 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
+                    "getStationInfo" -> {
+                        val stationId = call.argument<String>("stationId") ?: ""
+                        if (stationId.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "정류장 ID가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val stationInfoJson = busApiService.getStationInfo(stationId)
+                                Log.d(TAG, "정류장 정보 조회 완료: $stationId")
+                                result.success(stationInfoJson)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "정류장 정보 조회 오류: ${e.message}", e)
+                                result.error("API_ERROR", "정류장 정보 조회 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
+                    "getBusArrivalByRouteId" -> {
+                        val stationId = call.argument<String>("stationId") ?: ""
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        if (stationId.isEmpty() || routeId.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "정류장 ID 또는 노선 ID가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val arrivalInfo = busApiService.getBusArrivalInfoByRouteId(stationId, routeId)
+                                result.success(busApiService.convertToJson(arrivalInfo ?: "{}"))
+                            } catch (e: Exception) {
+                                Log.e(TAG, "노선별 버스 도착 정보 조회 오류: ${e.message}", e)
+                                result.error("API_ERROR", "노선별 버스 도착 정보 조회 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
+                    "getBusRouteInfo" -> {
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        if (routeId.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "노선 ID가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val routeInfo = busApiService.getBusRouteInfo(routeId)
+                                result.success(busApiService.convertToJson(routeInfo ?: "{}"))
+                            } catch (e: Exception) {
+                                Log.e(TAG, "버스 노선 정보 조회 오류: ${e.message}", e)
+                                result.error("API_ERROR", "버스 노선 정보 조회 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
+                    "getBusPositionInfo" -> {
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        if (routeId.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "노선 ID가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val positionInfo = busApiService.getBusPositionInfo(routeId)
+                                result.success(positionInfo)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "실시간 버스 위치 정보 조회 오류: ${e.message}", e)
+                                result.error("API_ERROR", "실시간 버스 위치 정보 조회 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
+                    "getRouteStations" -> {
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        if (routeId.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "routeId가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val stations = busApiService.getBusRouteMap(routeId)
+                                Log.d(TAG, "노선도 조회 결과: ${stations.size}개 정류장")
+                                result.success(busApiService.convertRouteStationsToJson(stations))
+                            } catch (e: Exception) {
+                                Log.e(TAG, "노선도 조회 오류: ${e.message}", e)
+                                result.error("API_ERROR", "노선도 조회 중 오류 발생: ${e.message}", null)
+                            }
+                        }
+                    }
+                    else -> result.notImplemented()
                 }
-                "startTtsTracking" -> {
-                    val routeId = call.argument<String>("routeId") ?: ""
-                    val stationId = call.argument<String>("stationId") ?: ""
-                    val busNo = call.argument<String>("busNo") ?: ""
-                    val stationName = call.argument<String>("stationName") ?: ""
-                    if (routeId.isEmpty() || stationId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
-                        result.error("INVALID_ARGUMENT", "필수 인자 누락", null)
-                        return@setMethodCallHandler
-                    }
-                    try {
-                        busAlertService?.startTtsTracking(routeId, stationId, busNo, stationName)
-                        result.success("TTS 추적 시작됨")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
-                        result.error("TTS_ERROR", "TTS 추적 시작 실패: ${e.message}", null)
-                    }
-                }
-                "stopTtsTracking" -> {
-                    try {
-                        busAlertService?.stopTtsTracking(forceStop = true) // forceStop = true로 설정
-                        tts.stop()
-                        Log.d(TAG, "TTS 추적 중지")
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "TTS 추적 중지 오류: ${e.message}", e)
-                        result.error("TTS_ERROR", "TTS 추적 중지 실패: ${e.message}", null)
-                    }
-                }
-                "stopTTS" -> {
-                    try {
-                        tts.stop()
-                        Log.d(TAG, "네이티브 TTS 정지")
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "네이티브 TTS 정지 오류: ${e.message}", e)
-                        result.error("TTS_ERROR", "TTS 정지 실패: ${e.message}", null)
-                    }
-                }
-                else -> result.notImplemented()
             }
-        }
+
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
+                if (busAlertService == null) {
+                    result.error("SERVICE_UNAVAILABLE", "알림 서비스가 초기화되지 않았습니다", null)
+                    return@setMethodCallHandler
+                }
+                when (call.method) {
+                    "initialize" -> {
+                        try {
+                            busAlertService?.initialize(this, flutterEngine)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
+                            result.error("INIT_ERROR", "알림 서비스 초기화 중 오류 발생: ${e.message}", null)
+                        }
+                    }
+                    "showNotification" -> {
+                        val id = call.argument<Int>("id") ?: 0
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                        val currentStation = call.argument<String>("currentStation")
+                        val payload = call.argument<String>("payload")
+                        try {
+                            busAlertService?.showNotification(id, busNo, stationName, remainingMinutes, currentStation, payload)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "알림 표시 오류: ${e.message}", e)
+                            result.error("NOTIFICATION_ERROR", "알림 표시 중 오류 발생: ${e.message}", null)
+                        }
+                    }
+                    "showOngoingBusTracking" -> {
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                        val currentStation = call.argument<String>("currentStation")
+                        val isUpdate = call.argument<Boolean>("isUpdate") ?: false
+                        try {
+                            busAlertService?.showNotification(
+                                id = ONGOING_NOTIFICATION_ID,
+                                busNo = busNo,
+                                stationName = stationName,
+                                remainingMinutes = remainingMinutes,
+                                currentStation = currentStation,
+                                payload = "bus_tracking_$busNo",
+                                isOngoing = true
+                            )
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "지속 알림 표시 오류: ${e.message}", e)
+                            result.error("NOTIFICATION_ERROR", "지속 알림 표시 중 오류 발생: ${e.message}", null)
+                        }
+                    }
+                    "showBusArrivingSoon" -> {
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        val currentStation = call.argument<String>("currentStation")
+                        try {
+                            busAlertService?.showBusArrivingSoon(busNo, stationName, currentStation)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "도착 임박 알림 표시 오류: ${e.message}", e)
+                            result.error("NOTIFICATION_ERROR", "도착 임박 알림 표시 중 오류 발생: ${e.message}", null)
+                        }
+                    }
+                    "cancelNotification" -> {
+                        val id = call.argument<Int>("id") ?: 0
+                        busAlertService?.cancelNotification(id)
+                        result.success(true)
+                    }
+                    "cancelOngoingTracking" -> {
+                        busAlertService?.cancelOngoingTracking()
+                        result.success(true)
+                    }
+                    "cancelAllNotifications" -> {
+                        busAlertService?.cancelAllNotifications()
+                        result.success(true)
+                    }
+                    "setAlarmSound" -> {
+                        try {
+                            val filename = call.argument<String>("filename") ?: ""
+                            val useTts = call.argument<Boolean>("useTts") ?: false
+                            Log.d(TAG, "알람음 설정 요청: $filename, TTS 사용: $useTts")
+                            busAlertService?.setAlarmSound(filename, useTts)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "알람음 설정 오류: ${e.message}", e)
+                            result.error("ALARM_SOUND_ERROR", "알람음 설정 중 오류 발생: ${e.message}", null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_CHANNEL).setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "forceEarphoneOutput" -> {
+                        try {
+                            // 미디어 출력으로 고정
+                            audioManager.mode = AudioManager.MODE_NORMAL
+                            audioManager.setStreamVolume(
+                                AudioManager.STREAM_MUSIC,
+                                audioManager.getStreamVolume(AudioManager.STREAM_MUSIC),
+                                0
+                            )
+                            Log.d(TAG, "미디어 출력 고정 완료")
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "오디오 출력 설정 오류: ${e.message}", e)
+                            result.error("AUDIO_ERROR", "오디오 출력 설정 실패: ${e.message}", null)
+                        }
+                    }
+                    "speakTTS" -> {
+                        val message = call.argument<String>("message") ?: ""
+                        val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false
+
+                        // 중복 발화 방지 로직 추가
+                        val currentTime = System.currentTimeMillis()
+                        val lastSpeakTime = ttsTracker[message] ?: 0
+
+                        if (currentTime - lastSpeakTime > TTS_DUPLICATE_THRESHOLD_MS) {
+                            // 중복 아니면 발화 진행
+                            speakTTS(message, isHeadphoneMode)
+
+                            // 발화 시간 기록
+                            ttsTracker[message] = currentTime
+
+                            result.success(true)
+                        } else {
+                            // 중복 발화 방지
+                            Log.d(TAG, "중복 TTS 발화 방지: $message")
+                            result.success(false)
+                        }
+                    }
+                    "setAudioOutputMode" -> {
+                        val mode = call.argument<Int>("mode") ?: 2  // 기본값: 자동 감지
+                        try {
+                            busAlertService?.setAudioOutputMode(mode)
+                            Log.d(TAG, "오디오 출력 모드 설정: $mode")
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "오디오 출력 모드 설정 오류: ${e.message}", e)
+                            result.error("AUDIO_MODE_ERROR", "오디오 출력 모드 설정 실패: ${e.message}", null)
+                        }
+                    }
+                    "speakEarphoneOnly" -> {
+                        val message = call.argument<String>("message") ?: ""
+                        if (message.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            // 미디어 출력으로 고정
+                            audioManager.mode = AudioManager.MODE_NORMAL
+                            
+                            // 감시 가능한 발화 ID 생성
+                            val utteranceId = "EARPHONE_${System.currentTimeMillis()}"
+                            val params = Bundle().apply {
+                                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+                                putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
+                            }
+                            
+                            // UI 스레드에서 실행
+                            runOnUiThread {
+                                try {
+                                    val ttsResult = tts.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                                    Log.d(TAG, "TTS 이어폰 발화 시작: $message, 결과: $ttsResult")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "TTS 이어폰 발화 오류: ${e.message}", e)
+                                }
+                            }
+                            
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "이어폰 TTS 실행 오류: ${e.message}", e)
+                            result.error("TTS_ERROR", "이어폰 TTS 발화 실패: ${e.message}", null)
+                        }
+                    }
+                    "startTtsTracking" -> {
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        val stationId = call.argument<String>("stationId") ?: ""
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        if (routeId.isEmpty() || stationId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "필수 인자 누락", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            busAlertService?.startTtsTracking(routeId, stationId, busNo, stationName)
+                            result.success("TTS 추적 시작됨")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
+                            result.error("TTS_ERROR", "TTS 추적 시작 실패: ${e.message}", null)
+                        }
+                    }
+                    "stopTtsTracking" -> {
+                        try {
+                            busAlertService?.stopTtsTracking(forceStop = true) // forceStop = true로 설정
+                            tts.stop()
+                            Log.d(TAG, "TTS 추적 중지")
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "TTS 추적 중지 오류: ${e.message}", e)
+                            result.error("TTS_ERROR", "TTS 추적 중지 실패: ${e.message}", null)
+                        }
+                    }
+                    "stopTTS" -> {
+                        try {
+                            tts.stop()
+                            Log.d(TAG, "네이티브 TTS 정지")
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "네이티브 TTS 정지 오류: ${e.message}", e)
+                            result.error("TTS_ERROR", "TTS 정지 실패: ${e.message}", null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
             // 초기화 시도
             try {
@@ -810,6 +834,30 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         }
         
         return sentences.filter { it.isNotEmpty() }
+    }
+
+    private fun handleBoardingComplete() {
+        try {
+            // 알림 매니저 가져오기
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            
+            // 진행 중인 알림 모두 제거
+            notificationManager.cancelAll()
+            
+            // TTS 중지
+            _methodChannel?.invokeMethod("stopTTS", null)
+            
+            // 승차 완료 메시지 표시
+            Toast.makeText(
+                this,
+                "승차가 완료되었습니다. 알림이 중지되었습니다.",
+                Toast.LENGTH_SHORT
+            ).show()
+            
+            Log.d(TAG, "✅ 승차 완료 처리됨")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 승차 완료 처리 중 오류: ${e.message}")
+        }
     }
 }
 

@@ -1,6 +1,4 @@
 import 'package:daegu_bus_app/services/api_service.dart';
-import 'package:daegu_bus_app/utils/alarm_helper.dart';
-import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
@@ -240,54 +238,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  void _addCommuteAlarmExample() async {
-    // 고유 ID 생성 (routeNo와 stationName 조합으로 간단히)
-    final String alarmId = AlarmHelper.getAlarmId('401', '동대구역').toString();
-
-    // 현재 날짜를 기준으로 다음 알람 시간 계산
-    final now = DateTime.now();
-    DateTime alarmTime =
-        DateTime(now.year, now.month, now.day, 19, 30); // 07:30 PM
-    if (alarmTime.isBefore(now)) {
-      alarmTime = alarmTime.add(const Duration(days: 1)); // 이미 지난 시간이면 다음 날로 설정
-    }
-
-    // AutoAlarm 객체 생성
-    final commuteAlarm = AutoAlarm(
-      id: alarmId,
-      hour: 8,
-      minute: 0,
-      stationId: '1',
-      stationName: '동대구역',
-      routeId: '101',
-      routeNo: '401',
-      repeatDays: [1, 2, 3, 4, 5], // 월~금 (1: 월요일, 7: 일요일)
-      excludeWeekends: true,
-      excludeHolidays: true,
-      beforeMinutes: 10,
-      isActive: true,
-    );
-
-    // 알람 예약
-    try {
-      final success = await AlarmHelper.setOneTimeAlarm(
-        id: int.parse(alarmId),
-        alarmTime: alarmTime,
-        preNotificationTime: Duration(minutes: commuteAlarm.beforeMinutes),
-        busNo: commuteAlarm.routeNo,
-        stationName: commuteAlarm.stationName,
-        remainingMinutes: commuteAlarm.beforeMinutes,
-      );
-
-      debugPrint('출퇴근 알람 예약 결과: $success, ID: $alarmId, 시간: $alarmTime');
-
-      // TTS 알림
-      await SimpleTTSHelper.speak("${commuteAlarm.routeNo}번 버스 알람이 설정되었습니다.");
-    } catch (e) {
-      debugPrint('출퇴근 알람 설정 중 오류: $e');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -301,12 +251,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '자동 버스 알림 설정',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              '자동 버스 알림',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: _addAutoAlarm,
+                              icon: const Icon(Icons.add),
+                              label: const Text('알림 추가'),
+                              style: TextButton.styleFrom(
+                                backgroundColor: Colors.blue.shade50,
+                                foregroundColor: Colors.blue.shade700,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 8),
                         Text(
@@ -318,22 +289,82 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 24),
 
-                        // 알람음 설정 섹션 추가
-                        const Text(
-                          '알람 설정',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        // 알람음 설정을 간단한 선택으로 변경
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              '알람음',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  builder: (context) => Container(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Text(
+                                          '알람음 선택',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        ...AlarmSound.allSounds.map((sound) {
+                                          final isSelected =
+                                              _settingsService.alarmSoundId ==
+                                                  sound.id;
+                                          return ListTile(
+                                            leading: Icon(
+                                              sound.icon,
+                                              color: isSelected
+                                                  ? Colors.blue
+                                                  : Colors.grey,
+                                            ),
+                                            title: Text(sound.name),
+                                            trailing: isSelected
+                                                ? const Icon(Icons.check_circle,
+                                                    color: Colors.blue)
+                                                : null,
+                                            onTap: () {
+                                              _settingsService
+                                                  .setAlarmSound(sound.id);
+                                              Navigator.pop(context);
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                      '알람음이 "${sound.name}"으로 변경되었습니다'),
+                                                  duration: const Duration(
+                                                      seconds: 2),
+                                                ),
+                                              );
+                                            },
+                                          );
+                                        }),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.volume_up),
+                              label: Text(
+                                AlarmSound.allSounds
+                                    .firstWhere((s) =>
+                                        s.id == _settingsService.alarmSoundId)
+                                    .name,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        _buildAlarmSoundSection(),
                         const SizedBox(height: 24),
-
-                        TextButton(
-                          onPressed: _addCommuteAlarmExample,
-                          child: const Text('출근 알람 예시 추가'),
-                        ),
                       ],
                     ),
                   ),
@@ -361,7 +392,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  '하단의 + 버튼을 눌러 새 자동 알림을 추가하거나 예시를 추가하세요',
+                                  '상단의 "알림 추가" 버튼을 눌러 새 자동 알림을 추가하세요',
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: Colors.grey[500],
@@ -520,10 +551,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addAutoAlarm,
-        child: const Icon(Icons.add),
-      ),
     );
   }
 
@@ -552,58 +579,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (alarm.excludeWeekends) excludes.add('주말 제외');
     if (alarm.excludeHolidays) excludes.add('공휴일 제외');
     return excludes.join(', ');
-  }
-
-  // 알람음 설정 섹션 위젯
-  Widget _buildAlarmSoundSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '알람음',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            children: AlarmSound.allSounds.map((sound) {
-              final isSelected = _settingsService.alarmSoundId == sound.id;
-              return ListTile(
-                leading: Icon(
-                  sound.icon,
-                  color: isSelected ? Colors.blue : Colors.grey,
-                ),
-                title: Text(sound.name),
-                trailing: isSelected
-                    ? const Icon(Icons.check_circle, color: Colors.blue)
-                    : null,
-                selected: isSelected,
-                selectedTileColor: Colors.blue.shade50,
-                onTap: () {
-                  _settingsService.setAlarmSound(sound.id);
-                  setState(() {}); // UI 갱신
-
-                  // 선택 피드백
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('알람음이 "${sound.name}"으로 변경되었습니다'),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                },
-              );
-            }).toList(),
-          ),
-        ),
-      ],
-    );
   }
 }
 
@@ -640,7 +615,38 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   List<Map<String, String>> _routeOptions = [];
 
   final List<String> _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
-  final List<int> _notifyOptions = [5, 10, 15, 20, 30];
+  final List<Map<String, dynamic>> _notifyOptions = [
+    {
+      'minutes': 5,
+      'label': '5분 전',
+      'icon': Icons.timer,
+      'description': '버스가 곧 도착할 때'
+    },
+    {
+      'minutes': 10,
+      'label': '10분 전',
+      'icon': Icons.access_time,
+      'description': '준비할 시간이 충분할 때'
+    },
+    {
+      'minutes': 15,
+      'label': '15분 전',
+      'icon': Icons.schedule,
+      'description': '여유있게 준비할 때'
+    },
+    {
+      'minutes': 20,
+      'label': '20분 전',
+      'icon': Icons.hourglass_empty,
+      'description': '길을 걸어갈 때'
+    },
+    {
+      'minutes': 30,
+      'label': '30분 전',
+      'icon': Icons.hourglass_full,
+      'description': '먼 곳에서 출발할 때'
+    },
+  ];
 
   @override
   void initState() {
@@ -744,6 +750,8 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   }
 
   void _selectRoute(String routeId, String routeNo) {
+    if (!mounted) return;
+
     setState(() {
       _selectedRouteId = routeId;
       _selectedRouteNo = routeNo;
@@ -761,6 +769,8 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   }
 
   void _toggleDay(int day) {
+    if (!mounted) return;
+
     setState(() {
       if (_repeatDays.contains(day)) {
         _repeatDays.remove(day);
@@ -1003,25 +1013,82 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
             const Text('버스 도착 전 알림',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: _notifyOptions.map((minutes) {
-                final isSelected = _beforeMinutes == minutes;
-                return ChoiceChip(
-                  label: Text('$minutes분 전'),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    if (selected) setState(() => _beforeMinutes = minutes);
-                  },
-                  backgroundColor: Colors.grey[200],
-                  selectedColor: Colors.blue[100],
-                  labelStyle: TextStyle(
-                    color: isSelected ? Colors.blue[800] : Colors.black87,
-                    fontWeight:
-                        isSelected ? FontWeight.bold : FontWeight.normal,
-                  ),
-                );
-              }).toList(),
+            Text(
+              '버스가 도착하기 전에 미리 알려드립니다',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: _notifyOptions.map((option) {
+                  final isSelected = _beforeMinutes == option['minutes'];
+                  return InkWell(
+                    onTap: () =>
+                        setState(() => _beforeMinutes = option['minutes']),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.blue.shade50 : null,
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Colors.grey.shade300,
+                            width: option == _notifyOptions.last ? 0 : 1,
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            option['icon'],
+                            color: isSelected ? Colors.blue : Colors.grey,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  option['label'],
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: isSelected
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                    color: isSelected
+                                        ? Colors.blue.shade700
+                                        : Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  option['description'],
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isSelected)
+                            const Icon(
+                              Icons.check_circle,
+                              color: Colors.blue,
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
             const SizedBox(height: 24),
           ],
