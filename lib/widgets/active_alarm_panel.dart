@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -14,7 +13,6 @@ class ActiveAlarmPanel extends StatefulWidget {
 
 class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
   // 버스 위치 애니메이션을 위한 프로그레스 컨트롤러
-  double _progress = 0.0;
   Timer? _progressTimer;
 
   @override
@@ -41,31 +39,13 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     // 기존 타이머가 있으면 취소
     _progressTimer?.cancel();
 
-    // 60초(1분) 동안 진행되는 애니메이션 - 버스 위치 실시간 시각화
-    const animationDuration = Duration(milliseconds: 60000);
+    // 버스 위치 실시간 시각화를 위한 타이머 설정
     const refreshRate = Duration(milliseconds: 50);
 
-    // 초기 프로그레스 값 설정
-    setState(() {
-      _progress = 0.0;
-    });
-
     // 프로그레스 업데이트 타이머 설정
-    final startTime = DateTime.now().millisecondsSinceEpoch;
     _progressTimer = Timer.periodic(refreshRate, (timer) {
-      final currentTime = DateTime.now().millisecondsSinceEpoch;
-      final elapsedTime = currentTime - startTime;
-
-      if (elapsedTime >= animationDuration.inMilliseconds) {
-        // 애니메이션 완료 후 다시 시작
-        _startProgressAnimation();
-      } else {
-        // 프로그레스 업데이트
-        if (mounted) {
-          setState(() {
-            _progress = elapsedTime / animationDuration.inMilliseconds;
-          });
-        }
+      if (mounted) {
+        setState(() {});
       }
     });
   }
@@ -88,10 +68,12 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     int arrivalMinutes;
     if (cachedBusInfo != null) {
       arrivalMinutes = cachedBusInfo.getRemainingMinutes();
-      debugPrint('🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 마지막 갱신 시간=${cachedBusInfo.lastUpdated.toString()}, 남은 시간=$arrivalMinutes분');
+      debugPrint(
+          '🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 마지막 갱신 시간=${cachedBusInfo.lastUpdated.toString()}, 남은 시간=$arrivalMinutes분');
     } else {
       arrivalMinutes = alarm.getCurrentArrivalMinutes();
-      debugPrint('🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 캐시 없음, 알람 시간=$arrivalMinutes분');
+      debugPrint(
+          '🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 캐시 없음, 알람 시간=$arrivalMinutes분');
     }
 
     final arrivalText = arrivalMinutes <= 1 ? '곧 도착' : '$arrivalMinutes분 후 도착';
@@ -203,7 +185,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         await alarmService.loadAlarms();
 
         // 남은 알람이 없으면 추적 서비스도 중지
-        if (alarmService.activeAlarms.isEmpty) {
+        if (alarmService.activeAlarms.isEmpty &&
+            alarmService.autoAlarms.isEmpty) {
           await alarmService.stopBusMonitoringService();
         }
 
@@ -221,10 +204,20 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
   Widget build(BuildContext context) {
     return Consumer<AlarmService>(
       builder: (context, alarmService, child) {
+        // 일반 알람과 자동 알람을 모두 가져옴
         final activeAlarms = alarmService.activeAlarms;
+        final autoAlarms = alarmService.autoAlarms;
+
+        // 현재 시간
+        final now = DateTime.now();
+
+        // 모든 알람을 시간순으로 정렬하고 현재 시간보다 미래의 알람만 필터링
+        final allAlarms = [...activeAlarms, ...autoAlarms]
+          ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime))
+          ..removeWhere((alarm) => alarm.scheduledTime.isBefore(now));
 
         // 알람이 없는 경우
-        if (activeAlarms.isEmpty) {
+        if (allAlarms.isEmpty) {
           return Container(
             width: double.infinity,
             color: Colors.yellow[50],
@@ -239,7 +232,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         }
 
         // 알람이 있는 경우 - 첫 번째 알람에 대한 상세 패널 표시
-        final firstAlarm = activeAlarms.first;
+        final firstAlarm = allAlarms.first;
 
         // 캐시된 정보를 가져와서 최신화
         final cachedBusInfo = alarmService.getCachedBusInfo(
@@ -277,7 +270,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 25.5),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 4,
                 offset: const Offset(0, 2),
               ),
@@ -345,7 +338,6 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 12),
 
               // 정류장 및 도착 정보
@@ -353,7 +345,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                 padding:
                     const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 178.5),
+                  color: Colors.white.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -463,35 +455,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 77),
-                                  blurRadius: 2,
-                                  offset: const Offset(0, 1),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.directions_bus,
-                              color: Colors.white,
-                              size: 10,
-                            ),
-                          ),
-                        ),
-                        // 버스 애니메이션 효과 - 시간에 따라 부드럽게 움직이는 버스
-                        Positioned(
-                          left: MediaQuery.of(context).size.width *
-                                  _progress *
-                                  0.85 -
-                              8,
-                          top: -4 + (math.sin(_progress * 4 * 3.14159) * 0.7),
-                          child: Container(
-                            width: 14,
-                            height: 14,
-                            decoration: BoxDecoration(
-                              color: isArrivingSoon ? Colors.red : Colors.blue,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 51),
+                                  color: Colors.white.withValues(alpha: 0.3),
                                   blurRadius: 2,
                                   offset: const Offset(0, 1),
                                 ),
@@ -514,7 +478,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         );
 
         // 알람이 여러 개인 경우 추가 알람 목록 표시
-        if (activeAlarms.length > 1) {
+        if (allAlarms.length > 1) {
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -533,7 +497,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                           TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    ...activeAlarms.skip(1).map(
+                    ...allAlarms.skip(1).map(
                         (alarm) => _buildAlarmListItem(alarm, alarmService)),
                   ],
                 ),
