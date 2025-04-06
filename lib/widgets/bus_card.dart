@@ -201,8 +201,9 @@ class _BusCardState extends State<BusCard> {
       busInfo: nextBus,
     );
 
-    if (success)
+    if (success) {
       TTSSwitcher.speakSafely('${widget.busArrival.routeNo}번 버스 알람이 설정되었습니다');
+    }
   }
 
   Future<void> _toggleBoardingAlarm() async {
