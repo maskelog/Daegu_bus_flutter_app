@@ -7,6 +7,7 @@ import '../utils/simple_tts_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../screens/profile_screen.dart';
+import 'alarm_service.dart';
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {
@@ -33,19 +34,67 @@ void callbackDispatcher() {
 
       // 자동 알람 초기화 작업 처리
       if (task == 'initAutoAlarms') {
-        debugPrint("🔄 자동 알람 초기화 시작");
+        debugPrint("🔄 자동 알람 초기화 시작: ${DateTime.now().toString()}");
         try {
           final prefs = await SharedPreferences.getInstance();
           final alarms = prefs.getStringList('auto_alarms') ?? [];
+          debugPrint("📋 저장된 자동 알람 수: ${alarms.length}개");
+
+          // 현재 날짜 정보 가져오기
+          final now = DateTime.now();
+          final currentWeekday = now.weekday; // 1-7 (월-일)
+          final isWeekend = currentWeekday == 6 || currentWeekday == 7; // 주말 여부
+          debugPrint(
+              "📅 현재 시간: ${now.toString()}, 요일: $currentWeekday, 주말여부: $isWeekend");
+
+          // 공휴일 목록 가져오기 (AlarmService 사용)
+          final alarmService = AlarmService();
+          final holidays = await alarmService.getHolidays(now.year, now.month);
+          final isHoliday = holidays.any((holiday) =>
+              holiday.year == now.year &&
+              holiday.month == now.month &&
+              holiday.day == now.day);
+          debugPrint("🏖️ 오늘 공휴일 여부: $isHoliday");
+
+          int processedCount = 0;
+          int skippedCount = 0;
+          int registeredCount = 0;
 
           for (var json in alarms) {
             try {
+              processedCount++;
               final data = jsonDecode(json);
               final autoAlarm = AutoAlarm.fromJson(data);
+              debugPrint(
+                  "🔍 알람 처리 중 #$processedCount: ${autoAlarm.routeNo}번 버스, ${autoAlarm.hour}:${autoAlarm.minute}, 활성화: ${autoAlarm.isActive}");
 
-              if (!autoAlarm.isActive) continue;
+              if (!autoAlarm.isActive) {
+                debugPrint("⏭️ 비활성화된 자동 알람 건너뛰기: ${autoAlarm.routeNo}번 버스");
+                skippedCount++;
+                continue;
+              }
 
-              final now = DateTime.now();
+              // 주말/공휴일 제외 체크
+              if (autoAlarm.excludeWeekends && isWeekend) {
+                debugPrint("⏭️ 주말 제외: ${autoAlarm.routeNo}번 버스 알람");
+                skippedCount++;
+                continue;
+              }
+              if (autoAlarm.excludeHolidays && isHoliday) {
+                debugPrint("⏭️ 공휴일 제외: ${autoAlarm.routeNo}번 버스 알람");
+                skippedCount++;
+                continue;
+              }
+
+              // 반복 요일 체크
+              if (!autoAlarm.repeatDays.contains(currentWeekday)) {
+                debugPrint(
+                    "⏭️ 반복 요일 제외: ${autoAlarm.routeNo}번 버스 알람, 설정 요일: ${autoAlarm.repeatDays}");
+                skippedCount++;
+                continue;
+              }
+
+              // 오늘의 예약 시간 계산
               DateTime scheduledTime = DateTime(
                 now.year,
                 now.month,
@@ -53,35 +102,69 @@ void callbackDispatcher() {
                 autoAlarm.hour,
                 autoAlarm.minute,
               );
+              debugPrint("⏰ 예약 시간 계산: ${scheduledTime.toString()}");
 
-              // 이미 지난 시간이면 다음 날로 설정
+              // 이미 지난 시간이면 다음 반복 요일로 설정
               if (scheduledTime.isBefore(now)) {
-                scheduledTime = scheduledTime.add(const Duration(days: 1));
+                debugPrint("⏰ 이미 지난 시간, 다음 반복 요일 찾기 시작");
+                // 다음 반복 요일 찾기
+                int daysToAdd = 1;
+                while (daysToAdd <= 7) {
+                  final nextDate = now.add(Duration(days: daysToAdd));
+                  final nextWeekday = nextDate.weekday;
+                  debugPrint(
+                      "🔍 다음 날짜 확인: ${nextDate.toString()}, 요일: $nextWeekday");
+
+                  if (autoAlarm.repeatDays.contains(nextWeekday)) {
+                    scheduledTime = DateTime(
+                      nextDate.year,
+                      nextDate.month,
+                      nextDate.day,
+                      autoAlarm.hour,
+                      autoAlarm.minute,
+                    );
+                    debugPrint(
+                        "✅ 다음 유효 시간 발견: $daysToAdd일 후, ${scheduledTime.toString()}");
+                    break;
+                  }
+                  daysToAdd++;
+                }
               }
 
-              final notificationTime = scheduledTime
-                  .subtract(Duration(minutes: autoAlarm.beforeMinutes));
-              final initialDelay = notificationTime.difference(now);
+              final initialDelay = scheduledTime.difference(now);
+              debugPrint(
+                  "⏱️ 설정될 지연 시간: ${initialDelay.inHours}시간 ${initialDelay.inMinutes % 60}분 ${initialDelay.inSeconds % 60}초");
 
-              if (initialDelay.inSeconds <= 0) continue;
+              if (initialDelay.inSeconds <= 0) {
+                debugPrint(
+                    "⏭️ 이미 지난 시간으로 계산됨: ${autoAlarm.routeNo}번 버스 알람, 지연: ${initialDelay.inSeconds}초");
+                skippedCount++;
+                continue;
+              }
 
               final inputData = {
                 'alarmId': autoAlarm.id,
                 'busNo': autoAlarm.routeNo,
                 'stationName': autoAlarm.stationName,
-                'remainingMinutes': autoAlarm.beforeMinutes,
+                'remainingMinutes': 3, // 기본값으로 설정
                 'routeId': autoAlarm.routeId,
                 'isAutoAlarm': true,
                 'showNotification': true,
                 'startTracking': true,
                 'stationId': autoAlarm.stationId,
                 'shouldFetchRealtime': true,
-                'useTTS': true,
+                'useTTS': autoAlarm.useTTS,
                 'currentStation': '',
-                'notificationTime': notificationTime.millisecondsSinceEpoch,
+                'notificationTime': scheduledTime.millisecondsSinceEpoch,
                 'speakerMode': 1,
               };
 
+              // 기존 작업이 있다면 취소
+              await Workmanager()
+                  .cancelByUniqueName('autoAlarm_${autoAlarm.id}');
+              debugPrint("🔄 기존 알람 취소: autoAlarm_${autoAlarm.id}");
+
+              // 새로운 작업 등록
               await Workmanager().registerOneOffTask(
                 'autoAlarm_${autoAlarm.id}',
                 'autoAlarmTask',
@@ -96,15 +179,18 @@ void callbackDispatcher() {
                 ),
                 existingWorkPolicy: ExistingWorkPolicy.replace,
               );
+              registeredCount++;
 
               debugPrint(
-                  "✅ 자동 알람 등록 성공: ${autoAlarm.routeNo}, ${autoAlarm.stationName}, ${initialDelay.inMinutes}분 후 실행");
+                  "✅ 자동 알람 등록 성공: ${autoAlarm.routeNo}, ${autoAlarm.stationName}, ${initialDelay.inMinutes}분 후 실행 (${scheduledTime.toString()})");
             } catch (e) {
               debugPrint("❌ 개별 자동 알람 초기화 오류: $e");
             }
           }
 
-          debugPrint("✅ 자동 알람 초기화 완료");
+          debugPrint(
+              "📊 자동 알람 초기화 통계: 총 ${alarms.length}개, 처리 $processedCount개, 스킵 $skippedCount개, 등록 $registeredCount개");
+          debugPrint("✅ 자동 알람 초기화 완료: ${DateTime.now().toString()}");
           return true;
         } catch (e) {
           debugPrint("❌ 자동 알람 초기화 오류: $e");
