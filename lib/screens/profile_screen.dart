@@ -21,8 +21,8 @@ class AutoAlarm {
   final List<int> repeatDays;
   final bool excludeWeekends;
   final bool excludeHolidays;
-  final int beforeMinutes;
   final bool isActive;
+  final bool useTTS; // TTS 알림 사용 여부
 
   const AutoAlarm({
     required this.id,
@@ -35,8 +35,8 @@ class AutoAlarm {
     required this.repeatDays,
     required this.excludeWeekends,
     required this.excludeHolidays,
-    required this.beforeMinutes,
     required this.isActive,
+    this.useTTS = true, // 기본값은 true
   });
 
   Map<String, dynamic> toJson() => {
@@ -50,8 +50,8 @@ class AutoAlarm {
         'repeatDays': repeatDays,
         'excludeWeekends': excludeWeekends,
         'excludeHolidays': excludeHolidays,
-        'beforeMinutes': beforeMinutes,
         'isActive': isActive,
+        'useTTS': useTTS,
       };
 
   factory AutoAlarm.fromJson(Map<String, dynamic> json) {
@@ -66,8 +66,8 @@ class AutoAlarm {
       repeatDays: List<int>.from(json['repeatDays']),
       excludeWeekends: json['excludeWeekends'],
       excludeHolidays: json['excludeHolidays'],
-      beforeMinutes: json['beforeMinutes'],
       isActive: json['isActive'],
+      useTTS: json['useTTS'] ?? true,
     );
   }
 
@@ -82,8 +82,8 @@ class AutoAlarm {
     List<int>? repeatDays,
     bool? excludeWeekends,
     bool? excludeHolidays,
-    int? beforeMinutes,
     bool? isActive,
+    bool? useTTS,
   }) {
     return AutoAlarm(
       id: id ?? this.id,
@@ -96,8 +96,8 @@ class AutoAlarm {
       repeatDays: repeatDays ?? this.repeatDays,
       excludeWeekends: excludeWeekends ?? this.excludeWeekends,
       excludeHolidays: excludeHolidays ?? this.excludeHolidays,
-      beforeMinutes: beforeMinutes ?? this.beforeMinutes,
       isActive: isActive ?? this.isActive,
+      useTTS: useTTS ?? this.useTTS,
     );
   }
 }
@@ -470,7 +470,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           ),
                                           const SizedBox(width: 4),
                                           Text(
-                                            '${alarm.routeNo} (${alarm.beforeMinutes}분 전 알림)',
+                                            alarm.routeNo,
                                             style: TextStyle(
                                               color: Colors.grey[800],
                                             ),
@@ -602,7 +602,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   List<int> _repeatDays = [];
   bool _excludeWeekends = false;
   bool _excludeHolidays = false;
-  int _beforeMinutes = 10;
+  bool _useTTS = true;
 
   late final TextEditingController _stationController;
   late final TextEditingController _routeController;
@@ -615,38 +615,6 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   List<Map<String, String>> _routeOptions = [];
 
   final List<String> _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
-  final List<Map<String, dynamic>> _notifyOptions = [
-    {
-      'minutes': 5,
-      'label': '5분 전',
-      'icon': Icons.timer,
-      'description': '버스가 곧 도착할 때'
-    },
-    {
-      'minutes': 10,
-      'label': '10분 전',
-      'icon': Icons.access_time,
-      'description': '준비할 시간이 충분할 때'
-    },
-    {
-      'minutes': 15,
-      'label': '15분 전',
-      'icon': Icons.schedule,
-      'description': '여유있게 준비할 때'
-    },
-    {
-      'minutes': 20,
-      'label': '20분 전',
-      'icon': Icons.hourglass_empty,
-      'description': '길을 걸어갈 때'
-    },
-    {
-      'minutes': 30,
-      'label': '30분 전',
-      'icon': Icons.hourglass_full,
-      'description': '먼 곳에서 출발할 때'
-    },
-  ];
 
   @override
   void initState() {
@@ -661,7 +629,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       _repeatDays = List.from(alarm.repeatDays);
       _excludeWeekends = alarm.excludeWeekends;
       _excludeHolidays = alarm.excludeHolidays;
-      _beforeMinutes = alarm.beforeMinutes;
+      _useTTS = alarm.useTTS;
       _stationController.text = alarm.stationName;
       _routeController.text = alarm.routeNo;
       _selectedStation = BusStop(
@@ -806,8 +774,8 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       repeatDays: _repeatDays,
       excludeWeekends: _excludeWeekends,
       excludeHolidays: _excludeHolidays,
-      beforeMinutes: _beforeMinutes,
       isActive: widget.autoAlarm?.isActive ?? true,
+      useTTS: _useTTS,
     );
 
     Navigator.pop(context, alarm);
@@ -1010,11 +978,11 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                 ],
               ),
             const SizedBox(height: 24),
-            const Text('버스 도착 전 알림',
+            const Text('알림 설정',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Text(
-              '버스가 도착하기 전에 미리 알려드립니다',
+              '버스 도착 정보를 알림과 음성으로 알려드립니다',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[600],
@@ -1027,67 +995,39 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
-                children: _notifyOptions.map((option) {
-                  final isSelected = _beforeMinutes == option['minutes'];
-                  return InkWell(
-                    onTap: () =>
-                        setState(() => _beforeMinutes = option['minutes']),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: isSelected ? Colors.blue.shade50 : null,
-                        border: Border(
-                          bottom: BorderSide(
-                            color: Colors.grey.shade300,
-                            width: option == _notifyOptions.last ? 0 : 1,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            option['icon'],
-                            color: isSelected ? Colors.blue : Colors.grey,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  option['label'],
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: isSelected
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: isSelected
-                                        ? Colors.blue.shade700
-                                        : Colors.black87,
-                                  ),
-                                ),
-                                Text(
-                                  option['description'],
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (isSelected)
-                            const Icon(
-                              Icons.check_circle,
-                              color: Colors.blue,
-                            ),
-                        ],
+                children: [
+                  ListTile(
+                    leading: Icon(
+                      Icons.volume_up,
+                      color: _useTTS ? Colors.blue : Colors.grey,
+                    ),
+                    title: const Text('음성 알림'),
+                    subtitle: Text(
+                      '버스 도착 정보를 음성으로 알려드립니다',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
                       ),
                     ),
-                  );
-                }).toList(),
+                    trailing: Switch(
+                      value: _useTTS,
+                      onChanged: (value) => setState(() => _useTTS = value),
+                    ),
+                  ),
+                  if (_useTTS)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      child: Text(
+                        '예시: "대구 101번 버스가 3분 후에 도착합니다"',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(height: 24),
