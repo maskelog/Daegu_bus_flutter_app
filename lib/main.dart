@@ -33,60 +33,117 @@ void log(String message, {LogLevel level = LogLevel.debug}) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await dotenv.load(fileName: '.env');
+  // 앱 시작 로그
+  log('🚀 앱 초기화 시작: ${DateTime.now()}', level: LogLevel.info);
 
   try {
-    await AndroidAlarmManager.initialize();
-    log('AndroidAlarmManager 초기화 성공', level: LogLevel.info);
+    await dotenv.load(fileName: '.env');
+    log('.env 파일 로드 성공', level: LogLevel.info);
   } catch (e) {
-    log('AndroidAlarmManager 초기화 오류: $e', level: LogLevel.error);
+    log('.env 파일 로드 실패 (무시하고 계속): $e', level: LogLevel.warning);
   }
 
-  try {
-    await Workmanager().initialize(callbackDispatcher, isInDebugMode: true);
-    log('Workmanager 초기화 완료', level: LogLevel.info);
-    
-    // 자동 알람 등록을 위한 WorkManager 처리
-    await Workmanager().registerOneOffTask(
-      'init_auto_alarms',
-      'initAutoAlarms',
-      initialDelay: const Duration(seconds: 10),
-      constraints: Constraints(
-        networkType: NetworkType.connected,
-        requiresBatteryNotLow: false,
-      ),
-    );
-    log('자동 알람 초기화 작업 등록 완료', level: LogLevel.info);
-  } catch (e) {
-    log('Workmanager 초기화 오류: $e', level: LogLevel.error);
-  }
+  // 필수 서비스 초기화 - 단계별로 분리하고 각각 오류 처리
+  bool settingsInitialized = false;
+  bool notificationInitialized = false;
+  bool ttsInitialized = false;
+  bool alarmManagerInitialized = false;
+  bool workManagerInitialized = false;
 
-  try {
-    await NotificationService().initialize();
-  } catch (e) {
-    log('NotificationService 초기화 오류: $e', level: LogLevel.error);
-  }
-
-  try {
-    await SimpleTTSHelper.initialize();
-  } catch (e) {
-    log('TTS 초기화 오류: $e', level: LogLevel.error);
-  }
-
+  // 1. 설정 서비스 초기화
   try {
     await SettingsService().initialize();
-    log('SettingsService 초기화 성공', level: LogLevel.info);
+    settingsInitialized = true;
+    log('✅ SettingsService 초기화 성공', level: LogLevel.info);
   } catch (e) {
-    log('SettingsService 초기화 오류: $e', level: LogLevel.error);
+    log('⚠️ SettingsService 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    // 설정 서비스 초기화 실패해도 앱 실행 계속
   }
 
-  // 안드로이드 전용 앱이므로 권한 요청 진행
+  // 2. 알림 서비스 초기화
   try {
-    await PermissionService.requestNotificationPermission();
-    log('알림 권한 요청 완료', level: LogLevel.info);
+    await NotificationService().initialize();
+    notificationInitialized = true;
+    log('✅ NotificationService 초기화 성공', level: LogLevel.info);
   } catch (e) {
-    log('알림 권한 요청 오류: $e', level: LogLevel.warning);
+    log('⚠️ NotificationService 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    // 알림 서비스 초기화 실패해도 앱 실행 계속
   }
+
+  // 3. TTS 초기화
+  try {
+    await SimpleTTSHelper.initialize();
+    ttsInitialized = true;
+    log('✅ TTS 초기화 성공', level: LogLevel.info);
+  } catch (e) {
+    log('⚠️ TTS 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    // TTS 초기화 실패해도 앱 실행 계속
+  }
+
+  // 4. AndroidAlarmManager 초기화
+  try {
+    await AndroidAlarmManager.initialize();
+    alarmManagerInitialized = true;
+    log('✅ AndroidAlarmManager 초기화 성공', level: LogLevel.info);
+  } catch (e) {
+    log('⚠️ AndroidAlarmManager 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    // AlarmManager 초기화 실패해도 앱 실행 계속
+  }
+
+  // 5. WorkManager 초기화 - 오류 처리 개선
+  try {
+    await Workmanager().initialize(
+      callbackDispatcher,
+      isInDebugMode: true,
+    );
+    workManagerInitialized = true;
+    log('✅ Workmanager 초기화 완료', level: LogLevel.info);
+  } catch (e) {
+    log('⚠️ Workmanager 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    // WorkManager 초기화 실패해도 앱 실행 계속
+  }
+
+  // 자동 알람 등록 작업은 앱 시작 후에 비동기적으로 처리
+  if (workManagerInitialized) {
+    // 앱이 완전히 시작된 후 자동 알람 등록 시도 (30초 지연)
+    Future.delayed(const Duration(seconds: 30), () async {
+      try {
+        log('🕒 자동 알람 초기화 작업 시작 (지연 실행)', level: LogLevel.info);
+        await Workmanager().registerOneOffTask(
+          'init_auto_alarms',
+          'initAutoAlarms',
+          initialDelay: const Duration(seconds: 15),
+          constraints: Constraints(
+            networkType: NetworkType.connected,
+            requiresBatteryNotLow: false,
+          ),
+        );
+        log('✅ 자동 알람 초기화 작업 등록 완료', level: LogLevel.info);
+      } catch (e) {
+        log('⚠️ 자동 알람 작업 등록 오류 (무시): $e', level: LogLevel.error);
+      }
+    });
+  } else {
+    log('⚠️ WorkManager 초기화 실패로 자동 알람 등록 건너뜀', level: LogLevel.warning);
+  }
+
+  // 안드로이드 전용 앱이므로 권한 요청 진행 (비동기로 처리)
+  PermissionService.requestNotificationPermission()
+      .then((_) => log('✅ 알림 권한 요청 완료', level: LogLevel.info))
+      .catchError((e) => log('⚠️ 알림 권한 요청 오류: $e', level: LogLevel.warning));
+
+  // 초기화 상태 요약 로그
+  log('📊 서비스 초기화 상태 요약:', level: LogLevel.info);
+  log('   - 설정 서비스: ${settingsInitialized ? '✅' : '❌'}', level: LogLevel.info);
+  log('   - 알림 서비스: ${notificationInitialized ? '✅' : '❌'}',
+      level: LogLevel.info);
+  log('   - TTS: ${ttsInitialized ? '✅' : '❌'}', level: LogLevel.info);
+  log('   - AlarmManager: ${alarmManagerInitialized ? '✅' : '❌'}',
+      level: LogLevel.info);
+  log('   - WorkManager: ${workManagerInitialized ? '✅' : '❌'}',
+      level: LogLevel.info);
+
+  log('🚀 앱 UI 시작: ${DateTime.now()}', level: LogLevel.info);
 
   runApp(
     MultiProvider(
