@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 import 'package:daegu_bus_app/screens/profile_screen.dart';
 import 'package:daegu_bus_app/screens/reoute_map_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
@@ -13,6 +15,7 @@ import '../widgets/bus_card.dart';
 import '../widgets/compact_bus_card.dart';
 import 'search_screen.dart';
 import 'favorites_screen.dart';
+import 'package:geolocator/geolocator.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -113,9 +116,66 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 주변 정류장 로드 최적화
   Future<void> _loadNearbyStations() async {
+    setState(() {
+      _isLoadingNearby = true;
+      _errorMessage = null; // Clear previous errors
+    });
+
     try {
+      // 1. 먼저 권한 상태 확인
+      final status = await Permission.location.status;
+      log('📍 Location permission status: $status');
+
+      if (!status.isGranted) {
+        log('📍 Location permission not granted. Requesting...');
+        // 권한 요청
+        final requestedStatus = await Permission.location.request();
+        log('📍 Location permission request result: $requestedStatus');
+
+        if (!requestedStatus.isGranted) {
+          // 여전히 권한이 없다면 사용자에게 안내하고 종료
+          setState(() {
+            _isLoadingNearby = false;
+            _nearbyStops = []; // Ensure list is empty
+            // _errorMessage = '위치 권한이 필요합니다.'; // Error message handled by UI below
+          });
+          // Show snackbar for permanent denial
+          if (requestedStatus.isPermanentlyDenied && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('위치 권한이 영구적으로 거부되었습니다. 앱 설정에서 권한을 허용해주세요.'),
+                action:
+                    SnackBarAction(label: '설정 열기', onPressed: openAppSettings),
+              ),
+            );
+          }
+          return; // Exit if permission denied
+        }
+      }
+
+      // 2. 위치 서비스 활성화 확인 (추가)
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        log('📍 Location services disabled.');
+        setState(() {
+          _isLoadingNearby = false;
+          _nearbyStops = [];
+          _errorMessage = '위치 서비스가 비활성화되어 있습니다. GPS를 켜주세요.';
+        });
+        // Optionally prompt user to enable location services
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('위치 서비스(GPS)를 활성화해주세요.')),
+          );
+        }
+        return;
+      }
+
+      // 3. 권한과 서비스가 준비되면 주변 정류장 로드 시도
+      log('📍 Permissions granted and services enabled. Fetching nearby stations...');
       final nearbyStations =
           await LocationService.getNearbyStations(500, context: context);
+      log('📍 Found ${nearbyStations.length} nearby stations.');
 
       if (!mounted) return;
 
@@ -123,14 +183,25 @@ class _HomeScreenState extends State<HomeScreen> {
         _nearbyStops = nearbyStations;
         if (_nearbyStops.isNotEmpty && _selectedStop == null) {
           _selectedStop = _nearbyStops.first;
+          // Automatically load arrivals for the first nearby stop if none selected
+          _loadBusArrivals();
         }
       });
-    } catch (e) {
-      debugPrint('Error loading nearby stations: $e');
+    } catch (e, stackTrace) {
+      // Catch specific exceptions if possible
+      log('❌ Error loading nearby stations: $e\n$stackTrace');
       if (!mounted) return;
       setState(() {
-        _errorMessage = '주변 정류장을 불러오는 중 오류가 발생했습니다: $e';
+        _errorMessage = '주변 정류장을 불러오는 중 오류 발생: ${e.toString()}';
+        _nearbyStops = []; // Clear stops on error
       });
+    } finally {
+      // Ensure loading indicator is always turned off
+      if (mounted) {
+        setState(() {
+          _isLoadingNearby = false;
+        });
+      }
     }
   }
 
@@ -435,140 +506,249 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 )
-              : _nearbyStops.isEmpty
+              : _errorMessage != null // Check for error message first
                   ? SliverToBoxAdapter(
                       child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.location_off,
-                                size: 48, color: Colors.grey[400]),
-                            const SizedBox(height: 16),
-                            Text('주변 정류장을 찾을 수 없습니다',
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.warning_amber_rounded,
+                                  size: 48, color: Colors.orange[400]),
+                              const SizedBox(height: 16),
+                              Text(
+                                _errorMessage!,
                                 style: TextStyle(
-                                    fontSize: 16, color: Colors.grey[600])),
-                            const SizedBox(height: 8),
-                            ElevatedButton.icon(
-                              onPressed: _loadNearbyStations,
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('다시 시도'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue[50],
-                                foregroundColor: Colors.blue[700],
+                                    fontSize: 16, color: Colors.orange[700]),
+                                textAlign: TextAlign.center,
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed:
+                                    _initializeData, // Retry initialization
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('다시 시도'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange[50],
+                                  foregroundColor: Colors.orange[700],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     )
-                  : SliverToBoxAdapter(
-                      child: SizedBox(
-                        height: 120,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _nearbyStops.length,
-                          itemBuilder: (context, index) {
-                            final stop = _nearbyStops[index];
-                            return Container(
-                              width: 220,
-                              margin: const EdgeInsets.only(right: 12),
-                              child: Card(
-                                elevation: 2,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side: BorderSide(
-                                    color: _selectedStop?.id == stop.id
-                                        ? Colors.blue.shade300
-                                        : Colors.grey.shade200,
-                                    width: _selectedStop?.id == stop.id ? 2 : 1,
-                                  ),
+                  : _nearbyStops.isEmpty // Now check if stops list is empty
+                      ? SliverToBoxAdapter(
+                          child: FutureBuilder<bool>(
+                            future: Permission.location.isGranted,
+                            builder: (context, snapshot) {
+                              final hasPermission = snapshot.data ?? false;
+
+                              return Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      hasPermission
+                                          ? Icons.location_off
+                                          : Icons.location_disabled,
+                                      size: 48,
+                                      color: hasPermission
+                                          ? Colors.grey[400]
+                                          : Colors.orange[400],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      hasPermission
+                                          ? '주변 정류장을 찾을 수 없습니다'
+                                          : '주변 정류장을 확인하려면 위치 권한이 필요합니다',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: hasPermission
+                                            ? Colors.grey[600]
+                                            : Colors.orange[700],
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (!hasPermission)
+                                      Text(
+                                        '아래 버튼을 클릭하여 권한을 허용해주세요',
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[600]),
+                                      ),
+                                    const SizedBox(height: 16),
+                                    ElevatedButton.icon(
+                                      onPressed: hasPermission
+                                          ? _loadNearbyStations
+                                          : () async {
+                                              // 권한 요청 후 다시 불러오기
+                                              final status = await Permission
+                                                  .location
+                                                  .request();
+                                              if (status.isGranted && mounted) {
+                                                _loadNearbyStations(); // 권한 허용되면 다시 불러오기
+                                              } else if (status
+                                                      .isPermanentlyDenied &&
+                                                  mounted) {
+                                                // 영구 거부인 경우 설정창 열기
+                                                ScaffoldMessenger.of(context)
+                                                    .showSnackBar(
+                                                  SnackBar(
+                                                    content: const Text(
+                                                        '권한이 영구적으로 거부되었습니다. 설정에서 허용해주세요.'),
+                                                    action: SnackBarAction(
+                                                      label: '설정',
+                                                      onPressed: () =>
+                                                          openAppSettings(),
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            },
+                                      icon: Icon(hasPermission
+                                          ? Icons.refresh
+                                          : Icons.location_on),
+                                      label: Text(
+                                          hasPermission ? '다시 시도' : '위치 권한 허용'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: hasPermission
+                                            ? Colors.blue[50]
+                                            : Colors.orange[50],
+                                        foregroundColor: hasPermission
+                                            ? Colors.blue[700]
+                                            : Colors.orange[700],
+                                      ),
+                                    ),
+                                    if (!hasPermission)
+                                      const SizedBox(height: 8),
+                                    if (!hasPermission)
+                                      TextButton(
+                                        onPressed: () => openAppSettings(),
+                                        child: const Text('설정에서 권한 관리하기'),
+                                      ),
+                                  ],
                                 ),
-                                child: InkWell(
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedStop = stop;
-                                    });
-                                    // 정류장 선택 후 즉시 도착 정보 로드
-                                    _loadBusArrivals();
-                                  },
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12.0),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
+                              );
+                            },
+                          ),
+                        )
+                      : SliverToBoxAdapter(
+                          child: SizedBox(
+                            height: 120,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _nearbyStops.length,
+                              itemBuilder: (context, index) {
+                                final stop = _nearbyStops[index];
+                                return Container(
+                                  width: 220,
+                                  margin: const EdgeInsets.only(right: 12),
+                                  child: Card(
+                                    elevation: 2,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(
+                                        color: _selectedStop?.id == stop.id
+                                            ? Colors.blue.shade300
+                                            : Colors.grey.shade200,
+                                        width: _selectedStop?.id == stop.id
+                                            ? 2
+                                            : 1,
+                                      ),
+                                    ),
+                                    child: InkWell(
+                                      onTap: () {
+                                        setState(() {
+                                          _selectedStop = stop;
+                                        });
+                                        // 정류장 선택 후 즉시 도착 정보 로드
+                                        _loadBusArrivals();
+                                      },
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(12.0),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            Icon(Icons.location_on,
-                                                color:
-                                                    _selectedStop?.id == stop.id
+                                            Row(
+                                              children: [
+                                                Icon(Icons.location_on,
+                                                    color: _selectedStop?.id ==
+                                                            stop.id
                                                         ? Colors.blue
                                                         : Colors.grey[600],
-                                                size: 16),
-                                            const SizedBox(width: 4),
-                                            if (stop.wincId != null &&
-                                                stop.wincId!.isNotEmpty)
-                                              Text(
-                                                stop.wincId!,
-                                                style: TextStyle(
-                                                    color: Colors.grey[600],
-                                                    fontSize: 12),
+                                                    size: 16),
+                                                const SizedBox(width: 4),
+                                                if (stop.wincId != null &&
+                                                    stop.wincId!.isNotEmpty)
+                                                  Text(
+                                                    stop.wincId!,
+                                                    style: TextStyle(
+                                                        color: Colors.grey[600],
+                                                        fontSize: 12),
+                                                  ),
+                                                const Spacer(),
+                                                InkWell(
+                                                  onTap: () {
+                                                    _toggleFavorite(stop);
+                                                  },
+                                                  borderRadius:
+                                                      BorderRadius.circular(16),
+                                                  child: const Padding(
+                                                    padding:
+                                                        EdgeInsets.all(4.0),
+                                                    child: Icon(Icons.star,
+                                                        color: Colors.amber,
+                                                        size: 20),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              stop.name,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                                color:
+                                                    _selectedStop?.id == stop.id
+                                                        ? Colors.blue.shade700
+                                                        : Colors.black87,
                                               ),
-                                            const Spacer(),
-                                            InkWell(
-                                              onTap: () {
-                                                _toggleFavorite(stop);
-                                              },
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                              child: const Padding(
-                                                padding: EdgeInsets.all(4.0),
-                                                child: Icon(Icons.star,
-                                                    color: Colors.amber,
-                                                    size: 20),
-                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                if (stop.distance != null)
+                                                  Text(
+                                                    _formatDistance(
+                                                        stop.distance!),
+                                                    style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Colors.grey[600],
+                                                        fontWeight:
+                                                            FontWeight.w500),
+                                                  ),
+                                                const SizedBox(width: 8),
+                                              ],
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          stop.name,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: _selectedStop?.id == stop.id
-                                                ? Colors.blue.shade700
-                                                : Colors.black87,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            if (stop.distance != null)
-                                              Text(
-                                                _formatDistance(stop.distance!),
-                                                style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey[600],
-                                                    fontWeight:
-                                                        FontWeight.w500),
-                                              ),
-                                            const SizedBox(width: 8),
-                                          ],
-                                        ),
-                                      ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ),
-                            );
-                          },
+                                );
+                              },
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
         ),
         if (_favoriteStops.isNotEmpty)
           SliverPadding(
