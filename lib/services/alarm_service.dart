@@ -149,15 +149,94 @@ class AlarmService extends ChangeNotifier {
 
   Future<void> _initialize() async {
     if (_initialized) return;
-    await loadAlarms();
-    await loadAutoAlarms(); // 자동 알람 로드 추가
-    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      loadAlarms();
-      loadAutoAlarms(); // 자동 알람도 주기적으로 로드
-    });
-    _setupMethodChannel();
-    await _registerBusArrivalReceiver();
-    _initialized = true;
+
+    debugPrint('🔔 AlarmService 초기화 시작: ${DateTime.now()}');
+
+    // 초기화 재시도 로직 추가
+    int retryCount = 0;
+    const int maxRetries = 3;
+
+    while (retryCount < maxRetries) {
+      try {
+        if (retryCount > 0) {
+          debugPrint('🔄 AlarmService 초기화 재시도 #$retryCount');
+          await Future.delayed(Duration(seconds: 2 * retryCount));
+        }
+
+        // 알람 로드 시도
+        try {
+          await loadAlarms();
+          debugPrint('✅ 일반 알람 로드 성공');
+        } catch (e) {
+          debugPrint('⚠️ 일반 알람 로드 실패: $e');
+          // 알람 로드가 실패해도 계속 진행
+        }
+
+        // 자동 알람 로드 시도
+        try {
+          await loadAutoAlarms();
+          debugPrint('✅ 자동 알람 로드 성공');
+        } catch (e) {
+          debugPrint('⚠️ 자동 알람 로드 실패: $e');
+          // 자동 알람 로드가 실패해도 계속 진행
+        }
+
+        // 주기적 리프레시 타이머 설정
+        _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+          loadAlarms();
+          loadAutoAlarms();
+        });
+
+        // 메서드 채널 설정
+        try {
+          _setupMethodChannel();
+          debugPrint('✅ 메서드 채널 설정 성공');
+        } catch (e) {
+          debugPrint('⚠️ 메서드 채널 설정 실패: $e');
+          // 메서드 채널 설정이 실패해도 계속 진행
+        }
+
+        // 버스 도착 수신기 등록
+        try {
+          await _registerBusArrivalReceiver();
+          debugPrint('✅ 버스 도착 수신기 등록 성공');
+        } catch (e) {
+          debugPrint('⚠️ 버스 도착 수신기 등록 실패: $e');
+          // 버스 도착 수신기 등록이 실패해도 계속 진행
+        }
+
+        // 초기화 성공 표시
+        _initialized = true;
+        debugPrint('✅ AlarmService 초기화 완료: ${DateTime.now()}');
+        return;
+      } catch (e) {
+        retryCount++;
+        debugPrint('❌ AlarmService 초기화 시도 #$retryCount 실패: $e');
+
+        if (retryCount >= maxRetries) {
+          // 최대 재시도 횟수 도달, 강제로 초기화 성공으로 표시
+          debugPrint('⚠️ 최대 재시도 횟수 도달, 부분적으로 초기화 진행');
+          _initialized = true;
+          break;
+        }
+      }
+    }
+
+    // 초기화가 완전히 실패했을 경우에도 앱이 동작할 수 있도록 기본 상태 설정
+    if (!_initialized) {
+      debugPrint('⚠️ AlarmService 초기화 실패, 기본 상태로 진행');
+      _initialized = true;
+      _activeAlarms = [];
+      _autoAlarms.clear(); // 기존 아이템 모두 제거
+      _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        try {
+          loadAlarms();
+          loadAutoAlarms();
+        } catch (e) {
+          debugPrint('⚠️ 알람 주기적 로드 실패: $e');
+        }
+      });
+    }
   }
 
   void _setupMethodChannel() {
@@ -1270,7 +1349,7 @@ class AlarmService extends ChangeNotifier {
         await _methodChannel?.invokeMethod('stopBusMonitoringService');
         notifyListeners();
       } catch (resetError) {
-        debugPrint('🔔 오류 발생 후 알람 초기화 시도 중 추가 오류: $resetError');
+        debugPrint('�� 오류 발생 후 알람 초기화 시도 중 추가 오류: $resetError');
       }
       return false;
     }
