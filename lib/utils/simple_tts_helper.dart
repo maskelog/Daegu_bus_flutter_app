@@ -70,8 +70,8 @@ class SimpleTTSHelper {
   /// 버스 도착 알림을 위한 단순화된 메서드
   static Future<void> speakBusArriving(String busNo, String stationName) async {
     try {
-      // 버스 번호만 사용하여 도착 안내
-      await speak('$busNo번 버스가 곧 도착합니다');
+      // 위치 정보를 더 명확히 포함
+      await speak('$busNo번 버스가 $stationName 정류장 앞 정류장에 도착했습니다. 곧 $stationName에 도착합니다. 탑승 준비하세요.');
     } catch (e) {
       debugPrint('버스 도착 발화 오류: $e');
     }
@@ -83,18 +83,22 @@ class SimpleTTSHelper {
     required String stationName,
     required int remainingMinutes,
     String? currentStation,
+    int? remainingStops, // 추가: 남은 정류장 수
   }) async {
     try {
-      // 단순화된 방식으로 처리
+      // 정류장 개수에 따른 처리
       String message;
-      if (remainingMinutes <= 0) {
-        message = '$busNo번 버스가 곧 도착합니다.';
+      if (remainingStops == 1 && remainingMinutes <= 3) {
+        // 목적지 앞 정류장 도착 시
+        message = '$busNo번 버스가 $stationName 정류장 앞 정류장에 도착했습니다. 곧 $stationName에 도착합니다.';
+      } else if (remainingMinutes <= 0) {
+        message = '$busNo번 버스가 $stationName에 도착했습니다. 탑승하세요.';
       } else {
         message = '$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.';
       }
 
       // 현재 위치 정보가 있으면 추가
-      if (currentStation != null && currentStation.isNotEmpty) {
+      if (currentStation != null && currentStation.isNotEmpty && remainingMinutes > 0) {
         message += ' 현재 $currentStation 위치입니다.';
       }
 
