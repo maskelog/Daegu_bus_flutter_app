@@ -115,10 +115,26 @@ class LocationService {
   static Future<List<BusStop>> getNearbyStations(double radiusMeters,
       {BuildContext? context}) async {
     try {
+      // 위치 권한 확인 먼저 수행
+      bool hasPermission = await Permission.location.isGranted;
+      if (!hasPermission) {
+        debugPrint('위치 권한이 없습니다. 권한 수동 요청 완료된 화면으로 넘어갑니다.');
+        
+        // 전달하는 정보가 없는 경우 권한이 없음을 알리기 위한 확인
+        if (context != null && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('주변 정류장을 검색하려면 위치 권한이 필요합니다.')),
+          );
+        }
+        
+        // 권한이 없어도 앱이 멈추지 않도록 비어있는 리스트 반환
+        return [];
+      }
+      
       final position = await getCurrentLocation();
 
       if (position == null) {
-        if (context != null) {
+        if (context != null && context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('위치 정보를 가져올 수 없습니다. 위치 서비스를 확인해주세요.')),
           );
@@ -133,7 +149,7 @@ class LocationService {
           position.latitude, position.longitude, radiusMeters);
     } catch (e) {
       debugPrint('주변 정류장을 가져오는 중 오류 발생: $e');
-      if (context != null) {
+      if (context != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('주변 정류장을 가져오는 중 오류가 발생했습니다: $e')),
         );
