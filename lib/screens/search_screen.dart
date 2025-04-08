@@ -140,12 +140,38 @@ class _SearchScreenState extends State<SearchScreen> {
       final results = await ApiService.searchStations(query); // 정적 호출로 변경
       final limitedResults = results.take(30).toList();
 
+      // stationId 확인 및 가공
+      for (var i = 0; i < limitedResults.length; i++) {
+        var station = limitedResults[i];
+        // stationId 확인
+        if ((station.stationId == null || station.stationId!.isEmpty) &&
+            (!station.id.startsWith('7') || station.id.length != 10)) {
+          try {
+            // 각 정류장마다 검색을 하면 성능 저하가 심함
+            // 따라서 일반 정류장만 한 번에 20개까지만 변환 시도
+            if (i < 20) {
+              debugPrint('정류장 ID 변환 시도: ${station.name} (${station.id})');
+              final mappedStation = await ApiService.getStationById(station.id);
+              if (mappedStation != null && mappedStation.stationId != null) {
+                limitedResults[i] = station.copyWith(
+                  stationId: mappedStation.stationId,
+                  isFavorite: _isStopIdFavorite(station.id),
+                );
+                debugPrint(
+                    '정류장 ID 변환 성공: ${station.id} -> ${mappedStation.stationId}');
+              }
+            }
+          } catch (e) {
+            debugPrint('정류장 ID 변환 오류: $e');
+          }
+        }
+      }
+
       if (mounted) {
         setState(() {
           _searchResults = limitedResults
-              .map((station) => station.copyWith(
-                    isFavorite: _isStopIdFavorite(station.id),
-                  ))
+              .map((station) =>
+                  station.copyWith(isFavorite: _isStopIdFavorite(station.id)))
               .toList();
           _isLoading = false;
           _stationArrivals.clear();
@@ -153,14 +179,14 @@ class _SearchScreenState extends State<SearchScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Error searching stations: $e');
+      debugPrint('정류장 검색 오류: $e');
       if (mounted) {
         setState(() {
-          _errorMessage = '정류장 검색 중 오류가 발생했습니다: $e';
+          _errorMessage = '정류장 검색 중 오류가 발생했습니다';
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('정류장 검색 중 오류가 발생했습니다: $e')),
+          const SnackBar(content: Text('정류장 검색 중 오류가 발생했습니다')),
         );
       }
     }
@@ -174,18 +200,37 @@ class _SearchScreenState extends State<SearchScreen> {
     });
 
     try {
-      final arrivals = await ApiService.getStationInfo(station.id); // bsId 사용
+      // 첫 번째 시도
+      debugPrint('정류장 도착 정보 조회 시도: ${station.name} (ID: ${station.id})');
+      var arrivals = await ApiService.getStationInfo(station.id);
+
+      // 결과가 없는 경우 stationId로 재시도
+      if (arrivals.isEmpty &&
+          station.stationId != null &&
+          station.stationId!.isNotEmpty) {
+        debugPrint('ID로 조회 실패, stationId로 재시도: ${station.stationId}');
+        arrivals = await ApiService.getStationInfo(station.stationId!);
+      }
+
       if (mounted) {
         setState(() {
           _stationArrivals[station.id] = arrivals;
           _isLoading = false;
+
+          if (arrivals.isEmpty) {
+            debugPrint('정류장 도착 정보 없음: ${station.name}');
+            // 결과가 없지만 오류는 아님
+            _errorMessage = null;
+          } else {
+            debugPrint('정류장 도착 정보 로드 성공: ${arrivals.length}개 버스');
+          }
         });
       }
     } catch (e) {
-      debugPrint('Error loading arrivals: $e');
+      debugPrint('정류장 도착 정보 로드 오류: $e');
       if (mounted) {
         setState(() {
-          _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
+          _errorMessage = '버스 도착 정보를 불러오지 못했습니다. 다시 시도해주세요.';
           _isLoading = false;
         });
       }
