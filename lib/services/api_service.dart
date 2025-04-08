@@ -356,20 +356,32 @@ class ApiService {
     try {
       String finalStationId = stationId;
       if (!stationId.startsWith('7') || stationId.length != 10) {
+        debugPrint('stationId 변환 시도: $stationId (7로 시작하는 10자리 형식이 아님)');
         final mappedStation = await getStationById(stationId);
         if (mappedStation?.stationId != null) {
           finalStationId = mappedStation!.stationId!;
+          debugPrint('stationId 변환 성공: $stationId -> $finalStationId');
         } else {
-          throw Exception('정류장 ID 매핑 실패: $stationId');
+          debugPrint('⚠️ stationId 변환 실패: $stationId - 원본 ID로 시도합니다');
+          // 변환 실패시 원본 ID로 시도 - 성공할 수도 있음
+          finalStationId = stationId;
         }
       }
 
+      debugPrint('정류장 도착 정보 조회 요청: $finalStationId');
       final response = await _busApiChannel.invokeMethod(
         'getStationInfo',
         {'stationId': finalStationId},
       );
 
       final arrivals = _processStationInfoResponse(response, finalStationId);
+
+      // 결과 확인 및 로깅
+      if (arrivals.isEmpty) {
+        debugPrint('정류장 도착 정보 없음: $finalStationId');
+      } else {
+        debugPrint('정류장 도착 정보 조회 성공: ${arrivals.length}개 버스');
+      }
 
       // 결과 캐싱
       _setCache(cacheKey, arrivals);
