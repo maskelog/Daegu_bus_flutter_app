@@ -3,15 +3,103 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:io';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import '../models/bus_stop.dart';
 
 class DatabaseHelper {
   static Database? _database;
+  static bool _isInitializing = false;
+  static final Completer<Database> _initCompleter = Completer<Database>();
+
+  // 앱 시작 시 미리 DB 초기화를 시작하는 메서드 추가
+  static void preInitialize() {
+    if (_database != null || _isInitializing) return;
+    _isInitializing = true;
+
+    // 백그라운드 isolate에서 DB 초기화 작업 수행
+    compute(_initDatabaseInBackground, null).then((db) {
+      _database = db;
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.complete(db);
+      }
+      _isInitializing = false;
+      debugPrint('✅ 데이터베이스 백그라운드 초기화 완료');
+    }).catchError((e) {
+      debugPrint('❌ 데이터베이스 백그라운드 초기화 실패: $e');
+      _isInitializing = false;
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.completeError(e);
+      }
+    });
+  }
+
+  // 백그라운드에서 실행될 DB 초기화 함수
+  static Future<Database> _initDatabaseInBackground(void _) async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, 'bus_stops.db');
+
+    try {
+      bool dbExists = await databaseExists(path);
+      if (!dbExists) {
+        debugPrint('DB 파일이 존재하지 않음, assets에서 복사 시작');
+        final byteData = await rootBundle.load('assets/bus_stops.db');
+        final buffer = byteData.buffer.asUint8List();
+        await File(path).writeAsBytes(buffer, flush: true);
+        debugPrint('DB 파일 복사 성공: $path');
+      }
+
+      return await openDatabase(
+        path,
+        version: 1,
+        readOnly: true, // 읽기 전용으로 열어 성능 향상
+      );
+    } catch (e) {
+      debugPrint('DB 초기화 오류: $e');
+      // 오류 발생 시 기존 DB 파일 삭제 후 재시도
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+          debugPrint('손상된 DB 파일 삭제됨');
+        }
+
+        final byteData = await rootBundle.load('assets/bus_stops.db');
+        final buffer = byteData.buffer.asUint8List();
+        await File(path).writeAsBytes(buffer, flush: true);
+        debugPrint('DB 파일 재복사 성공');
+
+        return await openDatabase(path, version: 1, readOnly: true);
+      } catch (retryError) {
+        debugPrint('DB 복구 시도 실패: $retryError');
+        throw Exception('데이터베이스 초기화 실패: $e, 복구 실패: $retryError');
+      }
+    }
+  }
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+
+    if (_isInitializing) {
+      // 이미 초기화 중이면 완료될 때까지 대기
+      return _initCompleter.future;
+    }
+
+    // 아직 초기화되지 않았으면 초기화 시작
+    _isInitializing = true;
+    try {
+      _database = await _initDatabase();
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.complete(_database);
+      }
+      return _database!;
+    } catch (e) {
+      _isInitializing = false;
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.completeError(e);
+      }
+      rethrow;
+    }
   }
 
   Future<Database> _initDatabase() async {
@@ -20,21 +108,19 @@ class DatabaseHelper {
 
     bool dbExists = await databaseExists(path);
     if (!dbExists) {
-      debugPrint('DB file does not exist, copying from assets');
+      debugPrint('DB 파일이 존재하지 않음, assets에서 복사 시작');
       try {
         final byteData = await rootBundle.load('assets/bus_stops.db');
         final buffer = byteData.buffer.asUint8List();
         await File(path).writeAsBytes(buffer, flush: true);
-        debugPrint('DB file copied successfully to: $path');
+        debugPrint('DB 파일 복사 성공: $path');
       } catch (e) {
-        debugPrint('Failed to copy DB file: $e');
-        throw Exception('Failed to load DB file: $e');
+        debugPrint('DB 파일 복사 실패: $e');
+        throw Exception('DB 파일 로드 실패: $e');
       }
-    } else {
-      debugPrint('DB file already exists at: $path');
     }
 
-    return await openDatabase(path, version: 1);
+    return await openDatabase(path, version: 1, readOnly: true);
   }
 
   Future<List<BusStop>> getAllStations() async {
