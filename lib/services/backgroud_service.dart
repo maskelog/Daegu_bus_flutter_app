@@ -181,22 +181,33 @@ void callbackDispatcher() {
                     continue;
                   }
 
+                  // 안전하게 inputData 생성 - 모든 필드에 기본값 제공
                   final inputData = {
                     'alarmId': autoAlarm.id,
-                    'busNo': autoAlarm.routeNo,
-                    'stationName': autoAlarm.stationName,
+                    'busNo': autoAlarm.routeNo.isNotEmpty
+                        ? autoAlarm.routeNo
+                        : '알 수 없음',
+                    'stationName': autoAlarm.stationName.isNotEmpty
+                        ? autoAlarm.stationName
+                        : '알 수 없는 정류장',
                     'remainingMinutes': 3, // 기본값으로 설정
-                    'routeId': autoAlarm.routeId,
+                    'routeId':
+                        autoAlarm.routeId.isNotEmpty ? autoAlarm.routeId : '',
                     'isAutoAlarm': true,
                     'showNotification': true,
                     'startTracking': true,
-                    'stationId': autoAlarm.stationId,
+                    'stationId': autoAlarm.stationId.isNotEmpty
+                        ? autoAlarm.stationId
+                        : '',
                     'shouldFetchRealtime': true,
                     'useTTS': autoAlarm.useTTS,
                     'currentStation': '',
                     'notificationTime': scheduledTime.millisecondsSinceEpoch,
                     'speakerMode': 1,
                   };
+
+                  // 디버그 로그 추가
+                  debugPrint("📝 생성된 inputData: $inputData");
 
                   // 기존 작업이 있다면 취소
                   await Workmanager()
@@ -261,8 +272,23 @@ void callbackDispatcher() {
           debugPrint("🔔 자동 알람 작업 실행");
           debugPrint("📱 입력 데이터: $inputData");
 
+          // 입력 데이터에서 값 추출 시 널 처리 추가
+          final String busNoSafe = inputData?['busNo'] as String? ?? '알 수 없음';
+          final String stationNameSafe =
+              inputData?['stationName'] as String? ?? '알 수 없는 정류장';
+          final String routeIdSafe = inputData?['routeId'] as String? ?? '';
+          final String stationIdSafe = inputData?['stationId'] as String? ?? '';
+          final int alarmIdSafe = inputData?['alarmId'] as int? ??
+              DateTime.now().millisecondsSinceEpoch;
+          final int remainingMinutesSafe =
+              inputData?['remainingMinutes'] as int? ?? 3;
+          final bool useTTSSafe = inputData?['useTTS'] as bool? ?? true;
+
+          debugPrint(
+              "📝 안전하게 처리된 데이터: busNo=$busNoSafe, stationName=$stationNameSafe, routeId=$routeIdSafe");
+
           // TTS 초기화 시도
-          if (useTTS) {
+          if (useTTSSafe) {
             try {
               debugPrint("🔊 TTS 초기화 시작");
               await SimpleTTSHelper.initialize();
@@ -290,15 +316,16 @@ void callbackDispatcher() {
               }
 
               // speakBusArriving 메서드 사용
-              debugPrint("🔊 TTS 발화 시작: $busNo번 버스 도착 알림");
-              await SimpleTTSHelper.speakBusArriving(busNo, stationName);
+              debugPrint("🔊 TTS 발화 시작: $busNoSafe번 버스 도착 알림");
+              await SimpleTTSHelper.speakBusArriving(
+                  busNoSafe, stationNameSafe);
               debugPrint("✅ TTS 발화 성공");
             } catch (ttsError) {
               debugPrint("❌ TTS 오류, 기본 speak 메서드로 시도: $ttsError");
               try {
                 debugPrint("🔊 기본 TTS 발화 시도");
                 await SimpleTTSHelper.speak(
-                    "$busNo번 버스가 $stationName 정류장에 $remainingMinutes분 후 도착합니다.");
+                    "$busNoSafe번 버스가 $stationNameSafe 정류장에 $remainingMinutesSafe분 후 도착합니다.");
                 debugPrint("✅ 기본 TTS 발화 성공");
               } catch (fallbackError) {
                 debugPrint("❌ 기본 TTS도 실패: $fallbackError");
@@ -311,11 +338,11 @@ void callbackDispatcher() {
             try {
               debugPrint("🔔 알림 표시 시작");
               await NotificationService().showAutoAlarmNotification(
-                id: alarmId,
-                busNo: busNo,
-                stationName: stationName,
-                remainingMinutes: remainingMinutes,
-                routeId: routeId,
+                id: alarmIdSafe,
+                busNo: busNoSafe,
+                stationName: stationNameSafe,
+                remainingMinutes: remainingMinutesSafe,
+                routeId: routeIdSafe,
               );
               debugPrint("✅ 알림 표시 성공");
             } catch (notifError) {
@@ -331,28 +358,28 @@ void callbackDispatcher() {
             debugPrint("📱 네이티브 TTS 추적 시작");
             // 먼저 네이티브 TTS 추적 시작
             await channel.invokeMethod('startTtsTracking', {
-              'routeId': routeId,
-              'stationId': stationId,
-              'busNo': busNo,
-              'stationName': stationName,
+              'routeId': routeIdSafe,
+              'stationId': stationIdSafe,
+              'busNo': busNoSafe,
+              'stationName': stationNameSafe,
             });
             debugPrint("✅ 네이티브 TTS 추적 시작 성공");
 
             // 버스 모니터링 시작
             debugPrint("📱 버스 모니터링 시작");
             await channel.invokeMethod('startBusMonitoring', {
-              'routeId': routeId,
-              'stationId': stationId,
-              'stationName': stationName,
+              'routeId': routeIdSafe,
+              'stationId': stationIdSafe,
+              'stationName': stationNameSafe,
             });
             debugPrint("✅ 버스 모니터링 서비스 시작 성공");
 
             // 버스 도착 수신기 등록
             debugPrint("📱 버스 도착 수신기 등록");
             await channel.invokeMethod('registerBusArrivalReceiver', {
-              'stationId': stationId,
-              'stationName': stationName,
-              'routeId': routeId,
+              'stationId': stationIdSafe,
+              'stationName': stationNameSafe,
+              'routeId': routeIdSafe,
             });
             debugPrint("✅ 버스 도착 수신기 등록 성공");
           } catch (e) {
