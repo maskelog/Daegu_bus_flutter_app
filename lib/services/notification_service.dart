@@ -141,6 +141,7 @@ class NotificationService {
     String? routeId,
     bool isAutoAlarm = false, // 자동 알람 여부 추가
     int? notificationTime, // 알림 시간 추가
+    String? allBusesSummary, // 모든 버스 정보 요약 (allBuses 모드에서만 사용)
   }) async {
     try {
       debugPrint(
@@ -158,6 +159,7 @@ class NotificationService {
         'isAutoAlarm': isAutoAlarm,
         'notificationTime':
             notificationTime ?? DateTime.now().millisecondsSinceEpoch,
+        'allBusesSummary': allBusesSummary, // 모든 버스 정보 요약 추가
       });
 
       debugPrint('🔔 알림 표시 완료: $id');
