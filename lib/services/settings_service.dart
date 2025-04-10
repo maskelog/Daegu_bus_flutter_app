@@ -4,12 +4,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import '../models/alarm_sound.dart';
 
+// 설정 화면에서 사용할 Enum 정의
+enum NotificationDisplayMode {
+  alarmedOnly, // 알람 설정된 버스만
+  allBuses // 해당 정류장의 모든 버스
+}
+
 class SettingsService extends ChangeNotifier {
   static const String _alarmSoundKey = 'alarm_sound_id';
   static const String _kThemeModeKey = 'theme_mode';
   static const String _kUseTtsKey = 'use_tts';
   static const String _kVibrateKey = 'vibrate';
   static const String _kSpeakerModeKey = 'speaker_mode';
+  static const String _notificationDisplayModeKey = 'notificationDisplayMode';
 
   // 스피커 모드 상수
   static const int speakerModeHeadset = 0; // 이어폰 전용
@@ -36,6 +43,12 @@ class SettingsService extends ChangeNotifier {
   final MethodChannel _ttsChannel =
       const MethodChannel('com.example.daegu_bus_app/tts');
 
+  // 알림 표시 모드 관련
+  NotificationDisplayMode _notificationDisplayMode =
+      NotificationDisplayMode.alarmedOnly; // 기본값
+
+  late SharedPreferences _prefs;
+
   // Getters
   String get alarmSoundId => _alarmSoundId;
   AlarmSound get selectedAlarmSound => AlarmSound.findById(_alarmSoundId);
@@ -44,17 +57,25 @@ class SettingsService extends ChangeNotifier {
   bool get useTts => _useTts;
   bool get vibrate => _vibrate;
   int get speakerMode => _speakerMode; // 스피커 모드 getter
+  NotificationDisplayMode get notificationDisplayMode =>
+      _notificationDisplayMode;
 
   // 설정 초기화
   Future<void> initialize() async {
+    _prefs = await SharedPreferences.getInstance();
     _isLoading = true;
     notifyListeners();
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      _alarmSoundId = prefs.getString(_alarmSoundKey) ?? AlarmSound.ttsAlarm.id;
+      _alarmSoundId =
+          _prefs.getString(_alarmSoundKey) ?? AlarmSound.ttsAlarm.id;
       await _updateNativeAlarmSound();
       await _loadSettings();
+
+      // Load Notification Display Mode
+      final modeIndex = _prefs.getInt(_notificationDisplayModeKey) ??
+          NotificationDisplayMode.alarmedOnly.index;
+      _notificationDisplayMode = NotificationDisplayMode.values[modeIndex];
     } catch (e) {
       debugPrint('설정 초기화 오류: $e');
     } finally {
@@ -66,8 +87,7 @@ class SettingsService extends ChangeNotifier {
   // 알람음 변경
   Future<void> setAlarmSound(String soundId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_alarmSoundKey, soundId);
+      await _prefs.setString(_alarmSoundKey, soundId);
       _alarmSoundId = soundId;
 
       await _updateNativeAlarmSound();
@@ -94,14 +114,13 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> _loadSettings() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final themeModeString = prefs.getString(_kThemeModeKey) ?? 'system';
+      final themeModeString = _prefs.getString(_kThemeModeKey) ?? 'system';
       _themeMode = _parseThemeMode(themeModeString);
 
-      _useTts = prefs.getBool(_kUseTtsKey) ?? false;
-      _vibrate = prefs.getBool(_kVibrateKey) ?? true;
+      _useTts = _prefs.getBool(_kUseTtsKey) ?? false;
+      _vibrate = _prefs.getBool(_kVibrateKey) ?? true;
       _speakerMode =
-          prefs.getInt(_kSpeakerModeKey) ?? speakerModeAuto; // 스피커 모드 로드
+          _prefs.getInt(_kSpeakerModeKey) ?? speakerModeAuto; // 스피커 모드 로드
 
       notifyListeners();
     } catch (e) {
@@ -115,8 +134,7 @@ class SettingsService extends ChangeNotifier {
     _themeMode = mode;
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_kThemeModeKey, _themeModeToString(mode));
+      await _prefs.setString(_kThemeModeKey, _themeModeToString(mode));
       notifyListeners();
     } catch (e) {
       debugPrint('테마 모드 저장 오류: $e');
@@ -129,8 +147,7 @@ class SettingsService extends ChangeNotifier {
     _useTts = value;
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_kUseTtsKey, value);
+      await _prefs.setBool(_kUseTtsKey, value);
       notifyListeners();
     } catch (e) {
       debugPrint('TTS 설정 저장 오류: $e');
@@ -143,8 +160,7 @@ class SettingsService extends ChangeNotifier {
     _vibrate = value;
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_kVibrateKey, value);
+      await _prefs.setBool(_kVibrateKey, value);
       notifyListeners();
     } catch (e) {
       debugPrint('진동 설정 저장 오류: $e');
@@ -164,8 +180,7 @@ class SettingsService extends ChangeNotifier {
     _speakerMode = mode;
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_kSpeakerModeKey, mode);
+      await _prefs.setInt(_kSpeakerModeKey, mode);
 
       // 네이티브 코드에도 설정 전달
       try {
@@ -217,4 +232,21 @@ class SettingsService extends ChangeNotifier {
         return '자동 감지';
     }
   }
+
+  // Method to update Notification Display Mode
+  Future<void> updateNotificationDisplayMode(
+      NotificationDisplayMode mode) async {
+    if (_notificationDisplayMode != mode) {
+      _notificationDisplayMode = mode;
+      await _prefs.setInt(_notificationDisplayModeKey, mode.index);
+      notifyListeners();
+      // Optionally notify native side if needed immediately
+      // await _notifyNativeSettingsChanged();
+    }
+  }
+
+  // Optional: Method to notify native side about setting changes
+  // Future<void> _notifyNativeSettingsChanged() async {
+  //   // Use MethodChannel to send updated settings to BusAlertService if necessary
+  // }
 }
