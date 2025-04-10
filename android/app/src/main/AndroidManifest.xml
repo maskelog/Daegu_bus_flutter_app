@@ -50,6 +50,12 @@
         <!-- 버스 알림 포그라운드 서비스 -->
         <service android:name=".BusAlertService" android:foregroundServiceType="dataSync" android:exported="false" />
 
+        <!-- 정류장 추적 서비스 -->
+        <service
+            android:name=".StationTrackingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- AlarmManager를 위한 리시버 등록 -->
         <service android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false"/>
         <receiver android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmBroadcastReceiver" android:exported="false"/>
@@ -63,7 +69,6 @@
                 <action android:name="com.example.daegu_bus_app.NOTIFICATION_DISMISS" />
             </intent-filter>
         </receiver>
-
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
