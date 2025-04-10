@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart' as xml;
 import '../models/bus_arrival.dart';
 import '../services/notification_service.dart';
+import '../services/settings_service.dart';
 import '../utils/tts_switcher.dart';
 import '../utils/simple_tts_helper.dart';
 
@@ -152,83 +153,58 @@ class AlarmService extends ChangeNotifier {
 
     debugPrint('🔔 AlarmService 초기화 시작: ${DateTime.now()}');
 
-    // 초기화 재시도 로직 추가
-    int retryCount = 0;
-    const int maxRetries = 3;
+    // 초기화 작업을 백그라운드에서 동시에 시작
+    final List<Future> initTasks = [
+      // 알람 로드
+      loadAlarms().catchError((e) {
+        debugPrint('⚠️ 일반 알람 로드 실패: $e');
+        return null; // 실패해도 계속 진행
+      }),
 
-    while (retryCount < maxRetries) {
+      // 자동 알람 로드
+      loadAutoAlarms().catchError((e) {
+        debugPrint('⚠️ 자동 알람 로드 실패: $e');
+        return null; // 실패해도 계속 진행
+      }),
+    ];
+
+    try {
+      // 모든 초기화 작업을 동시에 실행
+      await Future.wait(initTasks);
+
+      // 주기적 리프레시 타이머 설정 (더 긴 간격으로 변경)
+      _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        loadAlarms();
+        loadAutoAlarms();
+      });
+
+      // 메서드 채널 설정
       try {
-        if (retryCount > 0) {
-          debugPrint('🔄 AlarmService 초기화 재시도 #$retryCount');
-          await Future.delayed(Duration(seconds: 2 * retryCount));
-        }
-
-        // 알람 로드 시도
-        try {
-          await loadAlarms();
-          debugPrint('✅ 일반 알람 로드 성공');
-        } catch (e) {
-          debugPrint('⚠️ 일반 알람 로드 실패: $e');
-          // 알람 로드가 실패해도 계속 진행
-        }
-
-        // 자동 알람 로드 시도
-        try {
-          await loadAutoAlarms();
-          debugPrint('✅ 자동 알람 로드 성공');
-        } catch (e) {
-          debugPrint('⚠️ 자동 알람 로드 실패: $e');
-          // 자동 알람 로드가 실패해도 계속 진행
-        }
-
-        // 주기적 리프레시 타이머 설정
-        _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-          loadAlarms();
-          loadAutoAlarms();
-        });
-
-        // 메서드 채널 설정
-        try {
-          _setupMethodChannel();
-          debugPrint('✅ 메서드 채널 설정 성공');
-        } catch (e) {
-          debugPrint('⚠️ 메서드 채널 설정 실패: $e');
-          // 메서드 채널 설정이 실패해도 계속 진행
-        }
-
-        // 버스 도착 수신기 등록
-        try {
-          await _registerBusArrivalReceiver();
-          debugPrint('✅ 버스 도착 수신기 등록 성공');
-        } catch (e) {
-          debugPrint('⚠️ 버스 도착 수신기 등록 실패: $e');
-          // 버스 도착 수신기 등록이 실패해도 계속 진행
-        }
-
-        // 초기화 성공 표시
-        _initialized = true;
-        debugPrint('✅ AlarmService 초기화 완료: ${DateTime.now()}');
-        return;
+        _setupMethodChannel();
+        debugPrint('✅ 메서드 채널 설정 성공');
       } catch (e) {
-        retryCount++;
-        debugPrint('❌ AlarmService 초기화 시도 #$retryCount 실패: $e');
-
-        if (retryCount >= maxRetries) {
-          // 최대 재시도 횟수 도달, 강제로 초기화 성공으로 표시
-          debugPrint('⚠️ 최대 재시도 횟수 도달, 부분적으로 초기화 진행');
-          _initialized = true;
-          break;
-        }
+        debugPrint('⚠️ 메서드 채널 설정 실패: $e');
       }
-    }
 
-    // 초기화가 완전히 실패했을 경우에도 앱이 동작할 수 있도록 기본 상태 설정
-    if (!_initialized) {
-      debugPrint('⚠️ AlarmService 초기화 실패, 기본 상태로 진행');
+      // 버스 도착 수신기 등록
+      try {
+        await _registerBusArrivalReceiver();
+        debugPrint('✅ 버스 도착 수신기 등록 성공');
+      } catch (e) {
+        debugPrint('⚠️ 버스 도착 수신기 등록 실패: $e');
+      }
+
+      // 초기화 성공 표시
+      _initialized = true;
+      debugPrint('✅ AlarmService 초기화 완료: ${DateTime.now()}');
+    } catch (e) {
+      debugPrint('❌ AlarmService 초기화 실패: $e');
+
+      // 초기화가 실패해도 앱이 동작할 수 있도록 기본 상태 설정
       _initialized = true;
       _activeAlarms = [];
-      _autoAlarms.clear(); // 기존 아이템 모두 제거
-      _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _autoAlarms.clear();
+      _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
         try {
           loadAlarms();
           loadAutoAlarms();
@@ -416,6 +392,22 @@ class AlarmService extends ChangeNotifier {
         _isInTrackingMode = true;
         _markExistingAlarmsAsTracked(effectiveRouteId);
 
+        // 현재 알림 표시 모드 확인
+        final settingsService = SettingsService();
+        final isAllBusesMode = settingsService.notificationDisplayMode ==
+            NotificationDisplayMode.allBuses;
+        String? allBusesSummary;
+
+        // allBuses 모드일 때 모든 버스 정보 요약 생성
+        if (isAllBusesMode) {
+          try {
+            // 정류장의 모든 버스 정보 가져오기 (필요시 구현)
+            // allBusesSummary = await _getAllBusesInfoSummary(stationId);
+          } catch (e) {
+            debugPrint('모든 버스 정보 요약 생성 오류: $e');
+          }
+        }
+
         // 알림 표시
         if (trackingAlarm != null) {
           await NotificationService().showNotification(
@@ -426,6 +418,7 @@ class AlarmService extends ChangeNotifier {
             currentStation: trackingAlarm.currentStation ?? '정보 가져오는 중...',
             isOngoing: true, // 지속적인 알림으로 설정
             routeId: trackingAlarm.routeId,
+            allBusesSummary: allBusesSummary, // allBuses 모드일 때만 값이 있음
           );
         } else {
           await NotificationService().showNotification(
@@ -436,6 +429,7 @@ class AlarmService extends ChangeNotifier {
             currentStation: '정보 가져오는 중...',
             isOngoing: true, // 지속적인 알림으로 설정
             routeId: effectiveRouteId,
+            allBusesSummary: allBusesSummary, // allBuses 모드일 때만 값이 있음
           );
         }
 
@@ -842,18 +836,31 @@ class AlarmService extends ChangeNotifier {
 
   // loadAlarms 메소드에서 자동 알람은 로드하지 않도록 수정
   Future<void> loadAlarms() async {
+    // 백그라운드에서 알람 로드 실행
+    return compute(_loadAlarmsInBackground, null).then((result) {
+      _activeAlarms = result;
+      notifyListeners();
+      debugPrint('✅ 알람 로드 완료: ${_activeAlarms.length}개');
+    }).catchError((e) {
+      debugPrint('❌ 알람 로드 오류: $e');
+      // 오류 발생 시 기존 알람 유지
+    });
+  }
+
+  // 백그라운드에서 실행될 알람 로드 함수
+  static Future<List<AlarmData>> _loadAlarmsInBackground(void _) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final keys = prefs.getKeys();
+      final List<AlarmData> loadedAlarms = [];
 
       // 일반 알람 로드
       final alarmKeys = keys
           .where((key) =>
               key.startsWith('alarm_') && !key.startsWith('auto_alarm_'))
           .toList();
-
       debugPrint('알람 로드 시작: ${alarmKeys.length}개');
-      _activeAlarms = [];
+
       final keysToRemove = <String>[];
 
       for (var key in alarmKeys) {
@@ -865,17 +872,25 @@ class AlarmService extends ChangeNotifier {
           }
 
           final Map<String, dynamic> jsonData = jsonDecode(jsonString);
+
+          // 필수 필드 유효성 검사
+          if (!_validateRequiredFields(jsonData)) {
+            debugPrint('알람 데이터 필수 필드 누락: $key');
+            keysToRemove.add(key);
+            continue;
+          }
+
           final AlarmData alarm = AlarmData.fromJson(jsonData);
 
           final now = DateTime.now();
           if (alarm.targetArrivalTime
               .isBefore(now.subtract(const Duration(minutes: 5)))) {
-            debugPrint('만료된 알람 발견: $alarm.busNo, $alarm.stationName');
+            debugPrint('만료된 알람 발견: ${alarm.busNo}, ${alarm.stationName}');
             keysToRemove.add(key);
             continue;
           }
 
-          _activeAlarms.add(alarm);
+          loadedAlarms.add(alarm);
         } catch (e) {
           debugPrint('알람 데이터 손상 ($key): $e');
           keysToRemove.add(key);
@@ -896,10 +911,18 @@ class AlarmService extends ChangeNotifier {
           }
 
           final Map<String, dynamic> jsonData = jsonDecode(jsonString);
+
+          // 필수 필드 유효성 검사
+          if (!_validateRequiredFields(jsonData)) {
+            debugPrint('자동 알람 데이터 필수 필드 누락: $key');
+            keysToRemove.add(key);
+            continue;
+          }
+
           final AlarmData alarm = AlarmData.fromJson(jsonData);
 
           // 자동 알람은 만료되지 않음
-          _activeAlarms.add(alarm);
+          loadedAlarms.add(alarm);
         } catch (e) {
           debugPrint('자동 알람 데이터 손상 ($key): $e');
           keysToRemove.add(key);
@@ -914,15 +937,46 @@ class AlarmService extends ChangeNotifier {
 
       // 변경사항이 있으면 저장
       if (keysToRemove.isNotEmpty) {
-        await _saveAlarms();
+        // 저장할 알람만 저장
+        final alarmsJson = loadedAlarms
+            .where((alarm) => !alarm.busNo.startsWith('auto_'))
+            .map((alarm) => jsonEncode(alarm.toJson()))
+            .toList();
+        await prefs.setStringList('active_alarms', alarmsJson);
       }
 
       debugPrint(
-          '알람 로드 완료: ${_activeAlarms.length}개 (일반: ${alarmKeys.length}개, 자동: ${autoAlarmKeys.length}개)');
-      notifyListeners();
+          '알람 로드 완료: ${loadedAlarms.length}개 (일반: ${alarmKeys.length - keysToRemove.length}개, 자동: ${autoAlarmKeys.length}개)');
+      return loadedAlarms;
     } catch (e) {
-      debugPrint('알람 로드 오류: $e');
+      debugPrint('알람 로드 중 오류 발생: $e');
+      return []; // 오류 발생 시 빈 리스트 반환
     }
+  }
+
+  // 필수 필드 유효성 검사 함수
+  static bool _validateRequiredFields(Map<String, dynamic> data) {
+    final requiredFields = [
+      'busNo',
+      'stationName',
+      'remainingMinutes',
+      'routeId',
+      'scheduledTime',
+    ];
+
+    for (var field in requiredFields) {
+      if (!data.containsKey(field) || data[field] == null) {
+        return false;
+      }
+
+      // String 필드의 경우 빈 문자열 검사
+      if ((field == 'busNo' || field == 'stationName' || field == 'routeId') &&
+          (data[field] as String).isEmpty) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   // TTS 재시도 함수 추가
@@ -1097,6 +1151,22 @@ class AlarmService extends ChangeNotifier {
         }
       }
 
+      // 현재 알림 표시 모드 확인
+      final settingsService = SettingsService();
+      final isAllBusesMode = settingsService.notificationDisplayMode ==
+          NotificationDisplayMode.allBuses;
+      String? allBusesSummary;
+
+      // allBuses 모드일 때 모든 버스 정보 요약 생성
+      if (isAllBusesMode) {
+        try {
+          // 정류장의 모든 버스 정보 가져오기 (필요시 구현)
+          // allBusesSummary = await _getAllBusesInfoSummary(stationId);
+        } catch (e) {
+          debugPrint('모든 버스 정보 요약 생성 오류: $e');
+        }
+      }
+
       // 알림 업데이트
       await NotificationService().showNotification(
         id: ("${busNo}_${stationName}_$routeId").hashCode,
@@ -1106,6 +1176,7 @@ class AlarmService extends ChangeNotifier {
         currentStation: currentStation,
         isOngoing: true, // 지속적인 알림으로 설정
         routeId: routeId,
+        allBusesSummary: allBusesSummary, // allBuses 모드일 때만 값이 있음
       );
     }
   }
@@ -1608,83 +1679,93 @@ class AlarmService extends ChangeNotifier {
   Future<void> updateAutoAlarms(List<AutoAlarm> autoAlarms) async {
     _autoAlarms.clear();
     final now = DateTime.now();
-    final currentWeekday = now.weekday; // 1-7 (월-일)
-
-    debugPrint(
-        "📅 자동 알람 업데이트 시작: ${autoAlarms.length}개 알람, 현재 시간: ${now.toString()}");
 
     for (var alarm in autoAlarms) {
-      // 오늘의 예약 시간 계산
-      DateTime scheduledTime = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        alarm.hour,
-        alarm.minute,
-      );
+      if (!alarm.isActive) continue;
 
-      debugPrint(
-          "⏰ 알람 계산 중: ${alarm.routeNo}번 버스, 시간: ${alarm.hour}:${alarm.minute}, 요일: ${alarm.repeatDays}");
-      debugPrint(
-          "⏰ 예약 시간: ${scheduledTime.toString()}, 현재 요일: $currentWeekday");
-
-      // 현재 요일이 반복 요일에 포함되어 있지 않으면 다음 반복 요일 찾기
-      if (!alarm.repeatDays.contains(currentWeekday) ||
+      DateTime scheduledTime =
+          DateTime(now.year, now.month, now.day, alarm.hour, alarm.minute);
+      if (!alarm.repeatDays.contains(now.weekday) ||
           scheduledTime.isBefore(now)) {
-        debugPrint("⏰ 시간 재계산 필요: 현재 요일($currentWeekday)이 반복 요일에 없거나 시간이 지남");
-        // 다음 반복 요일 찾기
         int daysToAdd = 1;
         while (daysToAdd <= 7) {
           final nextDate = now.add(Duration(days: daysToAdd));
-          final nextWeekday = nextDate.weekday;
-          if (alarm.repeatDays.contains(nextWeekday)) {
-            scheduledTime = DateTime(
-              nextDate.year,
-              nextDate.month,
-              nextDate.day,
-              alarm.hour,
-              alarm.minute,
-            );
-            debugPrint(
-                "⏰ 다음 유효 시간 발견: $daysToAdd일 후, ${scheduledTime.toString()}, 요일: $nextWeekday");
+          if (alarm.repeatDays.contains(nextDate.weekday)) {
+            scheduledTime = DateTime(nextDate.year, nextDate.month,
+                nextDate.day, alarm.hour, alarm.minute);
             break;
           }
           daysToAdd++;
         }
       }
 
-      _autoAlarms.add(AlarmData(
+      final alarmData = AlarmData(
         busNo: alarm.routeNo,
         stationName: alarm.stationName,
         remainingMinutes: 3,
         routeId: alarm.routeId,
         scheduledTime: scheduledTime,
         useTTS: alarm.useTTS,
-      ));
+      );
+      _autoAlarms.add(alarmData);
 
-      debugPrint(
-          "✅ 자동 알람 추가됨: ${alarm.routeNo}번 버스, 실행 시간: ${scheduledTime.toString()}");
-    }
-
-    // WorkManager에 자동 알람 초기화 작업 등록 부분 수정
-    try {
-      debugPrint("🔄 WorkManager에 자동 알람 초기화 작업 등록 시작");
-      await Workmanager().cancelByUniqueName('initAutoAlarms');
-
-      // 현재 시간으로부터 10초 후에 실행되도록 설정
-      // (바로 실행되면 문제가 생길 수 있으므로 약간의 지연 추가)
+      // 첫 번째 알람 예약
+      final id = alarmData.getAlarmId();
+      final initialDelay = scheduledTime.difference(now);
       await Workmanager().registerOneOffTask(
-        'initAutoAlarms',
-        'initAutoAlarms',
-        initialDelay: const Duration(seconds: 10),
+        'autoAlarm_$id',
+        'autoAlarmTask',
+        initialDelay: initialDelay,
+        inputData: {
+          'alarmId': id,
+          'busNo': alarm.routeNo,
+          'stationName': alarm.stationName,
+          'remainingMinutes': 3,
+          'routeId': alarm.routeId,
+          'useTTS': alarm.useTTS,
+        },
         existingWorkPolicy: ExistingWorkPolicy.replace,
       );
-      debugPrint("✅ 자동 알람 초기화 작업 등록 성공: 10초 후 실행 예정");
-    } catch (e) {
-      debugPrint("❌ 자동 알람 초기화 작업 등록 실패: $e");
-    }
+      debugPrint('자동 알람 예약: ${alarm.routeNo} at $scheduledTime');
 
+      // 다음 반복 알람 예약
+      await scheduleNextAutoAlarm(alarm);
+    }
     await _saveAutoAlarms();
+  }
+
+  Future<void> scheduleNextAutoAlarm(AutoAlarm alarm) async {
+    final now = DateTime.now();
+    int daysToAdd = 1;
+
+    while (daysToAdd <= 7) {
+      final nextDate = now.add(Duration(days: daysToAdd));
+      if (alarm.repeatDays.contains(nextDate.weekday)) {
+        final nextTime = DateTime(nextDate.year, nextDate.month, nextDate.day,
+            alarm.hour, alarm.minute);
+        final id =
+            "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}".hashCode;
+
+        await Workmanager().registerOneOffTask(
+          'autoAlarm_$id',
+          'autoAlarmTask',
+          initialDelay: nextTime.difference(now),
+          inputData: {
+            'alarmId': id,
+            'busNo': alarm.routeNo,
+            'stationName': alarm.stationName,
+            'remainingMinutes': 3,
+            'routeId': alarm.routeId,
+            'useTTS': alarm.useTTS,
+          },
+          existingWorkPolicy: ExistingWorkPolicy.replace,
+        );
+
+        debugPrint('다음 자동 알람 예약: ${alarm.routeNo} at $nextTime');
+        break;
+      }
+      daysToAdd++;
+    }
   }
 
   Future<void> _saveAutoAlarms() async {
@@ -1699,29 +1780,38 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  Future<void> _saveAlarms() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final alarmsJson =
-          _activeAlarms.map((alarm) => jsonEncode(alarm.toJson())).toList();
-      await prefs.setStringList('active_alarms', alarmsJson);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('일반 알람 저장 오류: $e');
-    }
-  }
-
   // 자동 알람 로드 메서드 추가
   Future<void> loadAutoAlarms() async {
+    // 백그라운드에서 자동 알람 로드 실행
+    return compute(_loadAutoAlarmsInBackground, null).then((result) {
+      _autoAlarms.clear();
+      _autoAlarms.addAll(result);
+      notifyListeners();
+      debugPrint('✅ 자동 알람 로드 완료: ${_autoAlarms.length}개');
+    }).catchError((e) {
+      debugPrint('❌ 자동 알람 로드 오류: $e');
+      // 오류 발생 시 기존 자동 알람 유지
+    });
+  }
+
+  // 백그라운드에서 실행될 자동 알람 로드 함수
+  static Future<List<AlarmData>> _loadAutoAlarmsInBackground(void _) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final alarmsJson = prefs.getStringList('auto_alarms') ?? [];
-      _autoAlarms.clear();
+      final List<AlarmData> loadedAutoAlarms = [];
       final now = DateTime.now();
 
       for (var json in alarmsJson) {
         try {
           final Map<String, dynamic> data = jsonDecode(json);
+
+          // 필수 필드 유효성 검사
+          if (!_validateAutoAlarmFields(data)) {
+            debugPrint('자동 알람 데이터 필수 필드 누락');
+            continue;
+          }
+
           final autoAlarm = AutoAlarm.fromJson(data);
 
           // 오늘의 예약 시간 계산
@@ -1754,7 +1844,7 @@ class AlarmService extends ChangeNotifier {
             }
           }
 
-          _autoAlarms.add(AlarmData(
+          loadedAutoAlarms.add(AlarmData(
             busNo: autoAlarm.routeNo,
             stationName: autoAlarm.stationName,
             remainingMinutes: 3,
@@ -1767,10 +1857,46 @@ class AlarmService extends ChangeNotifier {
         }
       }
 
-      debugPrint('자동 알람 로드 완료: ${_autoAlarms.length}개');
-      notifyListeners();
+      debugPrint('자동 알람 로드 완료: ${loadedAutoAlarms.length}개');
+      return loadedAutoAlarms;
     } catch (e) {
-      debugPrint('자동 알람 로드 오류: $e');
+      debugPrint('자동 알람 로드 중 오류 발생: $e');
+      return []; // 오류 발생 시 빈 리스트 반환
     }
+  }
+
+  // 자동 알람 필수 필드 유효성 검사 함수
+  static bool _validateAutoAlarmFields(Map<String, dynamic> data) {
+    final requiredFields = [
+      'routeNo',
+      'stationName',
+      'stationId',
+      'routeId',
+      'hour',
+      'minute',
+      'repeatDays',
+    ];
+
+    for (var field in requiredFields) {
+      if (!data.containsKey(field) || data[field] == null) {
+        return false;
+      }
+
+      // String 필드의 경우 빈 문자열 검사
+      if ((field == 'routeNo' ||
+              field == 'stationName' ||
+              field == 'stationId' ||
+              field == 'routeId') &&
+          (data[field] as String).isEmpty) {
+        return false;
+      }
+
+      // repeatDays가 리스트인지 확인
+      if (field == 'repeatDays' && data[field] is! List) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }
