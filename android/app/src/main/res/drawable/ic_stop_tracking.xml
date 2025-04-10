@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+
+    <!-- 원형 배경 -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M12,12m-10,0a10,10 0 1,1 20,0a10,10 0 1,1 -20,0" />
+
+    <!-- 가운데 사각형 (정지 모양) -->
+    <path
+        android:fillColor="#1976D2"
+        android:pathData="M9,9h6v6H9z" />
+</vector>

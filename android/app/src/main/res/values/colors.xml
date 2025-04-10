@@ -4,4 +4,6 @@
   <color name="notification_color">#2196F3</color>
   <color name="tracking_color">#1976D2</color>
   <color name="ic_launcher_background">#2196F3</color>
+  <!-- 저상 버스 표시를 위한 색상 추가 -->
+  <color name="low_floor_color">#4CAF50</color>
 </resources>
