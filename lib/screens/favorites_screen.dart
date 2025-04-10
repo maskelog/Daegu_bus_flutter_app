@@ -5,6 +5,7 @@ import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:daegu_bus_app/widgets/bus_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
@@ -34,6 +35,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   final Map<String, String?> _errorMap = {};
   BusStop? _selectedStop;
   Timer? _refreshTimer;
+  final Map<String, bool> _stationTrackingStatus = {};
+
+  static const _stationTrackingChannel =
+      MethodChannel('com.example.daegu_bus_app/station_tracking');
 
   @override
   void initState() {
@@ -55,6 +60,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    // 화면 종료 시 모든 추적 중지 (선택적) <-- 이 라인을 제거합니다.
+    // _stopAllStationTracking();
     super.dispose();
   }
 
@@ -150,6 +157,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         final stationArrivals = _stationArrivals[station.id] ?? [];
         final isLoading = _isLoadingMap[station.id] ?? false;
         final error = _errorMap[station.id];
+        final isTracking = _stationTrackingStatus[station.id] ?? false;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,6 +180,33 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               },
               onFavoriteToggle: () => widget.onFavoriteToggle(station),
             ),
+            // --- 정류장 추적 버튼을 StationItem 외부에 추가 --- (임시 방편)
+            // 이상적으로는 StationItem 위젯 자체를 수정하는 것이 좋음
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    isTracking
+                        ? Icons.notifications_active
+                        : Icons.notifications_none_outlined,
+                    color: isTracking
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey,
+                  ),
+                  tooltip:
+                      isTracking ? '정류장 전체 도착 정보 추적 중지' : '정류장 전체 도착 정보 추적 시작',
+                  onPressed: () {
+                    if (isTracking) {
+                      _stopStationTracking(station);
+                    } else {
+                      _startStationTracking(station);
+                    }
+                  },
+                ),
+              ],
+            ),
+            // --- 버튼 추가 끝 ---
             if (isSelected)
               Padding(
                 padding: const EdgeInsets.only(left: 12, top: 8, bottom: 16),
@@ -677,5 +712,64 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         );
       },
     );
+  }
+
+  Future<void> _startStationTracking(BusStop station) async {
+    try {
+      final result =
+          await _stationTrackingChannel.invokeMethod('startStationTracking', {
+        'stationId': station.id,
+        'stationName': station.name,
+      });
+      if (result == true && mounted) {
+        setState(() {
+          _stationTrackingStatus[station.id] = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${station.name} 정류장 전체 도착 정보 추적을 시작합니다.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } on PlatformException catch (e) {
+      debugPrint("Failed to start station tracking: '${e.message}'.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('정류장 추적 시작 실패: ${e.message}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopStationTracking(BusStop station) async {
+    try {
+      final result =
+          await _stationTrackingChannel.invokeMethod('stopStationTracking');
+      if (result == true && mounted) {
+        setState(() {
+          _stationTrackingStatus[station.id] = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${station.name} 정류장 전체 도착 정보 추적을 중지합니다.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } on PlatformException catch (e) {
+      debugPrint("Failed to stop station tracking: '${e.message}'.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('정류장 추적 중지 실패: ${e.message}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 }
