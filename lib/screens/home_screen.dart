@@ -638,14 +638,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         )
                       : SliverToBoxAdapter(
                           child: SizedBox(
-                            height: 120,
+                            height: 100,
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
                               itemCount: _nearbyStops.length,
                               itemBuilder: (context, index) {
                                 final stop = _nearbyStops[index];
                                 return Container(
-                                  width: 220,
+                                  width: 180,
                                   margin: const EdgeInsets.only(right: 12),
                                   child: Card(
                                     elevation: 2,
@@ -692,21 +692,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                                         color: Colors.grey[600],
                                                         fontSize: 12),
                                                   ),
-                                                const Spacer(),
-                                                InkWell(
-                                                  onTap: () {
-                                                    _toggleFavorite(stop);
-                                                  },
-                                                  borderRadius:
-                                                      BorderRadius.circular(16),
-                                                  child: const Padding(
-                                                    padding:
-                                                        EdgeInsets.all(4.0),
-                                                    child: Icon(Icons.star,
-                                                        color: Colors.amber,
-                                                        size: 20),
-                                                  ),
-                                                ),
                                               ],
                                             ),
                                             const SizedBox(height: 4),
@@ -724,21 +709,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                             const SizedBox(height: 4),
-                                            Row(
-                                              children: [
-                                                if (stop.distance != null)
-                                                  Text(
-                                                    _formatDistance(
-                                                        stop.distance!),
-                                                    style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: Colors.grey[600],
-                                                        fontWeight:
-                                                            FontWeight.w500),
-                                                  ),
-                                                const SizedBox(width: 8),
-                                              ],
-                                            ),
+                                            if (stop.distance != null)
+                                              Text(
+                                                _formatDistance(stop.distance!),
+                                                style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey[600],
+                                                    fontWeight:
+                                                        FontWeight.w500),
+                                              ),
                                           ],
                                         ),
                                       ),
@@ -785,7 +764,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemBuilder: (context, index) {
                     final stop = _favoriteStops[index];
                     return Container(
-                      width: 200,
+                      width: 180,
                       margin: const EdgeInsets.only(right: 12),
                       child: Card(
                         elevation: 1,
