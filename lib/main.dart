@@ -13,6 +13,7 @@ import 'services/notification_service.dart';
 import 'services/permission_service.dart';
 import 'screens/home_screen.dart';
 import 'package:daegu_bus_app/services/settings_service.dart';
+import 'utils/database_helper.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -35,6 +36,10 @@ Future<void> main() async {
 
   // 앱 시작 로그
   log('🚀 앱 초기화 시작: ${DateTime.now()}', level: LogLevel.info);
+
+  // 데이터베이스 미리 초기화 시작 (백그라운드에서 실행)
+  DatabaseHelper.preInitialize();
+  log('💾 데이터베이스 초기화 시작됨 (백그라운드)', level: LogLevel.info);
 
   try {
     await dotenv.load(fileName: '.env');
