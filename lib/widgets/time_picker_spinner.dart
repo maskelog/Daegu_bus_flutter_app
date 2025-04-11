@@ -185,8 +185,9 @@ class _TimePickerSpinnerState extends State<TimePickerSpinner> {
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(4),
-            color:
-                isSelected ? Colors.blue.withOpacity(0.1) : Colors.transparent,
+            color: isSelected
+                ? Colors.blue.withValues(alpha: 5)
+                : Colors.transparent,
           ),
           child: Text(
             text,
