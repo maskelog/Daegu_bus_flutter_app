@@ -27,6 +27,8 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
 
     init {
         initializeDatabase(context)
+        // 릴리즈 모드에서 데이터베이스 권한 확인 및 수정
+        fixDatabasePermissions()
     }
 
     // 데이터베이스 초기화 및 무결성 확인
@@ -50,7 +52,8 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
     
         // 데이터베이스 확인
         try {
-            val db = SQLiteDatabase.openDatabase(dbPath.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+            // OPEN_READWRITE로 변경하여 쓰기 권한 확인
+            val db = SQLiteDatabase.openDatabase(dbPath.absolutePath, null, SQLiteDatabase.OPEN_READWRITE)
             val count = db.rawQuery("SELECT COUNT(*) FROM bus_stops", null).use { cursor ->
                 cursor.moveToFirst()
                 cursor.getInt(0)
@@ -197,7 +200,8 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
             Log.d(TAG, "데이터베이스 정보 확인 완료")
         }
 
-        val db = readableDatabase
+        // OPEN_READWRITE로 변경하여 쓰기 권한 확인
+        val db = SQLiteDatabase.openDatabase(context.getDatabasePath(DATABASE_NAME).absolutePath, null, SQLiteDatabase.OPEN_READWRITE)
         val stations = mutableListOf<LocalStationSearchResult>()
         try {
             val (query, args) = if (latitude != 0.0 && longitude != 0.0 && radiusInMeters > 0) {
@@ -301,5 +305,23 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
                 Math.sin(dLon / 2) * Math.sin(dLon / 2)
         val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
         return R * c
+    }
+
+    // 데이터베이스 권한 확인 및 수정 (릴리즈 모드 대응)
+    private fun fixDatabasePermissions() {
+        val dbPath = context.getDatabasePath(DATABASE_NAME)
+        if (dbPath.exists()) {
+            // 파일 권한 확인 및 수정
+            if (!dbPath.canWrite()) {
+                Log.w(TAG, "데이터베이스 파일에 쓰기 권한이 없습니다. 권한을 수정합니다.")
+                try {
+                    // 파일 권한 수정 시도
+                    dbPath.setWritable(true, false)
+                    Log.d(TAG, "데이터베이스 파일 권한 수정 완료")
+                } catch (e: Exception) {
+                    Log.e(TAG, "데이터베이스 파일 권한 수정 실패: ${e.message}", e)
+                }
+            }
+        }
     }
 }
