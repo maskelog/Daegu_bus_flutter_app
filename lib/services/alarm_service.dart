@@ -1702,7 +1702,7 @@ class AlarmService extends ChangeNotifier {
       final alarmData = AlarmData(
         busNo: alarm.routeNo,
         stationName: alarm.stationName,
-        remainingMinutes: 3,
+        remainingMinutes: 0, // 3분에서 0분으로 변경
         routeId: alarm.routeId,
         scheduledTime: scheduledTime,
         useTTS: alarm.useTTS,
@@ -1720,7 +1720,7 @@ class AlarmService extends ChangeNotifier {
           'alarmId': id,
           'busNo': alarm.routeNo,
           'stationName': alarm.stationName,
-          'remainingMinutes': 3,
+          'remainingMinutes': 0, // 3분에서 0분으로 변경
           'routeId': alarm.routeId,
           'useTTS': alarm.useTTS,
         },
@@ -1754,7 +1754,7 @@ class AlarmService extends ChangeNotifier {
             'alarmId': id,
             'busNo': alarm.routeNo,
             'stationName': alarm.stationName,
-            'remainingMinutes': 3,
+            'remainingMinutes': 0, // 3분에서 0분으로 변경
             'routeId': alarm.routeId,
             'useTTS': alarm.useTTS,
           },
@@ -1847,7 +1847,7 @@ class AlarmService extends ChangeNotifier {
           loadedAutoAlarms.add(AlarmData(
             busNo: autoAlarm.routeNo,
             stationName: autoAlarm.stationName,
-            remainingMinutes: 3,
+            remainingMinutes: 0, // 3분에서 0분으로 변경
             routeId: autoAlarm.routeId,
             scheduledTime: scheduledTime,
             useTTS: autoAlarm.useTTS,
