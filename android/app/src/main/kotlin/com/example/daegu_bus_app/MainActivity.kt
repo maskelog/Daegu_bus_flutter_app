@@ -51,6 +51,7 @@ import android.content.BroadcastReceiver
 import io.flutter.plugins.GeneratedPluginRegistrant
 import java.util.Calendar
 import android.app.Notification
+import android.database.sqlite.SQLiteException
 
 class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
@@ -304,30 +305,63 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         CoroutineScope(Dispatchers.Main).launch {
                             try {
                                 Log.d(TAG, "주변 정류장 검색 요청: lat=$latitude, lon=$longitude, radius=${radiusMeters}m")
+                                
+                                // 데이터베이스 초기화 확인
                                 val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
-                                val nearbyStations = databaseHelper.searchStations(
-                                    searchText = "",
-                                    latitude = latitude,
-                                    longitude = longitude,
-                                    radiusInMeters = radiusMeters
-                                )
-                                Log.d(TAG, "주변 정류장 검색 결과: ${nearbyStations.size}개 (검색 반경: ${radiusMeters}m)")
-                                val jsonArray = JSONArray()
-                                nearbyStations.forEach { station ->
-                                    val jsonObj = JSONObject().apply {
-                                        put("id", station.stationId ?: station.bsId)
-                                        put("name", station.bsNm)
-                                        put("isFavorite", false)
-                                        put("wincId", station.bsId)
-                                        put("distance", station.distance)
-                                        put("ngisXPos", station.longitude)
-                                        put("ngisYPos", station.latitude)
-                                        put("routeList", "[]")
+                                
+                                // 데이터베이스 재설치 시도 (오류 발생 시)
+                                try {
+                                    val nearbyStations = databaseHelper.searchStations(
+                                        searchText = "",
+                                        latitude = latitude,
+                                        longitude = longitude,
+                                        radiusInMeters = radiusMeters
+                                    )
+                                    Log.d(TAG, "주변 정류장 검색 결과: ${nearbyStations.size}개 (검색 반경: ${radiusMeters}m)")
+                                    val jsonArray = JSONArray()
+                                    nearbyStations.forEach { station ->
+                                        val jsonObj = JSONObject().apply {
+                                            put("id", station.stationId ?: station.bsId)
+                                            put("name", station.bsNm)
+                                            put("isFavorite", false)
+                                            put("wincId", station.bsId)
+                                            put("distance", station.distance)
+                                            put("ngisXPos", station.longitude)
+                                            put("ngisYPos", station.latitude)
+                                            put("routeList", "[]")
+                                        }
+                                        jsonArray.put(jsonObj)
+                                        Log.d(TAG, "정류장 정보 - 이름: ${station.bsNm}, ID: ${station.bsId}, 위치: (${station.longitude}, ${station.latitude}), 거리: ${station.distance}m")
                                     }
-                                    jsonArray.put(jsonObj)
-                                    Log.d(TAG, "정류장 정보 - 이름: ${station.bsNm}, ID: ${station.bsId}, 위치: (${station.longitude}, ${station.latitude}), 거리: ${station.distance}m")
+                                    result.success(jsonArray.toString())
+                                } catch (e: SQLiteException) {
+                                    // SQLite 오류 발생 시 데이터베이스 재설치 시도
+                                    Log.e(TAG, "SQLite 오류 발생: ${e.message}. 데이터베이스 재설치 시도", e)
+                                    databaseHelper.forceReinstallDatabase()
+                                    
+                                    // 재설치 후 다시 시도
+                                    val nearbyStations = databaseHelper.searchStations(
+                                        searchText = "",
+                                        latitude = latitude,
+                                        longitude = longitude,
+                                        radiusInMeters = radiusMeters
+                                    )
+                                    val jsonArray = JSONArray()
+                                    nearbyStations.forEach { station ->
+                                        val jsonObj = JSONObject().apply {
+                                            put("id", station.stationId ?: station.bsId)
+                                            put("name", station.bsNm)
+                                            put("isFavorite", false)
+                                            put("wincId", station.bsId)
+                                            put("distance", station.distance)
+                                            put("ngisXPos", station.longitude)
+                                            put("ngisYPos", station.latitude)
+                                            put("routeList", "[]")
+                                        }
+                                        jsonArray.put(jsonObj)
+                                    }
+                                    result.success(jsonArray.toString())
                                 }
-                                result.success(jsonArray.toString())
                             } catch (e: Exception) {
                                 Log.e(TAG, "주변 정류장 검색 오류: ${e.message}", e)
                                 result.error("DB_ERROR", "주변 정류장 검색 중 오류 발생: ${e.message}", null)
@@ -980,6 +1014,7 @@ class AutoAlarmWorker(
     private var pendingStationName: String = ""
 
     override fun doWork(): Result {
+        Log.d(TAG, "⏰ AutoAlarmWorker 실행: ID=$pendingAlarmId, 버스=$pendingBusNo, 정류장=$pendingStationName")
         pendingAlarmId = inputData.getInt("alarmId", 0)
         pendingBusNo = inputData.getString("busNo") ?: ""
         pendingStationName = inputData.getString("stationName") ?: ""
