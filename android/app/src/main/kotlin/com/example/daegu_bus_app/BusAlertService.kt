@@ -31,6 +31,7 @@ import kotlinx.coroutines.isActive
 import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
+import io.flutter.embedding.engine.FlutterEngine
 
 
 class BusAlertService : Service() {
@@ -137,14 +138,21 @@ class BusAlertService : Service() {
             createNotificationChannels()
             checkNotificationPermission()
 
+            // FlutterEngine이 없는 경우에도 메서드 채널을 초기화할 수 있도록 수정
             if (flutterEngine != null) {
                 _methodChannel = MethodChannel(
                     flutterEngine.dartExecutor.binaryMessenger,
                     "com.example.daegu_bus_app/bus_api"
                 )
-                Log.d(TAG, "🔌 메서드 채널 초기화 완료")
+                Log.d(TAG, "🔌 메서드 채널 초기화 완료 (FlutterEngine 사용)")
             } else {
-                Log.d(TAG, "⚠️ FlutterEngine이 전달되지 않아 메서드 채널을 초기화할 수 없습니다")
+                // FlutterEngine이 없는 경우, 기본 메시지 채널을 사용
+                val messenger = FlutterEngine(actualContext).dartExecutor.binaryMessenger
+                _methodChannel = MethodChannel(
+                    messenger,
+                    "com.example.daegu_bus_app/bus_api"
+                )
+                Log.d(TAG, "🔌 메서드 채널 초기화 완료 (기본 메시지 채널 사용)")
             }
 
             initializeTts()
