@@ -22,7 +22,6 @@ void callbackDispatcher() {
         final String stationId = inputData?['stationId'] ?? '';
         final String stationName = inputData?['stationName'] ?? '';
         final String busNo = inputData?['busNo'] ?? '';
-        final int remainingMinutes = inputData?['remainingMinutes'] ?? 0;
         final bool showNotification = inputData?['showNotification'] ?? true;
         final bool useTTS = inputData?['useTTS'] ?? true;
 
