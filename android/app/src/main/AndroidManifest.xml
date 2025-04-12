@@ -50,6 +50,9 @@
         <!-- 버스 알림 포그라운드 서비스 -->
         <service android:name=".BusAlertService" android:foregroundServiceType="dataSync" android:exported="false" />
 
+        <!-- TTS 서비스 -->
+        <service android:name=".TTSService" android:foregroundServiceType="dataSync" android:exported="false" />
+
         <!-- 정류장 추적 서비스 -->
         <service
             android:name=".StationTrackingService"
@@ -67,6 +70,14 @@
         <receiver android:name="com.example.daegu_bus_app.NotificationDismissReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="com.example.daegu_bus_app.NOTIFICATION_DISMISS" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".AlarmReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.daegu_bus_app.AUTO_ALARM" />
             </intent-filter>
         </receiver>
 
