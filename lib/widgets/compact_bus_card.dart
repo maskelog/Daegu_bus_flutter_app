@@ -1,3 +1,4 @@
+import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -235,7 +236,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
           ? widget.busArrival.routeId
           : '${widget.busArrival.routeNo}_${widget.stationName}';
 
-      debugPrint('🚌 [Compact] 사용할 routeId: $routeId');
+      logMessage('🚌 [Compact] 사용할 routeId: $routeId', level: LogLevel.debug);
 
       bool hasAlarm = alarmService.hasAlarm(
         widget.busArrival.routeNo,
@@ -243,7 +244,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
         routeId,
       );
 
-      debugPrint('🚌 [Compact] 기존 알람 존재 여부: $hasAlarm');
+      logMessage('🚌 [Compact] 기존 알람 존재 여부: $hasAlarm', level: LogLevel.debug);
 
       if (hasAlarm) {
         await alarmService.cancelAlarmByRoute(
@@ -276,19 +277,26 @@ class _CompactBusCardState extends State<CompactBusCard> {
               Duration(minutes: defaultPreNotificationMinutes);
 
           // --- Add Debug Prints Here ---
-          debugPrint("--- [Compact] Attempting to set alarm ---");
-          debugPrint("Alarm ID: $alarmId");
-          debugPrint("Route No: ${widget.busArrival.routeNo}");
-          debugPrint("Station Name: ${widget.stationName}");
-          debugPrint("Route ID: $routeId");
-          debugPrint(
-              "Remaining Time (for arrivalTime): $remainingMinutes mins");
-          debugPrint("Calculated Arrival Time: $arrivalTime");
-          debugPrint(
-              "Pre-notification Time: ${preNotificationTime.inMinutes} mins");
-          debugPrint("Current Station (BusInfo): ${busInfo.currentStation}");
-          debugPrint(
-              "Bus Info Object (busInfo): ${busInfo.toString()}"); // Add toString() if available or relevant fields
+          logMessage("--- [Compact] Attempting to set alarm ---",
+              level: LogLevel.debug);
+          logMessage("Alarm ID: $alarmId", level: LogLevel.debug);
+          logMessage("Route No: ${widget.busArrival.routeNo}",
+              level: LogLevel.debug);
+          logMessage("Station Name: ${widget.stationName}",
+              level: LogLevel.debug);
+          logMessage("Route ID: $routeId", level: LogLevel.debug);
+          logMessage("Remaining Time (for arrivalTime): $remainingMinutes mins",
+              level: LogLevel.debug);
+          logMessage("Calculated Arrival Time: $arrivalTime",
+              level: LogLevel.debug);
+          logMessage(
+              "Pre-notification Time: ${preNotificationTime.inMinutes} mins",
+              level: LogLevel.debug);
+          logMessage("Current Station (BusInfo): ${busInfo.currentStation}",
+              level: LogLevel.debug);
+          logMessage("Bus Info Object (busInfo): ${busInfo.toString()}",
+              level: LogLevel
+                  .debug); // Add toString() if available or relevant fields
           // --- End Debug Prints ---
 
           bool success = await alarmService.setOneTimeAlarm(
@@ -300,7 +308,8 @@ class _CompactBusCardState extends State<CompactBusCard> {
             isImmediateAlarm: true,
           );
 
-          debugPrint('🚌 [Compact] 알람 설정 시도 결과: $success');
+          logMessage('🚌 [Compact] 알람 설정 시도 결과: $success',
+              level: LogLevel.debug);
 
           if (success && mounted) {
             // 즉시 알림 대신 즉시 모니터링 시작
@@ -343,7 +352,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
         }
       }
     } catch (e) {
-      debugPrint('🚨 [Compact] _setAlarm 오류: $e');
+      logMessage('🚨 [Compact] _setAlarm 오류: $e', level: LogLevel.error);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('오류 발생: ${e.toString()}')),
