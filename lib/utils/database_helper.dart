@@ -1,5 +1,4 @@
-import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:io';
@@ -11,33 +10,40 @@ class DatabaseHelper {
   static Database? _database;
   static bool _isInitializing = false;
   static final Completer<Database> _initCompleter = Completer<Database>();
+  static const String databaseName = 'bus_stops.db';
+  static const int databaseVersion = 1;
 
   // 앱 시작 시 미리 DB 초기화를 시작하는 메서드 추가
-  static void preInitialize() {
+  static Future<void> preInitialize() async {
     if (_database != null || _isInitializing) return;
     _isInitializing = true;
 
-    // 백그라운드 isolate에서 DB 초기화 작업 수행
-    compute(_initDatabaseInBackground, null).then((db) {
+    // sqflite_ffi 초기화
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+
+    // 백그라운드에서 데이터베이스 초기화 시작
+    try {
+      final db = await compute(_initDatabaseInBackground, null);
       _database = db;
       if (!_initCompleter.isCompleted) {
         _initCompleter.complete(db);
       }
       _isInitializing = false;
       debugPrint('✅ 데이터베이스 백그라운드 초기화 완료');
-    }).catchError((e) {
+    } catch (e) {
       debugPrint('❌ 데이터베이스 백그라운드 초기화 실패: $e');
       _isInitializing = false;
       if (!_initCompleter.isCompleted) {
         _initCompleter.completeError(e);
       }
-    });
+    }
   }
 
   // 백그라운드에서 실행될 DB 초기화 함수
   static Future<Database> _initDatabaseInBackground(void _) async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'bus_stops.db');
+    final path = join(dbPath, databaseName);
 
     try {
       bool dbExists = await databaseExists(path);
@@ -104,13 +110,13 @@ class DatabaseHelper {
 
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'bus_stops.db');
+    final path = join(dbPath, databaseName);
 
     bool dbExists = await databaseExists(path);
     if (!dbExists) {
       debugPrint('DB 파일이 존재하지 않음, assets에서 복사 시작');
       try {
-        final byteData = await rootBundle.load('assets/bus_stops.db');
+        final byteData = await rootBundle.load('assets/$databaseName');
         final buffer = byteData.buffer.asUint8List();
         await File(path).writeAsBytes(buffer, flush: true);
         debugPrint('DB 파일 복사 성공: $path');
@@ -120,7 +126,7 @@ class DatabaseHelper {
       }
     }
 
-    return await openDatabase(path, version: 1, readOnly: true);
+    return await openDatabase(path, version: databaseVersion, readOnly: true);
   }
 
   Future<List<BusStop>> getAllStations() async {
