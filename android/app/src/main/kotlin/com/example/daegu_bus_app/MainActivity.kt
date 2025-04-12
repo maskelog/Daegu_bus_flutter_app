@@ -985,6 +985,58 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             Log.d(TAG, "Alarm notification channel created with lockscreen support: $ALARM_NOTIFICATION_CHANNEL_ID")
         }
     }
+
+    private fun setupNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                ALARM_NOTIFICATION_CHANNEL_ID,
+                "Bus Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications for bus arrivals and alarms"
+                enableLights(true)
+                lightColor = Color.BLUE
+                enableVibration(true)
+                setShowBadge(true)
+            }
+
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun handleNotificationAction(action: String, intent: Intent) {
+        when (action) {
+            "cancel_alarm" -> {
+                val alarmId = intent.getIntExtra("alarm_id", -1)
+                if (alarmId != -1) {
+                    // 알림만 취소하고 자동 알람은 유지
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.cancel(alarmId)
+                    
+                    // TTS 서비스 중지
+                    var ttsIntent = Intent(this, TTSService::class.java)
+                    ttsIntent.action = "STOP_TTS"
+                    startService(ttsIntent)
+                    
+                    // 알람 취소 상태를 SharedPreferences에 저장
+                    val prefs = getSharedPreferences("alarm_preferences", Context.MODE_PRIVATE)
+                    val editor = prefs.edit()
+                    editor.putBoolean("alarm_cancelled_$alarmId", true).apply()
+                    
+                    Log.d(TAG, "Alarm notification cancelled: $alarmId (auto alarm remains active)")
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val action = intent.action
+        if (action != null) {
+            handleNotificationAction(action, intent)
+        }
+    }
 }
 
 // --- WorkManager Callback ---
