@@ -1,4 +1,3 @@
-// 안드로이드 전용 앱
 import 'package:daegu_bus_app/services/backgroud_service.dart';
 import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +6,7 @@ import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:developer' as dev;
 
 import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
@@ -22,14 +22,32 @@ enum LogLevel { debug, info, warning, error }
 
 const LogLevel currentLogLevel = LogLevel.info;
 
-void log(String message, {LogLevel level = LogLevel.debug}) {
+// 로깅 유틸리티 함수
+void logMessage(String message, {LogLevel level = LogLevel.debug}) {
   if (level.index >= currentLogLevel.index) {
-    if (level != LogLevel.debug ||
-        !const bool.fromEnvironment('dart.vm.product')) {
-      debugPrint(message);
+    if (level == LogLevel.debug) {
+      print('🐛 [DEBUG] $message');
+    } else if (level == LogLevel.info) {
+      print('ℹ️ [INFO] $message');
+    } else if (level == LogLevel.warning) {
+      print('⚠️ [WARN] $message');
+    } else if (level == LogLevel.error) {
+      print('❌ [ERROR] $message');
+    }
+
+    // 개발자 로그에도 기록 (선택사항)
+    if (!const bool.fromEnvironment('dart.vm.product')) {
+      dev.log(message, name: level.toString());
     }
   }
 }
+
+// 기존 log 함수를 logMessage로 대체
+void log(String message, {LogLevel level = LogLevel.debug}) =>
+    logMessage(message, level: level);
+
+// alarmService 인스턴스 생성
+final AlarmService _alarmService = AlarmService();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -153,7 +171,7 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AlarmService()),
+        ChangeNotifierProvider(create: (_) => _alarmService),
         ChangeNotifierProvider(create: (_) => SettingsService()),
       ],
       child: const MyApp(),
