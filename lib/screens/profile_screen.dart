@@ -283,25 +283,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                TextButton.icon(
-                                  onPressed: _addAutoAlarm,
+                                IconButton(
                                   icon: const Icon(Icons.add),
-                                  label: const Text('알림 추가'),
-                                  style: TextButton.styleFrom(
-                                    backgroundColor: Colors.blue.shade50,
-                                    foregroundColor: Colors.blue.shade700,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
+                                  onPressed: _addAutoAlarm,
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 16),
+                            // 자동 알람 볼륨 설정 추가
+                            Consumer<SettingsService>(
+                              builder: (context, settingsService, child) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '알람 볼륨',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.volume_down),
+                                        Expanded(
+                                          child: Slider(
+                                            value:
+                                                settingsService.autoAlarmVolume,
+                                            min: SettingsService
+                                                .minAutoAlarmVolume,
+                                            max: SettingsService
+                                                .maxAutoAlarmVolume,
+                                            divisions: 10,
+                                            label:
+                                                '${(settingsService.autoAlarmVolume * 100).round()}%',
+                                            onChanged: (value) {
+                                              settingsService
+                                                  .updateAutoAlarmVolume(value);
+                                            },
+                                          ),
+                                        ),
+                                        const Icon(Icons.volume_up),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                  ],
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 24),
                             Text(
                               '출퇴근 시간이나 정기적으로 이용하는 버스에 대한 알림을 자동으로 설정하세요.',
                               style: TextStyle(

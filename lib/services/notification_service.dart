@@ -16,6 +16,11 @@ class NotificationService {
 
   NotificationService._internal();
 
+  // 알림 ID 생성 헬퍼 메소드
+  int _generateNotificationId(String busNo, String stationName) {
+    return ('${busNo}_$stationName').hashCode.abs();
+  }
+
   /// 알림 서비스 초기화
   Future<bool> initialize() async {
     try {
@@ -37,16 +42,19 @@ class NotificationService {
     String? routeId,
   }) async {
     try {
-      // 초기화 확인
-      await initialize();
-
       debugPrint(
-          '🔔 자동 알람 알림 표시 시작: $busNo, $stationName, $remainingMinutes분 전, ID: $id, ${DateTime.now().toString()}');
+          '🔔 자동 알람 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, ID: $id');
 
-      // 현재 시간과 알림 시간 비교
+      // 알람 취소 상태 확인
+      final prefs = await SharedPreferences.getInstance();
+      final isAlarmCancelled = prefs.getBool('alarm_cancelled_$id') ?? false;
+
+      if (isAlarmCancelled) {
+        debugPrint('🔔 알람이 취소된 상태입니다. 알림을 표시하지 않습니다. ID: $id');
+        return false;
+      }
+
       final now = DateTime.now();
-
-      // 알림 시간이 매개변수로 전달된 경우 (WorkManager에서 설정한 시간)
       int? notificationTimeMs;
       if (routeId != null && routeId.isNotEmpty) {
         try {
@@ -80,9 +88,12 @@ class NotificationService {
         now.minute,
       );
 
+      // 네이티브 코드에서 Integer 범위를 초과하는 ID를 처리하기 위한 로직
+      final int safeNotificationId = id.abs() % 2147483647;
+
       // 자동 알람의 경우 isOngoing을 true로 설정하여 지속적인 알림으로 표시
       final bool result = await _channel.invokeMethod('showNotification', {
-        'id': id,
+        'id': safeNotificationId,
         'busNo': busNo,
         'stationName': stationName,
         'remainingMinutes': remainingMinutes,
@@ -93,9 +104,10 @@ class NotificationService {
         'routeId': routeId, // routeId 추가
         'notificationTime': notificationTimeMs ??
             notificationTime.millisecondsSinceEpoch, // 알림 시간 추가
+        'actions': ['cancel_alarm'], // 알람 취소 액션 추가
       });
 
-      debugPrint('🔔 자동 알람 알림 표시 완료: $id');
+      debugPrint('🔔 자동 알람 알림 표시 완료: $id (안전 ID: $safeNotificationId)');
       return result;
     } catch (e) {
       debugPrint('🔔 자동 알람 알림 표시 오류: ${e.toString()}');
@@ -139,30 +151,41 @@ class NotificationService {
     String? payload,
     bool isOngoing = false,
     String? routeId,
-    bool isAutoAlarm = false, // 자동 알람 여부 추가
-    int? notificationTime, // 알림 시간 추가
-    String? allBusesSummary, // 모든 버스 정보 요약 (allBuses 모드에서만 사용)
+    bool isAutoAlarm = false,
+    int? notificationTime,
+    String? allBusesSummary,
   }) async {
     try {
+      // ID가 0이면 새로운 ID 생성
+      final int notificationId =
+          id == 0 ? _generateNotificationId(busNo, stationName) : id;
+
+      // 알람 알림인 경우 isOngoing을 true로 설정
+      final bool shouldBeOngoing = isOngoing || isAutoAlarm;
+
       debugPrint(
-          '🔔 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, ID: $id, isOngoing: $isOngoing, routeId: $routeId, isAutoAlarm: $isAutoAlarm');
+          '🔔 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, ID: $notificationId, isOngoing: $shouldBeOngoing, routeId: $routeId, isAutoAlarm: $isAutoAlarm');
+
+      // 네이티브 코드에서 Integer 범위를 초과하는 ID를 처리하기 위한 로직
+      // Integer 범위: -2,147,483,648 ~ 2,147,483,647
+      final int safeNotificationId = notificationId.abs() % 2147483647;
 
       final bool result = await _channel.invokeMethod('showNotification', {
-        'id': id,
+        'id': safeNotificationId,
         'busNo': busNo,
         'stationName': stationName,
         'remainingMinutes': remainingMinutes,
         'currentStation': currentStation,
         'payload': payload,
-        'isOngoing': isOngoing,
+        'isOngoing': shouldBeOngoing,
         'routeId': routeId,
         'isAutoAlarm': isAutoAlarm,
         'notificationTime':
             notificationTime ?? DateTime.now().millisecondsSinceEpoch,
-        'allBusesSummary': allBusesSummary, // 모든 버스 정보 요약 추가
+        'allBusesSummary': allBusesSummary,
       });
 
-      debugPrint('🔔 알림 표시 완료: $id');
+      debugPrint('🔔 알림 표시 완료: $notificationId (안전 ID: $safeNotificationId)');
       return result;
     } on PlatformException catch (e) {
       debugPrint('🔔 알림 표시 오류: ${e.message}');

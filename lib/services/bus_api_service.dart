@@ -42,7 +42,12 @@ class BusApiService {
       });
 
       final List<dynamic> decoded = jsonDecode(jsonResult);
-      debugPrint('getStationInfo 응답: $decoded'); // 응답 로그 추가
+      // 디버그 모드에서만 로그 출력
+      assert(() {
+        debugPrint('정류장 도착 정보 조회 성공: ${decoded.length}개 버스');
+        return true;
+      }());
+
       return decoded
           .map((info) =>
               convertToBusArrival(BusArrivalInfo.fromJson(info), stationId))

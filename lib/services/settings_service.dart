@@ -17,11 +17,17 @@ class SettingsService extends ChangeNotifier {
   static const String _kVibrateKey = 'vibrate';
   static const String _kSpeakerModeKey = 'speaker_mode';
   static const String _notificationDisplayModeKey = 'notificationDisplayMode';
+  static const String _kAutoAlarmVolumeKey = 'auto_alarm_volume';
 
   // 스피커 모드 상수
   static const int speakerModeHeadset = 0; // 이어폰 전용
   static const int speakerModeSpeaker = 1; // 스피커 전용
   static const int speakerModeAuto = 2; // 자동 감지 (기본값)
+
+  // 자동 알람 볼륨 관련 상수
+  static const double defaultAutoAlarmVolume = 0.7; // 기본 볼륨 (0.0 ~ 1.0)
+  static const double minAutoAlarmVolume = 0.0; // 최소 볼륨
+  static const double maxAutoAlarmVolume = 1.0; // 최대 볼륨
 
   static const MethodChannel _channel =
       MethodChannel('com.example.daegu_bus_app/notification');
@@ -33,6 +39,7 @@ class SettingsService extends ChangeNotifier {
 
   String _alarmSoundId = AlarmSound.ttsAlarm.id;
   bool _isLoading = true;
+  double _autoAlarmVolume = defaultAutoAlarmVolume;
 
   ThemeMode _themeMode = ThemeMode.system;
   bool _useTts = false;
@@ -56,7 +63,8 @@ class SettingsService extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   bool get useTts => _useTts;
   bool get vibrate => _vibrate;
-  int get speakerMode => _speakerMode; // 스피커 모드 getter
+  int get speakerMode => _speakerMode;
+  double get autoAlarmVolume => _autoAlarmVolume;
   NotificationDisplayMode get notificationDisplayMode =>
       _notificationDisplayMode;
 
@@ -76,6 +84,10 @@ class SettingsService extends ChangeNotifier {
       final modeIndex = _prefs.getInt(_notificationDisplayModeKey) ??
           NotificationDisplayMode.alarmedOnly.index;
       _notificationDisplayMode = NotificationDisplayMode.values[modeIndex];
+
+      // 자동 알람 볼륨 로드
+      _autoAlarmVolume =
+          _prefs.getDouble(_kAutoAlarmVolumeKey) ?? defaultAutoAlarmVolume;
     } catch (e) {
       debugPrint('설정 초기화 오류: $e');
     } finally {
@@ -242,6 +254,30 @@ class SettingsService extends ChangeNotifier {
       notifyListeners();
       // Optionally notify native side if needed immediately
       // await _notifyNativeSettingsChanged();
+    }
+  }
+
+  // 자동 알람 볼륨 업데이트 메서드 추가
+  Future<void> updateAutoAlarmVolume(double volume) async {
+    if (_autoAlarmVolume == volume) return;
+
+    _autoAlarmVolume = volume.clamp(minAutoAlarmVolume, maxAutoAlarmVolume);
+
+    try {
+      await _prefs.setDouble(_kAutoAlarmVolumeKey, _autoAlarmVolume);
+
+      // 네이티브 코드에 볼륨 설정 전달
+      try {
+        await _ttsChannel
+            .invokeMethod('setAutoAlarmVolume', {'volume': _autoAlarmVolume});
+        debugPrint('🔊 자동 알람 볼륨 설정 성공: $_autoAlarmVolume');
+      } catch (e) {
+        debugPrint('❌ 자동 알람 볼륨 설정 오류: $e');
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('자동 알람 볼륨 설정 저장 오류: $e');
     }
   }
 

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
@@ -13,21 +12,41 @@ class ActiveAlarmPanel extends StatefulWidget {
 
 class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
   // 버스 위치 애니메이션을 위한 프로그레스 컨트롤러
-  Timer? _progressTimer;
+  dynamic _progressTimer;
 
   @override
   void initState() {
     super.initState();
     // 컴포넌트 마운트 시 알람 데이터 최신화
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final alarmService = Provider.of<AlarmService>(context, listen: false);
-      alarmService.loadAlarms();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
 
-      // 정기적인 알람 데이터 갱신 설정 (5초마다)
-      Timer.periodic(const Duration(seconds: 5), (_) {
-        if (mounted) {
-          alarmService.loadAlarms();
+      final alarmService = Provider.of<AlarmService>(context, listen: false);
+      await alarmService.loadAlarms();
+      setState(() {}); // 초기 로드 후 UI 갱신
+
+      // 정기적인 알람 데이터 갱신 설정 (2초마다)
+      Future.delayed(const Duration(seconds: 2), () async {
+        if (!mounted) return;
+
+        // 알람 데이터 갱신
+        await alarmService.loadAlarms();
+
+        // 캐시된 버스 정보 확인 및 업데이트
+        if (alarmService.activeAlarms.isNotEmpty) {
+          final firstAlarm = alarmService.activeAlarms.first;
+          final cachedInfo = alarmService.getCachedBusInfo(
+            firstAlarm.busNo,
+            firstAlarm.routeId,
+          );
+
+          if (cachedInfo != null) {
+            print(
+                '🚌 캐시된 버스 정보 발견: ${firstAlarm.busNo}, 남은 시간: ${cachedInfo.getRemainingMinutes()}분');
+          }
         }
+
+        setState(() {}); // UI 갱신
       });
 
       // 버스 이동 애니메이션 타이머 설정
@@ -43,9 +62,10 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     const refreshRate = Duration(milliseconds: 50);
 
     // 프로그레스 업데이트 타이머 설정
-    _progressTimer = Timer.periodic(refreshRate, (timer) {
+    _progressTimer = Future.delayed(refreshRate, () {
       if (mounted) {
         setState(() {});
+        _startProgressAnimation(); // 재귀적으로 다시 호출
       }
     });
   }
@@ -68,12 +88,11 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     int arrivalMinutes;
     if (cachedBusInfo != null) {
       arrivalMinutes = cachedBusInfo.getRemainingMinutes();
-      debugPrint(
+      print(
           '🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 마지막 갱신 시간=${cachedBusInfo.lastUpdated.toString()}, 남은 시간=$arrivalMinutes분');
     } else {
       arrivalMinutes = alarm.getCurrentArrivalMinutes();
-      debugPrint(
-          '🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 캐시 없음, 알람 시간=$arrivalMinutes분');
+      print('🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 캐시 없음, 알람 시간=$arrivalMinutes분');
     }
 
     final arrivalText = arrivalMinutes <= 1 ? '곧 도착' : '$arrivalMinutes분 후 도착';
@@ -135,7 +154,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             onPressed: () {
-              debugPrint("알람 목록 새로고침 요청");
+              print("알람 목록 새로고침 요청");
               alarmService.loadAlarms();
             },
             tooltip: '알람 목록 새로고침',
@@ -166,35 +185,17 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
       ),
     );
 
-    // 사용자가 확인을 선택한 경우
     if (confirmDelete == true && context.mounted) {
-      // 알람 취소 (cancelAlarmByRoute 사용)
+      // 알람 즉시 취소
       final success = await alarmService.cancelAlarmByRoute(
         alarm.busNo,
         alarm.stationName,
         alarm.routeId,
       );
 
-      // 남은 알람이 없으면 버스 추적 서비스도 중지
       if (success && context.mounted) {
-        // 모든 관련 알림 취소 확인
-        await NotificationService().cancelNotification(alarm.getAlarmId());
-        await NotificationService().cancelOngoingTracking();
-
-        // 알람 목록 즉시 새로고침
-        await alarmService.loadAlarms();
-
-        // 남은 알람이 없으면 추적 서비스도 중지
-        if (alarmService.activeAlarms.isEmpty &&
-            alarmService.autoAlarms.isEmpty) {
-          await alarmService.stopBusMonitoringService();
-        }
-
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다'),
-            duration: const Duration(seconds: 2),
-          ),
+          SnackBar(content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다')),
         );
       }
     }
@@ -204,17 +205,21 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
   Widget build(BuildContext context) {
     return Consumer<AlarmService>(
       builder: (context, alarmService, child) {
-        // 일반 알람과 자동 알람을 모두 가져옴
+        // 일반 알람은 모두 표시
         final activeAlarms = alarmService.activeAlarms;
-        final autoAlarms = alarmService.autoAlarms;
 
-        // 현재 시간
-        final now = DateTime.now();
+        // 자동 알람은 예약된 시간 2분 전부터만 표시
+        final autoAlarms = alarmService.autoAlarms.where((alarm) {
+          final timeDiff =
+              alarm.scheduledTime.difference(DateTime.now()).inMinutes;
+          return timeDiff <= 2;
+        }).toList();
 
-        // 모든 알람을 시간순으로 정렬하고 현재 시간보다 미래의 알람만 필터링
         final allAlarms = [...activeAlarms, ...autoAlarms]
-          ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime))
-          ..removeWhere((alarm) => alarm.scheduledTime.isBefore(now));
+          ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
+
+        print(
+            '🚨 ActiveAlarmPanel 빌드: 일반=${activeAlarms.length}개, 자동=${autoAlarms.length}개');
 
         // 알람이 없는 경우
         if (allAlarms.isEmpty) {
@@ -244,8 +249,12 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         int remainingMinutes;
         if (cachedBusInfo != null) {
           remainingMinutes = cachedBusInfo.getRemainingMinutes();
+          print('🚌 버스 도착 정보 (캐시): ${firstAlarm.busNo}번, $remainingMinutes분 후');
         } else {
-          remainingMinutes = firstAlarm.getCurrentArrivalMinutes();
+          // 캐시된 정보가 없으면 알람 예정 시간과 현재 시간의 차이로 계산
+          remainingMinutes =
+              firstAlarm.scheduledTime.difference(DateTime.now()).inMinutes;
+          print('🚌 버스 도착 정보 (예약): ${firstAlarm.busNo}번, $remainingMinutes분 후');
         }
 
         final isArrivingSoon = remainingMinutes <= 2;
@@ -270,7 +279,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
+                color: Colors.black.withOpacity(0.1),
                 blurRadius: 4,
                 offset: const Offset(0, 2),
               ),
@@ -345,7 +354,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                 padding:
                     const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: Colors.white.withOpacity(0.7),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -455,7 +464,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.white.withValues(alpha: 0.3),
+                                  color: Colors.white.withOpacity(0.3),
                                   blurRadius: 2,
                                   offset: const Offset(0, 1),
                                 ),

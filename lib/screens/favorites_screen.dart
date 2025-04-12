@@ -34,7 +34,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   final Map<String, bool> _isLoadingMap = {};
   final Map<String, String?> _errorMap = {};
   BusStop? _selectedStop;
-  Timer? _refreshTimer;
+  dynamic _refreshTimer;
   final Map<String, bool> _stationTrackingStatus = {};
 
   static const _stationTrackingChannel =
@@ -46,7 +46,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     if (widget.favoriteStops.isNotEmpty) {
       _loadAllFavoriteArrivals();
     }
-    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+    _refreshTimer = Future.delayed(const Duration(minutes: 1), () {
       if (mounted) {
         if (_selectedStop != null) {
           _loadStationArrivals(_selectedStop!);
@@ -88,7 +88,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       });
       _updateAlarmServiceCache(arrivals, station.name);
     } catch (e) {
-      debugPrint('Error loading arrivals for station ${station.id}: $e');
+      print('Error loading arrivals for station ${station.id}: $e');
       if (!mounted) return;
 
       setState(() {
@@ -119,7 +119,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           firstBus,
           remainingTime,
         );
-        debugPrint(
+        print(
             '즐겨찾기 화면에서 캐시 업데이트: ${busArrival.routeNo}, 남은 시간: $remainingTime분');
       }
     }
@@ -317,22 +317,34 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               final alarmService = Provider.of<AlarmService>(
                                   context,
                                   listen: false);
-                              int alarmId = busArrival.routeId.hashCode;
-                              DateTime arrivalTime = DateTime.now()
-                                  .add(Duration(minutes: remainingTime));
-                              await alarmService.setOneTimeAlarm(
-                                id: alarmId,
-                                alarmTime: arrivalTime,
-                                preNotificationTime:
-                                    Duration(minutes: selectedAlarmTime),
-                                busNo: busArrival.routeNo,
-                                stationName: station.name,
-                                remainingMinutes: remainingTime,
+                              bool success = await alarmService.setOneTimeAlarm(
+                                busArrival.routeNo,
+                                station.name,
+                                remainingTime,
                                 routeId: busArrival.routeId,
-                                currentStation:
-                                    busArrival.buses.first.currentStation,
-                                busInfo: busArrival.buses.first,
+                                useTTS: true,
                               );
+                              if (!mounted) return;
+                              if (success) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        '${busArrival.routeNo}번 도착 알림이 설정되었습니다'),
+                                    duration: const Duration(seconds: 2),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        '${busArrival.routeNo}번 도착 알림 설정에 실패했습니다'),
+                                    backgroundColor: Colors.red[700],
+                                    duration: const Duration(seconds: 2),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
                             }
                             Navigator.pop(context);
                           },
@@ -616,8 +628,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             onPressed: () async {
                               Navigator.pop(context); // 모달 닫기
                               if (hasActiveAlarm) {
-                                debugPrint(
-                                    '${busArrival.routeNo}번 도착 알림 취소 요청');
+                                print('${busArrival.routeNo}번 도착 알림 취소 요청');
 
                                 // 알람 서비스 참조
                                 final alarmService = Provider.of<AlarmService>(
@@ -733,7 +744,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         );
       }
     } on PlatformException catch (e) {
-      debugPrint("Failed to start station tracking: '${e.message}'.");
+      print("Failed to start station tracking: '${e.message}'.");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -761,7 +772,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         );
       }
     } on PlatformException catch (e) {
-      debugPrint("Failed to stop station tracking: '${e.message}'.");
+      print("Failed to stop station tracking: '${e.message}'.");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

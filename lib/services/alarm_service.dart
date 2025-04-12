@@ -1181,7 +1181,46 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  Future<bool> setOneTimeAlarm({
+  // 새로운 setOneTimeAlarm 메서드 추가 - 버스 카드에서 사용하는 버전
+  Future<bool> setOneTimeAlarm(
+    String busNo,
+    String stationName,
+    int remainingMinutes, {
+    String routeId = '',
+    bool useTTS = true,
+    bool isImmediateAlarm = false,
+    String? currentStation,
+  }) async {
+    try {
+      // 알람 ID 생성
+      final int id = getAlarmId(busNo, stationName, routeId: routeId);
+
+      // 알람 시간 계산
+      final DateTime now = DateTime.now();
+      final DateTime alarmTime = now.add(Duration(minutes: remainingMinutes));
+      const Duration preNotificationTime = Duration(minutes: 3);
+
+      // 기존 메서드 호출
+      return await _setOneTimeAlarmInternal(
+        id: id,
+        alarmTime: alarmTime,
+        preNotificationTime: preNotificationTime,
+        busNo: busNo,
+        stationName: stationName,
+        remainingMinutes: remainingMinutes,
+        routeId: routeId,
+        currentStation: currentStation,
+        useTTS: useTTS,
+        isImmediateAlarm: isImmediateAlarm,
+      );
+    } catch (e) {
+      debugPrint('❗ 알람 설정 오류: $e');
+      return false;
+    }
+  }
+
+  // 기존 setOneTimeAlarm 메서드를 _setOneTimeAlarmInternal로 이름 변경
+  Future<bool> _setOneTimeAlarmInternal({
     required int id,
     required DateTime alarmTime,
     required Duration preNotificationTime,
@@ -1190,7 +1229,8 @@ class AlarmService extends ChangeNotifier {
     required int remainingMinutes,
     String routeId = '',
     String? currentStation,
-    BusInfo? busInfo,
+    bool useTTS = true,
+    bool isImmediateAlarm = false,
   }) async {
     try {
       // 디버그 로그 추가
@@ -1569,6 +1609,27 @@ class AlarmService extends ChangeNotifier {
             alarm.routeId == routeId);
   }
 
+  // 자동 알람이 있는지 확인하는 메서드 추가
+  bool hasAutoAlarm(String busNo, String stationName, String routeId) {
+    return _autoAlarms.any((alarm) =>
+        alarm.busNo == busNo &&
+        alarm.stationName == stationName &&
+        alarm.routeId == routeId);
+  }
+
+  // 자동 알람 데이터를 가져오는 메서드 추가
+  AlarmData? getAutoAlarm(String busNo, String stationName, String routeId) {
+    try {
+      return _autoAlarms.firstWhere((alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId);
+    } catch (e) {
+      debugPrint('자동 알람을 찾을 수 없음: $busNo, $stationName, $routeId');
+      return null;
+    }
+  }
+
   AlarmData? findAlarm(String busNo, String stationName, String routeId) {
     try {
       return _activeAlarms.firstWhere((alarm) =>
@@ -1677,94 +1738,146 @@ class AlarmService extends ChangeNotifier {
   }
 
   Future<void> updateAutoAlarms(List<AutoAlarm> autoAlarms) async {
-    _autoAlarms.clear();
-    final now = DateTime.now();
+    try {
+      _autoAlarms.clear();
+      final now = DateTime.now();
 
-    for (var alarm in autoAlarms) {
-      if (!alarm.isActive) continue;
+      for (var alarm in autoAlarms) {
+        if (!alarm.isActive) continue;
 
-      DateTime scheduledTime =
-          DateTime(now.year, now.month, now.day, alarm.hour, alarm.minute);
-      if (!alarm.repeatDays.contains(now.weekday) ||
-          scheduledTime.isBefore(now)) {
-        int daysToAdd = 1;
-        while (daysToAdd <= 7) {
-          final nextDate = now.add(Duration(days: daysToAdd));
-          if (alarm.repeatDays.contains(nextDate.weekday)) {
-            scheduledTime = DateTime(nextDate.year, nextDate.month,
-                nextDate.day, alarm.hour, alarm.minute);
-            break;
+        // 오늘 예약 시간 계산
+        DateTime scheduledTime =
+            DateTime(now.year, now.month, now.day, alarm.hour, alarm.minute);
+
+        // 오늘이 반복 요일이 아니거나 이미 지난 시간이면 다음 반복 요일 찾기
+        if (!alarm.repeatDays.contains(now.weekday) ||
+            scheduledTime.isBefore(now)) {
+          int daysToAdd = 1;
+          bool foundValidDay = false;
+
+          while (daysToAdd <= 7) {
+            final nextDate = now.add(Duration(days: daysToAdd));
+            if (alarm.repeatDays.contains(nextDate.weekday)) {
+              scheduledTime = DateTime(
+                nextDate.year,
+                nextDate.month,
+                nextDate.day,
+                alarm.hour,
+                alarm.minute,
+              );
+              foundValidDay = true;
+              break;
+            }
+            daysToAdd++;
           }
-          daysToAdd++;
+
+          // 유효한 반복 요일을 찾지 못한 경우 건너뛰기
+          if (!foundValidDay) {
+            debugPrint('⚠️ 유효한 반복 요일을 찾지 못함: ${alarm.routeNo}');
+            continue;
+          }
+        }
+
+        // 알람 데이터 생성
+        final alarmData = AlarmData(
+          busNo: alarm.routeNo,
+          stationName: alarm.stationName,
+          remainingMinutes: 0,
+          routeId: alarm.routeId,
+          scheduledTime: scheduledTime,
+          useTTS: alarm.useTTS,
+        );
+        _autoAlarms.add(alarmData);
+
+        // 알람 시간이 현재로부터 7일 이내인지 확인
+        final id = alarmData.getAlarmId();
+        final initialDelay = scheduledTime.difference(now);
+
+        if (initialDelay.inDays <= 7) {
+          // 첫 번째 알람 예약
+          await Workmanager().registerOneOffTask(
+            'autoAlarm_$id',
+            'autoAlarmTask',
+            initialDelay: initialDelay,
+            inputData: {
+              'alarmId': id,
+              'busNo': alarm.routeNo,
+              'stationName': alarm.stationName,
+              'remainingMinutes': 0,
+              'routeId': alarm.routeId,
+              'useTTS': alarm.useTTS,
+            },
+            existingWorkPolicy: ExistingWorkPolicy.replace,
+          );
+          debugPrint(
+              '자동 알람 예약: ${alarm.routeNo} at $scheduledTime (${initialDelay.inDays}일 ${initialDelay.inHours % 24}시간 후)');
+
+          // 다음 반복 알람 예약
+          await scheduleNextAutoAlarm(alarm);
+        } else {
+          debugPrint('⚠️ 알람 시간이 너무 멀어서 건너뛰기: ${initialDelay.inDays}일');
         }
       }
-
-      final alarmData = AlarmData(
-        busNo: alarm.routeNo,
-        stationName: alarm.stationName,
-        remainingMinutes: 0, // 3분에서 0분으로 변경
-        routeId: alarm.routeId,
-        scheduledTime: scheduledTime,
-        useTTS: alarm.useTTS,
-      );
-      _autoAlarms.add(alarmData);
-
-      // 첫 번째 알람 예약
-      final id = alarmData.getAlarmId();
-      final initialDelay = scheduledTime.difference(now);
-      await Workmanager().registerOneOffTask(
-        'autoAlarm_$id',
-        'autoAlarmTask',
-        initialDelay: initialDelay,
-        inputData: {
-          'alarmId': id,
-          'busNo': alarm.routeNo,
-          'stationName': alarm.stationName,
-          'remainingMinutes': 0, // 3분에서 0분으로 변경
-          'routeId': alarm.routeId,
-          'useTTS': alarm.useTTS,
-        },
-        existingWorkPolicy: ExistingWorkPolicy.replace,
-      );
-      debugPrint('자동 알람 예약: ${alarm.routeNo} at $scheduledTime');
-
-      // 다음 반복 알람 예약
-      await scheduleNextAutoAlarm(alarm);
+      await _saveAutoAlarms();
+    } catch (e) {
+      debugPrint('❌ 자동 알람 업데이트 오류: $e');
     }
-    await _saveAutoAlarms();
   }
 
   Future<void> scheduleNextAutoAlarm(AutoAlarm alarm) async {
-    final now = DateTime.now();
-    int daysToAdd = 1;
+    try {
+      final now = DateTime.now();
+      int daysToAdd = 1;
 
-    while (daysToAdd <= 7) {
-      final nextDate = now.add(Duration(days: daysToAdd));
-      if (alarm.repeatDays.contains(nextDate.weekday)) {
-        final nextTime = DateTime(nextDate.year, nextDate.month, nextDate.day,
-            alarm.hour, alarm.minute);
-        final id =
-            "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}".hashCode;
+      // 최대 7일 이내의 다음 알람만 예약
+      while (daysToAdd <= 7) {
+        final nextDate = now.add(Duration(days: daysToAdd));
 
-        await Workmanager().registerOneOffTask(
-          'autoAlarm_$id',
-          'autoAlarmTask',
-          initialDelay: nextTime.difference(now),
-          inputData: {
-            'alarmId': id,
-            'busNo': alarm.routeNo,
-            'stationName': alarm.stationName,
-            'remainingMinutes': 0, // 3분에서 0분으로 변경
-            'routeId': alarm.routeId,
-            'useTTS': alarm.useTTS,
-          },
-          existingWorkPolicy: ExistingWorkPolicy.replace,
-        );
+        // 반복 요일에 해당하는지 확인
+        if (alarm.repeatDays.contains(nextDate.weekday)) {
+          final nextTime = DateTime(
+            nextDate.year,
+            nextDate.month,
+            nextDate.day,
+            alarm.hour,
+            alarm.minute,
+          );
 
-        debugPrint('다음 자동 알람 예약: ${alarm.routeNo} at $nextTime');
-        break;
+          // 현재 시간보다 이후인지 확인
+          if (nextTime.isAfter(now)) {
+            final id = "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}"
+                .hashCode;
+            final initialDelay = nextTime.difference(now);
+
+            // 지연 시간이 너무 길지 않은지 확인 (최대 7일)
+            if (initialDelay.inDays <= 7) {
+              await Workmanager().registerOneOffTask(
+                'autoAlarm_$id',
+                'autoAlarmTask',
+                initialDelay: initialDelay,
+                inputData: {
+                  'alarmId': id,
+                  'busNo': alarm.routeNo,
+                  'stationName': alarm.stationName,
+                  'remainingMinutes': 0,
+                  'routeId': alarm.routeId,
+                  'useTTS': alarm.useTTS,
+                },
+                existingWorkPolicy: ExistingWorkPolicy.replace,
+              );
+
+              debugPrint(
+                  '다음 자동 알람 예약: ${alarm.routeNo} at $nextTime (${initialDelay.inDays}일 ${initialDelay.inHours % 24}시간 후)');
+              break;
+            } else {
+              debugPrint('⚠️ 알람 지연 시간이 너무 깁니다: ${initialDelay.inDays}일');
+            }
+          }
+        }
+        daysToAdd++;
       }
-      daysToAdd++;
+    } catch (e) {
+      debugPrint('❌ 다음 자동 알람 예약 오류: $e');
     }
   }
 
@@ -1808,11 +1921,17 @@ class AlarmService extends ChangeNotifier {
 
           // 필수 필드 유효성 검사
           if (!_validateAutoAlarmFields(data)) {
-            debugPrint('자동 알람 데이터 필수 필드 누락');
+            debugPrint('⚠️ 자동 알람 데이터 필수 필드 누락');
             continue;
           }
 
           final autoAlarm = AutoAlarm.fromJson(data);
+
+          // 비활성화된 알람은 건너뛰기
+          if (!autoAlarm.isActive) {
+            debugPrint('ℹ️ 비활성화된 자동 알람 건너뛰기: ${autoAlarm.routeNo}');
+            continue;
+          }
 
           // 오늘의 예약 시간 계산
           DateTime scheduledTime = DateTime(
@@ -1823,10 +1942,13 @@ class AlarmService extends ChangeNotifier {
             autoAlarm.minute,
           );
 
-          // 이미 지난 시간이면 다음 반복 요일로 설정
-          if (scheduledTime.isBefore(now)) {
+          // 오늘이 반복 요일이 아니거나 이미 지난 시간이면 다음 반복 요일 찾기
+          if (!autoAlarm.repeatDays.contains(now.weekday) ||
+              scheduledTime.isBefore(now)) {
             // 다음 반복 요일 찾기
             int daysToAdd = 1;
+            bool foundValidDay = false;
+
             while (daysToAdd <= 7) {
               final nextDate = now.add(Duration(days: daysToAdd));
               final nextWeekday = nextDate.weekday;
@@ -1838,29 +1960,48 @@ class AlarmService extends ChangeNotifier {
                   autoAlarm.hour,
                   autoAlarm.minute,
                 );
+                foundValidDay = true;
                 break;
               }
               daysToAdd++;
             }
+
+            // 유효한 반복 요일을 찾지 못한 경우 건너뛰기
+            if (!foundValidDay) {
+              debugPrint('⚠️ 유효한 반복 요일을 찾지 못함: ${autoAlarm.routeNo}');
+              continue;
+            }
           }
 
-          loadedAutoAlarms.add(AlarmData(
+          // 알람 시간이 현재로부터 7일 이내인지 확인
+          final initialDelay = scheduledTime.difference(now);
+          if (initialDelay.inDays > 7) {
+            debugPrint(
+                '⚠️ 알람 시간이 너무 멀어서 건너뛰기: ${autoAlarm.routeNo}, ${initialDelay.inDays}일 후');
+            continue;
+          }
+
+          // 알람 데이터 생성 및 추가
+          final alarmData = AlarmData(
             busNo: autoAlarm.routeNo,
             stationName: autoAlarm.stationName,
-            remainingMinutes: 0, // 3분에서 0분으로 변경
+            remainingMinutes: 0,
             routeId: autoAlarm.routeId,
             scheduledTime: scheduledTime,
             useTTS: autoAlarm.useTTS,
-          ));
+          );
+          loadedAutoAlarms.add(alarmData);
+          debugPrint(
+              '✅ 자동 알람 로드: ${autoAlarm.routeNo}, 예정 시간: $scheduledTime (${initialDelay.inHours}시간 후)');
         } catch (e) {
-          debugPrint('자동 알람 데이터 파싱 오류: $e');
+          debugPrint('❌ 자동 알람 파싱 오류: $e');
         }
       }
 
-      debugPrint('자동 알람 로드 완료: ${loadedAutoAlarms.length}개');
+      debugPrint('✅ 자동 알람 로드 완료: ${loadedAutoAlarms.length}개');
       return loadedAutoAlarms;
     } catch (e) {
-      debugPrint('자동 알람 로드 중 오류 발생: $e');
+      debugPrint('❌ 자동 알람 로드 중 오류 발생: $e');
       return []; // 오류 발생 시 빈 리스트 반환
     }
   }
@@ -1898,5 +2039,45 @@ class AlarmService extends ChangeNotifier {
     }
 
     return true;
+  }
+
+  // background_service.dart에서 사용하는 startAlarm 메서드 추가
+  Future<bool> startAlarm(
+      String busNo, String stationName, int remainingMinutes) async {
+    try {
+      debugPrint('🔔 startAlarm 호출: $busNo, $stationName, $remainingMinutes분');
+
+      // 알람 ID 생성
+      final int id = getAlarmId(busNo, stationName);
+
+      // TTS 발화 시도
+      try {
+        await SimpleTTSHelper.initialize();
+        if (remainingMinutes <= 0) {
+          await SimpleTTSHelper.speak(
+              "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
+        } else {
+          await SimpleTTSHelper.speak(
+              "$busNo번 버스가 약 $remainingMinutes분 후 $stationName 정류장에 도착 예정입니다.");
+        }
+        debugPrint('🔊 TTS 발화 성공');
+      } catch (e) {
+        debugPrint('🔊 TTS 발화 오류: $e');
+      }
+
+      // 알림 표시
+      await NotificationService().showNotification(
+        id: id,
+        busNo: busNo,
+        stationName: stationName,
+        remainingMinutes: remainingMinutes,
+        currentStation: '',
+      );
+
+      return true;
+    } catch (e) {
+      debugPrint('❌ startAlarm 오류: $e');
+      return false;
+    }
   }
 }

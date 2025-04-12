@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
 import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 // 이 파일은 안드로이드 시스템과 연동하는 유틸리티 클래스를 제공합니다.
 // 처음부터 NotificationService와 기능이 중복됩니다.
@@ -270,5 +271,68 @@ class NotificationHelperService {
       debugPrint('🔔 모든 알림 취소 오류: ${e.message}');
       return false;
     }
+  }
+}
+
+class NotificationHelper {
+  static const String channelId = 'bus_arrival_channel';
+  static const String channelName = '버스 도착 알림';
+  static const String channelDescription = '버스 도착 시간 알림을 표시합니다.';
+
+  static Future<void> createNotificationChannel() async {
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      channelId,
+      channelName,
+      description: channelDescription,
+      importance: Importance.high,
+      enableVibration: true,
+      enableLights: true,
+      playSound: true,
+    );
+
+    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+        FlutterLocalNotificationsPlugin();
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+  }
+
+  static Future<void> showNotification({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+    bool isOngoing = false,
+  }) async {
+    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+        FlutterLocalNotificationsPlugin();
+
+    final AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+      channelId,
+      channelName,
+      channelDescription: channelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      showWhen: true,
+      enableVibration: true,
+      enableLights: true,
+      playSound: true,
+      ongoing: isOngoing,
+      autoCancel: !isOngoing,
+    );
+
+    final NotificationDetails platformChannelSpecifics =
+        NotificationDetails(android: androidPlatformChannelSpecifics);
+
+    await flutterLocalNotificationsPlugin.show(
+      id,
+      title,
+      body,
+      platformChannelSpecifics,
+      payload: payload,
+    );
   }
 }
