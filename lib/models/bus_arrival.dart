@@ -19,9 +19,6 @@ class BusArrival {
   // JSON 파싱 메서드 수정
   factory BusArrival.fromJson(Map<String, dynamic> json) {
     try {
-      // 서버에서 오는 JSON 구조 로깅
-      debugPrint('BusArrival.fromJson 입력: ${json.keys.join(', ')}');
-
       // 기본 필드 추출 (키 이름이 다를 수 있음)
       final routeId = json['routeId'] ?? json['id'] ?? '';
       final routeNo = json['routeNo'] ?? json['name'] ?? '';
@@ -51,9 +48,12 @@ class BusArrival {
         buses: buses,
       );
     } catch (e) {
-      // 파싱 오류 상세 로깅
-      debugPrint('BusArrival.fromJson 파싱 오류: $e');
-      debugPrint('문제의 JSON: $json');
+      // 파싱 오류 상세 로깅 (릴리스 모드에서는 출력하지 않음)
+      assert(() {
+        debugPrint('BusArrival.fromJson 파싱 오류: $e');
+        debugPrint('문제의 JSON: $json');
+        return true;
+      }());
 
       // 빈 객체 반환하기보다 예외를 다시 던져서 호출자가 처리하도록 함
       rethrow;
@@ -82,9 +82,6 @@ class BusInfo {
   // JSON 파싱 메서드 수정
   factory BusInfo.fromJson(Map<String, dynamic> json) {
     try {
-      // 서버에서 오는 JSON 구조 로깅
-      debugPrint('BusInfo.fromJson 입력: ${json.keys.join(', ')}');
-
       // 버스 번호 - 여러 가능한 키 확인
       final busNumber =
           json['vhcNo2'] ?? json['busNumber'] ?? json['버스번호'] ?? '';
@@ -144,9 +141,12 @@ class BusInfo {
         isOutOfService: isOutOfService,
       );
     } catch (e) {
-      // 파싱 오류 상세 로깅
-      debugPrint('BusInfo.fromJson 파싱 오류: $e');
-      debugPrint('문제의 JSON: $json');
+      // 파싱 오류 상세 로깅 (릴리스 모드에서는 출력하지 않음)
+      assert(() {
+        debugPrint('BusInfo.fromJson 파싱 오류: $e');
+        debugPrint('문제의 JSON: $json');
+        return true;
+      }());
       rethrow;
     }
   }
