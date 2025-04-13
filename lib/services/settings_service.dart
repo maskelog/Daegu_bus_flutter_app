@@ -42,7 +42,7 @@ class SettingsService extends ChangeNotifier {
   double _autoAlarmVolume = defaultAutoAlarmVolume;
 
   ThemeMode _themeMode = ThemeMode.system;
-  bool _useTts = false;
+  bool _useTts = true;
   bool _vibrate = true;
   int _speakerMode = speakerModeAuto; // 스피커 모드 변수 (기본값: 자동)
 
@@ -129,7 +129,7 @@ class SettingsService extends ChangeNotifier {
       final themeModeString = _prefs.getString(_kThemeModeKey) ?? 'system';
       _themeMode = _parseThemeMode(themeModeString);
 
-      _useTts = _prefs.getBool(_kUseTtsKey) ?? false;
+      _useTts = _prefs.getBool(_kUseTtsKey) ?? true;
       _vibrate = _prefs.getBool(_kVibrateKey) ?? true;
       _speakerMode =
           _prefs.getInt(_kSpeakerModeKey) ?? speakerModeAuto; // 스피커 모드 로드

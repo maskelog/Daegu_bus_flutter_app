@@ -64,6 +64,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private lateinit var busApiService: BusApiService
     private var busAlertService: BusAlertService? = null
     private val NOTIFICATION_PERMISSION_REQUEST_CODE = 123
+    private val LOCATION_PERMISSION_REQUEST_CODE = 124
     private lateinit var audioManager: AudioManager
     private lateinit var tts: TextToSpeech
     private var _methodChannel: MethodChannel? = null
@@ -112,21 +113,82 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
             }
 
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.POST_NOTIFICATIONS
-                    ) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    ActivityCompat.requestPermissions(
-                        this,
-                        arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                        NOTIFICATION_PERMISSION_REQUEST_CODE
-                    )
-                }
-            }
+            // 권한 요청 처리
+            checkAndRequestPermissions()
+
         } catch (e: Exception) {
             Log.e(TAG, "MainActivity onCreate 오류: ${e.message}", e)
+        }
+    }
+
+    private fun checkAndRequestPermissions() {
+        // 알림 권한 확인 및 요청 (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    NOTIFICATION_PERMISSION_REQUEST_CODE
+                )
+            }
+        }
+
+        // 위치 권한 확인 및 요청
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val fineLocationPermission = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+            val coarseLocationPermission = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+
+            if (fineLocationPermission != PackageManager.PERMISSION_GRANTED ||
+                coarseLocationPermission != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ),
+                    LOCATION_PERMISSION_REQUEST_CODE
+                )
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        when (requestCode) {
+            LOCATION_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && 
+                    grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Log.d(TAG, "위치 권한 승인됨")
+                    // 권한이 승인되면 Flutter 측에 알림
+                    _methodChannel?.invokeMethod("onLocationPermissionGranted", null)
+                } else {
+                    Log.d(TAG, "위치 권한 거부됨")
+                    // 권한이 거부되면 Flutter 측에 알림
+                    _methodChannel?.invokeMethod("onLocationPermissionDenied", null)
+                }
+            }
+            NOTIFICATION_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && 
+                    grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Log.d(TAG, "알림 권한 승인됨")
+                } else {
+                    Log.d(TAG, "알림 권한 거부됨")
+                }
+            }
         }
     }
 

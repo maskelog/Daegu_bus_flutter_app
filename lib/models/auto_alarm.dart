@@ -1,40 +1,40 @@
 class AutoAlarm {
   final String id;
+  final String routeNo;
+  final String stationName;
+  final String stationId;
+  final String routeId;
   final int hour;
   final int minute;
-  final String stationId;
-  final String stationName;
-  final String routeId;
-  final String routeNo;
   final List<int> repeatDays;
   final bool excludeWeekends;
   final bool excludeHolidays;
   final bool isActive;
   final bool useTTS;
 
-  const AutoAlarm({
+  AutoAlarm({
     required this.id,
+    required this.routeNo,
+    required this.stationName,
+    required this.stationId,
+    required this.routeId,
     required this.hour,
     required this.minute,
-    required this.stationId,
-    required this.stationName,
-    required this.routeId,
-    required this.routeNo,
     required this.repeatDays,
-    required this.excludeWeekends,
-    required this.excludeHolidays,
-    required this.isActive,
+    this.excludeWeekends = false,
+    this.excludeHolidays = false,
+    this.isActive = true,
     this.useTTS = true,
   });
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'routeNo': routeNo,
+        'stationName': stationName,
+        'stationId': stationId,
+        'routeId': routeId,
         'hour': hour,
         'minute': minute,
-        'stationId': stationId,
-        'stationName': stationName,
-        'routeId': routeId,
-        'routeNo': routeNo,
         'repeatDays': repeatDays,
         'excludeWeekends': excludeWeekends,
         'excludeHolidays': excludeHolidays,
@@ -44,31 +44,29 @@ class AutoAlarm {
 
   factory AutoAlarm.fromJson(Map<String, dynamic> json) {
     return AutoAlarm(
-      id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      hour: json['hour'] ?? 7,
-      minute: json['minute'] ?? 0,
-      stationId: json['stationId'] ?? '',
-      stationName: json['stationName'] ?? '',
-      routeId: json['routeId'] ?? '',
-      routeNo: json['routeNo'] ?? '',
-      repeatDays: json['repeatDays'] != null
-          ? List<int>.from(json['repeatDays'])
-          : [1, 2, 3, 4, 5],
-      excludeWeekends: json['excludeWeekends'] ?? true,
-      excludeHolidays: json['excludeHolidays'] ?? true,
-      isActive: json['isActive'] ?? true,
-      useTTS: json['useTTS'] ?? true,
+      id: json['id'] as String,
+      routeNo: json['routeNo'] as String,
+      stationName: json['stationName'] as String,
+      stationId: json['stationId'] as String,
+      routeId: json['routeId'] as String,
+      hour: json['hour'] as int,
+      minute: json['minute'] as int,
+      repeatDays: List<int>.from(json['repeatDays'] as List),
+      excludeWeekends: json['excludeWeekends'] as bool? ?? false,
+      excludeHolidays: json['excludeHolidays'] as bool? ?? false,
+      isActive: json['isActive'] as bool? ?? true,
+      useTTS: json['useTTS'] as bool? ?? true,
     );
   }
 
   AutoAlarm copyWith({
     String? id,
+    String? routeNo,
+    String? stationName,
+    String? stationId,
+    String? routeId,
     int? hour,
     int? minute,
-    String? stationId,
-    String? stationName,
-    String? routeId,
-    String? routeNo,
     List<int>? repeatDays,
     bool? excludeWeekends,
     bool? excludeHolidays,
@@ -77,12 +75,12 @@ class AutoAlarm {
   }) {
     return AutoAlarm(
       id: id ?? this.id,
+      routeNo: routeNo ?? this.routeNo,
+      stationName: stationName ?? this.stationName,
+      stationId: stationId ?? this.stationId,
+      routeId: routeId ?? this.routeId,
       hour: hour ?? this.hour,
       minute: minute ?? this.minute,
-      stationId: stationId ?? this.stationId,
-      stationName: stationName ?? this.stationName,
-      routeId: routeId ?? this.routeId,
-      routeNo: routeNo ?? this.routeNo,
       repeatDays: repeatDays ?? this.repeatDays,
       excludeWeekends: excludeWeekends ?? this.excludeWeekends,
       excludeHolidays: excludeHolidays ?? this.excludeHolidays,

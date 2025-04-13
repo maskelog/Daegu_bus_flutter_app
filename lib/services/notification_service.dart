@@ -235,6 +235,9 @@ class NotificationService {
     }
   }
 
+  /// 이전 버전과의 호환성을 위한 메서드 별칭
+  Future<bool> cancel(int id) => cancelNotification(id);
+
   /// 지속적인 추적 알림 취소
   Future<bool> cancelOngoingTracking() async {
     try {

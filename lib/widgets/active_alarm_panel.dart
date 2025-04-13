@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
+import '../models/alarm_data.dart';
 import '../main.dart' show logMessage, LogLevel;
 
 class ActiveAlarmPanel extends StatefulWidget {
@@ -19,41 +20,73 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
   void initState() {
     super.initState();
     // 컴포넌트 마운트 시 알람 데이터 최신화
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeAlarms();
+    });
+  }
 
+  Future<void> _initializeAlarms() async {
+    if (!mounted) return;
+
+    try {
       final alarmService = Provider.of<AlarmService>(context, listen: false);
-      await alarmService.loadAlarms();
-      setState(() {}); // 초기 로드 후 UI 갱신
 
-      // 정기적인 알람 데이터 갱신 설정 (2초마다)
-      Future.delayed(const Duration(seconds: 2), () async {
-        if (!mounted) return;
+      // 알람 로드 시도 (최대 3번)
+      bool success = false;
+      int retryCount = 0;
+      const maxRetries = 3;
 
-        // 알람 데이터 갱신
-        await alarmService.loadAlarms();
-
-        // 캐시된 버스 정보 확인 및 업데이트
-        if (alarmService.activeAlarms.isNotEmpty) {
-          final firstAlarm = alarmService.activeAlarms.first;
-          final cachedInfo = alarmService.getCachedBusInfo(
-            firstAlarm.busNo,
-            firstAlarm.routeId,
-          );
-
-          if (cachedInfo != null) {
-            logMessage(
-                '캐시된 버스 정보 발견: ${firstAlarm.busNo}, 남은 시간: ${cachedInfo.getRemainingMinutes()}분',
-                level: LogLevel.debug);
+      while (!success && retryCount < maxRetries) {
+        try {
+          await alarmService.loadAlarms();
+          success = true;
+          if (mounted) setState(() {}); // 초기 로드 후 UI 갱신
+        } catch (e) {
+          retryCount++;
+          logMessage('알람 로드 재시도 #$retryCount: $e', level: LogLevel.warning);
+          if (retryCount < maxRetries) {
+            await Future.delayed(Duration(seconds: retryCount * 2));
           }
         }
+      }
 
-        setState(() {}); // UI 갱신
-      });
+      if (!success) {
+        logMessage('알람 로드 실패 (최대 재시도 횟수 초과)', level: LogLevel.error);
+        return;
+      }
+
+      // 정기적인 알람 데이터 갱신 설정 (2초마다)
+      if (mounted) {
+        Future.delayed(const Duration(seconds: 2), () async {
+          if (!mounted) return;
+
+          // 알람 데이터 갱신
+          await alarmService.loadAlarms();
+
+          // 캐시된 버스 정보 확인 및 업데이트
+          if (alarmService.activeAlarms.isNotEmpty) {
+            final firstAlarm = alarmService.activeAlarms.first;
+            final cachedBusInfo = alarmService.getCachedBusInfo(
+              firstAlarm.busNo,
+              firstAlarm.routeId,
+            );
+
+            if (cachedBusInfo != null) {
+              logMessage(
+                  '캐시된 버스 정보 발견: ${firstAlarm.busNo}, 남은 시간: ${cachedBusInfo.getRemainingMinutes()}분',
+                  level: LogLevel.debug);
+            }
+          }
+
+          if (mounted) setState(() {}); // UI 갱신
+        });
+      }
 
       // 버스 이동 애니메이션 타이머 설정
       _startProgressAnimation();
-    });
+    } catch (e) {
+      logMessage('알람 패널 초기화 오류: $e', level: LogLevel.error);
+    }
   }
 
   void _startProgressAnimation() {
@@ -251,10 +284,15 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         // 알람이 있는 경우 - 첫 번째 알람에 대한 상세 패널 표시
         final firstAlarm = allAlarms.first;
 
+        // routeId가 null이면 기본값 설정
+        final String routeId = firstAlarm.routeId.isNotEmpty
+            ? firstAlarm.routeId
+            : '${firstAlarm.busNo}_${firstAlarm.stationName}';
+
         // 캐시된 정보를 가져와서 최신화
         final cachedBusInfo = alarmService.getCachedBusInfo(
           firstAlarm.busNo,
-          firstAlarm.routeId,
+          routeId,
         );
 
         // 남은 시간 계산
@@ -278,9 +316,15 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
             (remainingMinutes > 30) ? 0.0 : (30 - remainingMinutes) / 30.0;
         final arrivalText = isArrivingSoon ? '곧 도착' : '$remainingMinutes분 후 도착';
 
-        // 버스 현재 위치 정보
-        String currentStation =
-            cachedBusInfo?.currentStation ?? firstAlarm.currentStation ?? '';
+        // 버스 현재 위치 정보 - 캐시 또는 알람 데이터에서 가져오기
+        String currentStation = '정보 업데이트 중...';
+        if (cachedBusInfo?.currentStation != null &&
+            cachedBusInfo!.currentStation.isNotEmpty) {
+          currentStation = cachedBusInfo.currentStation;
+        } else if (firstAlarm.currentStation != null &&
+            firstAlarm.currentStation!.isNotEmpty) {
+          currentStation = firstAlarm.currentStation!;
+        }
 
         // 메인 패널 생성
         final mainPanel = Container(

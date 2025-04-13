@@ -61,9 +61,6 @@ void logMessage(String message, {LogLevel level = LogLevel.debug}) {
 void log(String message, {LogLevel level = LogLevel.debug}) =>
     logMessage(message, level: level);
 
-// alarmService 인스턴스 생성
-final AlarmService _alarmService = AlarmService();
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -95,7 +92,6 @@ Future<void> main() async {
     log('✅ SettingsService 초기화 성공', level: LogLevel.info);
   } catch (e) {
     log('⚠️ SettingsService 초기화 오류 (계속 진행): $e', level: LogLevel.error);
-    // 설정 서비스 초기화 실패해도 앱 실행 계속
   }
 
   // 2. 알림 서비스 초기화
@@ -105,7 +101,6 @@ Future<void> main() async {
     log('✅ NotificationService 초기화 성공', level: LogLevel.info);
   } catch (e) {
     log('⚠️ NotificationService 초기화 오류 (계속 진행): $e', level: LogLevel.error);
-    // 알림 서비스 초기화 실패해도 앱 실행 계속
   }
 
   // 3. TTS 초기화
@@ -115,7 +110,6 @@ Future<void> main() async {
     log('✅ TTS 초기화 성공', level: LogLevel.info);
   } catch (e) {
     log('⚠️ TTS 초기화 오류 (계속 진행): $e', level: LogLevel.error);
-    // TTS 초기화 실패해도 앱 실행 계속
   }
 
   // 4. AndroidAlarmManager 초기화
@@ -125,7 +119,6 @@ Future<void> main() async {
     log('✅ AndroidAlarmManager 초기화 성공', level: LogLevel.info);
   } catch (e) {
     log('⚠️ AndroidAlarmManager 초기화 오류 (계속 진행): $e', level: LogLevel.error);
-    // AlarmManager 초기화 실패해도 앱 실행 계속
   }
 
   // 5. WorkManager 초기화 - 오류 처리 개선
@@ -138,7 +131,6 @@ Future<void> main() async {
     log('✅ Workmanager 초기화 완료', level: LogLevel.info);
   } catch (e) {
     log('⚠️ Workmanager 초기화 오류 (계속 진행): $e', level: LogLevel.error);
-    // WorkManager 초기화 실패해도 앱 실행 계속
   }
 
   // 자동 알람 등록 작업은 앱 시작 후에 비동기적으로 처리
@@ -183,10 +175,18 @@ Future<void> main() async {
 
   log('🚀 앱 UI 시작: ${DateTime.now()}', level: LogLevel.info);
 
+  final alarmService = AlarmService();
+  try {
+    await alarmService.initialize();
+    logMessage('✅ AlarmService 초기화 완료');
+  } catch (e) {
+    logMessage('❌ AlarmService 초기화 실패: $e', level: LogLevel.error);
+  }
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => _alarmService),
+        ChangeNotifierProvider.value(value: alarmService),
         ChangeNotifierProvider(create: (_) => SettingsService()),
       ],
       child: const MyApp(),
