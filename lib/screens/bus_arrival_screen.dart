@@ -1,6 +1,5 @@
-import 'dart:developer';
-
 import 'package:daegu_bus_app/models/bus_arrival.dart';
+import 'package:daegu_bus_app/main.dart' show log;
 import 'package:daegu_bus_app/services/alarm_service.dart';
 import 'package:flutter/material.dart';
 
@@ -123,12 +122,12 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       decoration: BoxDecoration(
-        color:
-            Color.fromARGB(26, textColor.red, textColor.green, textColor.blue),
+        color: Color.fromARGB(
+            26, textColor.r.toInt(), textColor.g.toInt(), textColor.b.toInt()),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Color.fromARGB(
-              77, textColor.red, textColor.green, textColor.blue),
+          color: Color.fromARGB(77, textColor.r.toInt(), textColor.g.toInt(),
+              textColor.b.toInt()),
         ),
       ),
       child: Text(
