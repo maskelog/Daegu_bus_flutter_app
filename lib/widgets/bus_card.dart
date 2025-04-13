@@ -110,7 +110,8 @@ class _BusCardState extends State<BusCard> {
           firstBus = updatedBusArrival.buses.first;
           remainingTime =
               firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
-          print('BusCard - 업데이트된 남은 시간: $remainingTime');
+          logMessage('BusCard - 업데이트된 남은 시간: $remainingTime',
+              level: LogLevel.debug);
           _updateAlarmServiceCache();
 
           final alarmService =
