@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
+import '../main.dart' show logMessage, LogLevel;
 
 class ActiveAlarmPanel extends StatefulWidget {
   const ActiveAlarmPanel({super.key});
@@ -41,8 +42,9 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
           );
 
           if (cachedInfo != null) {
-            print(
-                '🚌 캐시된 버스 정보 발견: ${firstAlarm.busNo}, 남은 시간: ${cachedInfo.getRemainingMinutes()}분');
+            logMessage(
+                '캐시된 버스 정보 발견: ${firstAlarm.busNo}, 남은 시간: ${cachedInfo.getRemainingMinutes()}분',
+                level: LogLevel.debug);
           }
         }
 
@@ -88,11 +90,14 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     int arrivalMinutes;
     if (cachedBusInfo != null) {
       arrivalMinutes = cachedBusInfo.getRemainingMinutes();
-      print(
-          '🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 마지막 갱신 시간=${cachedBusInfo.lastUpdated.toString()}, 남은 시간=$arrivalMinutes분');
+      logMessage(
+          '패널 표시 시간 계산: 버스=${alarm.busNo}, 마지막 갱신 시간=${cachedBusInfo.lastUpdated.toString()}, 남은 시간=$arrivalMinutes분',
+          level: LogLevel.debug);
     } else {
       arrivalMinutes = alarm.getCurrentArrivalMinutes();
-      print('🕗 패널 표시 시간 계산: 버스=${alarm.busNo}, 캐시 없음, 알람 시간=$arrivalMinutes분');
+      logMessage(
+          '패널 표시 시간 계산: 버스=${alarm.busNo}, 캐시 없음, 알람 시간=$arrivalMinutes분',
+          level: LogLevel.debug);
     }
 
     final arrivalText = arrivalMinutes <= 1 ? '곧 도착' : '$arrivalMinutes분 후 도착';
@@ -154,7 +159,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             onPressed: () {
-              print("알람 목록 새로고침 요청");
+              logMessage("알람 목록 새로고침 요청", level: LogLevel.debug);
               alarmService.loadAlarms();
             },
             tooltip: '알람 목록 새로고침',
@@ -193,10 +198,16 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         alarm.routeId,
       );
 
-      if (success && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다')),
-        );
+      if (success) {
+        // 알람 취소 성공 로그
+        logMessage('${alarm.busNo}번 버스 알람 취소 성공', level: LogLevel.info);
+
+        // 스낵바 표시
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다')),
+          );
+        }
       }
     }
   }
@@ -218,8 +229,9 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         final allAlarms = [...activeAlarms, ...autoAlarms]
           ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
 
-        print(
-            '🚨 ActiveAlarmPanel 빌드: 일반=${activeAlarms.length}개, 자동=${autoAlarms.length}개');
+        logMessage(
+            'ActiveAlarmPanel 빌드: 일반=${activeAlarms.length}개, 자동=${autoAlarms.length}개',
+            level: LogLevel.info);
 
         // 알람이 없는 경우
         if (allAlarms.isEmpty) {
@@ -249,12 +261,16 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         int remainingMinutes;
         if (cachedBusInfo != null) {
           remainingMinutes = cachedBusInfo.getRemainingMinutes();
-          print('🚌 버스 도착 정보 (캐시): ${firstAlarm.busNo}번, $remainingMinutes분 후');
+          logMessage(
+              '버스 도착 정보 (캐시): ${firstAlarm.busNo}번, $remainingMinutes분 후',
+              level: LogLevel.debug);
         } else {
           // 캐시된 정보가 없으면 알람 예정 시간과 현재 시간의 차이로 계산
           remainingMinutes =
               firstAlarm.scheduledTime.difference(DateTime.now()).inMinutes;
-          print('🚌 버스 도착 정보 (예약): ${firstAlarm.busNo}번, $remainingMinutes분 후');
+          logMessage(
+              '버스 도착 정보 (예약): ${firstAlarm.busNo}번, $remainingMinutes분 후',
+              level: LogLevel.debug);
         }
 
         final isArrivingSoon = remainingMinutes <= 2;
