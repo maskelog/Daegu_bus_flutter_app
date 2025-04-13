@@ -190,7 +190,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
                     boxShadow: hasAlarm
                         ? [
                             BoxShadow(
-                              color: Colors.amber.withOpacity(0.3),
+                              color: Colors.amber.withAlpha(77),
                               spreadRadius: 1,
                               blurRadius: 2,
                               offset: const Offset(0, 1),
