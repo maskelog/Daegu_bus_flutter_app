@@ -6,6 +6,7 @@ import 'package:daegu_bus_app/widgets/bus_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
+import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
@@ -88,7 +89,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       });
       _updateAlarmServiceCache(arrivals, station.name);
     } catch (e) {
-      print('Error loading arrivals for station ${station.id}: $e');
+      logMessage('Error loading arrivals for station ${station.id}: $e',
+          level: LogLevel.error);
       if (!mounted) return;
 
       setState(() {
@@ -119,8 +121,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           firstBus,
           remainingTime,
         );
-        print(
-            '즐겨찾기 화면에서 캐시 업데이트: ${busArrival.routeNo}, 남은 시간: $remainingTime분');
+        logMessage(
+            '즐겨찾기 화면에서 캐시 업데이트: ${busArrival.routeNo}, 남은 시간: $remainingTime분',
+            level: LogLevel.debug);
       }
     }
   }
@@ -325,28 +328,39 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                 useTTS: true,
                               );
                               if (!mounted) return;
-                              if (success) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        '${busArrival.routeNo}번 도착 알림이 설정되었습니다'),
-                                    duration: const Duration(seconds: 2),
-                                    behavior: SnackBarBehavior.floating,
-                                  ),
-                                );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        '${busArrival.routeNo}번 도착 알림 설정에 실패했습니다'),
-                                    backgroundColor: Colors.red[700],
-                                    duration: const Duration(seconds: 2),
-                                    behavior: SnackBarBehavior.floating,
-                                  ),
-                                );
+
+                              // 알람 설정 결과 로그
+                              logMessage(
+                                  '${busArrival.routeNo}번 도착 알림 설정 ${success ? '성공' : '실패'}',
+                                  level:
+                                      success ? LogLevel.info : LogLevel.error);
+
+                              if (mounted) {
+                                if (success) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          '${busArrival.routeNo}번 도착 알림이 설정되었습니다'),
+                                      duration: const Duration(seconds: 2),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          '${busArrival.routeNo}번 도착 알림 설정에 실패했습니다'),
+                                      backgroundColor: Colors.red[700],
+                                      duration: const Duration(seconds: 2),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
+
+                                // 모달 닫기
+                                Navigator.pop(context);
                               }
                             }
-                            Navigator.pop(context);
                           },
                           child: const Text('확인'),
                         ),
@@ -628,7 +642,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             onPressed: () async {
                               Navigator.pop(context); // 모달 닫기
                               if (hasActiveAlarm) {
-                                print('${busArrival.routeNo}번 도착 알림 취소 요청');
+                                logMessage('${busArrival.routeNo}번 도착 알림 취소 요청',
+                                    level: LogLevel.debug);
 
                                 // 알람 서비스 참조
                                 final alarmService = Provider.of<AlarmService>(
@@ -744,7 +759,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         );
       }
     } on PlatformException catch (e) {
-      print("Failed to start station tracking: '${e.message}'.");
+      logMessage("Failed to start station tracking: '${e.message}'.",
+          level: LogLevel.error);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -772,7 +788,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         );
       }
     } on PlatformException catch (e) {
-      print("Failed to stop station tracking: '${e.message}'.");
+      logMessage("Failed to stop station tracking: '${e.message}'.",
+          level: LogLevel.error);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
