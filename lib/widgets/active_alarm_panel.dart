@@ -279,7 +279,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withAlpha(26),
                 blurRadius: 4,
                 offset: const Offset(0, 2),
               ),
@@ -354,7 +354,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                 padding:
                     const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withAlpha(179),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -464,7 +464,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.white.withOpacity(0.3),
+                                  color: Colors.white.withAlpha(77),
                                   blurRadius: 2,
                                   offset: const Offset(0, 1),
                                 ),
