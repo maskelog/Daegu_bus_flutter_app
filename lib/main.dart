@@ -14,30 +14,45 @@ import 'services/permission_service.dart';
 import 'screens/home_screen.dart';
 import 'package:daegu_bus_app/services/settings_service.dart';
 import 'utils/database_helper.dart';
+import 'utils/dio_client.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
-enum LogLevel { debug, info, warning, error }
+// 로그 레벨 정의 (utils/dio_client.dart의 LogLevel과 일치시킴)
+enum LogLevel { none, error, warning, info, debug, verbose }
 
+// 현재 로그 레벨 설정
 const LogLevel currentLogLevel = LogLevel.info;
+
+// Dio 클라이언트 인스턴스
+final dioClient = DioClient();
 
 // 로깅 유틸리티 함수
 void logMessage(String message, {LogLevel level = LogLevel.debug}) {
   if (level.index >= currentLogLevel.index) {
-    if (level == LogLevel.debug) {
-      print('🐛 [DEBUG] $message');
-    } else if (level == LogLevel.info) {
-      print('ℹ️ [INFO] $message');
-    } else if (level == LogLevel.warning) {
-      print('⚠️ [WARN] $message');
-    } else if (level == LogLevel.error) {
-      print('❌ [ERROR] $message');
-    }
-
-    // 개발자 로그에도 기록 (선택사항)
+    // 개발 모드에서만 콘솔에 출력
     if (!const bool.fromEnvironment('dart.vm.product')) {
-      dev.log(message, name: level.toString());
+      String prefix;
+      switch (level) {
+        case LogLevel.debug:
+          prefix = '🐛 [DEBUG]';
+          break;
+        case LogLevel.info:
+          prefix = 'ℹ️ [INFO]';
+          break;
+        case LogLevel.warning:
+          prefix = '⚠️ [WARN]';
+          break;
+        case LogLevel.error:
+          prefix = '❌ [ERROR]';
+          break;
+        default:
+          prefix = '[LOG]';
+      }
+
+      // 개발자 로그에 기록
+      dev.log('$prefix $message', name: level.toString());
     }
   }
 }
