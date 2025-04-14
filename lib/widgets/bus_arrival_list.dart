@@ -90,7 +90,7 @@ class BusArrivalItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 첫 번째 버스 정보 추출
-    final firstBus = arrival.buses.isNotEmpty ? arrival.buses.first : null;
+    final firstBus = arrival.busInfoList.isNotEmpty ? arrival.busInfoList.first : null;
 
     return InkWell(
       onTap: onTap,
@@ -183,7 +183,7 @@ class BusArrivalItem extends StatelessWidget {
                   ),
                   if (firstBus != null)
                     Text(
-                      firstBus.isOutOfService ? '운행종료' : firstBus.arrivalTime,
+                      firstBus.isOutOfService ? '운행종료' : '${firstBus.getRemainingMinutes()}분',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,

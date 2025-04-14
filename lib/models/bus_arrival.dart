@@ -1,182 +1,141 @@
-// BusArrival 클래스
-import 'package:flutter/material.dart';
+import 'bus_info.dart';
 
+/// 버스 도착 정보 모델
 class BusArrival {
-  final String stationId;
-  final String routeId;
+  /// 노선 번호
   final String routeNo;
-  final String destination;
-  final List<BusInfo> buses;
 
+  /// 노선 ID
+  final String routeId;
+
+  /// 버스 정보 리스트
+  final List<BusInfo> busInfoList;
+
+  /// 진행 방향
+  final String direction;
+
+  /// 생성자
   BusArrival({
-    required this.stationId,
-    required this.routeId,
     required this.routeNo,
-    required this.destination,
-    required this.buses,
+    required this.routeId,
+    required this.busInfoList,
+    this.direction = '',
   });
 
-  // JSON 파싱 메서드 수정
+  /// JSON에서 객체 생성
   factory BusArrival.fromJson(Map<String, dynamic> json) {
-    try {
-      // 기본 필드 추출 (키 이름이 다를 수 있음)
-      final routeId = json['routeId'] ?? json['id'] ?? '';
-      final routeNo = json['routeNo'] ?? json['name'] ?? '';
-      final destination = json['moveDir'] ?? json['forward'] ?? '';
-      final stationId = json['stationId'] ?? ''; // 필요 시 외부에서 주입
+    final List<dynamic> busList = json['busInfoList'] ?? [];
 
-      // 버스 목록 추출 (구조가 다를 수 있음)
-      List<BusInfo> buses = [];
-
-      // arrList가 있는 경우 (새로운 API 응답 형식)
-      if (json.containsKey('arrList') && json['arrList'] is List) {
-        buses = (json['arrList'] as List)
-            .map((bus) => BusInfo.fromJson(bus))
-            .toList();
-      }
-      // bus 키가 있는 경우 (이전 형식)
-      else if (json.containsKey('bus') && json['bus'] is List) {
-        buses =
-            (json['bus'] as List).map((bus) => BusInfo.fromJson(bus)).toList();
-      }
-
-      return BusArrival(
-        stationId: stationId,
-        routeId: routeId,
-        routeNo: routeNo,
-        destination: destination,
-        buses: buses,
-      );
-    } catch (e) {
-      // 파싱 오류 상세 로깅 (릴리스 모드에서는 출력하지 않음)
-      assert(() {
-        debugPrint('BusArrival.fromJson 파싱 오류: $e');
-        debugPrint('문제의 JSON: $json');
-        return true;
-      }());
-
-      // 빈 객체 반환하기보다 예외를 다시 던져서 호출자가 처리하도록 함
-      rethrow;
-    }
+    return BusArrival(
+      routeNo: json['routeNo'] ?? '',
+      routeId: json['routeId'] ?? '',
+      busInfoList: busList.map((info) => BusInfo.fromJson(info)).toList(),
+      direction: json['direction'] ?? '',
+    );
   }
-}
 
-// BusInfo 클래스
-class BusInfo {
-  final String busNumber;
-  final bool isLowFloor;
-  final String currentStation;
-  final String remainingStops;
-  final String estimatedTime; // arrivalTime 대신 estimatedTime 사용
-  final bool isOutOfService;
+  /// JSON으로 변환
+  Map<String, dynamic> toJson() {
+    return {
+      'routeNo': routeNo,
+      'routeId': routeId,
+      'busInfoList': busInfoList.map((info) => info.toJson()).toList(),
+      'direction': direction,
+    };
+  }
 
-  BusInfo({
-    required this.busNumber,
-    required this.isLowFloor,
-    required this.currentStation,
-    required this.remainingStops,
-    required this.estimatedTime, // arrivalTime 대신 estimatedTime 사용
-    this.isOutOfService = false,
-  });
+  /// 가장 빨리 도착하는 버스 정보
+  BusInfo? get firstBus => busInfoList.isNotEmpty ? busInfoList[0] : null;
 
-  // JSON 파싱 메서드 수정
-  factory BusInfo.fromJson(Map<String, dynamic> json) {
-    try {
-      // 버스 번호 - 여러 가능한 키 확인
-      final busNumber =
-          json['vhcNo2'] ?? json['busNumber'] ?? json['버스번호'] ?? '';
+  /// 두 번째로 빨리 도착하는 버스 정보
+  BusInfo? get secondBus => busInfoList.length > 1 ? busInfoList[1] : null;
 
-      // 저상버스 여부
-      bool isLowFloor = false;
-      if (json.containsKey('busTCd2')) {
-        isLowFloor = json['busTCd2'] == 'N';
-      } else if (json.containsKey('isLowFloor')) {
-        isLowFloor = json['isLowFloor'] == true;
-      } else if (busNumber.contains('저상')) {
-        isLowFloor = true;
-      }
+  /// 버스가 있는지 확인
+  bool get hasArrival => busInfoList.isNotEmpty;
 
-      // 현재 정류소
-      final currentStation =
-          json['bsNm'] ?? json['currentStation'] ?? json['현재정류소'] ?? '';
+  /// 저상 버스가 있는지 확인
+  bool get hasLowFloorBus => busInfoList.any((bus) => bus.isLowFloor);
 
-      // 남은 정류소 수
-      String remainingStops = '';
-      if (json.containsKey('bsGap')) {
-        remainingStops = json['bsGap'].toString();
-      } else if (json.containsKey('remainingStops')) {
-        remainingStops = json['remainingStops'];
-      } else if (json.containsKey('remainingStations')) {
-        remainingStops = json['remainingStations'];
-      } else if (json.containsKey('남은정류소')) {
-        remainingStops = json['남은정류소'];
-      }
+  /// 도착 정보에서 버스가 도착 예정인지 확인
+  bool get hasArrivalInfo => busInfoList
+      .any((bus) => !bus.isOutOfService && bus.getRemainingMinutes() > 0);
 
-      // 도착 예정 시간 - estimatedTime으로 통일
-      String estimatedTime = '';
-      if (json.containsKey('arrState')) {
-        estimatedTime = json['arrState'] ?? '';
-      } else if (json.containsKey('arrivalTime')) {
-        estimatedTime = json['arrivalTime'];
-      } else if (json.containsKey('estimatedTime')) {
-        estimatedTime = json['estimatedTime'];
-      } else if (json.containsKey('도착예정소요시간')) {
-        estimatedTime = json['도착예정소요시간'];
-      }
+  /// 첫 번째 버스의 도착 시간 (분)
+  int getFirstArrivalMinutes() {
+    return firstBus?.getRemainingMinutes() ?? 0;
+  }
 
-      // 운행종료 여부
-      bool isOutOfService = false;
-      if (estimatedTime == '운행종료') {
-        isOutOfService = true;
-      } else if (json.containsKey('isOutOfService')) {
-        isOutOfService = json['isOutOfService'] == true;
-      }
+  /// 첫 번째 버스의 도착 시간 문자열
+  String getFirstArrivalTimeText() {
+    final first = firstBus;
+    if (first == null) {
+      return '도착 정보 없음';
+    }
 
-      return BusInfo(
-        busNumber: busNumber,
-        isLowFloor: isLowFloor,
-        currentStation: currentStation,
-        remainingStops: remainingStops,
-        estimatedTime: estimatedTime, // arrivalTime 대신 estimatedTime 사용
-        isOutOfService: isOutOfService,
-      );
-    } catch (e) {
-      // 파싱 오류 상세 로깅 (릴리스 모드에서는 출력하지 않음)
-      assert(() {
-        debugPrint('BusInfo.fromJson 파싱 오류: $e');
-        debugPrint('문제의 JSON: $json');
-        return true;
-      }());
-      rethrow;
+    if (first.isOutOfService) {
+      return '운행종료';
+    }
+
+    final minutes = first.getRemainingMinutes();
+    if (minutes <= 0) {
+      return '곧 도착';
+    } else {
+      return '$minutes분 후';
     }
   }
 
-  // 호환성을 위한 getter 추가
-  String get arrivalTime => estimatedTime;
-
-  int getRemainingMinutes() {
-    if (isOutOfService) return 0;
-
-    // estimatedTime에서 숫자만 추출
-    final regex = RegExp(r'(\d+)');
-    final match = regex.firstMatch(estimatedTime);
-
-    if (match != null) {
-      final minutes = int.tryParse(match.group(1) ?? '0') ?? 0;
-      return minutes;
-    } else if (estimatedTime.contains('곧') || estimatedTime.contains('잠시후')) {
-      // '곧 도착' 또는 '잠시후' 같은 텍스트인 경우
-      return 0;
-    } else if (estimatedTime.contains('출발')) {
-      // '출발' 텍스트가 있는 경우 (예: '출발 대기중')
-      try {
-        return int.tryParse(remainingStops) ?? 5;
-      } catch (_) {
-        return 5; // 기본값
-      }
+  /// 두 번째 버스의 도착 시간 문자열
+  String getSecondArrivalTimeText() {
+    final second = secondBus;
+    if (second == null) {
+      return '';
     }
 
-    // 도착 시간 정보가 없거나 해석할 수 없는 경우
-    return 0;
+    if (second.isOutOfService) {
+      return '운행종료';
+    }
+
+    final minutes = second.getRemainingMinutes();
+    if (minutes <= 0) {
+      return '곧 도착';
+    } else {
+      return '$minutes분 후';
+    }
+  }
+
+  /// 요약 정보 텍스트 (예: 금방 도착 / 3분, 15분 후)
+  String getSummaryText() {
+    if (!hasArrival) {
+      return '도착 예정 버스 없음';
+    }
+
+    final first = getFirstArrivalTimeText();
+    final second = getSecondArrivalTimeText();
+
+    if (second.isEmpty) {
+      return first;
+    } else {
+      return '$first, $second';
+    }
+  }
+
+  /// 복사본 생성 with 일부 필드 변경
+  BusArrival copyWith({
+    String? routeNo,
+    String? routeId,
+    List<BusInfo>? busInfoList,
+    String? direction,
+  }) {
+    return BusArrival(
+      routeNo: routeNo ?? this.routeNo,
+      routeId: routeId ?? this.routeId,
+      busInfoList: busInfoList ?? this.busInfoList,
+      direction: direction ?? this.direction,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'BusArrival{routeNo: $routeNo, direction: $direction, buses: ${busInfoList.length}}';
   }
 }

@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
+import '../models/bus_info.dart';
 import '../services/alarm_service.dart';
+import '../services/api_service.dart';
 
 class CompactBusCard extends StatefulWidget {
   final BusArrival busArrival;
@@ -24,12 +27,82 @@ class CompactBusCard extends StatefulWidget {
 class _CompactBusCardState extends State<CompactBusCard> {
   bool _cacheUpdated = false;
   final int defaultPreNotificationMinutes = 3; // 기본 알람 시간 (분)
+  Timer? _updateTimer;
+  bool _isUpdating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.busArrival.busInfoList.isNotEmpty) {
+      // 30초마다 주기적으로 버스 정보 업데이트
+      _updateTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+        if (mounted) {
+          _updateBusArrivalInfo();
+        } else {
+          timer.cancel();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _updateTimer?.cancel();
+    logMessage('컴팩트 버스 카드 타이머 취소', level: LogLevel.debug);
+    super.dispose();
+  }
+
+  Future<void> _updateBusArrivalInfo() async {
+    if (_isUpdating) return;
+    setState(() => _isUpdating = true);
+
+    try {
+      final updatedBusArrivals = await ApiService.getBusArrivalByRouteId(
+        widget.busArrival.routeId.split('_').last, // stationId 추출
+        widget.busArrival.routeId,
+      );
+
+      if (mounted &&
+          updatedBusArrivals.isNotEmpty &&
+          updatedBusArrivals[0].busInfoList.isNotEmpty) {
+        setState(() {
+          // 업데이트된 버스 정보로 위젯 새로 그리기
+          widget.busArrival.busInfoList.clear();
+          widget.busArrival.busInfoList
+              .addAll(updatedBusArrivals[0].busInfoList);
+          logMessage(
+              '컴팩트 버스 카드 정보 업데이트 성공: ${updatedBusArrivals[0].busInfoList.first.estimatedTime}',
+              level: LogLevel.debug);
+
+          // 알람 서비스 캐시 업데이트
+          if (widget.busArrival.busInfoList.isNotEmpty) {
+            final firstBus = widget.busArrival.busInfoList.first;
+            final alarmService =
+                Provider.of<AlarmService>(context, listen: false);
+            alarmService.updateBusInfoCache(
+              widget.busArrival.routeNo,
+              widget.busArrival.routeId,
+              firstBus,
+              firstBus.getRemainingMinutes(),
+            );
+            _cacheUpdated = true;
+          }
+        });
+      }
+    } catch (e) {
+      logMessage('컴팩트 버스 카드 정보 업데이트 오류: $e', level: LogLevel.error);
+    } finally {
+      if (mounted) {
+        setState(() => _isUpdating = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     // 첫 번째 버스 정보 추출
-    final firstBus = widget.busArrival.buses.isNotEmpty
-        ? widget.busArrival.buses.first
+    final firstBus = widget.busArrival.busInfoList.isNotEmpty
+        ? widget.busArrival.busInfoList.first
         : null;
 
     if (firstBus == null) {
@@ -310,7 +383,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
 
             // 승차 알람은 즉시 모니터링 시작
             await alarmService.startBusMonitoringService(
-              stationId: widget.busArrival.stationId,
+              stationId: '', // BusArrival에는 stationId가 없음 - 별도로 정류장 ID를 전달해야 함
               stationName: widget.stationName!,
               routeId: routeId,
               busNo: widget.busArrival.routeNo,

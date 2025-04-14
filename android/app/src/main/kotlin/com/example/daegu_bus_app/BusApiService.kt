@@ -718,7 +718,7 @@ class BusApiService(private val context: Context) {
                         busNumber = arrivalInfo.vhcNo2,
                         currentStation = arrivalInfo.bsNm ?: "정보 없음",
                         remainingStops = arrivalInfo.bsGap.toString(),
-                        estimatedTime = arrivalInfo.bsGap.toString(),
+                        estimatedTime = arrivalInfo.arrState ?: arrivalInfo.bsGap.toString(),
                         isLowFloor = arrivalInfo.busTCd2 == "1",
                         isOutOfService = arrivalInfo.busTCd3 == "1"
                     )
@@ -741,7 +741,7 @@ class BusApiService(private val context: Context) {
                             busNumber = arrivalInfo.vhcNo2,
                             currentStation = arrivalInfo.bsNm ?: "정보 없음",
                             remainingStops = arrivalInfo.bsGap.toString(),
-                            estimatedTime = arrivalInfo.bsGap.toString(),
+                            estimatedTime = arrivalInfo.arrState ?: arrivalInfo.bsGap.toString(),
                             isLowFloor = arrivalInfo.busTCd2 == "1",
                             isOutOfService = arrivalInfo.busTCd3 == "1"
                         )

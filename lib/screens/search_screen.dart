@@ -73,8 +73,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 'isFavorite': true,
                 'wincId': stop.wincId,
                 'routeList': stop.routeList,
-                'ngisXPos': stop.ngisXPos,
-                'ngisYPos': stop.ngisYPos,
+                'longitude': stop.longitude,
+                'latitude': stop.latitude,
               }))
           .toList();
       await prefs.setStringList('favorites', favorites);
@@ -151,14 +151,15 @@ class _SearchScreenState extends State<SearchScreen> {
             // 따라서 일반 정류장만 한 번에 20개까지만 변환 시도
             if (i < 20) {
               debugPrint('정류장 ID 변환 시도: ${station.name} (${station.id})');
-              final mappedStation = await ApiService.getStationById(station.id);
-              if (mappedStation != null && mappedStation.stationId != null) {
+              
+              // getStationIdFromBsId 메서드 사용
+              final String? convertedId = await ApiService.getStationIdFromBsId(station.id);
+              if (convertedId != null && convertedId.isNotEmpty) {
                 limitedResults[i] = station.copyWith(
-                  stationId: mappedStation.stationId,
+                  stationId: convertedId,
                   isFavorite: _isStopIdFavorite(station.id),
                 );
-                debugPrint(
-                    '정류장 ID 변환 성공: ${station.id} -> ${mappedStation.stationId}');
+                debugPrint('정류장 ID 변환 성공: ${station.id} -> $convertedId');
               }
             }
           } catch (e) {

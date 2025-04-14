@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'package:daegu_bus_app/screens/profile_screen.dart';
-import 'package:daegu_bus_app/screens/reoute_map_screen.dart';
+import 'package:daegu_bus_app/screens/route_map_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';

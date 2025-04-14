@@ -1,36 +1,44 @@
-import 'package:daegu_bus_app/services/backgroud_service.dart';
-import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'dart:developer' as dev;
 
 import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
 import 'services/permission_service.dart';
+import 'services/settings_service.dart';
+import 'services/backgroud_service.dart';
 import 'screens/home_screen.dart';
-import 'package:daegu_bus_app/services/settings_service.dart';
 import 'utils/database_helper.dart';
 import 'utils/dio_client.dart';
+import 'utils/simple_tts_helper.dart';
 
+/// 전역 알림 플러그인 인스턴스
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
-// 로그 레벨 정의 (utils/dio_client.dart의 LogLevel과 일치시킴)
-enum LogLevel { none, error, warning, info, debug, verbose }
+/// 로그 레벨 열거형
+enum LogLevel {
+  none, // 로깅 없음
+  error, // 오류만 로깅
+  warning, // 경고와 오류 로깅
+  info, // 정보, 경고, 오류 로깅
+  debug, // 디버그, 정보, 경고, 오류 로깅
+  verbose // 모든 로그 출력
+}
 
-// 현재 로그 레벨 설정
+/// 현재 로그 레벨 설정
 const LogLevel currentLogLevel = LogLevel.info;
 
-// Dio 클라이언트 인스턴스
+/// Dio 클라이언트 인스턴스
 final dioClient = DioClient();
 
-// 로깅 유틸리티 함수
+/// 로깅 유틸리티 함수
 void logMessage(String message, {LogLevel level = LogLevel.debug}) {
-  if (level.index >= currentLogLevel.index) {
+  if (level.index <= currentLogLevel.index) {
     // 개발 모드에서만 콘솔에 출력
     if (!const bool.fromEnvironment('dart.vm.product')) {
       String prefix;
@@ -57,124 +65,170 @@ void logMessage(String message, {LogLevel level = LogLevel.debug}) {
   }
 }
 
-// 기존 log 함수를 logMessage로 대체
+/// 기존 log 함수를 logMessage로 대체 (하위 호환성)
 void log(String message, {LogLevel level = LogLevel.debug}) =>
     logMessage(message, level: level);
 
+/// 애플리케이션 시작점
 Future<void> main() async {
+  // Flutter 엔진 초기화
   WidgetsFlutterBinding.ensureInitialized();
 
   // 앱 시작 로그
-  log('🚀 앱 초기화 시작: ${DateTime.now()}', level: LogLevel.info);
+  logMessage('🚀 앱 초기화 시작: ${DateTime.now()}', level: LogLevel.info);
 
-  // 데이터베이스 미리 초기화 시작 (백그라운드에서 실행)
-  DatabaseHelper.preInitialize();
-  log('💾 데이터베이스 초기화 시작됨 (백그라운드)', level: LogLevel.info);
+  // 서비스 초기화 상태 추적 변수
+  ServiceInitStatus initStatus = ServiceInitStatus();
 
   try {
-    await dotenv.load(fileName: '.env');
-    log('.env 파일 로드 성공', level: LogLevel.info);
+    // 1. 데이터베이스 미리 초기화 시작 (백그라운드에서 실행)
+    DatabaseHelper.preInitialize();
+    logMessage('💾 데이터베이스 초기화 시작됨 (백그라운드)', level: LogLevel.info);
+
+    // 2. 환경 변수 로드
+    await _loadEnvironmentVariables();
+
+    // 3. 필수 서비스 초기화
+    await _initializeServices(initStatus);
+
+    // 4. 자동 알람 초기화 (성공적으로 초기화된 서비스가 있을 경우)
+    if (initStatus.workManagerInitialized) {
+      _setupAutoAlarms();
+    } else {
+      logMessage('⚠️ WorkManager 초기화 실패로 자동 알람 등록 건너뜀',
+          level: LogLevel.warning);
+    }
+
+    // 5. 권한 요청 진행 (비동기로 처리)
+    _requestPermissions();
+
+    // 6. 초기화 상태 요약 로그
+    _logInitializationSummary(initStatus);
+
+    // 7. 알람 서비스 초기화
+    final alarmService = await _initializeAlarmService();
+
+    // 8. UI 시작
+    _startAppUI(alarmService);
   } catch (e) {
-    log('.env 파일 로드 실패 (무시하고 계속): $e', level: LogLevel.warning);
+    logMessage('❌ 앱 초기화 중 심각한 오류 발생: $e', level: LogLevel.error);
+
+    // 최소한의 서비스로 앱 실행 (완전한 초기화 실패 시)
+    _startAppUI(AlarmService());
   }
+}
 
-  // 필수 서비스 초기화 - 단계별로 분리하고 각각 오류 처리
-  bool settingsInitialized = false;
-  bool notificationInitialized = false;
-  bool ttsInitialized = false;
-  bool alarmManagerInitialized = false;
-  bool workManagerInitialized = false;
+/// 환경 변수 로드
+Future<void> _loadEnvironmentVariables() async {
+  try {
+    await dotenv.load(fileName: '.env');
+    logMessage('.env 파일 로드 성공', level: LogLevel.info);
+  } catch (e) {
+    logMessage('.env 파일 로드 실패 (무시하고 계속): $e', level: LogLevel.warning);
+  }
+}
 
+/// 필수 서비스 초기화
+Future<void> _initializeServices(ServiceInitStatus status) async {
   // 1. 설정 서비스 초기화
   try {
     await SettingsService().initialize();
-    settingsInitialized = true;
-    log('✅ SettingsService 초기화 성공', level: LogLevel.info);
+    status.settingsInitialized = true;
+    logMessage('✅ SettingsService 초기화 성공', level: LogLevel.info);
   } catch (e) {
-    log('⚠️ SettingsService 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    logMessage('⚠️ SettingsService 초기화 오류 (계속 진행): $e', level: LogLevel.error);
   }
 
   // 2. 알림 서비스 초기화
   try {
     await NotificationService().initialize();
-    notificationInitialized = true;
-    log('✅ NotificationService 초기화 성공', level: LogLevel.info);
+    status.notificationInitialized = true;
+    logMessage('✅ NotificationService 초기화 성공', level: LogLevel.info);
   } catch (e) {
-    log('⚠️ NotificationService 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    logMessage('⚠️ NotificationService 초기화 오류 (계속 진행): $e',
+        level: LogLevel.error);
   }
 
   // 3. TTS 초기화
   try {
     await SimpleTTSHelper.initialize();
-    ttsInitialized = true;
-    log('✅ TTS 초기화 성공', level: LogLevel.info);
+    status.ttsInitialized = true;
+    logMessage('✅ TTS 초기화 성공', level: LogLevel.info);
   } catch (e) {
-    log('⚠️ TTS 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    logMessage('⚠️ TTS 초기화 오류 (계속 진행): $e', level: LogLevel.error);
   }
 
   // 4. AndroidAlarmManager 초기화
   try {
     await AndroidAlarmManager.initialize();
-    alarmManagerInitialized = true;
-    log('✅ AndroidAlarmManager 초기화 성공', level: LogLevel.info);
+    status.alarmManagerInitialized = true;
+    logMessage('✅ AndroidAlarmManager 초기화 성공', level: LogLevel.info);
   } catch (e) {
-    log('⚠️ AndroidAlarmManager 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    logMessage('⚠️ AndroidAlarmManager 초기화 오류 (계속 진행): $e',
+        level: LogLevel.error);
   }
 
-  // 5. WorkManager 초기화 - 오류 처리 개선
+  // 5. WorkManager 초기화
   try {
     await Workmanager().initialize(
       callbackDispatcher,
       isInDebugMode: true,
     );
-    workManagerInitialized = true;
-    log('✅ Workmanager 초기화 완료', level: LogLevel.info);
+    status.workManagerInitialized = true;
+    logMessage('✅ Workmanager 초기화 완료', level: LogLevel.info);
   } catch (e) {
-    log('⚠️ Workmanager 초기화 오류 (계속 진행): $e', level: LogLevel.error);
+    logMessage('⚠️ Workmanager 초기화 오류 (계속 진행): $e', level: LogLevel.error);
   }
+}
 
-  // 자동 알람 등록 작업은 앱 시작 후에 비동기적으로 처리
-  if (workManagerInitialized) {
-    // 앱이 완전히 시작된 후 자동 알람 등록 시도 (30초 지연)
-    Future.delayed(const Duration(seconds: 30), () async {
-      try {
-        log('🕒 자동 알람 초기화 작업 시작 (지연 실행)', level: LogLevel.info);
-        await Workmanager().registerOneOffTask(
-          'init_auto_alarms',
-          'initAutoAlarms',
-          initialDelay: const Duration(seconds: 15),
-          constraints: Constraints(
-            networkType: NetworkType.connected,
-            requiresBatteryNotLow: false,
-          ),
-        );
-        log('✅ 자동 알람 초기화 작업 등록 완료', level: LogLevel.info);
-      } catch (e) {
-        log('⚠️ 자동 알람 작업 등록 오류 (무시): $e', level: LogLevel.error);
-      }
-    });
-  } else {
-    log('⚠️ WorkManager 초기화 실패로 자동 알람 등록 건너뜀', level: LogLevel.warning);
-  }
+/// 자동 알람 설정
+void _setupAutoAlarms() {
+  // 앱이 완전히 시작된 후 자동 알람 등록 시도 (30초 지연)
+  Future.delayed(const Duration(seconds: 30), () async {
+    try {
+      logMessage('🕒 자동 알람 초기화 작업 시작 (지연 실행)', level: LogLevel.info);
+      await Workmanager().registerOneOffTask(
+        'init_auto_alarms',
+        'initAutoAlarms',
+        initialDelay: const Duration(seconds: 15),
+        constraints: Constraints(
+          networkType: NetworkType.connected,
+          requiresBatteryNotLow: false,
+        ),
+      );
+      logMessage('✅ 자동 알람 초기화 작업 등록 완료', level: LogLevel.info);
+    } catch (e) {
+      logMessage('⚠️ 자동 알람 작업 등록 오류 (무시): $e', level: LogLevel.error);
+    }
+  });
+}
 
-  // 안드로이드 전용 앱이므로 권한 요청 진행 (비동기로 처리)
+/// 필요한 권한 요청
+void _requestPermissions() {
   PermissionService.requestNotificationPermission()
-      .then((_) => log('✅ 알림 권한 요청 완료', level: LogLevel.info))
-      .catchError((e) => log('⚠️ 알림 권한 요청 오류: $e', level: LogLevel.warning));
+      .then((_) => logMessage('✅ 알림 권한 요청 완료', level: LogLevel.info))
+      .catchError(
+          (e) => logMessage('⚠️ 알림 권한 요청 오류: $e', level: LogLevel.warning));
+}
 
-  // 초기화 상태 요약 로그
-  log('📊 서비스 초기화 상태 요약:', level: LogLevel.info);
-  log('   - 설정 서비스: ${settingsInitialized ? '✅' : '❌'}', level: LogLevel.info);
-  log('   - 알림 서비스: ${notificationInitialized ? '✅' : '❌'}',
+/// 초기화 상태 로그 출력
+void _logInitializationSummary(ServiceInitStatus status) {
+  logMessage('📊 서비스 초기화 상태 요약:', level: LogLevel.info);
+  logMessage('   - 설정 서비스: ${status.settingsInitialized ? '✅' : '❌'}',
       level: LogLevel.info);
-  log('   - TTS: ${ttsInitialized ? '✅' : '❌'}', level: LogLevel.info);
-  log('   - AlarmManager: ${alarmManagerInitialized ? '✅' : '❌'}',
+  logMessage('   - 알림 서비스: ${status.notificationInitialized ? '✅' : '❌'}',
       level: LogLevel.info);
-  log('   - WorkManager: ${workManagerInitialized ? '✅' : '❌'}',
+  logMessage('   - TTS: ${status.ttsInitialized ? '✅' : '❌'}',
       level: LogLevel.info);
+  logMessage('   - AlarmManager: ${status.alarmManagerInitialized ? '✅' : '❌'}',
+      level: LogLevel.info);
+  logMessage('   - WorkManager: ${status.workManagerInitialized ? '✅' : '❌'}',
+      level: LogLevel.info);
+  logMessage('🚀 앱 UI 시작: ${DateTime.now()}', level: LogLevel.info);
+}
 
-  log('🚀 앱 UI 시작: ${DateTime.now()}', level: LogLevel.info);
-
+/// 알람 서비스 초기화
+Future<AlarmService> _initializeAlarmService() async {
   final alarmService = AlarmService();
   try {
     await alarmService.initialize();
@@ -182,7 +236,11 @@ Future<void> main() async {
   } catch (e) {
     logMessage('❌ AlarmService 초기화 실패: $e', level: LogLevel.error);
   }
+  return alarmService;
+}
 
+/// 앱 UI 시작
+void _startAppUI(AlarmService alarmService) {
   runApp(
     MultiProvider(
       providers: [
@@ -194,6 +252,16 @@ Future<void> main() async {
   );
 }
 
+/// 서비스 초기화 상태 관리 클래스
+class ServiceInitStatus {
+  bool settingsInitialized = false;
+  bool notificationInitialized = false;
+  bool ttsInitialized = false;
+  bool alarmManagerInitialized = false;
+  bool workManagerInitialized = false;
+}
+
+/// 앱 메인 위젯
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
@@ -206,13 +274,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    log('앱 생명주기 옵저버 등록됨', level: LogLevel.info);
+    logMessage('앱 생명주기 옵저버 등록됨', level: LogLevel.info);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    log('앱 생명주기 옵저버 해제됨', level: LogLevel.info);
+    logMessage('앱 생명주기 옵저버 해제됨', level: LogLevel.info);
     super.dispose();
   }
 
@@ -220,19 +288,20 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      log('포그라운드 전환됨 → TTS 재초기화', level: LogLevel.info);
+      logMessage('포그라운드 전환됨 → TTS 재초기화', level: LogLevel.info);
       SimpleTTSHelper.initialize()
           .then(
-            (_) => log('TTS 재초기화 완료', level: LogLevel.info),
+            (_) => logMessage('TTS 재초기화 완료', level: LogLevel.info),
           )
           .catchError(
-            (error) => log('TTS 재초기화 실패: $error', level: LogLevel.error),
+            (error) => logMessage('TTS 재초기화 실패: $error', level: LogLevel.error),
           );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // 에러 위젯 커스터마이징
     ErrorWidget.builder = (FlutterErrorDetails details) {
       return Container(
         padding: const EdgeInsets.all(16),

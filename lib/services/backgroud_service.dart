@@ -348,8 +348,7 @@ Future<void> _speakBusInfo(
   final mins =
       int.tryParse(remainingTime.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
   final remainingStops =
-      int.tryParse(bus.remainingStations.replaceAll(RegExp(r'[^0-9]'), '')) ??
-          0;
+      int.tryParse(bus.remainingStops.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
 
   await SimpleTTSHelper.speakBusAlert(
     busNo: busNo,

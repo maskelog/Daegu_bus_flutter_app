@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/bus_arrival.dart';
+import '../models/bus_info.dart';
 
 class BusApiService {
   static const MethodChannel _channel =
@@ -119,7 +120,7 @@ class BusApiService {
 
   // BusArrivalInfo를 BusArrival로 변환하는 헬퍼 메소드
   BusArrival convertToBusArrival(BusArrivalInfo info, String stationId) {
-    List<BusInfo> buses = info.bus.map((busInfo) {
+    List<BusInfo> busInfoList = info.bus.map((busInfo) {
       // 버스 번호에서 저상버스 정보 추출
       bool isLowFloor = busInfo.busNumber.contains('저상');
       String busNumber =
@@ -127,14 +128,9 @@ class BusApiService {
 
       // 남은 정류소에서 숫자만 추출
       String remainingStations = busInfo.remainingStations;
-      int remainingStops = int.tryParse(
-            remainingStations.replaceAll(RegExp(r'[^0-9]'), ''),
-          ) ??
-          0;
-
+      
       // 도착 예정 시간 처리
       String estimatedTime = busInfo.estimatedTime;
-      String arrivalTime = estimatedTime;
 
       // 운행 종료 여부 확인
       bool isOutOfService = estimatedTime == '운행종료';
@@ -143,18 +139,17 @@ class BusApiService {
         busNumber: busNumber,
         isLowFloor: isLowFloor,
         currentStation: busInfo.currentStation,
-        remainingStops: remainingStops.toString(),
-        estimatedTime: arrivalTime,
+        remainingStops: remainingStations,
+        estimatedTime: estimatedTime,
         isOutOfService: isOutOfService,
       );
     }).toList();
 
     return BusArrival(
-      stationId: stationId,
       routeId: info.id,
       routeNo: info.name,
-      destination: info.forward,
-      buses: buses,
+      direction: info.forward,
+      busInfoList: busInfoList,
     );
   }
 }

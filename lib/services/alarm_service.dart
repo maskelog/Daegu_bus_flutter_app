@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart' as xml;
-import '../models/bus_arrival.dart' as bus_arrival;
 import '../models/auto_alarm.dart';
 import '../models/alarm_data.dart' as alarm_model;
 import '../utils/simple_tts_helper.dart';
@@ -34,7 +33,7 @@ class CachedBusInfo {
   DateTime get lastUpdated => _lastUpdated;
 
   factory CachedBusInfo.fromBusInfo({
-    required bus_arrival.BusInfo busInfo,
+    required dynamic busInfo,
     required String busNumber,
     required String routeId,
   }) {
@@ -436,7 +435,7 @@ class AlarmService extends ChangeNotifier {
   void updateBusInfoCache(
     String busNo,
     String routeId,
-    bus_arrival.BusInfo busInfo,
+    dynamic busInfo,
     int remainingMinutes,
   ) {
     final cachedInfo = CachedBusInfo.fromBusInfo(

@@ -130,8 +130,13 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       // 이미 캐시에 있는 경우 스킵
       if (_routeStationsCache.containsKey(route.id)) continue;
 
-      ApiService.getRouteStations(route.id).then((stations) {
-        if (mounted && stations.isNotEmpty) {
+      ApiService.getRouteStations(route.id).then((stationsData) {
+        if (mounted && stationsData.isNotEmpty) {
+          // 데이터를 RouteStation 객체로 변환
+          final List<RouteStation> stations = stationsData
+              .map((station) => RouteStation.fromJson(station))
+              .toList();
+
           // 순서대로 정렬
           stations.sort((a, b) => a.sequenceNo.compareTo(b.sequenceNo));
 
@@ -168,7 +173,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
         return;
       }
 
-      final stations = await ApiService.getRouteStations(route.id);
+      final dynamic stationsData = await ApiService.getRouteStations(route.id);
+      final List<RouteStation> stations = (stationsData as List)
+          .map((station) => RouteStation.fromJson(station))
+          .toList();
       if (mounted) {
         stations.sort((a, b) => a.sequenceNo.compareTo(b.sequenceNo));
         setState(() {
@@ -176,8 +184,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           _routeStationsCache[route.id] = stations; // 캐시에 저장
           _isLoading = false;
           debugPrint('노선 ${route.routeNo} 정류장 수: ${stations.length}');
-          debugPrint('기점: ${stations.isNotEmpty ? stations.first.bsNm : '없음'}');
-          debugPrint('종점: ${stations.isNotEmpty ? stations.last.bsNm : '없음'}');
+          debugPrint(
+              '기점: ${stations.isNotEmpty ? stations.first.stationName : '없음'}');
+          debugPrint(
+              '종점: ${stations.isNotEmpty ? stations.last.stationName : '없음'}');
         });
       }
     } catch (e) {
@@ -196,11 +206,12 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   // 정류장 클릭 시 모든 도착 정보 가져오기
   Future<void> _showStationArrival(RouteStation station) async {
     try {
-      final arrivals = await ApiService.getStationInfo(station.bsId);
+      final arrivals = await ApiService.getStationInfo(station.stationId);
       if (mounted) {
         setState(() {
           _selectedStationArrivals = arrivals; // 모든 도착 정보 저장
-          debugPrint('정류장 ${station.bsNm} 도착 정보: ${arrivals.length}개 노선');
+          debugPrint(
+              '정류장 ${station.stationName} 도착 정보: ${arrivals.length}개 노선');
         });
       }
     } catch (e) {
@@ -219,16 +230,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     if (_routeStationsCache.containsKey(route.id) &&
         _routeStationsCache[route.id]!.isNotEmpty) {
       final stations = _routeStationsCache[route.id]!;
-      return '${stations.first.bsNm} → ${stations.last.bsNm}';
+      return '${stations.first.stationName} → ${stations.last.stationName}';
     }
 
     // 선택된 노선이고 정류장 정보가 있는 경우
     if (_selectedRoute?.id == route.id && _routeStations.isNotEmpty) {
-      return '${_routeStations.first.bsNm} → ${_routeStations.last.bsNm}';
+      return '${_routeStations.first.stationName} → ${_routeStations.last.stationName}';
     }
 
     // API에서 받아온 시작점/종점 정보가 있는 경우 (낙후된 방법)
-    if (route.startPoint != null && route.endPoint != null) {
+    if (route.startPoint.isNotEmpty && route.endPoint.isNotEmpty) {
       return '${route.startPoint} → ${route.endPoint}';
     }
 
@@ -293,18 +304,20 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                         itemBuilder: (context, index) {
                           final arrival = _selectedStationArrivals[index];
                           final matchingStation = _routeStations.firstWhere(
-                            (s) => s.bsId == arrival.stationId,
+                            (s) =>
+                                s.stationId ==
+                                arrival.routeId, // 노선 ID로 비교하는 것이 맞는지 확인 필요
                             orElse: () => RouteStation(
-                                bsId: '',
-                                bsNm: '알 수 없음',
+                                stationId: '',
+                                stationName: '알 수 없음',
                                 sequenceNo: 0,
-                                lat: 0.0,
-                                lng: 0.0),
+                                latitude: 0.0,
+                                longitude: 0.0),
                           );
                           return CompactBusCard(
                             busArrival: arrival,
                             onTap: () {},
-                            stationName: matchingStation.bsNm,
+                            stationName: matchingStation.stationName,
                           );
                         },
                       ),
@@ -493,7 +506,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                   children: [
                     Text(
                       _routeStations.isNotEmpty
-                          ? '${_routeStations.first.bsNm} → ${_routeStations.last.bsNm}'
+                          ? '${_routeStations.first.stationName} → ${_routeStations.last.stationName}'
                           : '기점/종점 정보 없음',
                       style: const TextStyle(fontWeight: FontWeight.w500),
                       maxLines: 1,
@@ -579,7 +592,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
-                                        station.bsId,
+                                        station.stationId,
                                         style: TextStyle(
                                             fontSize: 10,
                                             color: Colors.grey[700]),
@@ -624,7 +637,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  station.bsNm,
+                                  station.stationName,
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: isStart || isEnd

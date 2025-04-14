@@ -2,10 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:daegu_bus_app/models/bus_arrival.dart';
+import 'package:daegu_bus_app/models/bus_info.dart';
 import 'package:daegu_bus_app/services/alarm_service.dart';
 import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:daegu_bus_app/services/api_service.dart';
-import 'package:daegu_bus_app/utils/tts_switcher.dart' as tts;
+import 'package:daegu_bus_app/utils/tts_switcher.dart' show TtsSwitcher;
 import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 
 class BusCard extends StatefulWidget {
@@ -38,8 +39,8 @@ void safeStartNativeTtsTracking({
     logMessage("❌ TTS 추적 호출 생략 - 인자 누락", level: LogLevel.warning);
     return;
   }
-  // TTSSwitcher 사용 - 가장 안전한 방법으로 TTS 발화
-  tts.TTSSwitcher.startTtsTracking(
+  // TtsSwitcher 사용 - 가장 안전한 방법으로 TTS 발화
+  TtsSwitcher.startTtsTracking(
     routeId: routeId,
     stationId: stationId,
     busNo: busNo,
@@ -55,19 +56,23 @@ class _BusCardState extends State<BusCard> {
   late BusInfo firstBus;
   late int remainingTime;
   final NotificationService _notificationService = NotificationService();
-  dynamic _timer;
-  dynamic _updateTimer;
+  Timer? _timer;
+  Timer? _updateTimer;
 
   @override
   void initState() {
     super.initState();
-    if (widget.busArrival.buses.isNotEmpty) {
-      firstBus = widget.busArrival.buses.first;
+    if (widget.busArrival.busInfoList.isNotEmpty) {
+      firstBus = widget.busArrival.busInfoList.first;
       remainingTime = _calculateRemainingTime();
       _updateAlarmServiceCache();
-      _updateTimer = Future.delayed(const Duration(seconds: 30), () {
-        if (mounted && _shouldUpdate()) {
+
+      // 30초마다 주기적으로 버스 정보 업데이트
+      _updateTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+        if (mounted) {
           _updateBusArrivalInfo();
+        } else {
+          timer.cancel();
         }
       });
     }
@@ -76,19 +81,11 @@ class _BusCardState extends State<BusCard> {
   @override
   void didUpdateWidget(BusCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.busArrival.buses.isNotEmpty) {
-      firstBus = widget.busArrival.buses.first;
+    if (widget.busArrival.busInfoList.isNotEmpty) {
+      firstBus = widget.busArrival.busInfoList.first;
       remainingTime =
           firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
     }
-  }
-
-  bool _shouldUpdate() {
-    // 중요 시간대이거나 마지막 업데이트로부터 일정 시간이 지났을 때만 업데이트
-    return remainingTime <= 10 ||
-        remainingTime <= 5 ||
-        remainingTime <= 3 ||
-        remainingTime <= 1;
   }
 
   Future<void> _updateBusArrivalInfo() async {
@@ -96,16 +93,17 @@ class _BusCardState extends State<BusCard> {
     setState(() => _isUpdating = true);
 
     try {
-      final updatedBusArrival = await ApiService.getBusArrivalByRouteId(
+      final updatedBusArrivals = await ApiService.getBusArrivalByRouteId(
         widget.stationId,
         widget.busArrival.routeId,
       );
 
       if (mounted &&
-          updatedBusArrival != null &&
-          updatedBusArrival.buses.isNotEmpty) {
+          updatedBusArrivals.isNotEmpty &&
+          updatedBusArrivals[0].busInfoList.isNotEmpty) {
+        final updatedBusArrival = updatedBusArrivals[0];
         setState(() {
-          firstBus = updatedBusArrival.buses.first;
+          firstBus = updatedBusArrival.busInfoList.first;
           remainingTime =
               firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
           logMessage('BusCard - 업데이트된 남은 시간: $remainingTime',
@@ -129,8 +127,8 @@ class _BusCardState extends State<BusCard> {
 
           if (!hasBoarded &&
               remainingTime <= 0 &&
-              updatedBusArrival.buses.length > 1) {
-            BusInfo nextBus = updatedBusArrival.buses[1];
+              updatedBusArrival.busInfoList.length > 1) {
+            BusInfo nextBus = updatedBusArrival.busInfoList[1];
             int nextRemainingTime = nextBus.getRemainingMinutes();
             _setNextBusAlarm(nextRemainingTime, nextBus.currentStation);
           }
@@ -198,6 +196,7 @@ class _BusCardState extends State<BusCard> {
     _timer?.cancel();
     _updateTimer?.cancel();
     super.dispose();
+    logMessage('타이머 취소 및 리소스 해제', level: LogLevel.debug);
   }
 
   void _playAlarm() {
@@ -288,7 +287,7 @@ class _BusCardState extends State<BusCard> {
       );
 
       // TTS 알림 즉시 시작
-      await tts.TTSSwitcher.startTtsTracking(
+      await TtsSwitcher.startTtsTracking(
           routeId: routeId,
           stationId: widget.stationId,
           busNo: widget.busArrival.routeNo,
@@ -296,14 +295,15 @@ class _BusCardState extends State<BusCard> {
           remainingMinutes: remainingTime,
           getRemainingTimeCallback: () async {
             try {
-              final updatedBusArrival = await ApiService.getBusArrivalByRouteId(
+              final updatedBusArrivals =
+                  await ApiService.getBusArrivalByRouteId(
                 widget.stationId,
                 routeId,
               );
 
-              if (updatedBusArrival != null &&
-                  updatedBusArrival.buses.isNotEmpty) {
-                final latestBus = updatedBusArrival.buses.first;
+              if (updatedBusArrivals.isNotEmpty &&
+                  updatedBusArrivals[0].busInfoList.isNotEmpty) {
+                final latestBus = updatedBusArrivals[0].busInfoList.first;
                 return latestBus.getRemainingMinutes();
               }
             } catch (e) {
@@ -346,7 +346,7 @@ class _BusCardState extends State<BusCard> {
         if (success && mounted) {
           // 알림 취소
           await _notificationService.cancelOngoingTracking();
-          await tts.TTSSwitcher.stopTtsTracking(widget.busArrival.routeNo);
+          await TtsSwitcher.stopTtsTracking(widget.busArrival.routeNo);
 
           // 알람 상태 갱신
           await alarmService.refreshAlarms();
@@ -449,7 +449,7 @@ class _BusCardState extends State<BusCard> {
             );
 
             // TTS 추적 시작
-            await tts.TTSSwitcher.startTtsTracking(
+            await TtsSwitcher.startTtsTracking(
               routeId: routeId,
               stationId: widget.stationId,
               busNo: widget.busArrival.routeNo,
@@ -457,15 +457,15 @@ class _BusCardState extends State<BusCard> {
               remainingMinutes: remainingTime,
               getRemainingTimeCallback: () async {
                 try {
-                  final updatedBusArrival =
+                  final updatedBusArrivals =
                       await ApiService.getBusArrivalByRouteId(
                     widget.stationId,
                     routeId,
                   );
 
-                  if (updatedBusArrival != null &&
-                      updatedBusArrival.buses.isNotEmpty) {
-                    final latestBus = updatedBusArrival.buses.first;
+                  if (updatedBusArrivals.isNotEmpty &&
+                      updatedBusArrivals[0].busInfoList.isNotEmpty) {
+                    final latestBus = updatedBusArrivals[0].busInfoList.first;
                     return latestBus.getRemainingMinutes();
                   }
                 } catch (e) {
@@ -517,7 +517,7 @@ class _BusCardState extends State<BusCard> {
         if (success && mounted) {
           // TTSHelper.speakAlarmCancel 제거
           await _notificationService.cancelOngoingTracking();
-          await tts.TTSSwitcher.stopTtsTracking(
+          await TtsSwitcher.stopTtsTracking(
               widget.busArrival.routeNo); // TTS 추적 중단
           alarmService.refreshAlarms();
         }
@@ -544,7 +544,7 @@ class _BusCardState extends State<BusCard> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.busArrival.buses.isEmpty) {
+    if (widget.busArrival.busInfoList.isEmpty) {
       return Card(
         margin: const EdgeInsets.only(bottom: 16),
         child: Padding(
@@ -564,7 +564,7 @@ class _BusCardState extends State<BusCard> {
       );
     }
 
-    firstBus = widget.busArrival.buses.first;
+    firstBus = widget.busArrival.busInfoList.first;
     remainingTime =
         firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
     final String currentStationText = firstBus.currentStation.trim().isNotEmpty
@@ -721,7 +721,7 @@ class _BusCardState extends State<BusCard> {
                       ],
                     ),
                     // 다음 버스 정보 표시 (있을 경우)
-                    if (widget.busArrival.buses.length > 1)
+                    if (widget.busArrival.busInfoList.length > 1)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -730,9 +730,9 @@ class _BusCardState extends State<BusCard> {
                             style: TextStyle(fontSize: 14, color: Colors.grey),
                           ),
                           Text(
-                            widget.busArrival.buses[1].isOutOfService
+                            widget.busArrival.busInfoList[1].isOutOfService
                                 ? '운행종료'
-                                : '${widget.busArrival.buses[1].getRemainingMinutes()}분',
+                                : '${widget.busArrival.busInfoList[1].getRemainingMinutes()}분',
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
@@ -793,7 +793,7 @@ class _BusCardState extends State<BusCard> {
                   ),
 
                 // 추가: 다음 버스 리스트 (2번째 버스부터)
-                if (widget.busArrival.buses.length > 1) ...[
+                if (widget.busArrival.busInfoList.length > 1) ...[
                   const SizedBox(height: 24),
                   Container(
                     width: double.infinity,
@@ -807,7 +807,7 @@ class _BusCardState extends State<BusCard> {
                   const SizedBox(height: 16),
 
                   // 다음 버스 목록
-                  ...widget.busArrival.buses.skip(1).map((bus) {
+                  ...widget.busArrival.busInfoList.skip(1).map((bus) {
                     final int nextRemainingMin = bus.getRemainingMinutes();
                     final bool isOutOfService = bus.isOutOfService;
 

@@ -108,8 +108,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     final Set<String> updatedBuses = {};
 
     for (var busArrival in busArrivals) {
-      if (busArrival.buses.isNotEmpty) {
-        final firstBus = busArrival.buses.first;
+      if (busArrival.busInfoList.isNotEmpty) {
+        final firstBus = busArrival.busInfoList.first;
         final remainingTime = firstBus.getRemainingMinutes();
         final busKey = "${busArrival.routeNo}:${busArrival.routeId}";
         if (updatedBuses.contains(busKey)) continue;
@@ -312,9 +312,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         child: ElevatedButton(
                           onPressed: () async {
                             int remainingTime = 0;
-                            if (busArrival.buses.isNotEmpty) {
-                              remainingTime =
-                                  busArrival.buses.first.getRemainingMinutes();
+                            if (busArrival.busInfoList.isNotEmpty) {
+                              remainingTime = busArrival.busInfoList.first
+                                  .getRemainingMinutes();
                             }
                             if (remainingTime > selectedAlarmTime) {
                               final alarmService = Provider.of<AlarmService>(
@@ -428,7 +428,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
-                                  '${station.name} → ${busArrival.destination}',
+                                  '${station.name} → ${busArrival.direction}',
                                   style: TextStyle(
                                       fontSize: 14, color: Colors.grey[800]),
                                   overflow: TextOverflow.ellipsis,
@@ -452,12 +452,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             BusCard(
                               busArrival: BusArrival(
                                 routeNo: busArrival.routeNo,
-                                destination: busArrival.destination,
                                 routeId: busArrival.routeId,
-                                buses: busArrival.buses.isNotEmpty
-                                    ? [busArrival.buses.first]
+                                busInfoList: busArrival.busInfoList.isNotEmpty
+                                    ? [busArrival.busInfoList.first]
                                     : [],
-                                stationId: '',
+                                direction: busArrival.direction,
                               ),
                               onTap: () {},
                               stationName: station.name,
@@ -465,7 +464,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             ),
 
                             // 다음 버스 정보 안내 (다음 버스가 있는 경우만)
-                            if (busArrival.buses.length > 1) ...[
+                            if (busArrival.busInfoList.length > 1) ...[
                               const SizedBox(height: 12),
                               // Center(
                               //   child: Container(
@@ -507,7 +506,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               const SizedBox(height: 12),
 
                               // 다음 버스 목록
-                              ...busArrival.buses.skip(1).map((bus) {
+                              ...busArrival.busInfoList.skip(1).map((bus) {
                                 return Card(
                                   margin: const EdgeInsets.only(bottom: 12),
                                   elevation: 0,
@@ -520,10 +519,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                       // 해당 버스만 포함한 새 BusArrival 객체 생성
                                       final selectedBusArrival = BusArrival(
                                         routeNo: busArrival.routeNo,
-                                        destination: busArrival.destination,
                                         routeId: busArrival.routeId,
-                                        buses: [bus],
-                                        stationId: busArrival.stationId,
+                                        busInfoList: [bus],
+                                        direction: busArrival.direction,
                                       );
 
                                       // 현재 모달 닫고 새 버스 상세 모달 열기
@@ -609,7 +607,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                                 ),
                                               ),
                                               Text(
-                                                bus.arrivalTime,
+                                                bus.estimatedTime,
                                                 style: TextStyle(
                                                   fontSize: 18,
                                                   fontWeight: FontWeight.bold,

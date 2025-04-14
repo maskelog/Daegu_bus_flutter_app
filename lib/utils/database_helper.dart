@@ -171,8 +171,8 @@ class DatabaseHelper {
           name: name,
           isFavorite: false,
           stationId: stationId, // stationId 필드 추가
-          ngisXPos: longitude,
-          ngisYPos: latitude,
+          longitude: longitude,
+          latitude: latitude,
           wincId: bsId, // wincId와 bsId는 동일하게 설정
         );
       });
@@ -223,8 +223,8 @@ class DatabaseHelper {
         name: name,
         isFavorite: false,
         stationId: stationId,
-        ngisXPos: longitude,
-        ngisYPos: latitude,
+        longitude: longitude,
+        latitude: latitude,
         wincId: bsId,
       );
     } catch (e) {

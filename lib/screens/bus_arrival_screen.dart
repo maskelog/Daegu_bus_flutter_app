@@ -53,8 +53,8 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   }
 
   Widget _buildBusInfoCard() {
-    final busInfo = widget.busArrival.buses.isNotEmpty
-        ? widget.busArrival.buses.first
+    final busInfo = widget.busArrival.busInfoList.isNotEmpty
+        ? widget.busArrival.busInfoList.first
         : null;
 
     final remainingMinutes = busInfo?.getRemainingMinutes() ?? 0;
@@ -202,8 +202,8 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
     try {
       // 남은 시간 계산
-      final remainingMinutes = widget.busArrival.buses.isNotEmpty
-          ? widget.busArrival.buses.first.getRemainingMinutes()
+      final remainingMinutes = widget.busArrival.busInfoList.isNotEmpty
+          ? widget.busArrival.busInfoList.first.getRemainingMinutes()
           : 0;
 
       if (remainingMinutes <= 0) {

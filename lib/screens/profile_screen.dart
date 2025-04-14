@@ -72,6 +72,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context,
       MaterialPageRoute(builder: (context) => const SearchScreen()),
     );
+
+    // 첫 번째 비동기 갭 이후에 mounted 체크 추가
+    if (!mounted) return;
+
     if (result != null && result is BusStop) {
       final alarmResult = await Navigator.push(
         context,
@@ -83,13 +87,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       );
+
+      // 두 번째 비동기 갭 이후에 다시 mounted 체크 추가
+      if (!mounted) return;
+
       if (alarmResult != null && alarmResult is AutoAlarm) {
-        if (mounted) {
-          setState(() {
-            _autoAlarms.add(alarmResult);
-            _saveAutoAlarms();
-          });
-        }
+        setState(() {
+          _autoAlarms.add(alarmResult);
+          _saveAutoAlarms();
+        });
       }
     }
   }
@@ -104,7 +110,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
-    if (result != null && result is AutoAlarm && mounted) {
+
+    // 비동기 갭 이후에 mounted 체크 추가
+    if (!mounted) return;
+
+    if (result != null && result is AutoAlarm) {
       setState(() {
         _autoAlarms[index] = result;
         _saveAutoAlarms();
