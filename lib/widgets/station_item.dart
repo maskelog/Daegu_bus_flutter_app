@@ -4,15 +4,19 @@ import '../models/bus_stop.dart';
 class StationItem extends StatelessWidget {
   final BusStop station;
   final bool isSelected;
+  final bool isTracking; // 추가: 정류장 추적 상태
   final Function() onTap;
   final Function()? onFavoriteToggle;
+  final Function()? onTrackingToggle; // 추가: 정류장 추적 토글 콜백
 
   const StationItem({
     super.key,
     required this.station,
     required this.isSelected,
+    this.isTracking = false, // 기본값 false
     required this.onTap,
     this.onFavoriteToggle,
+    this.onTrackingToggle,
   });
 
   @override
@@ -67,6 +71,18 @@ class StationItem extends StatelessWidget {
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       onPressed: onFavoriteToggle,
+                    ),
+                  // 정류장 추적 버튼
+                  if (onTrackingToggle != null)
+                    IconButton(
+                      icon: Icon(
+                        isTracking ? Icons.visibility : Icons.visibility_off,
+                        color: isTracking ? Colors.green : Colors.grey,
+                        size: 24,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: onTrackingToggle,
                     ),
                 ],
               ),
