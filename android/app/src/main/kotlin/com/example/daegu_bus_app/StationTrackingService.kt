@@ -92,13 +92,13 @@ class StationTrackingService : Service() {
         // 추적 시작 즉시 첫 번째 데이터 업데이트 및 알림 표시 실행
         fetchAndNotify()
 
-        // 타이머 설정 (예: 30초마다 도착 정보 업데이트)
+        // 타이머 설정 (예: 15초마다 도착 정보 업데이트)
         trackingTimer = Timer()
         trackingTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
                 fetchAndNotify() // 주기적으로 fetchAndNotify 호출
             }
-        }, 30000, 30000) // 30초 후에 첫 실행, 이후 30초 간격으로 반복
+        }, 15000, 15000) // 15초 후에 첫 실행, 이후 15초 간격으로 반복
     }
 
     // 내부적으로 추적을 중지하는 로직
@@ -246,7 +246,7 @@ class StationTrackingService : Service() {
                 .setContentTitle(title)
                 .setContentText(bodyText)
                 .setStyle(inboxStyle)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setPriority(NotificationCompat.PRIORITY_HIGH) // 우선순위를 HIGH로 설정하여 더 높은 가시성 제공
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setColor(ContextCompat.getColor(this, R.color.tracking_color))
@@ -279,14 +279,15 @@ class StationTrackingService : Service() {
          // 남은 정류장 수 표시 (선택 사항, 현재 주석 처리)
          // val stopsStr = arrival.remainingStops?.let { "($it 정류장)" } ?: ""
          val routeNoStr = arrival.routeNo // 버스 번호
-         // 버스 진행 방향 표시 (정보가 있을 경우)
-         val directionStr = arrival.moveDir?.let { " [$it]" } ?: ""
+         
+         // moveDir 값은 표시하지 않음 (인덱스 숫자 제거)
+         // val directionStr = arrival.moveDir?.let { " [$it]" } ?: ""
 
          // compact 플래그에 따라 다른 포맷으로 반환
          return if (compact) { // 축소 상태 포맷
              "$routeNoStr$lowFloorStr: $timeStr"
          } else { // 확장 상태 포맷
-             "$routeNoStr$lowFloorStr$directionStr - $timeStr" // + stopsStr
+             "$routeNoStr$lowFloorStr - $timeStr" // + stopsStr
          }
     }
 
@@ -294,22 +295,24 @@ class StationTrackingService : Service() {
     // 알림 채널 생성 (API 레벨 26 이상에서 필요)
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // 채널 설정 (낮은 중요도: 소리/진동 없음, 상단 고정 안됨)
+            // 채널 설정 (높은 중요도: 소리/진동 있음, 상단 고정됨)
             val channel = NotificationChannel(
                 CHANNEL_STATION_TRACKING, // 채널 ID
                 "Station Tracking", // 사용자에게 보여질 채널 이름
-                NotificationManager.IMPORTANCE_LOW // 낮은 중요도
+                NotificationManager.IMPORTANCE_HIGH // 높은 중요도로 변경
             ).apply {
                 description = "특정 정류장의 모든 버스 도착 정보 실시간 추적" // 채널 설명
-                setSound(null, null) // 소리 없음
-                enableVibration(false) // 진동 없음
-                enableLights(false) // 불빛 없음
+                // 소리 및 진동 활성화 (중요도가 높은 채널에 맞게 설정)
+                enableVibration(true) // 진동 활성화
+                vibrationPattern = longArrayOf(0, 250, 250, 250) // 짧은 진동 패턴
+                enableLights(true) // 불빛 활성화
+                lightColor = ContextCompat.getColor(this@StationTrackingService, R.color.tracking_color) // 알림 LED 색상
             }
             // 시스템 서비스인 NotificationManager 가져오기
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             // NotificationManager에 채널 등록
             manager.createNotificationChannel(channel)
-            Log.d(TAG, "알림 채널 생성됨: $CHANNEL_STATION_TRACKING")
+            Log.d(TAG, "알림 채널 생성됨: $CHANNEL_STATION_TRACKING (높은 우선순위)")
         }
     }
 
