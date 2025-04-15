@@ -274,17 +274,7 @@ class _BusCardState extends State<BusCard> {
         busNo: widget.busArrival.routeNo,
       );
 
-      // 알림 생성 - 진행 중 알림으로 설정하여 중복 방지
-      await _notificationService.showNotification(
-        id: alarmService.getAlarmId(
-            widget.busArrival.routeNo, widget.stationName ?? '정류장 정보 없음',
-            routeId: routeId),
-        busNo: widget.busArrival.routeNo,
-        stationName: widget.stationName ?? '정류장 정보 없음',
-        remainingMinutes: remainingTime,
-        currentStation: firstBus.currentStation,
-        isOngoing: true, // 진행 중 알림으로 설정
-      );
+      // 알림 생성 제거 - 중복 알림 방지
 
       // TTS 알림 즉시 시작
       await TtsSwitcher.startTtsTracking(
@@ -435,18 +425,6 @@ class _BusCardState extends State<BusCard> {
               logMessage('🚌 버스 모니터링 서비스 시작 실패: $e');
               // 서비스 시작 실패해도 계속 진행
             }
-
-            // 알림 생성 - 진행 중 알림으로 설정하여 중복 방지
-            await _notificationService.showNotification(
-              id: alarmService.getAlarmId(
-                  widget.busArrival.routeNo, widget.stationName ?? '정류장 정보 없음',
-                  routeId: routeId),
-              busNo: widget.busArrival.routeNo,
-              stationName: widget.stationName ?? '정류장 정보 없음',
-              remainingMinutes: remainingTime,
-              currentStation: firstBus.currentStation,
-              isOngoing: true,
-            );
 
             // TTS 추적 시작
             await TtsSwitcher.startTtsTracking(

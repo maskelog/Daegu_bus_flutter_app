@@ -728,9 +728,10 @@ class BusAlertService : Service() {
             } else if (remainingMinutes < 0) {
                 "$stationName - 정보 없음"
             } else if (remainingMinutes == 0) {
-                "$stationName - 곧 도착"
+                "$stationName - 곧 도착합니다!"
             } else {
-                "$stationName - 약 ${remainingMinutes}분 후 도착"
+                "$stationName - 약 ${remainingMinutes}분 후 도착" + 
+                (if (!currentStation.isNullOrEmpty()) " (현재 위치: $currentStation)" else "")
             }
 
             // 확장된 내용 구성
@@ -746,11 +747,11 @@ class BusAlertService : Service() {
                     if (remainingMinutes < 0) {
                         append("⏰ 도착 정보 없음")
                     } else if (remainingMinutes == 0) {
-                        append("⏰ 곧 도착!")
+                        append("⏰ 곧 도착합니다!")
                     } else {
                         append("⏰ 약 ${remainingMinutes}분 후 도착")
                     }
-                    // 현재 위치 정보 표시 개선
+                    // 현재 위치 정보 표시
                     if (!currentStation.isNullOrEmpty()) {
                         append("\n📍 현재 위치: $currentStation")
                     } else {
@@ -807,7 +808,7 @@ class BusAlertService : Service() {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(if (allBusesSummary != null) NotificationCompat.CATEGORY_STATUS else NotificationCompat.CATEGORY_TRANSPORT)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setColor(ContextCompat.getColor(context, R.color.tracking_color))
+                .setColor(ContextCompat.getColor(context, if (remainingMinutes <= 1) android.R.color.holo_red_light else R.color.tracking_color))
                 .setColorized(true)
                 .setOngoing(true)
                 .setAutoCancel(false)
@@ -844,6 +845,7 @@ class BusAlertService : Service() {
                 body += " (현재 위치: $currentStation)"
             }
 
+            // 기본 인텐트 설정
             val intent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 putExtra("NOTIFICATION_ID", notificationId)
@@ -854,20 +856,6 @@ class BusAlertService : Service() {
 
             val pendingIntent = PendingIntent.getActivity(
                 context, notificationId, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            // 앱에서 보기 액션 추가
-            val viewInAppIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                putExtra("NOTIFICATION_ID", notificationId)
-                putExtra("VIEW_IN_APP", true)
-                putExtra("BUS_NUMBER", busNo)
-                putExtra("STATION_NAME", stationName)
-            }
-
-            val viewInAppPendingIntent = PendingIntent.getActivity(
-                context, notificationId + 100, viewInAppIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
@@ -882,14 +870,12 @@ class BusAlertService : Service() {
                 .setAutoCancel(true)
                 .setColor(ContextCompat.getColor(context, android.R.color.holo_red_light))
                 .setColorized(true)
-                .setVibrate(longArrayOf(0, 500, 200, 500, 200, 500))
-                .setLights(Color.RED, 500, 500)
                 .setContentIntent(pendingIntent)
-                .addAction(R.drawable.ic_bus_notification, "앱에서 보기", viewInAppPendingIntent)
 
-            // TTS 사용하지 않을 경우 알람음 설정
+            // TTS 사용하지 않을 경우만 소리 및 진동 설정
             if (!useTextToSpeech) {
                 builder.setSound(Uri.parse("android.resource://${context.packageName}/raw/$currentAlarmSound"))
+                builder.setVibrate(longArrayOf(0, 500, 200, 500, 200, 500))
             }
 
             NotificationManagerCompat.from(context).notify(notificationId, builder.build())

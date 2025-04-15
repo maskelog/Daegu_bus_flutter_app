@@ -372,6 +372,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
             routeId: routeId,
             useTTS: true,
             isImmediateAlarm: true,
+            currentStation: busInfo.currentStation, // 현재 위치 정보 전달
           );
 
           logMessage('알람 설정 결과: $success', level: LogLevel.debug);
@@ -383,20 +384,13 @@ class _CompactBusCardState extends State<CompactBusCard> {
 
             // 승차 알람은 즉시 모니터링 시작
             await alarmService.startBusMonitoringService(
-              stationId: '', // BusArrival에는 stationId가 없음 - 별도로 정류장 ID를 전달해야 함
+              stationId: widget.busArrival.routeId.split('_').last, // stationId 추출
               stationName: widget.stationName!,
               routeId: routeId,
               busNo: widget.busArrival.routeNo,
             );
 
-            // TTS 알림 즉시 시작
-            await notificationService.showNotification(
-              id: DateTime.now().millisecondsSinceEpoch,
-              busNo: widget.busArrival.routeNo,
-              stationName: widget.stationName!,
-              remainingMinutes: remainingMinutes,
-              currentStation: busInfo.currentStation,
-            );
+            // 중복 알림 제거 - 알람 서비스에서 이미 알림을 표시함
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
