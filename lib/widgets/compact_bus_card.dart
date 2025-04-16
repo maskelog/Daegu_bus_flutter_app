@@ -384,7 +384,8 @@ class _CompactBusCardState extends State<CompactBusCard> {
 
             // 승차 알람은 즉시 모니터링 시작
             await alarmService.startBusMonitoringService(
-              stationId: widget.busArrival.routeId.split('_').last, // stationId 추출
+              stationId:
+                  widget.busArrival.routeId.split('_').last, // stationId 추출
               stationName: widget.stationName!,
               routeId: routeId,
               busNo: widget.busArrival.routeNo,

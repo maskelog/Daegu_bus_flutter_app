@@ -252,18 +252,30 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         // 일반 알람은 모두 표시
         final activeAlarms = alarmService.activeAlarms;
 
-        // 자동 알람은 예약된 시간 2분 전부터만 표시
+        // 자동 알람 처리 로직 수정
+        // 1. 활성화된 자동 알람만 포함
+        // 2. 예약 시간 이전인 알람만 포함 (시간이 이미 지난 알람은 제외)
         final autoAlarms = alarmService.autoAlarms.where((alarm) {
+          // 비활성화된 알람은 제외
+          if (!alarm.isActive) return false;
+
+          // 현재 시간과 예약 시간의 차이 계산 (분 단위)
           final timeDiff =
               alarm.scheduledTime.difference(DateTime.now()).inMinutes;
-          return timeDiff <= 2;
+
+          // 예약 시간이 아직 지나지 않은 알람만 표시 (최대 30분 전까지만 표시)
+          return timeDiff >= -1 && timeDiff <= 30;
         }).toList();
+
+        logMessage(
+            '자동 알람 필터링: 총 ${alarmService.autoAlarms.length}개 중 ${autoAlarms.length}개 표시됨',
+            level: LogLevel.debug);
 
         final allAlarms = [...activeAlarms, ...autoAlarms]
           ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
 
         logMessage(
-            'ActiveAlarmPanel 빌드: 일반=${activeAlarms.length}개, 자동=${autoAlarms.length}개',
+            'ActiveAlarmPanel 빌드: 일반=${activeAlarms.length}개, 자동=${autoAlarms.length}개, 총=${allAlarms.length}개',
             level: LogLevel.info);
 
         // 알람이 없는 경우
