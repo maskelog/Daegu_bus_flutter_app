@@ -11,6 +11,7 @@ import '../models/auto_alarm.dart';
 import '../models/alarm_data.dart' as alarm_model;
 import '../utils/simple_tts_helper.dart';
 import 'notification_service.dart';
+import 'settings_service.dart';
 import '../main.dart' show logMessage, LogLevel;
 
 class CachedBusInfo {
@@ -144,97 +145,75 @@ class AlarmService extends ChangeNotifier {
     return difference.inMinutes > -5; // 5분 이상 지난 알람은 제외
   }
 
-  // void _setupMethodChannel() {
-  //   _methodChannel = const MethodChannel('com.example.daegu_bus_app/bus_api');
-  //   _methodChannel?.setMethodCallHandler((call) async {
-  //     switch (call.method) {
-  //       case 'onBusArrival':
-  //         try {
-  //           final Map<String, dynamic> data =
-  //               jsonDecode(call.arguments as String);
-  //           final busNumber = data['busNumber'] as String;
-  //           final stationName = data['stationName'] as String;
-  //           final currentStation = data['currentStation'] as String;
-  //           final routeId = data['routeId'] as String? ?? '';
+  Future<void> loadAutoAlarms() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final alarms = prefs.getStringList('auto_alarms') ?? [];
+      logMessage('자동 알람 데이터 로드 시작: ${alarms.length}개');
 
-  //           debugPrint(
-  //               '버스 도착 이벤트 수신: $busNumber, $stationName, $currentStation');
+      _autoAlarms.clear();
 
-  //           await _handleBusArrival(
-  //               busNumber, stationName, currentStation, routeId);
+      for (var alarmJson in alarms) {
+        try {
+          final Map<String, dynamic> data = jsonDecode(alarmJson);
 
-  //           return true;
-  //         } catch (e) {
-  //           debugPrint('버스 도착 이벤트 처리 오류: $e');
+          // 필수 필드 검증
+          if (!_validateRequiredFields(data)) {
+            logMessage('⚠️ 자동 알람 데이터 필수 필드 누락: $data', level: LogLevel.warning);
+            continue;
+          }
 
-  //           // 예외가 발생해도 TTS 시도
-  //           try {
-  //             final busNumber =
-  //                 jsonDecode(call.arguments as String)['busNumber']
-  //                         as String? ??
-  //                     "알 수 없음";
-  //             final stationName =
-  //                 jsonDecode(call.arguments as String)['stationName']
-  //                         as String? ??
-  //                     "알 수 없음";
-  //             SimpleTTSHelper.speak(
-  //                 "$busNumber 번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
-  //           } catch (ttsError) {
-  //             debugPrint('예외 상황에서 TTS 시도 실패: $ttsError');
-  //           }
+          final alarm = alarm_model.AlarmData(
+            busNo: data['routeNo'] ?? '',
+            stationName: data['stationName'] ?? '',
+            remainingMinutes: 0,
+            routeId: data['routeId'] ?? '',
+            scheduledTime: DateTime(
+              DateTime.now().year,
+              DateTime.now().month,
+              DateTime.now().day,
+              data['hour'] ?? 0,
+              data['minute'] ?? 0,
+            ),
+            useTTS: data['useTTS'] ?? true,
+          );
 
-  //           return false;
-  //         }
+          _autoAlarms.add(alarm);
+          logMessage('✅ 자동 알람 로드: ${alarm.busNo}, ${alarm.stationName}');
+        } catch (e) {
+          logMessage('❌ 자동 알람 파싱 오류: $e', level: LogLevel.error);
+          continue;
+        }
+      }
 
-  //       case 'onBusLocationUpdate':
-  //         try {
-  //           final Map<String, dynamic> data =
-  //               jsonDecode(call.arguments as String);
-  //           final String busNumber = data['busNumber'] ?? '';
-  //           final String currentStation = data['currentStation'] ?? '';
-  //           final int remainingMinutes = data['remainingMinutes'] ?? 0;
-  //           final String routeId = data['routeId'] ?? '';
+      logMessage('✅ 자동 알람 로드 완료: ${_autoAlarms.length}개');
+      notifyListeners();
+    } catch (e) {
+      logMessage('❌ 자동 알람 로드 실패: $e', level: LogLevel.error);
+    }
+  }
 
-  //           debugPrint(
-  //               '버스 위치 업데이트: $busNumber, 남은 시간: $remainingMinutes분, 현재 위치: $currentStation');
+  bool _validateRequiredFields(Map<String, dynamic> data) {
+    final requiredFields = [
+      'routeNo',
+      'stationId',
+      'hour',
+      'minute',
+      'repeatDays'
+    ];
+    final missingFields = requiredFields
+        .where((field) =>
+            data[field] == null ||
+            (data[field] is String && data[field].isEmpty) ||
+            (data[field] is List && (data[field] as List).isEmpty))
+        .toList();
 
-  //           final busInfo = bus_arrival.BusInfo(
-  //             busNumber: busNumber,
-  //             currentStation: currentStation,
-  //             remainingStops: remainingMinutes.toString(),
-  //             estimatedTime: remainingMinutes.toString(),
-  //             isLowFloor: false,
-  //             isOutOfService: false,
-  //           );
-
-  //           final cachedInfo = CachedBusInfo.fromBusInfo(
-  //             busInfo: busInfo,
-  //             busNumber: busNumber,
-  //             routeId: routeId,
-  //           );
-
-  //           await _handleBusLocationUpdate(cachedInfo);
-  //           return true;
-  //         } catch (e) {
-  //           debugPrint('버스 위치 업데이트 처리 오류: $e');
-  //           return false;
-  //         }
-
-  //       case 'onTrackingCancelled':
-  //         _isInTrackingMode = false;
-  //         _processedNotifications.clear();
-  //         notifyListeners();
-  //         return true;
-
-  //       case 'stopBusMonitoringService':
-  //         _isInTrackingMode = false;
-  //         notifyListeners();
-  //         return true;
-  //     }
-
-  //     return null;
-  //   });
-  // }
+    if (missingFields.isNotEmpty) {
+      logMessage('! 자동 알람 데이터 필수 필드 누락: ${missingFields.join(", ")}');
+      return false;
+    }
+    return true;
+  }
 
   Future<bool> startBusMonitoringService({
     required String stationId,
@@ -338,28 +317,11 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  // bool _isNotificationProcessed(String busNo, String stationName,
-  //     [String? routeId]) {
-  //   final key = "${busNo}_${stationName}_${routeId ?? ""}";
-  //   return _processedNotifications.contains(key);
-  // }
-
-  // void _markNotificationAsProcessed(String busNo, String stationName,
-  //     [String? routeId]) {
-  //   final key = "${busNo}_${stationName}_${routeId ?? ""}";
-  //   _processedNotifications.add(key);
-  //   if (_processedNotifications.length > 100) {
-  //     _processedNotifications.remove(_processedNotifications.first);
-  //   }
-  // }
-
-  // BusInfo 클래스가 아닌 CachedBusInfo를 반환하도록 수정
   CachedBusInfo? getCachedBusInfo(String busNo, String routeId) {
     final key = "${busNo}_$routeId";
     return _cachedBusInfo[key];
   }
 
-  // 현재 추적 중인 버스 정보 가져오기
   Map<String, dynamic>? getTrackingBusInfo() {
     if (!_isInTrackingMode) return null;
 
@@ -431,7 +393,6 @@ class AlarmService extends ChangeNotifier {
     return null;
   }
 
-  // BusArrival.dart의 BusInfo 객체를 사용하는 메서드
   void updateBusInfoCache(
     String busNo,
     String routeId,
@@ -446,325 +407,6 @@ class AlarmService extends ChangeNotifier {
     final key = "${busNo}_$routeId";
     _cachedBusInfo[key] = cachedInfo;
     logMessage('🚌 버스 정보 캐시 업데이트: $busNo번, $remainingMinutes분 후');
-  }
-
-  // 버스 위치 정보 캐시 업데이트 헬퍼 메서드
-  // Future<bool> _handleBusLocationUpdate(CachedBusInfo busInfo) async {
-  //   try {
-  //     final key = "${busInfo.busNo}_${busInfo.routeId}";
-  //     _cachedBusInfo[key] = busInfo;
-
-  //     // 알람이 설정된 버스인지 확인
-  //     final alarmKey =
-  //         "${busInfo.busNo}_${busInfo.stationName}_${busInfo.routeId}";
-  //     final alarm = _activeAlarms[alarmKey];
-
-  //     if (alarm != null) {
-  //       // 알람 시간 업데이트
-  //       alarm.updateRemainingMinutes(busInfo.getRemainingMinutes());
-
-  //       // 도착 임박 알림 (3분 이하)
-  //       if (busInfo.getRemainingMinutes() <= 3) {
-  //         await _notificationService.showBusArrivingSoon(
-  //           busNo: busInfo.busNo,
-  //           stationName: busInfo.stationName,
-  //           currentStation: busInfo.currentStation,
-  //         );
-  //       }
-  //     }
-
-  //     return true;
-  //   } catch (e) {
-  //     logMessage('버스 위치 업데이트 처리 오류: $e', level: LogLevel.error);
-  //     return false;
-  //   }
-  // }
-
-  // SharedPreferences에 알람 정보를 저장하는 헬퍼 메서드
-  // Future<void> _updateAlarmInStorage(alarm_model.AlarmData alarm) async {
-  //   try {
-  //     final id = alarm.getAlarmId();
-  //     final prefs = await SharedPreferences.getInstance();
-  //     await prefs.setString('alarm_$id', jsonEncode(alarm.toJson()));
-  //     debugPrint(
-  //         '알람 저장소 업데이트 완료: $alarm.busNo, 남은 시간: ${alarm.getCurrentArrivalMinutes()}분');
-  //   } catch (e) {
-  //     debugPrint('알람 저장소 업데이트 오류: $e');
-  //   }
-  // }
-
-  // 추적 알림 업데이트 요청
-  // Future<void> _updateTrackingNotification(String busNo, String routeId) async {
-  //   try {
-  //     final key = "${busNo}_$routeId";
-  //     final cachedInfo = _cachedBusInfo[key];
-
-  //     if (cachedInfo != null) {
-  //       final remainingMinutes = cachedInfo.getRemainingMinutes();
-
-  //       // 알람이 설정된 버스인지 확인
-  //       final alarmKey = "${busNo}_${cachedInfo.stationName}_$routeId";
-  //       final alarm = _activeAlarms[alarmKey];
-
-  //       if (alarm != null) {
-  //         await _notificationService.showNotification(
-  //           id: alarm.getAlarmId(),
-  //           busNo: busNo,
-  //           stationName: cachedInfo.stationName,
-  //           remainingMinutes: remainingMinutes,
-  //           currentStation: cachedInfo.currentStation,
-  //           isOngoing: true,
-  //           routeId: routeId,
-  //         );
-  //       }
-  //     }
-  //   } catch (e) {
-  //     logMessage('알림 업데이트 오류: $e', level: LogLevel.error);
-  //   }
-  // }
-
-  Future<void> loadAutoAlarms() async {
-    // 백그라운드에서 자동 알람 로드 실행
-    return compute(_loadAutoAlarmsInBackground, null).then((result) {
-      _autoAlarms.clear();
-      _autoAlarms.addAll(result);
-      notifyListeners();
-      debugPrint('✅ 자동 알람 로드 완료: ${_autoAlarms.length}개');
-    }).catchError((e) {
-      debugPrint('❌ 자동 알람 로드 오류: $e');
-      // 오류 발생 시 기존 자동 알람 유지
-    });
-  }
-
-  // 백그라운드에서 실행될 자동 알람 로드 함수
-  static Future<List<alarm_model.AlarmData>> _loadAutoAlarmsInBackground(
-      void _) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final alarmsJson = prefs.getStringList('auto_alarms') ?? [];
-      final List<alarm_model.AlarmData> loadedAutoAlarms = [];
-      final now = DateTime.now();
-
-      for (var json in alarmsJson) {
-        try {
-          final Map<String, dynamic> data = jsonDecode(json);
-
-          // 필수 필드 유효성 검사
-          if (!_validateAutoAlarmFields(data)) {
-            debugPrint('⚠️ 자동 알람 데이터 필수 필드 누락');
-            continue;
-          }
-
-          final autoAlarm = AutoAlarm.fromJson(data);
-
-          // 비활성화된 알람은 건너뛰기
-          if (!autoAlarm.isActive) {
-            debugPrint('ℹ️ 비활성화된 자동 알람 건너뛰기: ${autoAlarm.routeNo}');
-            continue;
-          }
-
-          // 오늘의 예약 시간 계산
-          DateTime scheduledTime = DateTime(
-            now.year,
-            now.month,
-            now.day,
-            autoAlarm.hour,
-            autoAlarm.minute,
-          );
-
-          // 오늘이 반복 요일이 아니거나 이미 지난 시간이면 다음 반복 요일 찾기
-          if (!autoAlarm.repeatDays.contains(now.weekday) ||
-              scheduledTime.isBefore(now)) {
-            // 다음 반복 요일 찾기
-            int daysToAdd = 1;
-            bool foundValidDay = false;
-
-            while (daysToAdd <= 7) {
-              final nextDate = now.add(Duration(days: daysToAdd));
-              final nextWeekday = nextDate.weekday;
-              if (autoAlarm.repeatDays.contains(nextWeekday)) {
-                scheduledTime = DateTime(
-                  nextDate.year,
-                  nextDate.month,
-                  nextDate.day,
-                  autoAlarm.hour,
-                  autoAlarm.minute,
-                );
-                foundValidDay = true;
-                break;
-              }
-              daysToAdd++;
-            }
-
-            // 유효한 반복 요일을 찾지 못한 경우 건너뛰기
-            if (!foundValidDay) {
-              debugPrint('⚠️ 유효한 반복 요일을 찾지 못함: ${autoAlarm.routeNo}');
-              continue;
-            }
-          }
-
-          // 알람 시간이 현재로부터 7일 이내인지 확인
-          final initialDelay = scheduledTime.difference(now);
-          if (initialDelay.inDays > 7) {
-            debugPrint(
-                '⚠️ 알람 시간이 너무 멀어서 건너뛰기: ${autoAlarm.routeNo}, ${initialDelay.inDays}일 후');
-            continue;
-          }
-
-          // 알람 데이터 생성 및 추가
-          final alarmData = alarm_model.AlarmData(
-            busNo: autoAlarm.routeNo,
-            stationName: autoAlarm.stationName,
-            remainingMinutes: 0,
-            routeId: autoAlarm.routeId,
-            scheduledTime: scheduledTime,
-            useTTS: autoAlarm.useTTS,
-          );
-          loadedAutoAlarms.add(alarmData);
-          debugPrint(
-              '✅ 자동 알람 로드: ${autoAlarm.routeNo}, 예정 시간: $scheduledTime (${initialDelay.inDays}일 ${initialDelay.inHours % 24}시간 후)');
-        } catch (e) {
-          debugPrint('❌ 자동 알람 파싱 오류: $e');
-        }
-      }
-
-      debugPrint('✅ 자동 알람 로드 완료: ${loadedAutoAlarms.length}개');
-      return loadedAutoAlarms;
-    } catch (e) {
-      debugPrint('❌ 자동 알람 로드 중 오류 발생: $e');
-      return []; // 오류 발생 시 빈 리스트 반환
-    }
-  }
-
-  // 자동 알람 필수 필드 유효성 검사 함수
-  static bool _validateAutoAlarmFields(Map<String, dynamic> data) {
-    final requiredFields = [
-      'routeNo',
-      'stationName',
-      'stationId',
-      'routeId',
-      'hour',
-      'minute',
-      'repeatDays',
-    ];
-
-    for (var field in requiredFields) {
-      if (!data.containsKey(field) || data[field] == null) {
-        return false;
-      }
-
-      // String 필드의 경우 빈 문자열 검사
-      if ((field == 'routeNo' ||
-              field == 'stationName' ||
-              field == 'stationId' ||
-              field == 'routeId') &&
-          (data[field] as String).isEmpty) {
-        return false;
-      }
-
-      // repeatDays가 리스트인지 확인
-      if (field == 'repeatDays' && data[field] is! List) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  // background_service.dart에서 사용하는 startAlarm 메서드 추가
-  Future<bool> startAlarm(
-      String busNo, String stationName, int remainingMinutes) async {
-    try {
-      debugPrint('🔔 startAlarm 호출: $busNo, $stationName, $remainingMinutes분');
-
-      // 알람 ID 생성
-      final int id = getAlarmId(busNo, stationName);
-
-      // TTS 발화 시도
-      try {
-        await SimpleTTSHelper.initialize();
-        if (remainingMinutes <= 0) {
-          await SimpleTTSHelper.speak(
-              "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
-        } else {
-          await SimpleTTSHelper.speak(
-              "$busNo번 버스가 약 $remainingMinutes분 후 $stationName 정류장에 도착 예정입니다.");
-        }
-        debugPrint('🔊 TTS 발화 성공');
-      } catch (e) {
-        debugPrint('🔊 TTS 발화 오류: $e');
-      }
-
-      // 알림 표시
-      await NotificationService().showNotification(
-        id: id,
-        busNo: busNo,
-        stationName: stationName,
-        remainingMinutes: remainingMinutes,
-        currentStation: '',
-      );
-
-      return true;
-    } catch (e) {
-      debugPrint('❌ startAlarm 오류: $e');
-      return false;
-    }
-  }
-
-  int getAlarmId(String busNo, String stationName, {String routeId = ''}) {
-    return ("${busNo}_${stationName}_$routeId").hashCode;
-  }
-
-  bool hasAlarm(String busNo, String stationName, String routeId) {
-    return _activeAlarms.values.any((alarm) =>
-            alarm.busNo == busNo &&
-            alarm.stationName == stationName &&
-            alarm.routeId == routeId) ||
-        _autoAlarms.any((alarm) =>
-            alarm.busNo == busNo &&
-            alarm.stationName == stationName &&
-            alarm.routeId == routeId);
-  }
-
-  // 자동 알람이 있는지 확인하는 메서드 추가
-  bool hasAutoAlarm(String busNo, String stationName, String routeId) {
-    return _autoAlarms.any((alarm) =>
-        alarm.busNo == busNo &&
-        alarm.stationName == stationName &&
-        alarm.routeId == routeId);
-  }
-
-  // 자동 알람 데이터를 가져오는 메서드 추가
-  alarm_model.AlarmData? getAutoAlarm(
-      String busNo, String stationName, String routeId) {
-    try {
-      return _autoAlarms.firstWhere((alarm) =>
-          alarm.busNo == busNo &&
-          alarm.stationName == stationName &&
-          alarm.routeId == routeId);
-    } catch (e) {
-      debugPrint('자동 알람을 찾을 수 없음: $busNo, $stationName, $routeId');
-      return null;
-    }
-  }
-
-  alarm_model.AlarmData? findAlarm(
-      String busNo, String stationName, String routeId) {
-    try {
-      return _activeAlarms.values.firstWhere((alarm) =>
-          alarm.busNo == busNo &&
-          alarm.stationName == stationName &&
-          alarm.routeId == routeId);
-    } catch (e) {
-      try {
-        return _autoAlarms.firstWhere((alarm) =>
-            alarm.busNo == busNo &&
-            alarm.stationName == stationName &&
-            alarm.routeId == routeId);
-      } catch (e) {
-        return null;
-      }
-    }
   }
 
   Future<void> refreshAlarms() async {
@@ -858,7 +500,6 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  // 공휴일 목록을 가져오는 public 메서드
   Future<List<DateTime>> getHolidays(int year, int month) async {
     return _fetchHolidays(year, month);
   }
@@ -904,13 +545,44 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
+  Future<void> _updateNextAlarmTime(AutoAlarm alarm) async {
+    final nextAlarmTime = alarm.getNextAlarmTime();
+    if (nextAlarmTime != null) {
+      logMessage(
+          '[AlarmService] Updated next alarm time for ${alarm.routeNo} to ${nextAlarmTime.toString()}');
+    }
+  }
+
   Future<void> updateAutoAlarms(List<AutoAlarm> autoAlarms) async {
     try {
+      logMessage('🔄 자동 알람 업데이트 시작: ${autoAlarms.length}개');
+
       _autoAlarms.clear();
       final now = DateTime.now();
 
       for (var alarm in autoAlarms) {
-        if (!alarm.isActive) continue;
+        logMessage('📝 알람 처리 중:');
+        logMessage('  - 버스: ${alarm.routeNo}번');
+        logMessage('  - 정류장: ${alarm.stationName}');
+        logMessage('  - 시간: ${alarm.hour}:${alarm.minute}');
+        logMessage('  - 반복: ${alarm.repeatDays.map((d) => [
+              '월',
+              '화',
+              '수',
+              '목',
+              '금',
+              '토',
+              '일'
+            ][d - 1]).join(', ')}');
+        logMessage('  - 활성화: ${alarm.isActive}');
+
+        if (!alarm.isActive) {
+          logMessage('  ⚠️ 비활성화된 알람 건너뛰기');
+          continue;
+        }
+
+        // 다음 알람 시간 업데이트
+        await _updateNextAlarmTime(alarm);
 
         // 오늘 예약 시간 계산
         DateTime scheduledTime =
@@ -919,6 +591,7 @@ class AlarmService extends ChangeNotifier {
         // 오늘이 반복 요일이 아니거나 이미 지난 시간이면 다음 반복 요일 찾기
         if (!alarm.repeatDays.contains(now.weekday) ||
             scheduledTime.isBefore(now)) {
+          logMessage('  🔄 다음 유효한 알람 시간 계산 중...');
           int daysToAdd = 1;
           bool foundValidDay = false;
 
@@ -933,16 +606,32 @@ class AlarmService extends ChangeNotifier {
                 alarm.minute,
               );
               foundValidDay = true;
+              logMessage('  ✅ 다음 알람 시간 찾음: ${scheduledTime.toString()}');
               break;
             }
             daysToAdd++;
           }
 
           if (!foundValidDay) {
-            logMessage('⚠️ 유효한 반복 요일을 찾지 못함: ${alarm.routeNo}',
+            logMessage('  ⚠️ 유효한 반복 요일을 찾지 못함: ${alarm.routeNo}',
                 level: LogLevel.warning);
             continue;
           }
+        }
+
+        // 알람 시간까지 남은 시간 계산
+        final timeUntilAlarm = scheduledTime.difference(now);
+        logMessage('  ⏰ 다음 알람까지 ${timeUntilAlarm.inMinutes}분 남음');
+
+        // 알람 시간이 10분 이내면 버스 모니터링 시작
+        if (timeUntilAlarm.inMinutes <= 10) {
+          logMessage('  🚌 10분 이내 알람 - 버스 모니터링 시작');
+          await startBusMonitoringService(
+            routeId: alarm.routeId,
+            stationId: alarm.stationId,
+            busNo: alarm.routeNo,
+            stationName: alarm.stationName,
+          );
         }
 
         // 알람 데이터 생성
@@ -955,6 +644,7 @@ class AlarmService extends ChangeNotifier {
           useTTS: alarm.useTTS,
         );
         _autoAlarms.add(alarmData);
+        logMessage('  ✅ 알람 데이터 생성 완료');
 
         // 알람 예약
         await _scheduleAutoAlarm(alarm, scheduledTime);
@@ -962,65 +652,211 @@ class AlarmService extends ChangeNotifier {
 
       await _saveAutoAlarms();
       logMessage('✅ 자동 알람 업데이트 완료: ${_autoAlarms.length}개');
+
+      // 저장된 알람 정보 출력
+      for (var alarm in _autoAlarms) {
+        logMessage('📋 저장된 알람 정보:');
+        logMessage('  - 버스: ${alarm.busNo}번');
+        logMessage('  - 정류장: ${alarm.stationName}');
+        logMessage('  - 예약 시간: ${alarm.scheduledTime.toString()}');
+      }
     } catch (e) {
       logMessage('❌ 자동 알람 업데이트 오류: $e', level: LogLevel.error);
+      logMessage('  - 스택 트레이스: ${e is Error ? e.stackTrace : "없음"}');
     }
   }
 
   Future<void> _saveAutoAlarms() async {
     try {
+      logMessage('🔄 자동 알람 저장 시작...');
       final prefs = await SharedPreferences.getInstance();
-      final alarmsJson =
-          _autoAlarms.map((alarm) => jsonEncode(alarm.toJson())).toList();
-      await prefs.setStringList('auto_alarms', alarmsJson);
-      notifyListeners();
+      final List<String> alarms = _autoAlarms.map((alarm) {
+        // 현재 요일을 기준으로 반복 요일 설정
+        final now = DateTime.now();
+        List<int> repeatDays = [];
+
+        // 월요일부터 일요일까지 체크
+        for (int i = 1; i <= 7; i++) {
+          final checkDate = now.add(Duration(days: i - now.weekday));
+          if (checkDate.difference(alarm.scheduledTime).inDays % 7 == 0) {
+            repeatDays.add(i);
+          }
+        }
+
+        // 반복 요일이 없으면 기본값으로 평일 설정
+        if (repeatDays.isEmpty) {
+          repeatDays = [1, 2, 3, 4, 5];
+        }
+
+        final autoAlarm = AutoAlarm(
+          id: alarm.getAlarmId().toString(),
+          routeNo: alarm.busNo,
+          stationName: alarm.stationName,
+          stationId: alarm.routeId,
+          routeId: alarm.routeId,
+          hour: alarm.scheduledTime.hour,
+          minute: alarm.scheduledTime.minute,
+          repeatDays: repeatDays,
+          useTTS: alarm.useTTS,
+          isActive: true,
+        );
+
+        final json = autoAlarm.toJson();
+        final jsonString = jsonEncode(json);
+
+        // 각 알람의 데이터 로깅
+        logMessage('📝 알람 데이터 변환: ${alarm.busNo}번 버스');
+        logMessage('  - ID: ${autoAlarm.id}');
+        logMessage('  - 시간: ${autoAlarm.hour}:${autoAlarm.minute}');
+        logMessage(
+            '  - 정류장: ${autoAlarm.stationName} (${autoAlarm.stationId})');
+        logMessage('  - 반복: ${repeatDays.map((d) => [
+              '월',
+              '화',
+              '수',
+              '목',
+              '금',
+              '토',
+              '일'
+            ][d - 1]).join(", ")}');
+        logMessage('  - JSON: $jsonString');
+
+        return jsonString;
+      }).toList();
+
+      // 저장 전 데이터 확인
+      logMessage('📊 저장할 알람 수: ${alarms.length}개');
+
+      // SharedPreferences에 저장
+      await prefs.setStringList('auto_alarms', alarms);
+
+      // 저장 후 확인
+      final savedAlarms = prefs.getStringList('auto_alarms') ?? [];
+      logMessage('✅ 자동 알람 저장 완료');
+      logMessage('  - 저장된 알람 수: ${savedAlarms.length}개');
+      if (savedAlarms.isNotEmpty) {
+        final firstAlarm = jsonDecode(savedAlarms.first);
+        logMessage('  - 첫 번째 알람 정보:');
+        logMessage('    • 버스: ${firstAlarm['routeNo']}');
+        logMessage('    • 시간: ${firstAlarm['hour']}:${firstAlarm['minute']}');
+        logMessage('    • 반복: ${(firstAlarm['repeatDays'] as List).map((d) => [
+              '월',
+              '화',
+              '수',
+              '목',
+              '금',
+              '토',
+              '일'
+            ][d - 1]).join(", ")}');
+      }
     } catch (e) {
-      debugPrint('자동 알람 저장 오류: $e');
+      logMessage('❌ 자동 알람 저장 오류: $e', level: LogLevel.error);
+      logMessage('  - 스택 트레이스: ${e is Error ? e.stackTrace : "없음"}');
     }
   }
 
-  // Future<void> _handleBusArrival(
-  //   String busNo,
-  //   String stationName,
-  //   String currentStation,
-  //   String routeId,
-  // ) async {
-  //   try {
-  //     // 버스 도착 정보를 BusInfo 객체로 생성
-  //     final busInfo = bus_arrival.BusInfo(
-  //       busNumber: busNo,
-  //       currentStation: currentStation,
-  //       remainingStops: "0",
-  //       estimatedTime: "곧 도착",
-  //       isLowFloor: false,
-  //       isOutOfService: false,
-  //     );
+  Future<bool> startAlarm(
+      String busNo, String stationName, int remainingMinutes) async {
+    try {
+      debugPrint(
+          '🔔 startAlarm 호출 (자동 알람 가정): $busNo, $stationName, $remainingMinutes분');
 
-  //     // 캐시 업데이트
-  //     final cachedInfo = CachedBusInfo.fromBusInfo(
-  //       busInfo: busInfo,
-  //       busNumber: busNo,
-  //       routeId: routeId,
-  //     );
+      // 알람 ID 생성
+      final int id = getAlarmId(busNo, stationName);
 
-  //     await _handleBusLocationUpdate(cachedInfo);
+      // 설정된 알람 볼륨 가져오기
+      final settingsService = SettingsService();
+      await settingsService.initialize();
+      final volume = settingsService.autoAlarmVolume;
 
-  //     // 알람이 설정된 버스인지 확인
-  //     final alarmKey = "${busNo}_${stationName}_$routeId";
-  //     final alarm = _activeAlarms[alarmKey];
+      // TTS 발화 시도 (자동 알람 -> 스피커 우선)
+      try {
+        await SimpleTTSHelper.initialize();
+        await SimpleTTSHelper.setAudioOutputMode(1); // 스피커 모드 설정
+        await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
+        if (remainingMinutes <= 0) {
+          await SimpleTTSHelper.speak(
+              "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
+        } else {
+          await SimpleTTSHelper.speak(
+              "$busNo번 버스가 약 $remainingMinutes분 후 $stationName 정류장에 도착 예정입니다.");
+        }
+        await SimpleTTSHelper.setAudioOutputMode(2); // 자동 모드로 복원 (선택 사항)
+        debugPrint('🔊 TTS 발화 성공 (스피커 모드, 볼륨: ${volume * 100}%)');
+      } catch (e) {
+        debugPrint('🔊 TTS 발화 오류: $e');
+        await SimpleTTSHelper.setAudioOutputMode(2); // 오류 시 자동 모드로 복원
+      }
 
-  //     if (alarm != null) {
-  //       // 도착 알림 표시
-  //       await _notificationService.showBusArrivingSoon(
-  //         busNo: busNo,
-  //         stationName: stationName,
-  //         currentStation: currentStation,
-  //       );
-  //     }
-  //   } catch (e) {
-  //     logMessage('버스 도착 처리 오류: $e', level: LogLevel.error);
-  //   }
-  // }
+      // 알림 표시
+      await NotificationService().showNotification(
+        id: id,
+        busNo: busNo,
+        stationName: stationName,
+        remainingMinutes: remainingMinutes,
+        currentStation: '',
+      );
+
+      return true;
+    } catch (e) {
+      debugPrint('❌ startAlarm 오류: $e');
+      return false;
+    }
+  }
+
+  int getAlarmId(String busNo, String stationName, {String routeId = ''}) {
+    return ("${busNo}_${stationName}_$routeId").hashCode;
+  }
+
+  bool hasAlarm(String busNo, String stationName, String routeId) {
+    return _activeAlarms.values.any((alarm) =>
+            alarm.busNo == busNo &&
+            alarm.stationName == stationName &&
+            alarm.routeId == routeId) ||
+        _autoAlarms.any((alarm) =>
+            alarm.busNo == busNo &&
+            alarm.stationName == stationName &&
+            alarm.routeId == routeId);
+  }
+
+  bool hasAutoAlarm(String busNo, String stationName, String routeId) {
+    return _autoAlarms.any((alarm) =>
+        alarm.busNo == busNo &&
+        alarm.stationName == stationName &&
+        alarm.routeId == routeId);
+  }
+
+  alarm_model.AlarmData? getAutoAlarm(
+      String busNo, String stationName, String routeId) {
+    try {
+      return _autoAlarms.firstWhere((alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId);
+    } catch (e) {
+      debugPrint('자동 알람을 찾을 수 없음: $busNo, $stationName, $routeId');
+      return null;
+    }
+  }
+
+  alarm_model.AlarmData? findAlarm(
+      String busNo, String stationName, String routeId) {
+    try {
+      return _activeAlarms.values.firstWhere((alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId);
+    } catch (e) {
+      try {
+        return _autoAlarms.firstWhere((alarm) =>
+            alarm.busNo == busNo &&
+            alarm.stationName == stationName &&
+            alarm.routeId == routeId);
+      } catch (e) {
+        return null;
+      }
+    }
+  }
 
   Future<bool> setOneTimeAlarm(
     String busNo,
@@ -1032,7 +868,8 @@ class AlarmService extends ChangeNotifier {
     String? currentStation,
   }) async {
     try {
-      logMessage('🚌 알람 설정 시작: $busNo번 버스, $stationName, $remainingMinutes분');
+      logMessage(
+          '🚌 일반 알람 설정 시작: $busNo번 버스, $stationName, $remainingMinutes분');
 
       // 알람 데이터 생성
       final alarmData = alarm_model.AlarmData(
@@ -1052,22 +889,24 @@ class AlarmService extends ChangeNotifier {
       _activeAlarms[alarmId.toString()] = alarmData;
       await _saveAlarms();
 
-      // 즉시 알림 표시가 필요한 경우
-      if (isImmediateAlarm) {
-        await _notificationService.showNotification(
-          id: alarmId,
-          busNo: busNo,
-          stationName: stationName,
-          remainingMinutes: remainingMinutes,
-          currentStation: currentStation,
-          isOngoing: true,
-          routeId: routeId,
-        );
+      // 설정된 알람 볼륨 가져오기
+      final settingsService = SettingsService();
+      await settingsService.initialize();
+      final volume = settingsService.autoAlarmVolume;
 
-        // TTS 알림 시작 (설정된 경우)
-        if (useTTS) {
+      // TTS 알림 시작 (설정된 경우 - 일반 알람 -> 이어폰 우선)
+      if (useTTS) {
+        try {
+          await SimpleTTSHelper.initialize();
+          await SimpleTTSHelper.setAudioOutputMode(0); // 이어폰 모드 설정
+          await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
           await SimpleTTSHelper.speak(
               "$busNo번 버스가 $stationName 정류장에 $remainingMinutes분 후 도착 예정입니다.");
+          await SimpleTTSHelper.setAudioOutputMode(2); // 자동 모드로 복원 (선택 사항)
+          logMessage('🔊 TTS 발화 성공 (이어폰 모드, 볼륨: ${volume * 100}%)');
+        } catch (e) {
+          logMessage('🔊 TTS 발화 오류: $e', level: LogLevel.error);
+          await SimpleTTSHelper.setAudioOutputMode(2); // 오류 시 자동 모드로 복원
         }
       }
 

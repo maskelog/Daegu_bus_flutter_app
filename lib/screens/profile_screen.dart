@@ -10,6 +10,7 @@ import '../services/alarm_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/time_picker_spinner.dart';
 import 'search_screen.dart';
+import '../main.dart' show logMessage, LogLevel;
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -20,7 +21,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final List<AutoAlarm> _autoAlarms = [];
-  bool _isLoading = false;
+  final bool _isLoading = false;
   final List<String> _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
   late SettingsService _settingsService;
 
@@ -38,32 +39,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadAutoAlarms() async {
-    setState(() => _isLoading = true);
     try {
+      logMessage('🔄 자동 알람 로드 시작');
       final prefs = await SharedPreferences.getInstance();
       final alarms = prefs.getStringList('auto_alarms') ?? [];
+
       _autoAlarms.clear();
-      for (var json in alarms) {
-        final data = jsonDecode(json);
-        _autoAlarms.add(AutoAlarm.fromJson(data));
+
+      for (var alarmJson in alarms) {
+        try {
+          final Map<String, dynamic> data = jsonDecode(alarmJson);
+          final alarm = AutoAlarm.fromJson(data);
+          _autoAlarms.add(alarm);
+          logMessage('✅ 자동 알람 로드됨: ${alarm.routeNo}, ${alarm.stationName}');
+        } catch (e) {
+          logMessage('❌ 자동 알람 파싱 오류: $e', level: LogLevel.error);
+        }
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+
+      if (mounted) {
+        setState(() {});
+        logMessage('✅ 자동 알람 로드 완료: ${_autoAlarms.length}개');
+      }
+    } catch (e) {
+      logMessage('❌ 자동 알람 로드 실패: $e', level: LogLevel.error);
     }
   }
 
   Future<void> _saveAutoAlarms() async {
     try {
+      logMessage('🔄 자동 알람 저장 시작: ${_autoAlarms.length}개');
       final prefs = await SharedPreferences.getInstance();
-      final List<String> alarms =
-          _autoAlarms.map((alarm) => jsonEncode(alarm.toJson())).toList();
+
+      final List<String> alarms = _autoAlarms.map((alarm) {
+        final json = alarm.toJson();
+        logMessage('📝 알람 데이터 변환:');
+        logMessage('  - 버스: ${alarm.routeNo}번');
+        logMessage('  - 정류장: ${alarm.stationName}');
+        logMessage('  - 시간: ${alarm.hour}:${alarm.minute}');
+        logMessage(
+            '  - 반복: ${alarm.repeatDays.map((d) => _weekdays[d - 1]).join(", ")}');
+        return jsonEncode(json);
+      }).toList();
+
       await prefs.setStringList('auto_alarms', alarms);
+      logMessage('✅ 자동 알람 저장 완료');
+
       if (mounted) {
         final alarmService = Provider.of<AlarmService>(context, listen: false);
         await alarmService.updateAutoAlarms(_autoAlarms);
+        logMessage('✅ AlarmService 업데이트 완료');
       }
     } catch (e) {
-      debugPrint('자동 알림 설정 저장 오류: $e');
+      logMessage('❌ 자동 알람 저장 오류: $e', level: LogLevel.error);
     }
   }
 
@@ -778,29 +806,47 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   }
 
   void _save() {
-    if (_selectedStation == null || _selectedRouteId == null) {
+    // Validate essential fields before saving
+    if (_selectedStation == null || _selectedStation!.id.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('정류장과 노선을 선택해주세요')),
+        const SnackBar(content: Text('정류장을 먼저 선택해주세요.')),
+      );
+      return;
+    }
+    if (_selectedRouteId == null ||
+        _selectedRouteId!.isEmpty ||
+        _selectedRouteNo == null ||
+        _selectedRouteNo!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('노선을 먼저 선택해주세요.')),
       );
       return;
     }
     if (_repeatDays.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('최소 하나 이상의 요일을 선택해주세요')),
+        const SnackBar(content: Text('최소 하나 이상의 반복 요일을 선택해주세요.')),
+      );
+      return;
+    }
+    // Add checks for hour and minute if necessary (though TimePickerSpinner likely handles this)
+    if (_hour < 0 || _hour > 23 || _minute < 0 || _minute > 59) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('유효하지 않은 시간입니다.')),
       );
       return;
     }
 
+    // Create the AutoAlarm object only after validation passes
     final alarm = AutoAlarm(
       id: widget.autoAlarm?.id ??
           DateTime.now().millisecondsSinceEpoch.toString(),
       hour: _hour,
       minute: _minute,
-      stationId: _selectedStation!.id,
-      stationName: _selectedStation!.name,
-      routeId: _selectedRouteId!,
-      routeNo: _selectedRouteNo!,
-      repeatDays: _repeatDays,
+      stationId: _selectedStation!.id, // Ensured not null by validation
+      stationName: _selectedStation!.name, // Ensured not null by validation
+      routeId: _selectedRouteId!, // Ensured not null or empty by validation
+      routeNo: _selectedRouteNo!, // Ensured not null or empty by validation
+      repeatDays: _repeatDays, // Ensured not empty by validation
       excludeWeekends: _excludeWeekends,
       excludeHolidays: _excludeHolidays,
       isActive: widget.autoAlarm?.isActive ?? true,

@@ -263,4 +263,16 @@ class SimpleTTSHelper {
 
     return await speak(message);
   }
+
+  /// 볼륨 설정
+  static Future<void> setVolume(double volume) async {
+    try {
+      // volume은 0.0 ~ 1.0 사이의 값
+      final normalizedVolume = volume.clamp(0.0, 1.0);
+      await _ttsChannel.invokeMethod('setVolume', {'volume': normalizedVolume});
+    } catch (e) {
+      logMessage('볼륨 설정 오류: $e', level: LogLevel.error);
+      rethrow;
+    }
+  }
 }

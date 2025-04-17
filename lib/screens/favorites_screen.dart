@@ -160,7 +160,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         final stationArrivals = _stationArrivals[station.id] ?? [];
         final isLoading = _isLoadingMap[station.id] ?? false;
         final error = _errorMap[station.id];
-        final isTracking = _stationTrackingStatus[station.id] ?? false;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,

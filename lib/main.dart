@@ -31,38 +31,40 @@ enum LogLevel {
 }
 
 /// 현재 로그 레벨 설정
-const LogLevel currentLogLevel = LogLevel.info;
+const LogLevel currentLogLevel = LogLevel.verbose;
 
 /// Dio 클라이언트 인스턴스
 final dioClient = DioClient();
 
 /// 로깅 유틸리티 함수
 void logMessage(String message, {LogLevel level = LogLevel.debug}) {
-  if (level.index <= currentLogLevel.index) {
-    // 개발 모드에서만 콘솔에 출력
-    if (!const bool.fromEnvironment('dart.vm.product')) {
-      String prefix;
-      switch (level) {
-        case LogLevel.debug:
-          prefix = '🐛 [DEBUG]';
-          break;
-        case LogLevel.info:
-          prefix = 'ℹ️ [INFO]';
-          break;
-        case LogLevel.warning:
-          prefix = '⚠️ [WARN]';
-          break;
-        case LogLevel.error:
-          prefix = '❌ [ERROR]';
-          break;
-        default:
-          prefix = '[LOG]';
-      }
-
-      // 개발자 로그에 기록
-      dev.log('$prefix $message', name: level.toString());
-    }
+  // 개발 모드에서만 콘솔에 출력
+  String prefix;
+  switch (level) {
+    case LogLevel.debug:
+      prefix = '🐛 [DEBUG]';
+      break;
+    case LogLevel.info:
+      prefix = 'ℹ️ [INFO]';
+      break;
+    case LogLevel.warning:
+      prefix = '⚠️ [WARN]';
+      break;
+    case LogLevel.error:
+      prefix = '❌ [ERROR]';
+      break;
+    case LogLevel.verbose:
+      prefix = '📝 [VERBOSE]';
+      break;
+    default:
+      prefix = '[LOG]';
   }
+
+  // 콘솔에 직접 출력
+  debugPrint('$prefix $message');
+
+  // 개발자 로그에도 기록
+  dev.log('$prefix $message', name: level.toString());
 }
 
 /// 기존 log 함수를 logMessage로 대체 (하위 호환성)

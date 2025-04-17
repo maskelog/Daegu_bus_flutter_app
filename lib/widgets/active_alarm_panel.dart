@@ -245,6 +245,11 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     }
   }
 
+  // 시간을 HH:mm 형식으로 포맷팅하는 헬퍼 함수
+  String _getFormattedTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AlarmService>(
@@ -252,30 +257,40 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         // 일반 알람은 모두 표시
         final activeAlarms = alarmService.activeAlarms;
 
-        // 자동 알람 처리 로직 수정
-        // 1. 활성화된 자동 알람만 포함
-        // 2. 예약 시간 이전인 알람만 포함 (시간이 이미 지난 알람은 제외)
+        // 자동 알람은 실행 중인 것만 표시 (실제 알람이 시작된 경우)
         final autoAlarms = alarmService.autoAlarms.where((alarm) {
-          // 비활성화된 알람은 제외
-          if (!alarm.isActive) return false;
+          // 현재 시간과 알람 시간의 차이 계산
+          final now = DateTime.now();
+          final alarmTime = DateTime(
+            now.year,
+            now.month,
+            now.day,
+            alarm.scheduledTime.hour,
+            alarm.scheduledTime.minute,
+          );
 
-          // 현재 시간과 예약 시간의 차이 계산 (분 단위)
-          final timeDiff =
-              alarm.scheduledTime.difference(DateTime.now()).inMinutes;
+          // 알람이 실행 중인지 확인 (알람 시간으로부터 5분 이내)
+          final timeDiff = now.difference(alarmTime).inMinutes;
+          final isAlarmActive = timeDiff >= 0 && timeDiff <= 5;
 
-          // 예약 시간이 아직 지나지 않은 알람만 표시 (최대 30분 전까지만 표시)
-          return timeDiff >= -1 && timeDiff <= 30;
+          if (isAlarmActive) {
+            logMessage('실행 중인 자동 알람 발견: ${alarm.busNo}번');
+            logMessage('  - 알람 시간: ${_getFormattedTime(alarmTime)}');
+            logMessage('  - 경과 시간: $timeDiff분');
+          }
+
+          return isAlarmActive;
         }).toList();
 
         logMessage(
-            '자동 알람 필터링: 총 ${alarmService.autoAlarms.length}개 중 ${autoAlarms.length}개 표시됨',
+            '자동 알람 필터링: 총 ${alarmService.autoAlarms.length}개 중 실행 중 ${autoAlarms.length}개',
             level: LogLevel.debug);
 
         final allAlarms = [...activeAlarms, ...autoAlarms]
           ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
 
         logMessage(
-            'ActiveAlarmPanel 빌드: 일반=${activeAlarms.length}개, 자동=${autoAlarms.length}개, 총=${allAlarms.length}개',
+            'ActiveAlarmPanel 빌드: 일반=${activeAlarms.length}개, 실행 중 자동=${autoAlarms.length}개, 총=${allAlarms.length}개',
             level: LogLevel.info);
 
         // 알람이 없는 경우
@@ -295,6 +310,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
 
         // 알람이 있는 경우 - 첫 번째 알람에 대한 상세 패널 표시
         final firstAlarm = allAlarms.first;
+        final isAutoAlarm = autoAlarms.contains(firstAlarm);
 
         // routeId가 null이면 기본값 설정
         final String routeId = firstAlarm.routeId.isNotEmpty
@@ -307,35 +323,50 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
           routeId,
         );
 
-        // 남은 시간 계산
+        // 남은 시간 계산 (자동 알람과 일반 알람 구분)
         int remainingMinutes;
-        if (cachedBusInfo != null) {
+        if (isAutoAlarm) {
+          // 자동 알람의 경우 예약된 시간까지 남은 시간 표시
+          remainingMinutes =
+              firstAlarm.scheduledTime.difference(DateTime.now()).inMinutes;
+          logMessage(
+              '자동 알람 시간 계산: ${firstAlarm.busNo}번, $remainingMinutes분 후 (${firstAlarm.scheduledTime})',
+              level: LogLevel.debug);
+        } else if (cachedBusInfo != null) {
+          // 일반 알람의 경우 실시간 도착 정보 사용
           remainingMinutes = cachedBusInfo.getRemainingMinutes();
           logMessage(
               '버스 도착 정보 (캐시): ${firstAlarm.busNo}번, $remainingMinutes분 후',
               level: LogLevel.debug);
         } else {
-          // 캐시된 정보가 없으면 알람 예정 시간과 현재 시간의 차이로 계산
-          remainingMinutes =
-              firstAlarm.scheduledTime.difference(DateTime.now()).inMinutes;
+          remainingMinutes = firstAlarm.getCurrentArrivalMinutes();
           logMessage(
               '버스 도착 정보 (예약): ${firstAlarm.busNo}번, $remainingMinutes분 후',
               level: LogLevel.debug);
         }
 
-        final isArrivingSoon = remainingMinutes <= 2;
-        final progress =
-            (remainingMinutes > 30) ? 0.0 : (30 - remainingMinutes) / 30.0;
-        final arrivalText = isArrivingSoon ? '곧 도착' : '$remainingMinutes분 후 도착';
+        final isArrivingSoon = !isAutoAlarm && remainingMinutes <= 2;
+        final progress = isAutoAlarm
+            ? 0.0
+            : (remainingMinutes > 30)
+                ? 0.0
+                : (30 - remainingMinutes) / 30.0;
 
-        // 버스 현재 위치 정보 - 캐시 또는 알람 데이터에서 가져오기
-        String currentStation = '정보 업데이트 중...';
-        if (cachedBusInfo?.currentStation != null &&
-            cachedBusInfo!.currentStation.isNotEmpty) {
-          currentStation = cachedBusInfo.currentStation;
-        } else if (firstAlarm.currentStation != null &&
-            firstAlarm.currentStation!.isNotEmpty) {
-          currentStation = firstAlarm.currentStation!;
+        // 도착 정보 텍스트 설정
+        final arrivalText = isAutoAlarm
+            ? '다음 알람: ${_getFormattedTime(firstAlarm.scheduledTime)}'
+            : (isArrivingSoon ? '곧 도착' : '$remainingMinutes분 후 도착');
+
+        // 버스 현재 위치 정보 - 자동 알람이 아닐 때만 표시
+        String currentStation = isAutoAlarm ? '' : '정보 업데이트 중...';
+        if (!isAutoAlarm) {
+          if (cachedBusInfo?.currentStation != null &&
+              cachedBusInfo!.currentStation.isNotEmpty) {
+            currentStation = cachedBusInfo.currentStation;
+          } else if (firstAlarm.currentStation != null &&
+              firstAlarm.currentStation!.isNotEmpty) {
+            currentStation = firstAlarm.currentStation!;
+          }
         }
 
         // 메인 패널 생성

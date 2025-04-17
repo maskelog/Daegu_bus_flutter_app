@@ -134,54 +134,98 @@ Future<bool> _handleAutoAlarmTask({
     // AlarmService 인스턴스 생성
     final alarmService = AlarmService();
 
-    // 알람 설정 - 알람 자체는 설정하지만 즉시 알림이 울리지 않도록
-    final bool success = await alarmService.setOneTimeAlarm(
-      busNo,
-      stationName,
-      remainingMinutes,
-      routeId: routeId,
-      useTTS: useTTS,
-      isImmediateAlarm: false,
-    );
+    // 버스 도착 정보 조회
+    try {
+      final info =
+          await BusApiService().getBusArrivalByRouteId(stationId, routeId);
+      if (info != null && info.bus.isNotEmpty) {
+        final busData = info.bus.first;
+        final busInfo = BusInfo.fromBusInfoData(busData);
 
-    if (success) {
-      logMessage("✅ 알람 서비스를 통한 알람 설정 성공: $busNo");
-    } else {
-      logMessage("⚠️ 알람 서비스를 통한 알람 설정 실패: $busNo");
-    }
+        // TTS 발화
+        if (useTTS) {
+          await SimpleTTSHelper.initialize();
+          await SimpleTTSHelper.speak("$busNo번 버스 $stationName 승차 알람이 시작됩니다.");
+          await _speakBusInfo(busInfo, busNo, stationName);
+        }
 
-    // 알람 설정 시각에 TTS 및 알림 실행 (즉시 모니터링 시작하지 않음)
-    if (useTTS) {
-      await SimpleTTSHelper.initialize();
-      await SimpleTTSHelper.speak("$busNo번 버스 $stationName 승차 알람이 작동합니다.");
-    }
+        // 실시간 도착 정보로 알람 설정
+        final actualRemainingMinutes = int.tryParse(
+                busInfo.estimatedTime.replaceAll(RegExp(r'[^0-9]'), '')) ??
+            remainingMinutes;
 
-    // 알람 ID로 알림 표시 - 간단한 알림만 표시
-    await NotificationService().showNotification(
-      id: alarmId,
-      busNo: busNo,
-      stationName: stationName,
-      remainingMinutes: remainingMinutes,
-      currentStation: '',
-      isOngoing: false, // 지속적인 알림이 아닌 일회성 알림으로 설정
-    );
+        // 알람 설정 (즉시 알림 활성화)
+        final bool success = await alarmService.setOneTimeAlarm(
+          busNo,
+          stationName,
+          actualRemainingMinutes,
+          routeId: routeId,
+          useTTS: useTTS,
+          isImmediateAlarm: true,
+          currentStation: busInfo.currentStation,
+        );
 
-    // 필요한 경우에만 조건부로 버스 모니터링 서비스 시작
-    // (즉시 추적하지 않고 사용자가 명시적으로 요청한 경우에만)
-    final prefs = await SharedPreferences.getInstance();
-    final bool startMonitoring =
-        prefs.getBool('auto_start_monitoring') ?? false;
+        if (success) {
+          logMessage("✅ 알람 서비스를 통한 알람 설정 성공: $busNo");
 
-    if (startMonitoring) {
-      logMessage("🔔 사용자 설정에 따라 버스 모니터링 서비스 시작");
-      await alarmService.startBusMonitoringService(
-        stationId: stationId,
-        stationName: stationName,
-        routeId: routeId,
+          // TTS 반복 작업 등록 (2분 간격)
+          await Workmanager().registerPeriodicTask(
+            'tts_${busNo}_$stationId',
+            'ttsRepeatingTask',
+            frequency: const Duration(minutes: 2),
+            inputData: {
+              'busNo': busNo,
+              'stationName': stationName,
+              'routeId': routeId,
+              'stationId': stationId,
+              'useTTS': useTTS,
+              'alarmId': alarmId,
+            },
+            existingWorkPolicy: ExistingWorkPolicy.replace,
+          );
+
+          // 버스 모니터링 서비스 시작
+          await alarmService.startBusMonitoringService(
+            stationId: stationId,
+            stationName: stationName,
+            routeId: routeId,
+            busNo: busNo,
+          );
+        } else {
+          logMessage("⚠️ 알람 서비스를 통한 알람 설정 실패: $busNo");
+        }
+      } else {
+        // 버스 정보를 가져오지 못한 경우 기본 알림
+        if (useTTS) {
+          await SimpleTTSHelper.initialize();
+          await SimpleTTSHelper.speak("$busNo번 버스 $stationName 승차 알람이 시작됩니다.");
+        }
+
+        await NotificationService().showNotification(
+          id: alarmId,
+          busNo: busNo,
+          stationName: stationName,
+          remainingMinutes: remainingMinutes,
+          currentStation: '',
+          isOngoing: true,
+        );
+      }
+    } catch (e) {
+      logMessage("⚠️ 버스 정보 조회 실패: $e");
+      // 오류 발생 시 기본 알림
+      if (useTTS) {
+        await SimpleTTSHelper.initialize();
+        await SimpleTTSHelper.speak("$busNo번 버스 $stationName 승차 알람이 시작됩니다.");
+      }
+
+      await NotificationService().showNotification(
+        id: alarmId,
         busNo: busNo,
+        stationName: stationName,
+        remainingMinutes: remainingMinutes,
+        currentStation: '',
+        isOngoing: true,
       );
-    } else {
-      logMessage("🔔 즉시 모니터링 기능이 비활성화되어 있습니다");
     }
 
     logMessage("✅ 자동 알람 작동 완료: $busNo");

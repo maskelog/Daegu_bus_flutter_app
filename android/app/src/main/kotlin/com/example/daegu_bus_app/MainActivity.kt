@@ -71,9 +71,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private var bottomSheetDialog: BottomSheetDialog? = null
     private var bottomSheetBehavior: BottomSheetBehavior<View>? = null
 
-    // TTS 중복 방지를 위한 트래킹 맵
-    private val ttsTracker = ConcurrentHashMap<String, Long>()
-    private val TTS_DUPLICATE_THRESHOLD_MS = 300 // 0.3초 이내 중복 발화 방지
+    // TTS 중복 방지를 위한 트래킹 맵 (BusAlertService로 이동 예정)
+    // private val ttsTracker = ConcurrentHashMap<String, Long>()
+    // private val TTS_DUPLICATE_THRESHOLD_MS = 300
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -193,6 +193,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onInit(status: Int) {
+        // MainActivity의 TTS 초기화 로직은 유지 (초기 구동 시 필요할 수 있음)
         try {
             if (status == TextToSpeech.SUCCESS) {
                 try {
@@ -218,15 +219,15 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             onError(utteranceId)
                         }
                     })
-                    Log.d(TAG, "TTS 초기화 성공")
+                    Log.d(TAG, "MainActivity TTS 초기화 성공")
                 } catch (e: Exception) {
                     Log.e(TAG, "TTS 설정 오류: ${e.message}", e)
                 }
             } else {
-                Log.e(TAG, "TTS 초기화 실패: $status")
+                Log.e(TAG, "MainActivity TTS 초기화 실패: $status")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "TTS onInit 오류: ${e.message}", e)
+            Log.e(TAG, "MainActivity TTS onInit 오류: ${e.message}", e)
         }
     }
 
@@ -692,126 +693,46 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             }
 
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_CHANNEL).setMethodCallHandler { call, result ->
+                if (busAlertService == null) {
+                    Log.e(TAG, "TTS 채널 호출 시 BusAlertService가 null입니다.")
+                    result.error("SERVICE_UNAVAILABLE", "TTS 서비스가 초기화되지 않았습니다.", null)
+                    return@setMethodCallHandler
+                }
                 when (call.method) {
-                    "forceEarphoneOutput" -> {
-                        try {
-                            // 미디어 출력으로 고정
-                            audioManager.mode = AudioManager.MODE_NORMAL
-                            audioManager.setStreamVolume(
-                                AudioManager.STREAM_MUSIC,
-                                audioManager.getStreamVolume(AudioManager.STREAM_MUSIC),
-                                0
-                            )
-                            Log.d(TAG, "미디어 출력 고정 완료")
-                            result.success(true)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "오디오 출력 설정 오류: ${e.message}", e)
-                            result.error("AUDIO_ERROR", "오디오 출력 설정 실패: ${e.message}", null)
-                        }
-                    }
                     "speakTTS" -> {
                         val message = call.argument<String>("message") ?: ""
-                        val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false
-
-                        // 중복 발화 방지 로직 추가
-                        val currentTime = System.currentTimeMillis()
-                        val lastSpeakTime = ttsTracker[message] ?: 0
-
-                        if (currentTime - lastSpeakTime > TTS_DUPLICATE_THRESHOLD_MS) {
-                            // 중복 아니면 발화 진행
-                            speakTTS(message, isHeadphoneMode)
-
-                            // 발화 시간 기록
-                            ttsTracker[message] = currentTime
-
-                            result.success(true)
-                        } else {
-                            // 중복 발화 방지
-                            Log.d(TAG, "중복 TTS 발화 방지: $message")
-                            result.success(false)
+                        val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false // 이 파라미터는 BusAlertService에서 audioOutputMode로 대체됨
+                        if (message.isEmpty()) {
+                             result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
+                             return@setMethodCallHandler
                         }
+                        // BusAlertService의 speakTts 호출 (오디오 포커스 관리 포함)
+                        // isHeadphoneMode는 사용하지 않고, BusAlertService 내부의 audioOutputMode 설정을 따름
+                        busAlertService?.speakTts(message, earphoneOnly = false) // earphoneOnly는 BusAlertService 내부 로직으로 결정
+                        result.success(true) // 비동기 호출이므로 일단 성공으로 응답
                     }
                     "setAudioOutputMode" -> {
-                        val mode = call.argument<Int>("mode") ?: 2  // 기본값: 자동 감지
+                        val mode = call.argument<Int>("mode") ?: 2
+                        busAlertService?.setAudioOutputMode(mode)
+                        Log.d(TAG, "오디오 출력 모드 설정 요청: $mode")
+                        result.success(true)
+                    }
+                    "setVolume" -> {
+                        val volume = call.argument<Double>("volume") ?: 1.0
                         try {
-                            busAlertService?.setAudioOutputMode(mode)
-                            Log.d(TAG, "오디오 출력 모드 설정: $mode")
+                            busAlertService?.setTtsVolume(volume)
+                            Log.d(TAG, "TTS 볼륨 설정: ${volume * 100}%")
                             result.success(true)
                         } catch (e: Exception) {
-                            Log.e(TAG, "오디오 출력 모드 설정 오류: ${e.message}", e)
-                            result.error("AUDIO_MODE_ERROR", "오디오 출력 모드 설정 실패: ${e.message}", null)
-                        }
-                    }
-                    "speakEarphoneOnly" -> {
-                        val message = call.argument<String>("message") ?: ""
-                        if (message.isEmpty()) {
-                            result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
-                            return@setMethodCallHandler
-                        }
-                        try {
-                            // 미디어 출력으로 고정
-                            audioManager.mode = AudioManager.MODE_NORMAL
-
-                            // 감시 가능한 발화 ID 생성
-                            val utteranceId = "EARPHONE_${System.currentTimeMillis()}"
-                            val params = Bundle().apply {
-                                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-                                putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
-                            }
-
-                            // UI 스레드에서 실행
-                            runOnUiThread {
-                                try {
-                                    val ttsResult = tts.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-                                    Log.d(TAG, "TTS 이어폰 발화 시작: $message, 결과: $ttsResult")
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "TTS 이어폰 발화 오류: ${e.message}", e)
-                                }
-                            }
-
-                            result.success(true)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "이어폰 TTS 실행 오류: ${e.message}", e)
-                            result.error("TTS_ERROR", "이어폰 TTS 발화 실패: ${e.message}", null)
-                        }
-                    }
-                    "startTtsTracking" -> {
-                        val routeId = call.argument<String>("routeId") ?: ""
-                        val stationId = call.argument<String>("stationId") ?: ""
-                        val busNo = call.argument<String>("busNo") ?: ""
-                        val stationName = call.argument<String>("stationName") ?: ""
-                        if (routeId.isEmpty() || stationId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
-                            result.error("INVALID_ARGUMENT", "필수 인자 누락", null)
-                            return@setMethodCallHandler
-                        }
-                        try {
-                            busAlertService?.startTtsTracking(routeId, stationId, busNo, stationName)
-                            result.success("TTS 추적 시작됨")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
-                            result.error("TTS_ERROR", "TTS 추적 시작 실패: ${e.message}", null)
-                        }
-                    }
-                    "stopTtsTracking" -> {
-                        try {
-                            busAlertService?.stopTtsTracking(forceStop = true) // forceStop = true로 설정
-                            tts.stop()
-                            Log.d(TAG, "TTS 추적 중지")
-                            result.success(true)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "TTS 추적 중지 오류: ${e.message}", e)
-                            result.error("TTS_ERROR", "TTS 추적 중지 실패: ${e.message}", null)
+                            Log.e(TAG, "볼륨 설정 오류: ${e.message}")
+                            result.error("VOLUME_ERROR", "볼륨 설정 중 오류 발생: ${e.message}", null)
                         }
                     }
                     "stopTTS" -> {
-                        try {
-                            tts.stop()
-                            Log.d(TAG, "네이티브 TTS 정지")
-                            result.success(true)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "네이티브 TTS 정지 오류: ${e.message}", e)
-                            result.error("TTS_ERROR", "TTS 정지 실패: ${e.message}", null)
-                        }
+                        // BusAlertService의 stopTtsTracking을 호출하여 TTS 중지
+                        busAlertService?.stopTtsTracking(forceStop = true)
+                        Log.d(TAG, "네이티브 TTS 중지 요청 (BusAlertService 호출)")
+                        result.success(true)
                     }
                     else -> result.notImplemented()
                 }
@@ -868,60 +789,14 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
             // 초기화 시도
             try {
+                // BusAlertService 인스턴스 가져오기 (onCreate에서 이미 생성됨)
+                busAlertService = BusAlertService.getInstance(this)
                 busAlertService?.initialize(this, flutterEngine)
             } catch (e: Exception) {
                 Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Method 채널 설정 오류: ${e.message}", e)
-        }
-    }
-
-    private fun speakTTS(text: String, isHeadphoneMode: Boolean) {
-        try {
-            // 오디오 출력 모드 정보 로깅 (추가)
-            val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-            val isWiredHeadsetConnected = audioManager.isWiredHeadsetOn
-            val isBluetoothConnected = audioManager.isBluetoothA2dpOn
-            Log.d(TAG, "🎧🔊 TTS 오디오 상태 확인 ==========================================")
-            Log.d(TAG, "🎧 이어폰 연결 상태: 유선=${isWiredHeadsetConnected}, 블루투스=${isBluetoothConnected}")
-            Log.d(TAG, "🎧 요청된 모드: ${if (isHeadphoneMode) "이어폰 전용" else "일반 모드"}")
-            if (busAlertService != null) {
-                val mode = busAlertService?.getAudioOutputMode() ?: -1
-                val modeName = when(mode) {
-                    0 -> "이어폰 전용"
-                    1 -> "스피커 전용"
-                    2 -> "자동 감지"
-                    else -> "알 수 없음"
-                }
-                Log.d(TAG, "🎧 현재 설정된 오디오 모드: $modeName ($mode)")
-            } else {
-                Log.d(TAG, "🎧 busAlertService가 null이어서 오디오 모드를 확인할 수 없습니다")
-            }
-            Log.d(TAG, "🎧 발화 텍스트: \"$text\"")
-
-            // 간소화된 파라미터 설정
-            val utteranceId = "TTS_${System.currentTimeMillis()}"
-            val params = Bundle().apply {
-                putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-                // 알림 스트림으로 변경하여 우선순위 높임
-                putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_NOTIFICATION)
-                putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-            }
-
-            // UI 스레드에서 직접 실행
-            runOnUiThread {
-                try {
-                    // 항상 QUEUE_FLUSH 모드로 실행하여 지연 없이 즉시 발화
-                    val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-                    Log.d(TAG, "🔊 TTS 발화 결과: $result (0=성공)")
-                    Log.d(TAG, "🎧🔊 TTS 발화 요청 완료 ==========================================")
-                } catch (e: Exception) {
-                    Log.e(TAG, "TTS 발화 오류: ${e.message}", e)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "speakTTS 호출 오류: ${e.message}", e)
         }
     }
 
@@ -1108,194 +983,5 @@ object WorkManagerCallback {
     fun callbackDispatcher() {
         Log.d("WorkManagerCallback", "WorkManager callback dispatcher invoked.")
         // WorkManager initialization is best handled in the Application class.
-    }
-}
-
-// --- Worker for Auto Alarms ---
-class AutoAlarmWorker(
-    private val context: Context,
-    workerParams: WorkerParameters
-) : Worker(context, workerParams), TextToSpeech.OnInitListener {
-    private val TAG = "AutoAlarmWorker"
-    private val ALARM_NOTIFICATION_CHANNEL_ID = "bus_alarm_channel"
-    private lateinit var tts: TextToSpeech
-    private var ttsInitialized = false
-    private val ttsInitializationLock = Object() // Lock for synchronization
-
-    // Store data for TTS, as initialization is async
-    private var pendingAlarmId: Int = 0
-    private var pendingBusNo: String = ""
-    private var pendingStationName: String = ""
-
-    override fun doWork(): Result {
-        Log.d(TAG, "⏰ AutoAlarmWorker 실행: ID=$pendingAlarmId, 버스=$pendingBusNo, 정류장=$pendingStationName")
-        pendingAlarmId = inputData.getInt("alarmId", 0)
-        pendingBusNo = inputData.getString("busNo") ?: ""
-        pendingStationName = inputData.getString("stationName") ?: ""
-        val useTTS = inputData.getBoolean("useTTS", true)
-
-        Log.d(TAG, "⏰ Executing AutoAlarmWorker: ID=$pendingAlarmId, Bus=$pendingBusNo, Station=$pendingStationName, TTS=$useTTS")
-
-        if (pendingBusNo.isEmpty() || pendingStationName.isEmpty()) {
-            Log.e(TAG, "❌ Missing busNo or stationName in inputData")
-            return Result.failure()
-        }
-
-        // Initialize TTS. onInit will be called asynchronously.
-        // Pass 'this' as the OnInitListener.
-        tts = TextToSpeech(applicationContext, this)
-
-        // Show Notification (can be done immediately)
-        showNotification(pendingAlarmId, pendingBusNo, pendingStationName)
-
-        // TTS speaking is handled in onInit after initialization is complete
-        if (!useTTS) {
-             Log.d(TAG, "TTS is disabled for this alarm.")
-             // If TTS is disabled, we can potentially shut down TTS engine earlier if created,
-             // but let's keep it simple and let onStopped handle it.
-        } else {
-            // We wait for onInit to call speakTTS implicitly
-             Log.d(TAG, "Waiting for TTS initialization...")
-        }
-
-        // Worker result depends on whether setup was successful.
-        // The actual speaking happens async. WorkManager just needs to know
-        // if the initial setup succeeded.
-        Log.d(TAG, "✅ Worker setup finished for ID: $pendingAlarmId. TTS init is async.")
-        return Result.success()
-    }
-
-    private fun showNotification(alarmId: Int, busNo: String, stationName: String) {
-        val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val intent = applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        }
-        val pendingIntent = intent?.let {
-            PendingIntent.getActivity(applicationContext, alarmId, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        }
-
-        // Full-screen intent
-        val fullScreenIntent = Intent(applicationContext, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            putExtra("alarmId", alarmId)
-        }
-        val fullScreenPendingIntent = PendingIntent.getActivity(
-            applicationContext, alarmId, fullScreenIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(applicationContext, ALARM_NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("$busNo 버스 알람")
-            .setContentText("$stationName 정류장에 곧 도착합니다")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .setFullScreenIntent(fullScreenPendingIntent, true)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .build()
-
-        try {
-            notificationManager.notify(alarmId, notification)
-            Log.d(TAG, "✅ Notification shown with lockscreen support for alarm ID: $alarmId")
-        } catch (e: SecurityException) {
-            Log.e(TAG, "❌ Notification permission possibly denied: ${e.message}")
-            // Don't return failure here, TTS might still work if notification fails
-        } catch (e: Exception) {
-             Log.e(TAG, "❌ Error showing notification: ${e.message}")
-        }
-    }
-
-    override fun onInit(status: Int) {
-        synchronized(ttsInitializationLock) {
-            if (status == TextToSpeech.SUCCESS) {
-                val result = tts.setLanguage(Locale.KOREAN)
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                     Log.e(TAG, "❌ Korean language is not supported for TTS")
-                     ttsInitialized = false
-                } else {
-                    tts.setSpeechRate(1.2f)
-                    tts.setPitch(1.1f)
-                    ttsInitialized = true
-                    Log.d(TAG, "✅ TTS 초기화 성공 in AutoAlarmWorker. Speaking pending message.")
-                    // Speak now that TTS is ready, using stored data
-                    val useTTS = inputData.getBoolean("useTTS", true) // Check again if TTS is enabled
-                    if(useTTS && pendingBusNo.isNotEmpty()){ // Check if data is valid
-                        speakTTS(pendingAlarmId, pendingBusNo, pendingStationName)
-                    }
-                }
-            } else {
-                Log.e(TAG, "❌ TTS 초기화 실패 in AutoAlarmWorker: $status")
-                ttsInitialized = false
-            }
-        }
-    }
-
-    private fun speakTTS(alarmId: Int, busNo: String, stationName: String) {
-         if (!ttsInitialized || !::tts.isInitialized) {
-            Log.e(TAG, "TTS not ready or not initialized when trying to speak.")
-            return
-        }
-
-        val utteranceId = "auto_alarm_$alarmId"
-        val params = Bundle().apply {
-            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_ALARM)
-            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-        }
-        val message = "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다"
-
-        // Set listener *before* speaking
-        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {
-                Log.d(TAG, "TTS 발화 시작: $utteranceId")
-            }
-            override fun onDone(utteranceId: String?) {
-                if (utteranceId == "auto_alarm_$alarmId") {
-                    shutdownTTS()
-                    Log.d(TAG, "✅ TTS shutdown after speaking for alarm ID: $alarmId")
-                }
-            }
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) {
-                Log.e(TAG, "❌ TTS Error (deprecated) for utteranceId: $utteranceId")
-                shutdownTTS()
-            }
-             override fun onError(utteranceId: String?, errorCode: Int) {
-                 Log.e(TAG, "❌ TTS Error ($errorCode) for utteranceId: $utteranceId")
-                 shutdownTTS()
-             }
-        })
-
-        val result = tts.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-        if (result == TextToSpeech.ERROR) {
-             Log.e(TAG, "❌ TTS speak() failed for alarm ID: $alarmId")
-             shutdownTTS() // Shutdown if speak fails immediately
-        } else {
-            Log.d(TAG, "✅ TTS requested for alarm ID: $alarmId, Result: $result")
-        }
-    }
-
-    private fun shutdownTTS() {
-         // Ensure TTS shutdown happens only once and safely
-        if (::tts.isInitialized) {
-             try {
-                 // Check if speaking to avoid interrupting ongoing shutdown from listener
-                 if (!tts.isSpeaking) {
-                    tts.stop()
-                    tts.shutdown()
-                    Log.d(TAG, "✅ TTS resources released.")
-                 }
-             } catch (e: Exception) {
-                 Log.e(TAG, "❌ Error during TTS shutdown: ${e.message}")
-             }
-        }
-    }
-
-    override fun onStopped() {
-        Log.d(TAG, "AutoAlarmWorker stopped. Cleaning up TTS.")
-        shutdownTTS()
-        super.onStopped()
     }
 }

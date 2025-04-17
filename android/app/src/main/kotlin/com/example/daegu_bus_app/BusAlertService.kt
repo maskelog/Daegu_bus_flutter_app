@@ -43,6 +43,7 @@ class BusAlertService : Service() {
         private const val DEFAULT_ALARM_SOUND = "alarm_sound"
         private const val PREF_SPEAKER_MODE = "speaker_mode"
         private const val PREF_NOTIFICATION_DISPLAY_MODE_KEY = "notificationDisplayMode"
+        private const val PREF_TTS_VOLUME = "tts_volume"
 
         // 오디오 출력 모드 상수
         private const val OUTPUT_MODE_HEADSET = 0
@@ -82,6 +83,8 @@ class BusAlertService : Service() {
     private var useTextToSpeech = false
     private var audioOutputMode = OUTPUT_MODE_AUTO
     private var notificationDisplayMode = DISPLAY_MODE_ALARMED_ONLY
+    private var ttsVolume: Float = 1.0f
+    private var audioManager: AudioManager? = null
 
     // 추가: isInTrackingMode getter
     val isInTrackingMode: Boolean
@@ -1202,20 +1205,19 @@ class BusAlertService : Service() {
     // Renamed from loadAlarmSoundSettings to loadSettings for clarity
     private fun loadSettings() {
         try {
-            val sharedPreferences = context.getSharedPreferences(PREF_ALARM_SOUND, Context.MODE_PRIVATE)
-            currentAlarmSound = sharedPreferences.getString(PREF_ALARM_SOUND_FILENAME, DEFAULT_ALARM_SOUND) ?: DEFAULT_ALARM_SOUND
-            useTextToSpeech = sharedPreferences.getBoolean(PREF_ALARM_USE_TTS, false)
-            audioOutputMode = sharedPreferences.getInt(PREF_SPEAKER_MODE, OUTPUT_MODE_AUTO)
-            notificationDisplayMode = sharedPreferences.getInt(PREF_NOTIFICATION_DISPLAY_MODE_KEY, DISPLAY_MODE_ALARMED_ONLY)
-
-            Log.d(TAG, "🔔 설정 로드 성공: 알람음=$currentAlarmSound, TTS=$useTextToSpeech, 오디오=$audioOutputMode, 알림모드=$notificationDisplayMode")
+            val prefs = context.getSharedPreferences("bus_alert_settings", Context.MODE_PRIVATE)
+            currentAlarmSound = prefs.getString(PREF_ALARM_SOUND_FILENAME, DEFAULT_ALARM_SOUND) ?: DEFAULT_ALARM_SOUND
+            useTextToSpeech = prefs.getBoolean(PREF_ALARM_USE_TTS, true)
+            audioOutputMode = prefs.getInt(PREF_SPEAKER_MODE, OUTPUT_MODE_AUTO)
+            notificationDisplayMode = prefs.getInt(PREF_NOTIFICATION_DISPLAY_MODE_KEY, DISPLAY_MODE_ALARMED_ONLY)
+            ttsVolume = prefs.getFloat(PREF_TTS_VOLUME, 1.0f)
+            
+            // AudioManager 초기화
+            audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            
+            Log.d(TAG, "설정 로드 완료 - 알람음: $currentAlarmSound, TTS: $useTextToSpeech, 볼륨: ${ttsVolume * 100}%")
         } catch (e: Exception) {
-            Log.e(TAG, "🔔 설정 로드 오류: ${e.message}", e)
-            // 오류 시 기본값 설정
-            currentAlarmSound = DEFAULT_ALARM_SOUND
-            useTextToSpeech = false
-            audioOutputMode = OUTPUT_MODE_AUTO
-            notificationDisplayMode = DISPLAY_MODE_ALARMED_ONLY
+            Log.e(TAG, "설정 로드 중 오류: ${e.message}")
         }
     }
 
@@ -1292,10 +1294,11 @@ class BusAlertService : Service() {
         }
     }
 
-    private fun speakTts(text: String, earphoneOnly: Boolean = false, showNotification: Boolean = false, busInfo: Map<String, Any?>? = null) {
+    // TTS 발화 함수 수정 (private -> public)
+    fun speakTts(text: String, earphoneOnly: Boolean = false, showNotification: Boolean = false, busInfo: Map<String, Any?>? = null) {
         if (ttsEngine != null && ttsEngine?.isLanguageAvailable(Locale.KOREAN) == TextToSpeech.LANG_AVAILABLE) {
             try {
-                val message = text // Use the message passed directly
+                val message = text
 
                 val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 val useSpeaker = when (audioOutputMode) {
@@ -1307,12 +1310,12 @@ class BusAlertService : Service() {
 
                 val streamType = if (useSpeaker) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
 
-                Log.d(TAG, "🔊 TTS 발화 시도: \"$message\" (Stream: ${if(useSpeaker) "ALARM" else "MUSIC"}, EarphoneOnly: $earphoneOnly)")
+                Log.d(TAG, "🔊 TTS 발화 시도: \"$message\" (Stream: ${if(useSpeaker) "ALARM" else "MUSIC"}, 볼륨: ${ttsVolume * 100}%)")
 
                 val params = Bundle().apply {
                     putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "tts_${System.currentTimeMillis()}")
                     putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, streamType)
-                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, ttsVolume) // 볼륨 설정 적용
                 }
 
                 val utteranceId = params.getString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID)
@@ -1432,6 +1435,37 @@ class BusAlertService : Service() {
             if (arrivals.size > displayCount) {
                 append("\n외 ${arrivals.size - displayCount}대 더 있음")
             }
+        }
+    }
+
+    // 볼륨 설정 함수 추가
+    fun setTtsVolume(volume: Double) {
+        try {
+            // 볼륨 값을 0.0 ~ 1.0 범위로 제한
+            ttsVolume = volume.toFloat().coerceIn(0f, 1f)
+            
+            // 현재 오디오 스트림의 최대 볼륨 가져오기
+            val maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
+            
+            // 설정된 볼륨 비율을 실제 볼륨 값으로 변환
+            val targetVolume = (maxVolume * ttsVolume).toInt()
+            
+            // 오디오 스트림 볼륨 설정
+            audioManager?.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                targetVolume,
+                0  // 볼륨 변경 시 사운드 재생하지 않음
+            )
+            
+            // 설정 저장
+            context.getSharedPreferences("bus_alert_settings", Context.MODE_PRIVATE)
+                .edit()
+                .putFloat(PREF_TTS_VOLUME, ttsVolume)
+                .apply()
+            
+            Log.d(TAG, "TTS 볼륨 설정: ${ttsVolume * 100}% (시스템 볼륨: $targetVolume/$maxVolume)")
+        } catch (e: Exception) {
+            Log.e(TAG, "볼륨 설정 오류: ${e.message}")
         }
     }
 }
