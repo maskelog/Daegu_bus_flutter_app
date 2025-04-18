@@ -66,19 +66,52 @@ class BusApiService {
   Future<BusArrivalInfo?> getBusArrivalByRouteId(
       String stationId, String routeId) async {
     try {
-      final String jsonResult =
+      final dynamic result =
           await _channel.invokeMethod('getBusArrivalByRouteId', {
         'stationId': stationId,
         'routeId': routeId,
       });
 
-      final dynamic decoded = jsonDecode(jsonResult);
-      return BusArrivalInfo.fromJson(decoded);
+      // 응답 유형 확인 및 로깅
+      if (result is String) {
+        debugPrint('🐛 [DEBUG] API 응답이 String 형식입니다');
+
+        // 빈 문자열이거나 유효하지 않은 경우 처리
+        if (result.isEmpty || result == 'null' || result == '[]') {
+          debugPrint('🐛 [DEBUG] 빈 응답이거나 정보가 없음: "$result"');
+          return null;
+        }
+
+        try {
+          final dynamic decoded = jsonDecode(result);
+
+          // 배열 형식으로 온 경우 첫 번째 항목 사용
+          if (decoded is List && decoded.isNotEmpty) {
+            debugPrint('🐛 [DEBUG] 배열 형식의 응답, 첫 번째 항목 사용');
+            return BusArrivalInfo.fromJson(decoded[0]);
+          }
+
+          // 객체 형식으로 온 경우
+          if (decoded is Map<String, dynamic>) {
+            return BusArrivalInfo.fromJson(decoded);
+          }
+
+          debugPrint('❌ [ERROR] 예상치 못한 JSON 구조: ${decoded.runtimeType}');
+          return null;
+        } catch (e) {
+          debugPrint('❌ [ERROR] JSON 파싱 오류: $e, 원본 문자열: "$result"');
+          return null;
+        }
+      } else {
+        // String이 아닌 경우 (이미 Map 등으로 파싱된 경우)
+        debugPrint('🐛 [DEBUG] API 응답이 ${result.runtimeType} 형식입니다');
+        return BusArrivalInfo.fromJson(result);
+      }
     } on PlatformException catch (e) {
-      debugPrint('노선별 도착 정보 조회 오류: ${e.message}');
+      debugPrint('❌ [ERROR] 노선별 도착 정보 조회 오류: ${e.message}');
       return null;
     } catch (e) {
-      debugPrint('예상치 못한 오류: $e');
+      debugPrint('❌ [ERROR] 예상치 못한 오류: $e');
       return null;
     }
   }
@@ -128,7 +161,7 @@ class BusApiService {
 
       // 남은 정류소에서 숫자만 추출
       String remainingStations = busInfo.remainingStations;
-      
+
       // 도착 예정 시간 처리
       String estimatedTime = busInfo.estimatedTime;
 

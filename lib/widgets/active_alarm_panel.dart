@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/alarm_service.dart';
 import '../models/alarm_data.dart';
+import '../models/auto_alarm.dart';
 import '../main.dart' show logMessage, LogLevel;
 
 class ActiveAlarmPanel extends StatefulWidget {
@@ -250,6 +253,66 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
+  // 자동 알람의 실제 버스 도착 정보 업데이트 시도
+  Future<void> _refreshAutoAlarmBusInfo(
+      AlarmData alarm, AlarmService alarmService) async {
+    try {
+      // AutoAlarm 객체로 변환
+      final autoAlarm = await _getAutoAlarmFromAlarmData(alarm);
+      if (autoAlarm != null) {
+        // 실시간 버스 정보 업데이트 시도
+        await alarmService.refreshAutoAlarmBusInfo(autoAlarm);
+        logMessage('자동 알람 버스 정보 업데이트 시도: ${alarm.busNo}번',
+            level: LogLevel.debug);
+      }
+    } catch (e) {
+      logMessage('자동 알람 버스 정보 업데이트 오류: $e', level: LogLevel.error);
+    }
+  }
+
+  // AlarmData를 AutoAlarm으로 변환
+  Future<AutoAlarm?> _getAutoAlarmFromAlarmData(AlarmData alarm) async {
+    try {
+      // SharedPreferences에서 자동 알람 데이터 가져오기
+      final prefs = await SharedPreferences.getInstance();
+      final alarms = prefs.getStringList('auto_alarms') ?? [];
+
+      // 일치하는 자동 알람 찾기
+      for (var alarmJson in alarms) {
+        try {
+          final Map<String, dynamic> data = jsonDecode(alarmJson);
+          if (data['routeNo'] == alarm.busNo &&
+              data['stationName'] == alarm.stationName) {
+            // AutoAlarm 객체 생성
+            final autoAlarm = AutoAlarm(
+              id: data['id'] ?? alarm.getAlarmId().toString(),
+              routeNo: alarm.busNo,
+              stationName: alarm.stationName,
+              stationId: data['stationId'] ?? '',
+              routeId: alarm.routeId,
+              hour: alarm.scheduledTime.hour,
+              minute: alarm.scheduledTime.minute,
+              repeatDays: (data['repeatDays'] as List?)
+                      ?.map((e) => e as int)
+                      .toList() ??
+                  [1, 2, 3, 4, 5],
+              useTTS: alarm.useTTS,
+              isActive: true,
+            );
+
+            return autoAlarm;
+          }
+        } catch (e) {
+          logMessage('자동 알람 파싱 오류: $e', level: LogLevel.error);
+        }
+      }
+      return null;
+    } catch (e) {
+      logMessage('자동 알람 객체 변환 오류: $e', level: LogLevel.error);
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AlarmService>(
@@ -277,6 +340,9 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
             logMessage('실행 중인 자동 알람 발견: ${alarm.busNo}번');
             logMessage('  - 알람 시간: ${_getFormattedTime(alarmTime)}');
             logMessage('  - 경과 시간: $timeDiff분');
+
+            // 실행 중인 자동 알람은 실시간 정보 업데이트 시도 (알람 패널 새로고침 시에만 실행)
+            _refreshAutoAlarmBusInfo(alarm, alarmService);
           }
 
           return isAlarmActive;

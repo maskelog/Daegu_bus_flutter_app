@@ -871,7 +871,7 @@ class BusAlertService : Service() {
             NotificationManagerCompat.from(context).notify(notificationId, builder.build())
             Log.d(TAG, "🔔 버스 곧 도착 알림 표시 완료: $notificationId")
         } catch (e: Exception) {
-            Log.e(TAG, "🔔 버스 곧 도착 알림 표시 오류: ${e.message}", e)
+            Log.e(TAG, "🔔 버스 곧 도착 알림 표시 오류: ${e.message}")
         }
     }
 
@@ -1288,27 +1288,157 @@ class BusAlertService : Service() {
                 val message = text
 
                 val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                val useSpeaker = when (audioOutputMode) {
-                    OUTPUT_MODE_SPEAKER -> true
-                    OUTPUT_MODE_HEADSET -> false
-                    OUTPUT_MODE_AUTO -> !isHeadsetConnected()
-                    else -> !isHeadsetConnected()
+                
+                // 자동 알람인지 확인 (busInfo가 null이 아니고 isAutoAlarm이 true인 경우)
+                val isAutoAlarm = busInfo?.get("isAutoAlarm") as? Boolean ?: false
+                
+                Log.d(TAG, "🔊 TTS 발화 시작: \"$message\", 자동 알람: $isAutoAlarm")
+                
+                // 자동 알람인 경우 스피커로 강제 설정, 그 외에는 설정된 모드 사용
+                val useSpeaker = if (isAutoAlarm) {
+                    Log.d(TAG, "🔊 자동 알람 감지! 스피커 모드로 강제 설정")
+                    true // 자동 알람은 항상 스피커 사용
+                } else {
+                    when (audioOutputMode) {
+                        OUTPUT_MODE_SPEAKER -> true
+                        OUTPUT_MODE_HEADSET -> false
+                        OUTPUT_MODE_AUTO -> !isHeadsetConnected()
+                        else -> !isHeadsetConnected()
+                    }
                 }
 
-                val streamType = if (useSpeaker) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
+                // 자동 알람인 경우 STREAM_ALARM을 사용하여 볼륨이 무음 모드에서도 들리도록 함
+                val streamType = if (isAutoAlarm || useSpeaker) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
 
-                Log.d(TAG, "🔊 TTS 발화 시도: \"$message\" (Stream: ${if(useSpeaker) "ALARM" else "MUSIC"}, 볼륨: ${ttsVolume * 100}%)")
+                // 자동 알람일 경우 볼륨 최대로 설정
+                val actualVolume = if (isAutoAlarm) {
+                    Log.d(TAG, "🔊 자동 알람 - 볼륨 최대로 설정 (100%)")
+                    1.0f // 최대 볼륨으로 설정
+                } else {
+                    ttsVolume
+                }
+
+                // 볼륨 값 조정 시도 (자동 알람일 때)
+                if (isAutoAlarm) {
+                    try {
+                        // 현재 오디오 스트림의 최대 볼륨 가져오기
+                        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                        
+                        // 자동 알람인 경우 최대 볼륨으로 설정
+                        audioManager.setStreamVolume(
+                            AudioManager.STREAM_ALARM,
+                            maxVolume,
+                            0  // 볼륨 변경 시 사운드 재생하지 않음
+                        )
+                        
+                        Log.d(TAG, "🔊 자동 알람 시스템 볼륨 조정: $maxVolume/$maxVolume (100%)")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 볼륨 조정 오류: ${e.message}")
+                    }
+                }
+
+                Log.d(TAG, "🔊 TTS 발화 시도: \"$message\" (Stream: ${if(streamType == AudioManager.STREAM_ALARM) "ALARM" else "MUSIC"}, 볼륨: ${actualVolume * 100}%, 자동알람: $isAutoAlarm, 스피커 사용: $useSpeaker)")
 
                 val params = Bundle().apply {
                     putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "tts_${System.currentTimeMillis()}")
                     putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, streamType)
-                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, ttsVolume) // 볼륨 설정 적용
+                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, actualVolume) // 볼륨 설정 적용
                 }
 
-                val utteranceId = params.getString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID)
-                ttsEngine?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-                Log.d(TAG, "🔊 TTS speak() 호출됨. utteranceId: $utteranceId")
+                // 추가: 포커스 관련 처리
+                val audioFocusRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val focusDuration = if (isAutoAlarm) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN
+                    
+                    AudioFocusRequest.Builder(focusDuration)
+                        .setAudioAttributes(AudioAttributes.Builder()
+                            .setUsage(if (isAutoAlarm) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build())
+                        .setAcceptsDelayedFocusGain(true)
+                        .setOnAudioFocusChangeListener {
+                            when (it) {
+                                AudioManager.AUDIOFOCUS_LOSS -> {
+                                    ttsEngine?.stop()
+                                    Log.d(TAG, "🔊 오디오 포커스 손실로 TTS 중지")
+                                }
+                                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                                    ttsEngine?.stop()
+                                    Log.d(TAG, "🔊 일시적 오디오 포커스 손실로 TTS 중지")
+                                }
+                            }
+                        }
+                        .build()
+                } else null
 
+                // 오디오 포커스 요청
+                val focusResult = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
+                    audioManager.requestAudioFocus(audioFocusRequest)
+                } else {
+                    val onAudioFocusChangeListener = OnAudioFocusChangeListener { focusChange ->
+                        when (focusChange) {
+                            AudioManager.AUDIOFOCUS_LOSS -> {
+                                ttsEngine?.stop()
+                                Log.d(TAG, "🔊 오디오 포커스 손실로 TTS 중지")
+                            }
+                            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                                ttsEngine?.stop()
+                                Log.d(TAG, "🔊 일시적 오디오 포커스 손실로 TTS 중지")
+                            }
+                        }
+                    }
+                    audioManager.requestAudioFocus(
+                        onAudioFocusChangeListener,
+                        streamType,
+                        if (isAutoAlarm) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN
+                    )
+                }
+
+                if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    val utteranceId = params.getString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID)
+                    ttsEngine?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                    Log.d(TAG, "🔊 TTS speak() 호출됨. utteranceId: $utteranceId")
+
+                    // 자동 알람인 경우 호출자에게 TTS 발화 성공 알림
+                    if (isAutoAlarm && showNotification) {
+                        // 자동 알람 알림 표시 (10초 후 자동 취소)
+                        Log.d(TAG, "🔔 자동 알람 감지 - 추가 알림 표시")
+                        
+                        val busNumber = busInfo?.get("busNo") as? String ?: ""
+                        val stationName = busInfo?.get("stationName") as? String ?: ""
+                        val remainingMinutes = busInfo?.get("remainingMinutes") as? Int ?: 0
+                        
+                        serviceScope.launch(Dispatchers.Main) {
+                            val notificationManager = NotificationManagerCompat.from(context)
+                            val notificationId = System.currentTimeMillis().toInt()
+                            
+                            val title = "🚌 $busNumber 번 버스 자동 알람"
+                            val content = if (remainingMinutes <= 0) {
+                                "$stationName 정류장에 곧 도착합니다!"
+                            } else {
+                                "$stationName 정류장까지 약 $remainingMinutes 분 남았습니다."
+                            }
+                            
+                            val notification = NotificationCompat.Builder(context, CHANNEL_BUS_ALERTS)
+                                .setSmallIcon(R.drawable.ic_bus_notification)
+                                .setContentTitle(title)
+                                .setContentText(content)
+                                .setStyle(NotificationCompat.BigTextStyle().bigText(content))
+                                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                                .setAutoCancel(true)
+                                .build()
+                                
+                            try {
+                                notificationManager.notify(notificationId, notification)
+                                Log.d(TAG, "🔔 자동 알람 추가 알림 표시 완료: $notificationId")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "❌ 자동 알람 추가 알림 표시 오류: ${e.message}")
+                            }
+                        }
+                    }
+                } else {
+                    Log.e(TAG, "🔊 오디오 포커스 획득 실패: $focusResult")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ TTS 발화 중 오류 발생: ${e.message}", e)
             }

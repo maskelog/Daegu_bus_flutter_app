@@ -391,6 +391,15 @@ class _CompactBusCardState extends State<CompactBusCard> {
               busNo: widget.busArrival.routeNo,
             );
 
+            // 네이티브 알림 표시 (이 부분이 누락되어 있었음)
+            await notificationService.showOngoingBusTracking(
+              busNo: widget.busArrival.routeNo,
+              stationName: widget.stationName!,
+              remainingMinutes: remainingMinutes,
+              currentStation: busInfo.currentStation,
+              routeId: routeId,
+            );
+
             // 중복 알림 제거 - 알람 서비스에서 이미 알림을 표시함
 
             if (mounted) {

@@ -972,4 +972,194 @@ class AlarmService extends ChangeNotifier {
       return false;
     }
   }
+
+  Future<bool> refreshAutoAlarmBusInfo(AutoAlarm alarm) async {
+    try {
+      if (!alarm.isActive) {
+        logMessage('비활성화된 알람은 정보를 업데이트하지 않습니다', level: LogLevel.debug);
+        return false;
+      }
+
+      // 로그 출력
+      logMessage('자동 알람 버스 정보 업데이트 시작: ${alarm.routeNo}번, ${alarm.stationName}',
+          level: LogLevel.debug);
+
+      // API 호출을 통한 버스 실시간 정보 가져오기
+      try {
+        // API 호출
+        const methodChannel =
+            MethodChannel('com.example.daegu_bus_app/bus_api');
+        final result =
+            await methodChannel.invokeMethod('getBusArrivalByRouteId', {
+          'stationId': alarm.stationId,
+          'routeId': alarm.routeId,
+        });
+
+        if (result != null) {
+          try {
+            // 결과 파싱 - 응답 형식에 따른 다양한 처리
+            dynamic parsedData;
+            List<dynamic> arrivals = [];
+
+            // 응답이 이미 String인지 확인
+            if (result is String) {
+              logMessage('API 응답이 String 형식입니다', level: LogLevel.debug);
+              try {
+                parsedData = jsonDecode(result);
+
+                // parsedData가 List인지 확인
+                if (parsedData is List) {
+                  arrivals = parsedData;
+                }
+                // parsedData가 Map인지 확인 (다른 형태의 응답인 경우)
+                else if (parsedData is Map && parsedData.containsKey('bus')) {
+                  arrivals = parsedData['bus'] as List;
+                } else {
+                  // 알 수 없는 JSON 구조인 경우
+                  logMessage('예상치 못한 JSON 구조: ${parsedData.runtimeType}',
+                      level: LogLevel.error);
+                  return false;
+                }
+              } catch (e) {
+                logMessage('JSON 파싱 오류: $e', level: LogLevel.error);
+                return false;
+              }
+            }
+            // 응답이 이미 List인 경우
+            else if (result is List) {
+              logMessage('API 응답이 List 형식입니다', level: LogLevel.debug);
+              arrivals = result;
+            }
+            // 응답이 Map인 경우
+            else if (result is Map) {
+              logMessage('API 응답이 Map 형식입니다', level: LogLevel.debug);
+              if (result.containsKey('bus')) {
+                arrivals = result['bus'] as List;
+              } else {
+                // 알 수 없는 Map 구조인 경우
+                logMessage('예상치 못한 Map 구조: ${result.keys}',
+                    level: LogLevel.error);
+                return false;
+              }
+            }
+
+            // 디버깅을 위한 로그 추가
+            logMessage('파싱된 arrivals: ${arrivals.length}개 항목',
+                level: LogLevel.debug);
+
+            if (arrivals.isNotEmpty) {
+              // 버스 정보 필터링
+              dynamic busInfo;
+              bool found = false;
+
+              // 알람에 설정된 노선 번호와 일치하는 버스 찾기
+              for (var bus in arrivals) {
+                if (bus is Map &&
+                    bus.containsKey('routeNo') &&
+                    bus['routeNo'] == alarm.routeNo) {
+                  busInfo = bus;
+                  found = true;
+                  logMessage('일치하는 노선 찾음: ${alarm.routeNo}',
+                      level: LogLevel.debug);
+                  break;
+                }
+              }
+
+              // 일치하는 노선이 없으면 첫 번째 항목 사용
+              if (!found && arrivals.isNotEmpty) {
+                busInfo = arrivals.first;
+                logMessage(
+                    '일치하는 노선 없음, 첫 번째 항목 사용: ${busInfo['routeNo'] ?? "정보 없음"}',
+                    level: LogLevel.debug);
+              }
+
+              if (busInfo != null) {
+                // 도착 정보 추출 - 필드명 확인 및 안전하게 처리
+                final estimatedTime =
+                    busInfo['estimatedTime'] ?? busInfo['arrState'] ?? "정보 없음";
+                final int remainingMinutes =
+                    _parseRemainingMinutes(estimatedTime);
+                final String currentStation =
+                    busInfo['currentStation'] ?? busInfo['bsNm'] ?? '정보 없음';
+
+                // 캐시에 저장
+                final cachedInfo = CachedBusInfo(
+                  remainingMinutes: remainingMinutes,
+                  currentStation: currentStation,
+                  stationName: alarm.stationName,
+                  busNo: alarm.routeNo,
+                  routeId: alarm.routeId,
+                  lastUpdated: DateTime.now(),
+                );
+
+                final key = "${alarm.routeNo}_${alarm.routeId}";
+                _cachedBusInfo[key] = cachedInfo;
+
+                logMessage(
+                  '✅ 자동 알람 버스 정보 업데이트 완료: ${alarm.routeNo}번, $remainingMinutes분 후 도착, 위치: $currentStation',
+                  level: LogLevel.debug,
+                );
+
+                // 알림 업데이트
+                final alarmId = getAlarmId(alarm.routeNo, alarm.stationName,
+                    routeId: alarm.routeId);
+
+                // 실시간 버스 정보로 알림 업데이트
+                try {
+                  await _notificationService.showNotification(
+                    id: alarmId,
+                    busNo: alarm.routeNo,
+                    stationName: alarm.stationName,
+                    remainingMinutes: remainingMinutes,
+                    currentStation: currentStation,
+                    routeId: alarm.routeId,
+                    isAutoAlarm: true,
+                    isOngoing: true,
+                  );
+                  logMessage(
+                      '자동 알람 알림 업데이트: ${alarm.routeNo}번, $remainingMinutes분 후, $currentStation',
+                      level: LogLevel.debug);
+                } catch (e) {
+                  logMessage('자동 알람 알림 업데이트 오류: $e', level: LogLevel.error);
+                }
+
+                // 자동 알람 정보를 UI에 알리기
+                notifyListeners();
+
+                return true;
+              }
+            } else {
+              logMessage('도착 정보 없음', level: LogLevel.warning);
+            }
+          } catch (e) {
+            logMessage('버스 정보 파싱 오류: $e', level: LogLevel.error);
+            logMessage('원본 응답 타입: ${result.runtimeType}, 값: $result',
+                level: LogLevel.debug);
+          }
+        } else {
+          logMessage('API 응답이 null입니다', level: LogLevel.warning);
+        }
+      } catch (e) {
+        logMessage('버스 API 호출 오류: $e', level: LogLevel.error);
+      }
+
+      return false;
+    } catch (e) {
+      logMessage('자동 알람 버스 정보 업데이트 오류: $e', level: LogLevel.error);
+      return false;
+    }
+  }
+
+  // 문자열 형태의 도착 시간을 분 단위 정수로 변환
+  int _parseRemainingMinutes(dynamic estimatedTime) {
+    if (estimatedTime == null) return -1;
+
+    final String timeStr = estimatedTime.toString();
+    if (timeStr == '곧 도착' || timeStr == '전') return 0;
+    if (timeStr == '운행종료' || timeStr == '-') return -1;
+
+    // '분' 문자 제거 후 정수로 변환 시도
+    final numericValue = timeStr.replaceAll(RegExp(r'[^0-9]'), '');
+    return numericValue.isEmpty ? -1 : int.parse(numericValue);
+  }
 }

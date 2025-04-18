@@ -280,6 +280,7 @@ class _BusCardState extends State<BusCard> {
         stationName: widget.stationName ?? '정류장 정보 없음',
         remainingMinutes: remainingTime,
         currentStation: firstBus.currentStation,
+        routeId: routeId,
       );
 
       // TTS 알림 즉시 시작
@@ -376,138 +377,80 @@ class _BusCardState extends State<BusCard> {
 
         logMessage('🚌 사용할 routeId: $routeId');
 
-        if (firstBus.isOutOfService) {
-          logMessage('🚌 운행 종료된 버스: 알람 설정 불가');
+        // 알람 설정 로직 추가
+        int alarmId =
+            Provider.of<AlarmService>(context, listen: false).getAlarmId(
+          widget.busArrival.routeNo,
+          widget.stationName ?? '정류장 정보 없음',
+          routeId: routeId,
+        );
+
+        logMessage(
+            '🚌 알람 설정 시작: ${widget.busArrival.routeNo}번 버스, ${widget.stationName}, 알람ID: $alarmId');
+
+        // 버스 도착 예상 시간 계산
+        DateTime arrivalTime =
+            DateTime.now().add(Duration(minutes: remainingTime));
+        logMessage('🚌 예상 도착 시간: $arrivalTime');
+
+        // 알람 서비스에 알람 설정
+        bool success = await alarmService.setOneTimeAlarm(
+          widget.busArrival.routeNo,
+          widget.stationName ?? '정류장 정보 없음',
+          remainingTime,
+          routeId: routeId,
+          useTTS: true,
+          isImmediateAlarm: true,
+          currentStation: firstBus.currentStation,
+        );
+
+        if (success && mounted) {
+          // 버스 모니터링 서비스 시작
+          await alarmService.startBusMonitoringService(
+            routeId: routeId,
+            stationId: widget.stationId,
+            stationName: widget.stationName ?? '정류장 정보 없음',
+            busNo: widget.busArrival.routeNo,
+          );
+
+          // 알림 서비스 시작 - 지속적인 버스 추적 알림 표시
+          await _notificationService.showOngoingBusTracking(
+            busNo: widget.busArrival.routeNo,
+            stationName: widget.stationName ?? '정류장 정보 없음',
+            remainingMinutes: remainingTime,
+            currentStation: firstBus.currentStation,
+            routeId: routeId,
+          );
+
+          // TTS 알림 즉시 시작
+          await TtsSwitcher.startTtsTracking(
+            busNo: widget.busArrival.routeNo,
+            stationName: widget.stationName ?? '정류장 정보 없음',
+            routeId: routeId,
+            stationId: widget.stationId,
+          );
+
+          // 알람 상태 갱신
+          await alarmService.refreshAlarms();
+          await alarmService.loadAlarms();
+
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('운행 종료된 버스입니다')),
+              const SnackBar(content: Text('승차 알람이 설정되었습니다')),
             );
           }
-          return;
-        }
 
-        if (remainingTime > 0) {
-          // 먼저 버스 정보 캐시 업데이트
-          alarmService.updateBusInfoCache(
-            widget.busArrival.routeNo,
-            routeId,
-            firstBus,
-            remainingTime,
-          );
-
-          logMessage('🚌 버스 정보 캐시 업데이트 완료');
-
-          // 알람 설정 전에 기존 알람 상태 갱신
-          await alarmService.refreshAlarms();
-
-          // 알람 설정
-          bool success = await alarmService.setOneTimeAlarm(
-            widget.busArrival.routeNo,
-            widget.stationName ?? '정류장 정보 없음',
-            remainingTime,
-            routeId: routeId,
-            useTTS: true,
-            isImmediateAlarm: false,
-            currentStation: firstBus.currentStation,
-          );
-
-          logMessage('🚌 알람 설정 시도 결과: $success');
-
-          if (success && mounted) {
-            // 알람 상태 즉시 갱신
-            await alarmService.refreshAlarms();
-            await alarmService.loadAlarms();
-
-            // 승차 알람은 즉시 모니터링 시작
-            try {
-              await alarmService.startBusMonitoringService(
-                stationId: widget.stationId,
-                stationName: widget.stationName ?? '정류장 정보 없음',
-                routeId: routeId,
-                busNo: widget.busArrival.routeNo,
-              );
-              logMessage('🚌 버스 모니터링 서비스 시작 성공');
-
-              // 알림 서비스 시작 (즉시 표시)
-              await _notificationService.initialize(); // 알림 서비스 초기화 확인
-              final notificationSuccess =
-                  await _notificationService.showNotification(
-                id: alarmService.getAlarmId(
-                  widget.busArrival.routeNo,
-                  widget.stationName ?? '정류장 정보 없음',
-                  routeId: routeId,
-                ),
-                busNo: widget.busArrival.routeNo,
-                stationName: widget.stationName ?? '정류장 정보 없음',
-                remainingMinutes: remainingTime,
-                currentStation: firstBus.currentStation,
-                routeId: routeId,
-                isOngoing: true,
-              );
-
-              if (!notificationSuccess) {
-                logMessage('🚨 알림 표시 실패', level: LogLevel.error);
-              } else {
-                logMessage('✅ 알림 표시 성공');
-              }
-
-              // TTS 추적 시작
-              await TtsSwitcher.startTtsTracking(
-                routeId: routeId,
-                stationId: widget.stationId,
-                busNo: widget.busArrival.routeNo,
-                stationName: widget.stationName ?? "정류장 정보 없음",
-                remainingMinutes: remainingTime,
-                getRemainingTimeCallback: () async {
-                  try {
-                    final updatedBusArrivals =
-                        await ApiService.getBusArrivalByRouteId(
-                      widget.stationId,
-                      routeId,
-                    );
-
-                    if (updatedBusArrivals.isNotEmpty &&
-                        updatedBusArrivals[0].busInfoList.isNotEmpty) {
-                      final latestBus = updatedBusArrivals[0].busInfoList.first;
-                      return latestBus.getRemainingMinutes();
-                    }
-                  } catch (e) {
-                    logMessage('실시간 도착 시간 업데이트 오류: $e');
-                  }
-                  return remainingTime;
-                },
-              );
-
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('승차 알람이 설정되었습니다')),
-                );
-              }
-            } catch (e) {
-              logMessage('🚨 서비스 시작 중 오류: $e', level: LogLevel.error);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('서비스 시작 중 오류가 발생했습니다: $e')),
-                );
-              }
-            }
-          } else if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('승차 알람 설정에 실패했습니다')),
-            );
-          }
+          logMessage('🚌 알람 설정 완료: ${widget.busArrival.routeNo}번 버스');
         } else if (mounted) {
-          logMessage('🚌 버스 도착 임박 또는 이미 도착');
-
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('버스가 이미 도착했거나 곧 도착합니다')),
+            const SnackBar(content: Text('승차 알람 설정에 실패했습니다')),
           );
         }
       } catch (e) {
-        logMessage('🚨 _toggleBoardingAlarm 오류: $e');
+        logMessage('🚨 알람 설정 중 오류 발생: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('오류 발생: ${e.toString()}')),
+            SnackBar(content: Text('알람 설정 중 오류가 발생했습니다: $e')),
           );
         }
       }

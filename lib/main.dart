@@ -5,6 +5,8 @@ import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
@@ -277,6 +279,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     logMessage('앱 생명주기 옵저버 등록됨', level: LogLevel.info);
+
+    // 앱 시작 시 자동 알람 정보 확인 (딜레이 추가)
+    Future.delayed(const Duration(seconds: 3), () {
+      _checkPendingAutoAlarms();
+    });
   }
 
   @override
@@ -298,6 +305,74 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           .catchError(
             (error) => logMessage('TTS 재초기화 실패: $error', level: LogLevel.error),
           );
+
+      // 자동 알람 정보 확인
+      _checkPendingAutoAlarms();
+    }
+  }
+
+  /// 백그라운드에서 실행된 자동 알람 정보를 확인하고 처리
+  Future<void> _checkPendingAutoAlarms() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hasNewAlarm = prefs.getBool('has_new_auto_alarm') ?? false;
+
+      if (!hasNewAlarm) {
+        return; // 새 알람이 없으면 종료
+      }
+
+      final alarmDataJson = prefs.getString('last_auto_alarm_data');
+      if (alarmDataJson == null || alarmDataJson.isEmpty) {
+        return;
+      }
+
+      logMessage('🔔 저장된 자동 알람 정보 발견, 알림 표시 시도', level: LogLevel.info);
+
+      // 알람 데이터 파싱
+      final alarmData = jsonDecode(alarmDataJson);
+      final int alarmId = alarmData['alarmId'] ?? 0;
+      final String busNo = alarmData['busNo'] ?? '';
+      final String stationName = alarmData['stationName'] ?? '';
+      final int remainingMinutes = alarmData['remainingMinutes'] ?? 3;
+      final String routeId = alarmData['routeId'] ?? '';
+      final String? currentStation = alarmData['currentStation'];
+      final bool isAutoAlarm = alarmData['isAutoAlarm'] ?? true;
+      final bool hasError = alarmData['hasError'] ?? false;
+
+      // 알림 서비스를 통해 알림 표시
+      final notificationService = NotificationService();
+      await notificationService.initialize();
+
+      // 알림 표시 - 자동 알람 플래그와 현재 위치 정보 포함
+      await notificationService.showAutoAlarmNotification(
+        id: alarmId,
+        busNo: busNo,
+        stationName: stationName,
+        remainingMinutes: remainingMinutes,
+        routeId: routeId,
+        isAutoAlarm: isAutoAlarm,
+        currentStation: currentStation, // 현재 버스 위치 정보 추가
+      );
+
+      logMessage('✅ 저장된 자동 알람으로 알림 표시 완료: $busNo, $stationName',
+          level: LogLevel.info);
+
+      // 자동 알람 버스 모니터링 시작
+      if (!hasError) {
+        final alarmService = Provider.of<AlarmService>(context, listen: false);
+        await alarmService.startBusMonitoringService(
+          stationId: alarmData['stationId'] ?? '',
+          stationName: stationName,
+          routeId: routeId,
+          busNo: busNo,
+        );
+        logMessage('✅ 자동 알람으로 버스 모니터링 시작: $busNo', level: LogLevel.info);
+      }
+
+      // 처리 완료 후 플래그 초기화
+      await prefs.setBool('has_new_auto_alarm', false);
+    } catch (e) {
+      logMessage('❌ 자동 알람 정보 처리 중 오류: $e', level: LogLevel.error);
     }
   }
 

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 
 /// NotificationService: 네이티브 BusAlertService와 통신하는 Flutter 서비스
 class NotificationService {
@@ -40,6 +39,8 @@ class NotificationService {
     required String stationName,
     required int remainingMinutes,
     String? routeId,
+    bool isAutoAlarm = true, // 기본값은 true로 설정
+    String? currentStation, // 버스 현재 위치 정보 추가
   }) async {
     try {
       debugPrint(
@@ -56,30 +57,8 @@ class NotificationService {
 
       final now = DateTime.now();
       int? notificationTimeMs;
-      if (routeId != null && routeId.isNotEmpty) {
-        try {
-          final Map<String, dynamic> data =
-              await _getStoredAlarmData(busNo, stationName, routeId);
-          if (data.containsKey('notificationTime')) {
-            notificationTimeMs = data['notificationTime'] as int?;
-            if (notificationTimeMs != null) {
-              final scheduledTime =
-                  DateTime.fromMillisecondsSinceEpoch(notificationTimeMs);
-              debugPrint('🔔 저장된 알림 예약 시간: ${scheduledTime.toString()}');
 
-              // 현재 시간과 예약 시간의 차이가 5분 이상이면 알림 표시하지 않음
-              final difference = now.difference(scheduledTime).inMinutes.abs();
-              if (difference > 5) {
-                debugPrint('⏭️ 알림 시간 불일치, 표시하지 않음. 차이: $difference분');
-                return false;
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('🔔 저장된 알림 시간 확인 실패: $e');
-        }
-      }
-
+      // 현재 시간 기준으로 알림 정보 생성
       final notificationTime = DateTime(
         now.year,
         now.month,
@@ -91,53 +70,54 @@ class NotificationService {
       // 네이티브 코드에서 Integer 범위를 초과하는 ID를 처리하기 위한 로직
       final int safeNotificationId = id.abs() % 2147483647;
 
-      // 자동 알람의 경우 isOngoing을 true로 설정하여 지속적인 알림으로 표시
-      final bool result = await _channel.invokeMethod('showNotification', {
+      // 1. 먼저 TTS로 알림 시도 (자동 알람 플래그 명시)
+      try {
+        await SimpleTTSHelper.initialize();
+
+        // 시스템 볼륨 최대화 요청 (자동 알람이므로)
+        await SimpleTTSHelper.setVolume(1.0);
+
+        // 스피커 모드 강제 설정 (자동 알람이므로)
+        await SimpleTTSHelper.setAudioOutputMode(1); // 스피커 모드(1)
+
+        if (remainingMinutes <= 0) {
+          await SimpleTTSHelper.speak("$busNo번 버스가 $stationName 정류장에 곧 도착합니다.");
+        } else {
+          await SimpleTTSHelper.speak(
+              "$busNo번 버스가 $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.");
+        }
+      } catch (e) {
+        debugPrint('🔊 자동 알람 TTS 실행 오류: $e');
+      }
+
+      // 2. 자동 알람용 알림 표시 (isAutoAlarm 파라미터로부터 값 사용)
+      final Map<String, dynamic> params = {
         'id': safeNotificationId,
         'busNo': busNo,
         'stationName': stationName,
         'remainingMinutes': remainingMinutes,
-        'currentStation': '자동 알람', // 자동 알람임을 표시
+        'currentStation': currentStation ?? '자동 알람', // 버스 현재 위치 또는 '자동 알람' 표시
         'payload': routeId, // 필요시 routeId를 페이로드로 전달
-        'isAutoAlarm': true, // 자동 알람 식별자
+        'isAutoAlarm': isAutoAlarm, // 파라미터에서 값 사용
         'isOngoing': true, // 지속적인 알림으로 설정
         'routeId': routeId, // routeId 추가
         'notificationTime': notificationTimeMs ??
             notificationTime.millisecondsSinceEpoch, // 알림 시간 추가
+        'useTTS': true, // TTS 사용 플래그
         'actions': ['cancel_alarm'], // 알람 취소 액션 추가
-      });
+      };
+
+      debugPrint('자동 알람 파라미터: $params');
+
+      // 네이티브 메서드 호출
+      final bool result =
+          await _channel.invokeMethod('showNotification', params);
 
       debugPrint('🔔 자동 알람 알림 표시 완료: $id (안전 ID: $safeNotificationId)');
       return result;
     } catch (e) {
       debugPrint('🔔 자동 알람 알림 표시 오류: ${e.toString()}');
       return false;
-    }
-  }
-
-  // 저장된 알람 데이터 가져오기
-  Future<Map<String, dynamic>> _getStoredAlarmData(
-      String busNo, String stationName, String routeId) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final alarms = prefs.getStringList('auto_alarms') ?? [];
-
-      for (var json in alarms) {
-        try {
-          final data = jsonDecode(json);
-          if (data['routeNo'] == busNo &&
-              data['stationName'] == stationName &&
-              data['routeId'] == routeId) {
-            return data;
-          }
-        } catch (e) {
-          debugPrint('🔔 알람 데이터 파싱 오류: $e');
-        }
-      }
-      return {};
-    } catch (e) {
-      debugPrint('🔔 알람 데이터 조회 오류: $e');
-      return {};
     }
   }
 
@@ -273,7 +253,7 @@ class NotificationService {
   }) async {
     try {
       debugPrint(
-          '🔔 지속적인 버스 추적 알림 표시 시도: $busNo, $stationName, $remainingMinutes분');
+          '🔔 지속적인 버스 추적 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, routeId: $routeId');
 
       // 알림 ID 생성 (버스 번호와 정류장 이름으로)
       final int notificationId = _generateNotificationId(busNo, stationName);
@@ -291,7 +271,8 @@ class NotificationService {
       });
 
       if (result) {
-        debugPrint('🔔 지속적인 버스 추적 알림 표시 완료 (ID: $notificationId)');
+        debugPrint(
+            '🔔 지속적인 버스 추적 알림 표시 완료 (ID: $notificationId, routeId: $routeId)');
       } else {
         debugPrint('🔔 지속적인 버스 추적 알림 표시 실패');
       }

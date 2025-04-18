@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_stop.dart';
 import '../models/bus_route.dart';
@@ -9,6 +10,10 @@ import 'route_service.dart';
 
 /// 버스 API 서비스 (이전 버전과의 호환성 유지)
 class ApiService {
+  // 메소드 채널 추가
+  static const MethodChannel _channel =
+      MethodChannel('com.example.daegu_bus_app/api');
+
   // 싱글톤 패턴 적용
   static final ApiService _instance = ApiService._internal();
 
@@ -91,5 +96,53 @@ class ApiService {
       longitude,
       radiusMeters: radiusMeters,
     );
+  }
+
+  /// 네이티브 API를 직접 호출하는 메소드 (백그라운드 작업에서 안정적으로 동작)
+  static Future<dynamic> callNativeApi(
+      String method, Map<String, dynamic> params) async {
+    try {
+      final result = await _channel.invokeMethod(method, params);
+      return result;
+    } on PlatformException catch (e) {
+      print('네이티브 API 호출 오류: ${e.message}');
+      return null;
+    }
+  }
+
+  /// 백그라운드에서 알림 표시 메소드
+  static Future<bool> showBackgroundNotification({
+    required int id,
+    required String busNo,
+    required String stationName,
+    required int remainingMinutes,
+    String? currentStation,
+    String? routeId,
+    bool isAutoAlarm = true,
+  }) async {
+    try {
+      // 네이티브 코드에서 Integer 범위를 초과하는 ID를 처리하기 위한 로직
+      final int safeNotificationId = id.abs() % 2147483647;
+
+      final result = await callNativeApi('showNotification', {
+        'id': safeNotificationId,
+        'busNo': busNo,
+        'stationName': stationName,
+        'remainingMinutes': remainingMinutes,
+        'currentStation': currentStation ?? '자동 알람',
+        'payload': routeId,
+        'isAutoAlarm': isAutoAlarm,
+        'isOngoing': true,
+        'routeId': routeId,
+        'notificationTime': DateTime.now().millisecondsSinceEpoch,
+        'useTTS': true,
+        'actions': ['cancel_alarm'],
+      });
+
+      return result == true;
+    } catch (e) {
+      print('백그라운드 알림 표시 오류: $e');
+      return false;
+    }
   }
 }
