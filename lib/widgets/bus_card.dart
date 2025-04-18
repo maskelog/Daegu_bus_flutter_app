@@ -535,14 +535,25 @@ class _BusCardState extends State<BusCard> {
     }
 
     final alarmService = Provider.of<AlarmService>(context, listen: true);
-    final bool alarmEnabled = alarmService.hasAlarm(
+
+    // 자동 알람 설정 여부 확인
+    final bool hasAutoAlarm = alarmService.hasAutoAlarm(
       widget.busArrival.routeNo,
       widget.stationName ?? '정류장 정보 없음',
       widget.busArrival.routeId,
     );
-    logMessage('🚌 hasAlarm 결과: $alarmEnabled');
+
+    // 일반 승차 알람만 확인 (자동 알람 제외)
+    final bool regularAlarmEnabled = alarmService.activeAlarms.any((alarm) =>
+        alarm.busNo == widget.busArrival.routeNo &&
+        alarm.stationName == (widget.stationName ?? '정류장 정보 없음') &&
+        alarm.routeId == widget.busArrival.routeId);
+
+    // 자동 알람이 있으면 승차 알람은 비활성화
+    final bool alarmEnabled = !hasAutoAlarm && regularAlarmEnabled;
+
     logMessage(
-        '🚌 버스카드 알람 상태: routeNo=${widget.busArrival.routeNo}, enabled=$alarmEnabled');
+        '🚌 버스카드 알람 상태: routeNo=${widget.busArrival.routeNo}, 자동알람=$hasAutoAlarm, 승차알람=$regularAlarmEnabled, 최종=$alarmEnabled');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -570,12 +581,46 @@ class _BusCardState extends State<BusCard> {
                     const Icon(Icons.location_on, color: Colors.grey, size: 20),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        '${widget.busArrival.routeNo}번 버스 - ${widget.stationName ?? "정류장 정보 없음"}',
-                        style:
-                            const TextStyle(fontSize: 18, color: Colors.grey),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${widget.busArrival.routeNo}번 버스 - ${widget.stationName ?? "정류장 정보 없음"}',
+                              style: const TextStyle(
+                                  fontSize: 18, color: Colors.grey),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                          // 자동 알람 배지 추가
+                          if (hasAutoAlarm)
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.amber[100],
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.amber[300]!),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.schedule,
+                                      size: 12, color: Colors.amber[800]),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '자동',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.amber[800],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     if (_isUpdating)
@@ -695,10 +740,66 @@ class _BusCardState extends State<BusCard> {
                           ),
                         ],
                       )
+                    else if (hasAutoAlarm)
+                      // 자동 알람 표시 - 개선된 디자인
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.amber[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.amber[200]!),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.amber.withAlpha(25),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.alarm_on,
+                                    size: 16, color: Colors.amber[800]),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '자동 알람 설정됨',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.amber[800],
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            // 자동 알람 시간 정보 추가
+                            FutureBuilder<String>(
+                              future: _getAutoAlarmTimeInfo(alarmService),
+                              builder: (context, snapshot) {
+                                return Text(
+                                  snapshot.data ?? '승차 알람을 사용할 수 없습니다',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.amber[700],
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      )
                     else
                       const SizedBox.shrink(),
                     ElevatedButton.icon(
-                      onPressed: firstBus.isOutOfService
+                      onPressed: firstBus.isOutOfService ||
+                              alarmService.hasAutoAlarm(
+                                  widget.busArrival.routeNo,
+                                  widget.stationName ?? '정류장 정보 없음',
+                                  widget.busArrival.routeId)
                           ? null
                           : () async {
                               await _toggleBoardingAlarm();
@@ -722,7 +823,11 @@ class _BusCardState extends State<BusCard> {
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: firstBus.isOutOfService
+                        backgroundColor: firstBus.isOutOfService ||
+                                alarmService.hasAutoAlarm(
+                                    widget.busArrival.routeNo,
+                                    widget.stationName ?? '정류장 정보 없음',
+                                    widget.busArrival.routeId)
                             ? Colors.grey
                             : (alarmEnabled
                                 ? Colors.yellow[700] // 노란색으로 변경
@@ -851,5 +956,33 @@ class _BusCardState extends State<BusCard> {
         ),
       ),
     );
+  }
+
+  // 자동 알람 시간 정보를 가져오는 메서드
+  Future<String> _getAutoAlarmTimeInfo(AlarmService alarmService) async {
+    try {
+      // 자동 알람 정보 가져오기
+      final autoAlarm = alarmService.getAutoAlarm(
+        widget.busArrival.routeNo,
+        widget.stationName ?? '정류장 정보 없음',
+        widget.busArrival.routeId,
+      );
+
+      if (autoAlarm == null) {
+        return '승차 알람을 사용할 수 없습니다';
+      }
+
+      // 알람 시간 포맷팅
+      final scheduledTime = autoAlarm.scheduledTime;
+      final hour = scheduledTime.hour.toString().padLeft(2, '0');
+      final minute = scheduledTime.minute.toString().padLeft(2, '0');
+      final timeStr = '$hour:$minute';
+
+      // 자동 알람이 설정된 시간 표시
+      return '$timeStr 자동 알람 설정됨';
+    } catch (e) {
+      logMessage('자동 알람 시간 정보 가져오기 오류: $e', level: LogLevel.error);
+      return '승차 알람을 사용할 수 없습니다';
+    }
   }
 }

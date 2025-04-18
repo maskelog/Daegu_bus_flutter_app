@@ -66,6 +66,14 @@ class BusApiService {
   Future<BusArrivalInfo?> getBusArrivalByRouteId(
       String stationId, String routeId) async {
     try {
+      // 입력 유효성 검사
+      if (stationId.isEmpty || routeId.isEmpty) {
+        debugPrint('❌ [ERROR] 정류장 ID 또는 노선 ID가 비어있습니다');
+        return null;
+      }
+
+      debugPrint('🐛 [DEBUG] 자동 알람 버스 정보 업데이트 시도: $routeId, $stationId');
+
       final dynamic result =
           await _channel.invokeMethod('getBusArrivalByRouteId', {
         'stationId': stationId,
@@ -93,10 +101,47 @@ class BusApiService {
 
           // 객체 형식으로 온 경우
           if (decoded is Map<String, dynamic>) {
+            // 자동 알람에서 오는 응답 형식 처리 (routeNo 필드가 있는 경우)
+            if (decoded.containsKey('routeNo')) {
+              debugPrint('🐛 [DEBUG] 자동 알람 응답 형식 감지됨');
+              // 필요한 필드 구성
+              final Map<String, dynamic> formattedResponse = {
+                'name': decoded['routeNo'] ?? '',
+                'sub': '',
+                'id': routeId,
+                'forward': decoded['moveDir'] ?? '알 수 없음',
+                'bus': []
+              };
+
+              // arrList 필드가 있으면 처리
+              if (decoded.containsKey('arrList') &&
+                  decoded['arrList'] is List) {
+                final List<dynamic> arrList = decoded['arrList'];
+                final List<Map<String, dynamic>> busInfoList = [];
+
+                for (var arr in arrList) {
+                  if (arr is Map<String, dynamic>) {
+                    busInfoList.add({
+                      '버스번호': arr['vhcNo2'] ?? '',
+                      '현재정류소': arr['bsNm'] ?? '',
+                      '남은정류소': '${arr['bsGap'] ?? 0} 개소',
+                      '도착예정소요시간': arr['arrState'] ?? '${arr['bsGap'] ?? 0}분',
+                    });
+                  }
+                }
+
+                formattedResponse['bus'] = busInfoList;
+              }
+
+              return BusArrivalInfo.fromJson(formattedResponse);
+            }
+
             return BusArrivalInfo.fromJson(decoded);
           }
 
           debugPrint('❌ [ERROR] 예상치 못한 JSON 구조: ${decoded.runtimeType}');
+          // 디버깅을 위해 원본 데이터 출력
+          debugPrint('❌ [ERROR] 원본 데이터: $decoded');
           return null;
         } catch (e) {
           debugPrint('❌ [ERROR] JSON 파싱 오류: $e, 원본 문자열: "$result"');
@@ -105,7 +150,12 @@ class BusApiService {
       } else {
         // String이 아닌 경우 (이미 Map 등으로 파싱된 경우)
         debugPrint('🐛 [DEBUG] API 응답이 ${result.runtimeType} 형식입니다');
-        return BusArrivalInfo.fromJson(result);
+        if (result is Map<String, dynamic>) {
+          return BusArrivalInfo.fromJson(result);
+        } else {
+          debugPrint('❌ [ERROR] 지원되지 않는 응답 형식: ${result.runtimeType}');
+          return null;
+        }
       }
     } on PlatformException catch (e) {
       debugPrint('❌ [ERROR] 노선별 도착 정보 조회 오류: ${e.message}');
@@ -268,6 +318,17 @@ class BusInfoData {
   });
 
   factory BusInfoData.fromJson(Map<String, dynamic> json) {
+    // 자동 알람에서 오는 응답 형식 처리
+    if (json.containsKey('vhcNo2') || json.containsKey('bsNm')) {
+      return BusInfoData(
+        busNumber: json['vhcNo2'] ?? '',
+        currentStation: json['bsNm'] ?? '',
+        remainingStations: '${json['bsGap'] ?? 0} 개소',
+        estimatedTime: json['arrState'] ?? '${json['bsGap'] ?? 0}분',
+      );
+    }
+
+    // 기본 형식 처리
     return BusInfoData(
       busNumber: json['버스번호'] ?? '',
       currentStation: json['현재정류소'] ?? '',
