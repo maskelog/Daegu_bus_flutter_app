@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -21,13 +22,16 @@ import java.util.Timer
 import java.util.TimerTask
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import android.media.AudioManager
+import android.media.AudioManager.OnAudioFocusChangeListener
+import android.media.AudioFocusRequest
 import android.os.Bundle
-import android.content.SharedPreferences
+import android.app.Notification
+import java.util.Locale
+import java.text.SimpleDateFormat
+import java.util.Date
 import org.json.JSONArray
 import org.json.JSONObject
 import io.flutter.embedding.engine.FlutterEngine
-import java.util.Locale
 
 class BusAlertService : Service() {
     companion object {
@@ -135,6 +139,14 @@ class BusAlertService : Service() {
             checkNotificationPermission()
             initializeMethodChannel(flutterEngine)
             initializeTts()
+
+            // 서비스가 이미 실행 중인지 확인
+            if (isInTrackingMode) {
+                Log.d(TAG, "🔔 서비스가 이미 실행 중입니다. 알림 채널 재생성")
+                createNotificationChannels()
+            }
+
+            Log.d(TAG, "✅ BusAlertService 초기화 완료")
         } catch (e: Exception) {
             Log.e(TAG, "🔔 알림 서비스 초기화 중 오류 발생: ${e.message}", e)
         }
@@ -267,11 +279,16 @@ class BusAlertService : Service() {
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "버스 위치 실시간 추적"
-                enableLights(false)
-                enableVibration(false)
-                setSound(null, null)
+                enableLights(true)
+                lightColor = ContextCompat.getColor(context, R.color.tracking_color)
+                enableVibration(true)
+                setShowBadge(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                setSound(null, null)  // 소리 없음
+                vibrationPattern = longArrayOf(0, 250, 250, 250)  // 짧은 진동
             }
             notificationManager.createNotificationChannel(channel)
+            Log.d(TAG, "🔔 지속적인 추적 알림 채널 생성됨: $CHANNEL_BUS_ONGOING")
         }
     }
 
@@ -718,49 +735,17 @@ class BusAlertService : Service() {
         allBusesSummary: String? = null
     ) {
         try {
-            val title = if (allBusesSummary != null) {
-                "$stationName 정류장 버스 정보"
-            } else {
-                "${busNo}번 버스 실시간 추적"
-            }
+            Log.d(TAG, "🚌 버스 추적 알림 표시 시도: $busNo, $stationName, ${remainingMinutes}분")
 
-            // 기본 내용 구성
-            val contentText = if (allBusesSummary != null) {
-                // allBuses 모드일 때는 첫 번째 버스 정보만 표시
-                "${busNo}번: ${if (remainingMinutes <= 0) "곧 도착" else "약 ${remainingMinutes}분 후 도착"}"
-            } else if (remainingMinutes < 0) {
-                "$stationName - 정보 없음"
+            val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            val title = "$busNo 번 버스 실시간 추적"
+            val bodyText = if (remainingMinutes < 0) {
+                "$busNo 번 버스 - 도착 정보 없음"
             } else if (remainingMinutes == 0) {
-                "$stationName - 곧 도착합니다!"
+                "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다!"
             } else {
-                "$stationName - 약 ${remainingMinutes}분 후 도착" + 
-                (if (!currentStation.isNullOrEmpty()) " (현재 위치: $currentStation)" else "")
-            }
-
-            // 확장된 내용 구성
-            val expandedText = buildString {
-                append("정류장: $stationName\n")
-
-                if (allBusesSummary != null) {
-                    // allBuses 모드일 때는 모든 버스 정보 표시
-                    append("\n🚌 도착 예정 버스 정보\n")
-                    append(allBusesSummary)
-                } else {
-                    // 기존 모드일 때는 단일 버스 정보 표시
-                    if (remainingMinutes < 0) {
-                        append("⏰ 도착 정보 없음")
-                    } else if (remainingMinutes == 0) {
-                        append("⏰ 곧 도착합니다!")
-                    } else {
-                        append("⏰ 약 ${remainingMinutes}분 후 도착")
-                    }
-                    // 현재 위치 정보 표시
-                    if (!currentStation.isNullOrEmpty()) {
-                        append("\n📍 현재 위치: $currentStation")
-                    } else {
-                        append("\n📍 위치 정보 업데이트 중...")
-                    }
-                }
+                "$busNo 번 버스가 $stationName 정류장까지 약 $remainingMinutes 분 남았습니다." +
+                (if (!currentStation.isNullOrEmpty()) "\n현재 위치: $currentStation" else "")
             }
 
             val intent = Intent(context, MainActivity::class.java).apply {
@@ -787,50 +772,52 @@ class BusAlertService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            // 진행률 계산 (0-100)
-            val maxMinutesForProgress = 30
-            val progress = if (remainingMinutes < 0) {
-                0 // 정보 없음
-            } else if (remainingMinutes > maxMinutesForProgress) {
-                0 // 30분 이상 남음
-            } else if (remainingMinutes == 0) {
-                100 // 도착 또는 도착 임박
-            } else {
-                ((maxMinutesForProgress - remainingMinutes).toDouble() / maxMinutesForProgress * 100).toInt()
-            }
-
-            val style = NotificationCompat.BigTextStyle()
-                .setBigContentTitle(title)
-                .bigText(expandedText)
-
             val builder = NotificationCompat.Builder(context, CHANNEL_BUS_ONGOING)
                 .setSmallIcon(R.drawable.ic_bus_notification)
                 .setContentTitle(title)
-                .setContentText(contentText)
-                .setStyle(style)
+                .setContentText(bodyText)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(if (allBusesSummary != null) NotificationCompat.CATEGORY_STATUS else NotificationCompat.CATEGORY_TRANSPORT)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setColor(ContextCompat.getColor(context, if (remainingMinutes <= 1) android.R.color.holo_red_light else R.color.tracking_color))
+                .setColor(ContextCompat.getColor(context, R.color.tracking_color))
                 .setColorized(true)
                 .setOngoing(true)
                 .setAutoCancel(false)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(pendingIntent)
-                .setProgress(100, progress, false)
                 .addAction(R.drawable.ic_stop, "추적 중지", stopTrackingPendingIntent)
                 .setWhen(System.currentTimeMillis())
                 .setShowWhen(true)
 
-            if (isUpdate) {
-                NotificationManagerCompat.from(context).notify(notificationId, builder.build())
-                Log.d(TAG, "🚌 버스 추적 알림 업데이트: $busNo, 위치: ${currentStation ?: "정보 없음"}")
+            // 진행률 표시 (0-100)
+            val progress = if (remainingMinutes < 0) {
+                0
+            } else if (remainingMinutes > 30) {
+                0
+            } else if (remainingMinutes == 0) {
+                100
             } else {
-                startForeground(notificationId, builder.build())
-                Log.d(TAG, "🚌 버스 추적 알림 시작: $busNo")
+                ((30 - remainingMinutes).toDouble() / 30 * 100).toInt()
+            }
+            builder.setProgress(100, progress, false)
+
+            val notificationManager = NotificationManagerCompat.from(context)
+            try {
+                if (isUpdate) {
+                    notificationManager.notify(notificationId, builder.build())
+                    Log.d(TAG, "🚌 버스 추적 알림 업데이트: $busNo, 위치: ${currentStation ?: "정보 없음"}")
+                } else {
+                    startForeground(notificationId, builder.build())
+                    Log.d(TAG, "🚌 버스 추적 알림 시작: $busNo")
+                }
+            } catch (e: SecurityException) {
+                Log.e(TAG, "🚌 알림 권한 없음: ${e.message}")
+                throw e
             }
         } catch (e: Exception) {
             Log.e(TAG, "🚌 버스 추적 알림 오류: ${e.message}", e)
+            throw e
         }
     }
 

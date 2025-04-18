@@ -156,28 +156,21 @@ class NotificationService {
     String? allBusesSummary,
   }) async {
     try {
-      // ID가 0이면 새로운 ID 생성
-      final int notificationId =
-          id == 0 ? _generateNotificationId(busNo, stationName) : id;
-
-      // 알람 알림인 경우 isOngoing을 true로 설정
-      final bool shouldBeOngoing = isOngoing || isAutoAlarm;
-
       debugPrint(
-          '🔔 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, ID: $notificationId, isOngoing: $shouldBeOngoing, routeId: $routeId, isAutoAlarm: $isAutoAlarm');
+          '🔔 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, ID: $id, isOngoing: $isOngoing');
 
       // 네이티브 코드에서 Integer 범위를 초과하는 ID를 처리하기 위한 로직
-      // Integer 범위: -2,147,483,648 ~ 2,147,483,647
-      final int safeNotificationId = notificationId.abs() % 2147483647;
+      final int safeNotificationId = id.abs() % 2147483647;
 
+      // 알림 표시 시도
       final bool result = await _channel.invokeMethod('showNotification', {
         'id': safeNotificationId,
         'busNo': busNo,
         'stationName': stationName,
         'remainingMinutes': remainingMinutes,
         'currentStation': currentStation,
-        'payload': payload,
-        'isOngoing': shouldBeOngoing,
+        'payload': payload ?? routeId,
+        'isOngoing': isOngoing,
         'routeId': routeId,
         'isAutoAlarm': isAutoAlarm,
         'notificationTime':
@@ -185,10 +178,17 @@ class NotificationService {
         'allBusesSummary': allBusesSummary,
       });
 
-      debugPrint('🔔 알림 표시 완료: $notificationId (안전 ID: $safeNotificationId)');
+      if (result) {
+        debugPrint('🔔 알림 표시 성공: $id (안전 ID: $safeNotificationId)');
+      } else {
+        debugPrint('🔔 알림 표시 실패: $id');
+      }
       return result;
     } on PlatformException catch (e) {
       debugPrint('🔔 알림 표시 오류: ${e.message}');
+      return false;
+    } catch (e) {
+      debugPrint('🔔 알림 표시 중 예외 발생: $e');
       return false;
     }
   }
@@ -258,6 +258,46 @@ class NotificationService {
       return result;
     } on PlatformException catch (e) {
       debugPrint('🔔 모든 알림 취소 오류: ${e.message}');
+      return false;
+    }
+  }
+
+  /// 버스 도착 임박 알림 (중요도 높음) - TTS 발화와 함께 실행
+  Future<bool> showOngoingBusTracking({
+    required String busNo,
+    required String stationName,
+    required int remainingMinutes,
+    String? currentStation,
+    String? routeId,
+    String? allBusesSummary,
+  }) async {
+    try {
+      debugPrint(
+          '🔔 지속적인 버스 추적 알림 표시 시도: $busNo, $stationName, $remainingMinutes분');
+
+      // 알림 ID 생성 (버스 번호와 정류장 이름으로)
+      final int notificationId = _generateNotificationId(busNo, stationName);
+
+      final bool result =
+          await _channel.invokeMethod('showOngoingBusTracking', {
+        'busNo': busNo,
+        'stationName': stationName,
+        'remainingMinutes': remainingMinutes,
+        'currentStation': currentStation,
+        'routeId': routeId,
+        'allBusesSummary': allBusesSummary,
+        'id': notificationId,
+        'isUpdate': false,
+      });
+
+      if (result) {
+        debugPrint('🔔 지속적인 버스 추적 알림 표시 완료 (ID: $notificationId)');
+      } else {
+        debugPrint('🔔 지속적인 버스 추적 알림 표시 실패');
+      }
+      return result;
+    } on PlatformException catch (e) {
+      debugPrint('🔔 지속적인 버스 추적 알림 표시 오류: ${e.message}');
       return false;
     }
   }
