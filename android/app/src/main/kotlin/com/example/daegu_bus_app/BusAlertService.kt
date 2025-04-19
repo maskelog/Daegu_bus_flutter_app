@@ -1292,18 +1292,29 @@ class BusAlertService : Service() {
                 // 자동 알람인지 확인 (busInfo가 null이 아니고 isAutoAlarm이 true인 경우)
                 val isAutoAlarm = busInfo?.get("isAutoAlarm") as? Boolean ?: false
                 
-                Log.d(TAG, "🔊 TTS 발화 시작: \"$message\", 자동 알람: $isAutoAlarm")
+                Log.d(TAG, "🔊 TTS 발화 시도: \"$message\", 자동 알람: $isAutoAlarm")
+                
+                // 이어폰 전용 모드인 경우 이어폰 연결 상태 확인
+                val isHeadsetConnected = isHeadsetConnected()
+                
+                // 일반 승차 알람에서 earphoneOnly가 true인 경우 이어폰이 연결되어 있지 않으면 발화 중지
+                if (earphoneOnly && !isAutoAlarm && !isHeadsetConnected) {
+                    Log.d(TAG, "🎧 이어폰이 연결되어 있지 않아 일반 승차 알람 TTS 발화를 중지합니다.")
+                    return
+                }
                 
                 // 자동 알람인 경우 스피커로 강제 설정, 그 외에는 설정된 모드 사용
                 val useSpeaker = if (isAutoAlarm) {
                     Log.d(TAG, "🔊 자동 알람 감지! 스피커 모드로 강제 설정")
                     true // 자동 알람은 항상 스피커 사용
+                } else if (earphoneOnly) {
+                    false // 이어폰 전용 모드는 항상 이어폰 사용 (이어폰이 연결되어 있는 경우만 여기까지 옴)
                 } else {
                     when (audioOutputMode) {
                         OUTPUT_MODE_SPEAKER -> true
                         OUTPUT_MODE_HEADSET -> false
-                        OUTPUT_MODE_AUTO -> !isHeadsetConnected()
-                        else -> !isHeadsetConnected()
+                        OUTPUT_MODE_AUTO -> !isHeadsetConnected
+                        else -> !isHeadsetConnected
                     }
                 }
 
@@ -1337,7 +1348,7 @@ class BusAlertService : Service() {
                     }
                 }
 
-                Log.d(TAG, "🔊 TTS 발화 시도: \"$message\" (Stream: ${if(streamType == AudioManager.STREAM_ALARM) "ALARM" else "MUSIC"}, 볼륨: ${actualVolume * 100}%, 자동알람: $isAutoAlarm, 스피커 사용: $useSpeaker)")
+                Log.d(TAG, "🔊 TTS 발화 시도: \"$message\" (Stream: ${if(streamType == AudioManager.STREAM_ALARM) "ALARM" else "MUSIC"}, 볼륨: ${actualVolume * 100}%, 자동알람: $isAutoAlarm, 스피커 사용: $useSpeaker, 이어폰 연결됨: $isHeadsetConnected)")
 
                 val params = Bundle().apply {
                     putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "tts_${System.currentTimeMillis()}")
@@ -1399,43 +1410,7 @@ class BusAlertService : Service() {
                     Log.d(TAG, "🔊 TTS speak() 호출됨. utteranceId: $utteranceId")
 
                     // 자동 알람인 경우 호출자에게 TTS 발화 성공 알림
-                    if (isAutoAlarm && showNotification) {
-                        // 자동 알람 알림 표시 (10초 후 자동 취소)
-                        Log.d(TAG, "🔔 자동 알람 감지 - 추가 알림 표시")
-                        
-                        val busNumber = busInfo?.get("busNo") as? String ?: ""
-                        val stationName = busInfo?.get("stationName") as? String ?: ""
-                        val remainingMinutes = busInfo?.get("remainingMinutes") as? Int ?: 0
-                        
-                        serviceScope.launch(Dispatchers.Main) {
-                            val notificationManager = NotificationManagerCompat.from(context)
-                            val notificationId = System.currentTimeMillis().toInt()
-                            
-                            val title = "🚌 $busNumber 번 버스 자동 알람"
-                            val content = if (remainingMinutes <= 0) {
-                                "$stationName 정류장에 곧 도착합니다!"
-                            } else {
-                                "$stationName 정류장까지 약 $remainingMinutes 분 남았습니다."
-                            }
-                            
-                            val notification = NotificationCompat.Builder(context, CHANNEL_BUS_ALERTS)
-                                .setSmallIcon(R.drawable.ic_bus_notification)
-                                .setContentTitle(title)
-                                .setContentText(content)
-                                .setStyle(NotificationCompat.BigTextStyle().bigText(content))
-                                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                                .setAutoCancel(true)
-                                .build()
-                                
-                            try {
-                                notificationManager.notify(notificationId, notification)
-                                Log.d(TAG, "🔔 자동 알람 추가 알림 표시 완료: $notificationId")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ 자동 알람 추가 알림 표시 오류: ${e.message}")
-                            }
-                        }
-                    }
+                    // ...existing code...
                 } else {
                     Log.e(TAG, "🔊 오디오 포커스 획득 실패: $focusResult")
                 }
