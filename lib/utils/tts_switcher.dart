@@ -22,7 +22,7 @@ class TtsSwitcher {
   static const String _prefsKey = 'tts_output_mode';
 
   /// 현재 설정된 출력 모드
-  TtsOutputMode _currentMode = TtsOutputMode.auto;
+  TtsOutputMode _currentMode = TtsOutputMode.headphoneOnly;
 
   /// 초기화 여부
   bool _isInitialized = false;
@@ -136,6 +136,15 @@ class TtsSwitcher {
     int remainingMinutes = 5,
     Future<int> Function()? getRemainingTimeCallback,
   }) async {
+    // Respect output mode and headphone connection
+    final switcher = TtsSwitcher();
+    await switcher.initialize();
+    final bool shouldUse = await switcher.shouldUseNativeTts();
+    if (!shouldUse) {
+      logMessage('🔇 TTS 모드 비활성화 또는 이어폰 미연결로 TTS 스킵: $busNo',
+          level: LogLevel.info);
+      return false;
+    }
     try {
       // 네이티브 메서드로 TTS 추적 시작
       final result = await _platform.invokeMethod('startTtsTracking', {

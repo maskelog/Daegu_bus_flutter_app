@@ -100,8 +100,28 @@ class RouteService {
         return [];
       }
 
-      // 단일 노선 정보만 포함된 응답을 파싱
-      final Map<String, dynamic> data = jsonDecode(result);
+      // 단일 노선 정보만 포함된 응답을 파싱 (중첩된 JSON 문자열 처리 포함)
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(result);
+        // 이중 인코딩된 경우 다시 파싱 시도
+        if (decoded is String) {
+          try {
+            decoded = jsonDecode(decoded);
+          } catch (_) {
+            // 추가 파싱 실패 시 그대로 둠
+          }
+        }
+      } catch (e) {
+        logMessage('노선별 버스 도착 정보 응답 파싱 오류: $e', level: LogLevel.error);
+        return [];
+      }
+      if (decoded is! Map<String, dynamic>) {
+        logMessage('노선별 버스 도착 정보 예상치 못한 타입: ${decoded.runtimeType}',
+            level: LogLevel.error);
+        return [];
+      }
+      final Map<String, dynamic> data = decoded;
 
       // 결과를 BusArrival 목록으로 변환
       final List<BusArrival> arrivals = [];

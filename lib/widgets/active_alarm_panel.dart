@@ -256,11 +256,6 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     }
   }
 
-  // 시간을 HH:mm 형식으로 포맷팅하는 헬퍼 함수
-  String _getFormattedTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Consumer<AlarmService>(

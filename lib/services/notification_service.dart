@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:daegu_bus_app/services/settings_service.dart';
+import 'package:daegu_bus_app/utils/tts_switcher.dart' show TtsSwitcher;
 
 /// NotificationService: 네이티브 BusAlertService와 통신하는 Flutter 서비스
 class NotificationService {
+  static final NotificationService _instance = NotificationService._internal();
+  factory NotificationService() => _instance;
+  NotificationService._internal();
+
   static const MethodChannel _channel =
       MethodChannel('com.example.daegu_bus_app/notification');
-
-  // 싱글톤 패턴 구현
-  static final NotificationService _instance = NotificationService._internal();
-
-  factory NotificationService() => _instance;
-
-  NotificationService._internal();
+  final SettingsService _settingsService = SettingsService();
 
   // 알림 ID 생성 헬퍼 메소드
   int _generateNotificationId(String busNo, String stationName) {
@@ -55,44 +55,38 @@ class NotificationService {
         return false;
       }
 
-      final now = DateTime.now();
-      int? notificationTimeMs;
-
-      // 현재 시간 기준으로 알림 정보 생성
-      final notificationTime = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        now.hour,
-        now.minute,
-      );
-
-      // 네이티브 코드에서 Integer 범위를 초과하는 ID를 처리하기 위한 로직
-      final int safeNotificationId = id.abs() % 2147483647;
-
-      // 1. 먼저 TTS로 알림 시도 (자동 알람 플래그 명시)
-      try {
-        await SimpleTTSHelper.initialize();
-
-        // 시스템 볼륨 최대화 요청 (자동 알람이므로)
-        await SimpleTTSHelper.setVolume(1.0);
-
-        // 스피커 모드 강제 설정 (자동 알람이므로)
-        await SimpleTTSHelper.setAudioOutputMode(1); // 스피커 모드(1)
-
-        if (remainingMinutes <= 0) {
-          await SimpleTTSHelper.speak("$busNo번 버스가 $stationName 정류장에 곧 도착합니다.");
+      // 1. TTS 시도 (설정 및 이어폰 연결 여부 확인)
+      if (_settingsService.useTts) {
+        final ttsSwitcher = TtsSwitcher();
+        await ttsSwitcher.initialize();
+        final headphoneConnected = await ttsSwitcher.isHeadphoneConnected();
+        if (headphoneConnected) {
+          try {
+            await SimpleTTSHelper.initialize();
+            // 시스템 볼륨 최대화 요청
+            await SimpleTTSHelper.setVolume(1.0);
+            // 스피커 모드 강제 설정
+            await SimpleTTSHelper.setAudioOutputMode(1);
+            if (remainingMinutes <= 0) {
+              await SimpleTTSHelper.speak(
+                  "$busNo번 버스가 $stationName 정류장에 곧 도착합니다.");
+            } else {
+              await SimpleTTSHelper.speak(
+                  "$busNo번 버스가 $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.");
+            }
+          } catch (e) {
+            debugPrint('🔊 자동 알람 TTS 실행 오류: $e');
+          }
         } else {
-          await SimpleTTSHelper.speak(
-              "$busNo번 버스가 $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.");
+          debugPrint('🎧 이어폰 미연결 - 자동 알람 TTS 건너뜀');
         }
-      } catch (e) {
-        debugPrint('🔊 자동 알람 TTS 실행 오류: $e');
+      } else {
+        debugPrint('🔇 자동 알람 TTS 비활성화 - 음성 알림 건너뜀');
       }
 
       // 2. 자동 알람용 알림 표시 (isAutoAlarm 파라미터로부터 값 사용)
       final Map<String, dynamic> params = {
-        'id': safeNotificationId,
+        'id': id,
         'busNo': busNo,
         'stationName': stationName,
         'remainingMinutes': remainingMinutes,
@@ -101,8 +95,7 @@ class NotificationService {
         'isAutoAlarm': isAutoAlarm, // 파라미터에서 값 사용
         'isOngoing': true, // 지속적인 알림으로 설정
         'routeId': routeId, // routeId 추가
-        'notificationTime': notificationTimeMs ??
-            notificationTime.millisecondsSinceEpoch, // 알림 시간 추가
+        'notificationTime': DateTime.now().millisecondsSinceEpoch, // 알림 시간 추가
         'useTTS': true, // TTS 사용 플래그
         'actions': ['cancel_alarm'], // 알람 취소 액션 추가
       };
@@ -113,7 +106,7 @@ class NotificationService {
       final bool result =
           await _channel.invokeMethod('showNotification', params);
 
-      debugPrint('🔔 자동 알람 알림 표시 완료: $id (안전 ID: $safeNotificationId)');
+      debugPrint('🔔 자동 알람 알림 표시 완료: $id');
       return result;
     } catch (e) {
       debugPrint('🔔 자동 알람 알림 표시 오류: ${e.toString()}');
@@ -188,14 +181,25 @@ class NotificationService {
 
       debugPrint('🚨 버스 도착 임박 알림 표시: $busNo');
 
-      // TTS 알림
-      await SimpleTTSHelper.speak(
-          "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
-      debugPrint('TTS 실행 요청: $busNo, $stationName');
+      // TTS 알림 - 설정 및 이어폰 연결 여부 확인
+      if (_settingsService.useTts) {
+        final switcher = TtsSwitcher();
+        await switcher.initialize();
+        final shouldUse = await switcher.shouldUseNativeTts();
+        if (shouldUse) {
+          await SimpleTTSHelper.speak(
+              "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
+          debugPrint('TTS 실행 요청: $busNo, $stationName');
+        } else {
+          debugPrint('🔇 이어폰 미연결 또는 TTS 모드 비허용 - TTS 건너뜀');
+        }
+      } else {
+        debugPrint('🔇 TTS 비활성화 상태: 음성 알림 건너뜀');
+      }
 
       return result;
     } on PlatformException catch (e) {
-      debugPrint('🚨 버스 도착 임박 알림 오류: ${e.message}');
+      debugPrint('🚨 버스 도착 임박 알림 표시 오류: ${e.message}');
       return false;
     }
   }
@@ -274,7 +278,7 @@ class NotificationService {
         debugPrint(
             '🔔 지속적인 버스 추적 알림 표시 완료 (ID: $notificationId, routeId: $routeId)');
       } else {
-        debugPrint('🔔 지속적인 버스 추적 알림 표시 실패');
+        debugPrint('�� 지속적인 버스 추적 알림 표시 실패');
       }
       return result;
     } on PlatformException catch (e) {

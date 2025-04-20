@@ -201,6 +201,64 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Widget _buildTtsOutputModeSection() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '일반 승차 알람 TTS 설정',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            RadioListTile<int>(
+              title: const Text('이어폰 전용'),
+              subtitle: const Text('이어폰으로만 TTS 알림을 출력합니다'),
+              value: SettingsService.speakerModeHeadset,
+              groupValue: _settingsService.speakerMode,
+              onChanged: (value) {
+                if (value != null) {
+                  _settingsService.updateSpeakerMode(value);
+                  setState(() {});
+                }
+              },
+            ),
+            RadioListTile<int>(
+              title: const Text('스피커 전용'),
+              subtitle: const Text('스피커로만 TTS 알림을 출력합니다'),
+              value: SettingsService.speakerModeSpeaker,
+              groupValue: _settingsService.speakerMode,
+              onChanged: (value) {
+                if (value != null) {
+                  _settingsService.updateSpeakerMode(value);
+                  setState(() {});
+                }
+              },
+            ),
+            RadioListTile<int>(
+              title: const Text('자동 감지'),
+              subtitle: const Text('연결된 오디오 장치에 따라 자동으로 선택합니다'),
+              value: SettingsService.speakerModeAuto,
+              groupValue: _settingsService.speakerMode,
+              onChanged: (value) {
+                if (value != null) {
+                  _settingsService.updateSpeakerMode(value);
+                  setState(() {});
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<SettingsService>(
@@ -603,6 +661,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ],
                         ),
                       ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildTtsOutputModeSection(),
                     ),
                   ],
                 ),

@@ -947,7 +947,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             "cancel_alarm" -> {
                 val alarmId = intent.getIntExtra("alarm_id", -1)
                 if (alarmId != -1) {
-                    // 알림만 취소하고 자동 알람은 유지
+                    // 알림 취소
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     notificationManager.cancel(alarmId)
                     
@@ -956,12 +956,19 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     ttsIntent.action = "STOP_TTS"
                     startService(ttsIntent)
                     
-                    // 알람 취소 상태를 SharedPreferences에 저장
+                    // 현재 알람만 취소 상태로 저장
                     val prefs = getSharedPreferences("alarm_preferences", Context.MODE_PRIVATE)
                     val editor = prefs.edit()
                     editor.putBoolean("alarm_cancelled_$alarmId", true).apply()
                     
-                    Log.d(TAG, "Alarm notification cancelled: $alarmId (auto alarm remains active)")
+                    // 토스트 메시지로 알림
+                    Toast.makeText(
+                        this,
+                        "현재 알람이 취소되었습니다",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    
+                    Log.d(TAG, "Alarm notification cancelled: $alarmId (one-time cancel)")
                 }
             }
         }

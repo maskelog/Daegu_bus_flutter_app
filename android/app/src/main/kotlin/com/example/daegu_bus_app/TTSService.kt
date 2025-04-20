@@ -7,10 +7,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.TextToSpeech.OnUtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.util.Locale
@@ -108,7 +109,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 Log.e(TAG, "한국어가 지원되지 않습니다")
             }
             
-            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            tts?.setOnUtteranceProgressListener(object : OnUtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
                     Log.d(TAG, "TTS 발화 시작: $utteranceId")
                 }
@@ -145,23 +146,29 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     }
     
     private fun speakBusAlert() {
+        // 이어폰/블루투스 이어셋 연결 여부 확인, 미연결 시 TTS 건너뜀
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val isWired = audioManager.isWiredHeadsetOn
+        val isBt = audioManager.isBluetoothA2dpOn
+        if (!isWired && !isBt) {
+            Log.d(TAG, "🎧 이어셋 미연결 - TTS 발화 스킵")
+            return
+        }
         if (!isTracking || !isInitialized) {
             return
         }
-        
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastSpokenTime < SPEAK_INTERVAL) {
             Log.d(TAG, "TTS 발화 간격이 너무 짧습니다. 건너뜁니다.")
             return
         }
-        
         lastSpokenTime = currentTime
-        
+
         val utteranceId = UUID.randomUUID().toString()
         val message = "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
-        
+
         Log.d(TAG, "TTS 발화: $message")
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             tts?.speak(message, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
         } else {

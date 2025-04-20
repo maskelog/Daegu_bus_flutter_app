@@ -44,7 +44,7 @@ class SettingsService extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   bool _useTts = true;
   bool _vibrate = true;
-  int _speakerMode = speakerModeAuto; // 스피커 모드 변수 (기본값: 자동)
+  int _speakerMode = speakerModeHeadset; // 스피커 모드 변수 (기본값: 이어폰 전용)
 
   // MethodChannel 추가
   final MethodChannel _ttsChannel =
@@ -131,8 +131,8 @@ class SettingsService extends ChangeNotifier {
 
       _useTts = _prefs.getBool(_kUseTtsKey) ?? true;
       _vibrate = _prefs.getBool(_kVibrateKey) ?? true;
-      _speakerMode =
-          _prefs.getInt(_kSpeakerModeKey) ?? speakerModeAuto; // 스피커 모드 로드
+      _speakerMode = _prefs.getInt(_kSpeakerModeKey) ??
+          speakerModeHeadset; // 스피커 모드 로드 (기본 이어폰 전용)
 
       notifyListeners();
     } catch (e) {
@@ -179,7 +179,7 @@ class SettingsService extends ChangeNotifier {
     }
   }
 
-  // 스피커 모드 업데이트 함수 추가
+  // 스피커 모드 업데이트 함수
   Future<void> updateSpeakerMode(int mode) async {
     if (_speakerMode == mode) return;
 
@@ -194,13 +194,12 @@ class SettingsService extends ChangeNotifier {
     try {
       await _prefs.setInt(_kSpeakerModeKey, mode);
 
-      // 네이티브 코드에도 설정 전달
+      // 네이티브 코드에 설정 전달
       try {
         await _ttsChannel.invokeMethod('setAudioOutputMode', {'mode': mode});
-        debugPrint(
-            '🔊 네이티브 오디오 출력 모드 설정 성공: $mode (${getSpeakerModeName(mode)})');
+        debugPrint('✅ 네이티브 TTS 출력 모드 설정 성공: $newModeName');
       } catch (e) {
-        debugPrint('❌ 네이티브 오디오 출력 모드 설정 오류: $e');
+        debugPrint('❌ 네이티브 TTS 출력 모드 설정 실패: $e');
       }
 
       notifyListeners();
@@ -240,8 +239,10 @@ class SettingsService extends ChangeNotifier {
         return '이어폰 전용';
       case speakerModeSpeaker:
         return '스피커 전용';
-      default:
+      case speakerModeAuto:
         return '자동 감지';
+      default:
+        return '알 수 없음';
     }
   }
 
@@ -285,4 +286,13 @@ class SettingsService extends ChangeNotifier {
   // Future<void> _notifyNativeSettingsChanged() async {
   //   // Use MethodChannel to send updated settings to BusAlertService if necessary
   // }
+
+  // 현재 스피커 모드가 이어폰 전용인지 확인
+  bool get isHeadsetMode => _speakerMode == speakerModeHeadset;
+
+  // 현재 스피커 모드가 스피커 전용인지 확인
+  bool get isSpeakerMode => _speakerMode == speakerModeSpeaker;
+
+  // 현재 스피커 모드가 자동 감지인지 확인
+  bool get isAutoMode => _speakerMode == speakerModeAuto;
 }

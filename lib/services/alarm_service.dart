@@ -61,6 +61,8 @@ class AlarmService extends ChangeNotifier {
 
   final Map<String, alarm_model.AlarmData> _activeAlarms = {};
   final NotificationService _notificationService = NotificationService();
+  final SettingsService _settingsService = SettingsService();
+  bool get _useTTS => _settingsService.useTts;
   Timer? _alarmCheckTimer;
   final List<alarm_model.AlarmData> _autoAlarms = [];
   bool _initialized = false;
@@ -329,13 +331,17 @@ class AlarmService extends ChangeNotifier {
 
       // 6. TTS로 알림 중지 알림
       try {
-        await SimpleTTSHelper.speak("버스 추적이 중지되었습니다.");
+        // 이어폰 연결 시에만 TTS 발화
+        await SimpleTTSHelper.speak(
+          "버스 추적이 중지되었습니다.",
+          earphoneOnly: true,
+        );
       } catch (e) {
         debugPrint('🚌 TTS 알림 오류: $e');
       }
 
       debugPrint('🚌 모니터링 서비스 중지 완료, 추적 모드: $_isInTrackingMode');
-      return stopSuccess || !_isInTrackingMode; // 둘 중 하나라도 성공하면 true 반환
+      return stopSuccess || !_isInTrackingMode;
     } catch (e) {
       debugPrint('🚌 버스 모니터링 서비스 중지 오류: $e');
 
@@ -543,61 +549,147 @@ class AlarmService extends ChangeNotifier {
           "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}".hashCode;
       final initialDelay = scheduledTime.difference(now);
 
-      // 이미 지난 시간이면 즉시 알람 실행
-      if (initialDelay.isNegative) {
-        logMessage('⚠️ 이미 지난 알람 시간: $scheduledTime, 다음 알람 시간 계산 필요',
-            level: LogLevel.warning);
-        // 다음 알람 시간 계산 시도
-        final nextAlarmTime = alarm.getNextAlarmTime();
-        if (nextAlarmTime != null) {
-          logMessage('✅ 다음 알람 시간 계산 성공: $nextAlarmTime');
-          return _scheduleAutoAlarm(alarm, nextAlarmTime);
-        }
-        return;
+      // 너무 먼 미래의 알람은 최대 3일로 제한
+      final actualDelay =
+          initialDelay.inDays > 3 ? const Duration(days: 3) : initialDelay;
+
+      // 기존 작업 취소 확인
+      try {
+        await Workmanager().cancelByUniqueName('autoAlarm_$id');
+        logMessage('기존 자동 알람 작업 취소 완료, ID: $id');
+      } catch (e) {
+        logMessage('기존 작업 취소 오류 (무시): $e', level: LogLevel.warning);
       }
 
-      if (initialDelay.inDays <= 7) {
-        // 기존 작업 취소
-        try {
-          await Workmanager().cancelByUniqueName('autoAlarm_$id');
-          logMessage('✅ 기존 자동 알람 작업 취소: $id');
-        } catch (e) {
-          logMessage('⚠️ 기존 작업 취소 오류 (무시): $e', level: LogLevel.warning);
-        }
+      // 백업 ID 사용 - 충돌 방지
+      final uniqueId = 'autoAlarm_${id}_${now.millisecondsSinceEpoch}';
 
-        // 새 작업 등록
-        await Workmanager().registerOneOffTask(
-          'autoAlarm_$id',
-          'autoAlarmTask',
-          initialDelay: initialDelay,
-          inputData: {
-            'alarmId': id,
+      // 작업 등록 시도
+      await Workmanager().registerOneOffTask(
+        uniqueId,
+        'autoAlarmTask',
+        initialDelay: actualDelay,
+        inputData: {
+          'alarmId': id,
+          'busNo': alarm.routeNo,
+          'stationName': alarm.stationName,
+          'remainingMinutes': 0,
+          'routeId': alarm.routeId,
+          'useTTS': alarm.useTTS,
+          'stationId': alarm.stationId,
+          'registeredAt': now.millisecondsSinceEpoch,
+          'scheduledFor': scheduledTime.millisecondsSinceEpoch,
+        },
+        constraints: Constraints(
+          networkType: NetworkType.connected,
+          requiresBatteryNotLow: false, // 배터리 제한 완화
+          requiresCharging: false,
+          requiresDeviceIdle: false,
+          requiresStorageNotLow: false,
+        ),
+        backoffPolicy: BackoffPolicy.linear,
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+      );
+
+      // SharedPreferences에 작업 등록 정보 저장 (검증용)
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          'last_scheduled_alarm_$id',
+          jsonEncode({
+            'workId': uniqueId,
             'busNo': alarm.routeNo,
             'stationName': alarm.stationName,
-            'remainingMinutes': 0,
-            'routeId': alarm.routeId,
-            'useTTS': alarm.useTTS,
-            'stationId': alarm.stationId,
-          },
-          constraints: Constraints(
-            networkType: NetworkType.connected,
-            requiresBatteryNotLow: false, // 배터리 제한 완화
-            requiresCharging: false,
-            requiresDeviceIdle: false,
-            requiresStorageNotLow: false,
-          ),
-          backoffPolicy: BackoffPolicy.linear,
-          existingWorkPolicy: ExistingWorkPolicy.replace,
-        );
+            'scheduledTime': scheduledTime.toIso8601String(),
+            'registeredAt': now.toIso8601String(),
+          }));
 
-        logMessage(
-            '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${initialDelay.inDays}일 ${initialDelay.inHours % 24}시간 ${initialDelay.inMinutes % 60}분 후)');
-      } else {
-        logMessage('⚠️ 알람 시간이 너무 멀어서 건너뛰기: ${initialDelay.inDays}일',
-            level: LogLevel.warning);
+      logMessage(
+          '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${actualDelay.inMinutes}분 후), 작업 ID: $uniqueId');
+
+      // 5분 후 백업 알람 등록
+      if (actualDelay.inMinutes > 5) {
+        _scheduleBackupAlarm(alarm, id, scheduledTime);
       }
     } catch (e) {
       logMessage('❌ 자동 알람 예약 오류: $e', level: LogLevel.error);
+      // 오류 발생 시 앱 내 로컬 알림으로 예약 시도
+      _scheduleLocalBackupAlarm(alarm, scheduledTime);
+    }
+  }
+
+  // 로컬 백업 알람 등록 함수
+  Future<void> _scheduleLocalBackupAlarm(
+      AutoAlarm alarm, DateTime scheduledTime) async {
+    try {
+      logMessage('⏰ 로컬 백업 알람 등록 시도: ${alarm.routeNo}, ${alarm.stationName}',
+          level: LogLevel.debug);
+
+      // TTS 및 알림으로 사용자에게 정보 제공
+      try {
+        await SimpleTTSHelper.speak(
+            "${alarm.routeNo}번 버스 자동 알람 예약에 문제가 발생했습니다. 앱을 다시 실행해 주세요.");
+      } catch (e) {
+        logMessage('🔊 TTS 알림 실패: $e', level: LogLevel.error);
+      }
+
+      // 메인 앱이 실행될 때 처리할 수 있도록 정보 저장
+      final prefs = await SharedPreferences.getInstance();
+      final alarmInfo = {
+        'routeNo': alarm.routeNo,
+        'stationName': alarm.stationName,
+        'scheduledTime': scheduledTime.toIso8601String(),
+        'registeredAt': DateTime.now().toIso8601String(),
+        'hasSchedulingError': true,
+      };
+
+      await prefs.setString('alarm_scheduling_error', jsonEncode(alarmInfo));
+      await prefs.setBool('has_alarm_scheduling_error', true);
+
+      logMessage('⏰ 로컬 백업 알람 정보 저장 완료', level: LogLevel.debug);
+    } catch (e) {
+      logMessage('❌ 로컬 백업 알람 등록 실패: $e', level: LogLevel.error);
+    }
+  }
+
+  // 백업 알람 등록 함수 추가
+  Future<void> _scheduleBackupAlarm(
+      AutoAlarm alarm, int id, DateTime scheduledTime) async {
+    try {
+      final backupTime = scheduledTime.subtract(const Duration(minutes: 5));
+      final now = DateTime.now();
+      if (backupTime.isBefore(now)) return; // 이미 지난 시간이면 등록 취소
+
+      final backupId = 'autoAlarm_backup_${id}_${now.millisecondsSinceEpoch}';
+      final backupDelay = backupTime.difference(now);
+
+      await Workmanager().registerOneOffTask(
+        backupId,
+        'autoAlarmTask',
+        initialDelay: backupDelay,
+        inputData: {
+          'alarmId': id,
+          'busNo': alarm.routeNo,
+          'stationName': alarm.stationName,
+          'remainingMinutes': 0,
+          'routeId': alarm.routeId,
+          'useTTS': alarm.useTTS,
+          'stationId': alarm.stationId,
+          'isBackup': true,
+        },
+        constraints: Constraints(
+          networkType: NetworkType.connected,
+          requiresBatteryNotLow: false,
+          requiresCharging: false,
+          requiresDeviceIdle: false,
+          requiresStorageNotLow: false,
+        ),
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+      );
+
+      logMessage(
+          '✅ 백업 자동 알람 예약 성공: ${alarm.routeNo} at $backupTime (${backupDelay.inMinutes}분 후)');
+    } catch (e) {
+      logMessage('❌ 백업 알람 예약 오류: $e', level: LogLevel.error);
     }
   }
 
@@ -831,72 +923,47 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  Future<bool> startAlarm(
-      String busNo, String stationName, int remainingMinutes) async {
+  /// 알람 시작
+  Future<void> startAlarm(
+      String busNo, String stationName, int remainingMinutes,
+      {bool isAutoAlarm = false}) async {
     try {
-      logMessage('🔔 startAlarm 호출: $busNo, $stationName, $remainingMinutes분',
-          level: LogLevel.info);
-
-      // 백그라운드 메신저 상태 확인 및 초기화
-      if (!kIsWeb) {
-        try {
-          final rootIsolateToken = RootIsolateToken.instance;
-          if (rootIsolateToken != null) {
-            BackgroundIsolateBinaryMessenger.ensureInitialized(
-                rootIsolateToken);
-            logMessage(
-                '✅ startAlarm - BackgroundIsolateBinaryMessenger 초기화 성공');
-          } else {
-            logMessage('⚠️ startAlarm - RootIsolateToken이 null입니다',
-                level: LogLevel.warning);
-          }
-        } catch (e) {
-          logMessage(
-              '⚠️ startAlarm - BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
-              level: LogLevel.warning);
-        }
+      // TTS 발화
+      if (_useTTS) {
+        await SimpleTTSHelper.speakBusAlert(
+          busNo: busNo,
+          stationName: stationName,
+          remainingMinutes: remainingMinutes,
+          earphoneOnly: !isAutoAlarm, // 일반 알람은 이어폰 전용, 자동 알람은 설정된 모드 사용
+        );
       }
 
-      // 알람 ID 생성
-      final int id = getAlarmId(busNo, stationName);
-
-      // 설정된 알람 볼륨 가져오기
-      final settingsService = SettingsService();
-      await settingsService.initialize();
-      final volume = settingsService.autoAlarmVolume;
-
-      // TTS 발화 시도 (자동 알람 -> 스피커 우선)
-      try {
-        await SimpleTTSHelper.initialize();
-        await SimpleTTSHelper.setAudioOutputMode(1); // 스피커 모드 설정
-        await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
-        if (remainingMinutes <= 0) {
-          await SimpleTTSHelper.speak(
-              "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
-        } else {
-          await SimpleTTSHelper.speak(
-              "$busNo번 버스가 약 $remainingMinutes분 후 $stationName 정류장에 도착 예정입니다.");
-        }
-        await SimpleTTSHelper.setAudioOutputMode(2); // 자동 모드로 복원 (선택 사항)
-        debugPrint('🔊 TTS 발화 성공 (스피커 모드, 볼륨: ${volume * 100}%)');
-      } catch (e) {
-        debugPrint('🔊 TTS 발화 오류: $e');
-        await SimpleTTSHelper.setAudioOutputMode(2); // 오류 시 자동 모드로 복원
-      }
-
-      // 알림 표시
-      await NotificationService().showNotification(
-        id: id,
+      // 알람 해제 시에도 설정된 모드 유지
+      await _notificationService.showBusArrivingSoon(
         busNo: busNo,
         stationName: stationName,
-        remainingMinutes: remainingMinutes,
-        currentStation: '',
       );
-
-      return true;
     } catch (e) {
-      debugPrint('❌ startAlarm 오류: $e');
-      return false;
+      logMessage('❌ 알람 시작 오류: $e', level: LogLevel.error);
+    }
+  }
+
+  /// 알람 해제
+  Future<void> stopAlarm(String busNo, String stationName,
+      {bool isAutoAlarm = false}) async {
+    try {
+      // TTS로 알람 해제 안내
+      if (_useTTS) {
+        await SimpleTTSHelper.speak(
+          "$busNo번 버스 알람이 해제되었습니다.",
+          earphoneOnly: !isAutoAlarm, // 일반 알람은 이어폰 전용, 자동 알람은 설정된 모드 사용
+        );
+      }
+
+      // 알림 제거
+      await _notificationService.cancelOngoingTracking();
+    } catch (e) {
+      logMessage('❌ 알람 해제 오류: $e', level: LogLevel.error);
     }
   }
 

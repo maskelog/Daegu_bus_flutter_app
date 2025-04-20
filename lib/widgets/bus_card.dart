@@ -8,6 +8,7 @@ import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:daegu_bus_app/services/api_service.dart';
 import 'package:daegu_bus_app/utils/tts_switcher.dart' show TtsSwitcher;
 import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
+import 'package:daegu_bus_app/services/settings_service.dart';
 
 class BusCard extends StatefulWidget {
   final BusArrival busArrival;
@@ -283,31 +284,25 @@ class _BusCardState extends State<BusCard> {
         routeId: routeId,
       );
 
-      // TTS 알림 즉시 시작
-      await TtsSwitcher.startTtsTracking(
-          routeId: routeId,
-          stationId: widget.stationId,
-          busNo: widget.busArrival.routeNo,
-          stationName: widget.stationName ?? "정류장 정보 없음",
-          remainingMinutes: remainingTime,
-          getRemainingTimeCallback: () async {
-            try {
-              final updatedBusArrivals =
-                  await ApiService.getBusArrivalByRouteId(
-                widget.stationId,
-                routeId,
-              );
-
-              if (updatedBusArrivals.isNotEmpty &&
-                  updatedBusArrivals[0].busInfoList.isNotEmpty) {
-                final latestBus = updatedBusArrivals[0].busInfoList.first;
-                return latestBus.getRemainingMinutes();
-              }
-            } catch (e) {
-              logMessage('실시간 도착 시간 업데이트 오류: $e');
-            }
-            return remainingTime - 1;
-          });
+      // TTS 알림 즉시 시작 (일반 승차 알람에 대해 useTts 설정 및 이어폰 연결 여부 확인)
+      final settings = Provider.of<SettingsService>(context, listen: false);
+      if (!settings.useTts) {
+        logMessage('🔇 일반 승차 알람 TTS 설정 비활성화 - TTS 건너뜀', level: LogLevel.info);
+      } else {
+        final ttsSwitcher = TtsSwitcher();
+        await ttsSwitcher.initialize();
+        final headphoneConnected = await ttsSwitcher.isHeadphoneConnected();
+        if (headphoneConnected) {
+          await TtsSwitcher.startTtsTracking(
+            routeId: routeId,
+            stationId: widget.stationId,
+            busNo: widget.busArrival.routeNo,
+            stationName: widget.stationName ?? '정류장 정보 없음',
+          );
+        } else {
+          logMessage('🎧 이어폰 미연결 - 승차 알람 TTS 건너뜀', level: LogLevel.info);
+        }
+      }
 
       // 승차 알람이 설정되었음을 알림
       if (mounted) {
@@ -422,13 +417,28 @@ class _BusCardState extends State<BusCard> {
             routeId: routeId,
           );
 
-          // TTS 알림 즉시 시작
-          await TtsSwitcher.startTtsTracking(
-            busNo: widget.busArrival.routeNo,
-            stationName: widget.stationName ?? '정류장 정보 없음',
-            routeId: routeId,
-            stationId: widget.stationId,
-          );
+          // TTS 알림 즉시 시작 (일반 승차 알람용, useTts 설정 및 이어폰 연결 여부 확인)
+          final settings2 =
+              Provider.of<SettingsService>(context, listen: false);
+          if (!settings2.useTts) {
+            logMessage('🔇 일반 승차 알람 TTS 설정 비활성화 - TTS 건너뜀',
+                level: LogLevel.info);
+          } else {
+            final ttsSwitcher2 = TtsSwitcher();
+            await ttsSwitcher2.initialize();
+            final headphoneConnected2 =
+                await ttsSwitcher2.isHeadphoneConnected();
+            if (headphoneConnected2) {
+              await TtsSwitcher.startTtsTracking(
+                routeId: routeId,
+                stationId: widget.stationId,
+                busNo: widget.busArrival.routeNo,
+                stationName: widget.stationName ?? '정류장 정보 없음',
+              );
+            } else {
+              logMessage('🎧 이어폰 미연결 - 승차 알람 TTS 건너뜀', level: LogLevel.info);
+            }
+          }
 
           // 알람 상태 갱신
           await alarmService.refreshAlarms();

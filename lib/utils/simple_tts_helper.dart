@@ -65,7 +65,8 @@ class SimpleTTSHelper {
   }
 
   /// 텍스트를 음성으로 변환 (플러터 TTS 사용)
-  static Future<bool> speak(String message, {bool force = false}) async {
+  static Future<bool> speak(String message,
+      {bool force = false, bool earphoneOnly = false}) async {
     try {
       if (!_isInitialized) {
         await initialize();
@@ -91,13 +92,47 @@ class SimpleTTSHelper {
         return false;
       }
 
-      // TTS 엔진 선택 (이어폰 연결 상태에 따라)
-      final useNativeTts = await _ttsSwitcher?.shouldUseNativeTts() ?? false;
+      // 현재 설정된 오디오 출력 모드 확인
+      int currentMode = earphoneOnly ? 0 : await _getCurrentAudioMode();
+      logMessage('🔊 현재 오디오 출력 모드: $currentMode (earphoneOnly: $earphoneOnly)',
+          level: LogLevel.info);
 
-      if (useNativeTts) {
-        return await _speakNative(message);
-      } else {
+      // 이어폰 연결 상태 확인
+      bool isHeadphoneConnected = await _checkHeadphoneConnection();
+      logMessage('🎧 이어폰 연결 상태: ${isHeadphoneConnected ? "연결됨" : "연결 안됨"}',
+          level: LogLevel.info);
+
+      // 출력 모드에 따른 처리
+      switch (currentMode) {
+        case 0: // 이어폰 전용
+          if (!isHeadphoneConnected) {
+            logMessage('⚠️ 이어폰 전용 모드인데 이어폰이 연결되지 않았습니다',
+                level: LogLevel.warning);
+            return false;
+          }
+          break;
+        case 1: // 스피커 전용
+          // 스피커 모드는 이어폰 연결 상태와 관계없이 진행
+          break;
+        case 2: // 자동 감지
+          if (earphoneOnly && !isHeadphoneConnected) {
+            logMessage('⚠️ 이어폰 전용 요청인데 이어폰이 연결되지 않았습니다',
+                level: LogLevel.warning);
+            return false;
+          }
+          break;
+      }
+
+      // TTS 발화 실행
+      _isSpeaking = true;
+      _addRecentMessage(message);
+
+      if (currentMode == 0 || (earphoneOnly && isHeadphoneConnected)) {
+        // 이어폰 전용 또는 이어폰 강제 모드
         return await _speakFlutter(message);
+      } else {
+        // 스피커 전용 또는 기타
+        return await _speakNative(message);
       }
     } catch (e) {
       logMessage('❌ TTS 발화 오류: $e', level: LogLevel.error);
@@ -231,10 +266,33 @@ class SimpleTTSHelper {
   /// 초기화되었는지 확인
   static bool get isInitialized => _isInitialized;
 
+  /// 현재 오디오 출력 모드 가져오기
+  static Future<int> _getCurrentAudioMode() async {
+    try {
+      final result = await _ttsChannel.invokeMethod('getAudioOutputMode');
+      return result as int;
+    } catch (e) {
+      logMessage('⚠️ 오디오 출력 모드 확인 실패: $e', level: LogLevel.warning);
+      return 2; // 기본값: 자동 감지
+    }
+  }
+
+  /// 이어폰 연결 상태 확인
+  static Future<bool> _checkHeadphoneConnection() async {
+    try {
+      final result = await _ttsChannel.invokeMethod('isHeadphoneConnected');
+      return result as bool;
+    } catch (e) {
+      logMessage('⚠️ 이어폰 연결 상태 확인 실패: $e', level: LogLevel.warning);
+      return false;
+    }
+  }
+
   /// 버스 도착 알림 TTS 발화
-  static Future<bool> speakBusArriving(String busNo, String stationName) async {
+  static Future<bool> speakBusArriving(String busNo, String stationName,
+      {bool earphoneOnly = true}) async {
     final message = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.";
-    return await speak(message);
+    return await speak(message, earphoneOnly: earphoneOnly);
   }
 
   /// 버스 알림 TTS 발화 (상세 정보 포함)
@@ -244,6 +302,7 @@ class SimpleTTSHelper {
     required int remainingMinutes,
     String? currentStation,
     int? remainingStops,
+    bool earphoneOnly = true,
   }) async {
     String message;
 
@@ -261,7 +320,7 @@ class SimpleTTSHelper {
           "$busNo번 버스가$locationInfo $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.";
     }
 
-    return await speak(message);
+    return await speak(message, earphoneOnly: earphoneOnly);
   }
 
   /// 볼륨 설정

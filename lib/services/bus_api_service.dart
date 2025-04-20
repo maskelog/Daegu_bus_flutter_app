@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class BusApiService {
   static const MethodChannel _channel =
@@ -62,7 +63,7 @@ class BusApiService {
     }
   }
 
-  // 특정 노선의 도착 정보 조회 메소드
+  // 버스 도착 정보 조회 메소드 개선
   Future<BusArrivalInfo?> getBusArrivalByRouteId(
       String stationId, String routeId) async {
     try {
@@ -72,97 +73,234 @@ class BusApiService {
         return null;
       }
 
-      debugPrint('🐛 [DEBUG] 자동 알람 버스 정보 업데이트 시도: $routeId, $stationId');
+      debugPrint(
+          '🚌 [API 호출] 버스 정보 조회: routeId=$routeId, stationId=$stationId');
+      final apiStartTime = DateTime.now();
 
-      final dynamic result =
-          await _channel.invokeMethod('getBusArrivalByRouteId', {
-        'stationId': stationId,
-        'routeId': routeId,
-      });
+      // API 응답 시간 및 성공 여부 기록 (분석용)
+      bool apiSuccess = false;
+      String? errorMsg;
+      BusArrivalInfo? result;
 
-      // 응답 유형 확인 및 로깅
-      if (result is String) {
-        debugPrint('🐛 [DEBUG] API 응답이 String 형식입니다');
+      try {
+        final dynamic response =
+            await _channel.invokeMethod('getBusArrivalByRouteId', {
+          'stationId': stationId,
+          'routeId': routeId,
+        });
 
-        // 빈 문자열이거나 유효하지 않은 경우 처리
-        if (result.isEmpty || result == 'null' || result == '[]') {
-          debugPrint('🐛 [DEBUG] 빈 응답이거나 정보가 없음: "$result"');
+        final apiDuration =
+            DateTime.now().difference(apiStartTime).inMilliseconds;
+        debugPrint('🚌 [API 응답] 소요시간: ${apiDuration}ms');
+
+        // 응답 타입 로깅
+        if (response == null) {
+          debugPrint('❌ [ERROR] 응답이 null입니다');
           return null;
         }
 
-        try {
-          final dynamic decoded = jsonDecode(result);
+        debugPrint('🚌 [API 응답] 타입: ${response.runtimeType}');
 
-          // 배열 형식으로 온 경우 첫 번째 항목 사용
-          if (decoded is List && decoded.isNotEmpty) {
-            debugPrint('🐛 [DEBUG] 배열 형식의 응답, 첫 번째 항목 사용');
-            return BusArrivalInfo.fromJson(decoded[0]);
-          }
+        // 응답 파싱 (여러 형식 처리)
+        result = await _parseApiResponse(response, routeId);
+        apiSuccess = result != null;
 
-          // 객체 형식으로 온 경우
-          if (decoded is Map<String, dynamic>) {
-            // 자동 알람에서 오는 응답 형식 처리 (routeNo 필드가 있는 경우)
-            if (decoded.containsKey('routeNo')) {
-              debugPrint('🐛 [DEBUG] 자동 알람 응답 형식 감지됨');
-              // 필요한 필드 구성
-              final Map<String, dynamic> formattedResponse = {
-                'name': decoded['routeNo'] ?? '',
-                'sub': '',
-                'id': routeId,
-                'forward': decoded['moveDir'] ?? '알 수 없음',
-                'bus': []
-              };
-
-              // arrList 필드가 있으면 처리
-              if (decoded.containsKey('arrList') &&
-                  decoded['arrList'] is List) {
-                final List<dynamic> arrList = decoded['arrList'];
-                final List<Map<String, dynamic>> busInfoList = [];
-
-                for (var arr in arrList) {
-                  if (arr is Map<String, dynamic>) {
-                    busInfoList.add({
-                      '버스번호': arr['vhcNo2'] ?? '',
-                      '현재정류소': arr['bsNm'] ?? '',
-                      '남은정류소': '${arr['bsGap'] ?? 0} 개소',
-                      '도착예정소요시간': arr['arrState'] ?? '${arr['bsGap'] ?? 0}분',
-                    });
-                  }
-                }
-
-                formattedResponse['bus'] = busInfoList;
-              }
-
-              return BusArrivalInfo.fromJson(formattedResponse);
-            }
-
-            return BusArrivalInfo.fromJson(decoded);
-          }
-
-          debugPrint('❌ [ERROR] 예상치 못한 JSON 구조: ${decoded.runtimeType}');
-          // 디버깅을 위해 원본 데이터 출력
-          debugPrint('❌ [ERROR] 원본 데이터: $decoded');
-          return null;
-        } catch (e) {
-          debugPrint('❌ [ERROR] JSON 파싱 오류: $e, 원본 문자열: "$result"');
-          return null;
-        }
-      } else {
-        // String이 아닌 경우 (이미 Map 등으로 파싱된 경우)
-        debugPrint('🐛 [DEBUG] API 응답이 ${result.runtimeType} 형식입니다');
-        if (result is Map<String, dynamic>) {
-          return BusArrivalInfo.fromJson(result);
+        // 파싱 결과 로깅
+        if (result != null) {
+          final busCount = result.bus.length;
+          debugPrint('✅ [API 성공] $busCount개 버스 정보 수신');
+          _saveSuccessfulResponse(response, apiDuration); // 성공한 응답 저장 (분석용)
         } else {
-          debugPrint('❌ [ERROR] 지원되지 않는 응답 형식: ${result.runtimeType}');
+          debugPrint('⚠️ [API 오류] 데이터 파싱 실패');
+          errorMsg = 'response parsing failed';
+        }
+      } catch (e) {
+        apiSuccess = false;
+        errorMsg = e.toString();
+        debugPrint('❌ [API 오류] ${e.toString()}');
+      }
+
+      // API 호출 결과 저장 (나중에 분석용)
+      final apiDuration =
+          DateTime.now().difference(apiStartTime).inMilliseconds;
+      await _saveApiCallResult(
+        routeId: routeId,
+        stationId: stationId,
+        success: apiSuccess,
+        duration: apiDuration,
+        errorMsg: errorMsg,
+      );
+
+      return result;
+    } catch (e) {
+      debugPrint('❌ [ERROR] getBusArrivalByRouteId 실행 중 오류: $e');
+      return null;
+    }
+  }
+
+  /// API 응답 파싱 분리 (복잡한 로직 모듈화)
+  Future<BusArrivalInfo?> _parseApiResponse(
+      dynamic response, String routeId) async {
+    try {
+      // String 응답 처리
+      if (response is String) {
+        debugPrint('🚌 [API 파싱] String 형식 응답 처리');
+
+        // 빈 응답 처리
+        if (response.isEmpty || response == 'null' || response == '[]') {
+          debugPrint('⚠️ [API 파싱] 빈 응답: "$response"');
+          return null;
+        }
+
+        // JSON 파싱 시도
+        try {
+          final dynamic decoded = jsonDecode(response);
+          return _processJsonData(decoded, routeId);
+        } catch (e) {
+          debugPrint('❌ [API 파싱] JSON 파싱 오류: $e');
           return null;
         }
       }
-    } on PlatformException catch (e) {
-      debugPrint('❌ [ERROR] 노선별 도착 정보 조회 오류: ${e.message}');
+      // Map 응답 처리
+      else if (response is Map<String, dynamic>) {
+        debugPrint('🚌 [API 파싱] Map 형식 응답 처리');
+        return _processJsonData(response, routeId);
+      }
+      // List 응답 처리
+      else if (response is List) {
+        debugPrint('🚌 [API 파싱] List 형식 응답 처리');
+        if (response.isEmpty) {
+          debugPrint('⚠️ [API 파싱] 빈 리스트');
+          return null;
+        }
+
+        if (response.first is Map<String, dynamic>) {
+          return _processJsonData(response.first, routeId);
+        } else {
+          debugPrint(
+              '❌ [API 파싱] 지원되지 않는 리스트 항목 타입: ${response.first.runtimeType}');
+          return null;
+        }
+      }
+      // 기타 타입 처리
+      else {
+        debugPrint('❌ [API 파싱] 지원되지 않는 응답 타입: ${response.runtimeType}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('❌ [API 파싱] 파싱 중 오류: $e');
+      return null;
+    }
+  }
+
+  /// JSON 데이터 처리 (다양한 형식에 대응)
+  BusArrivalInfo? _processJsonData(dynamic data, String routeId) {
+    try {
+      // 배열 형식 처리
+      if (data is List && data.isNotEmpty) {
+        debugPrint('🚌 [JSON 처리] 배열 형식, 첫 번째 항목 사용');
+        return BusArrivalInfo.fromJson(data[0]);
+      }
+
+      // 자동 알람 응답 형식 처리
+      if (data is Map<String, dynamic> && data.containsKey('routeNo')) {
+        debugPrint('🚌 [JSON 처리] 자동 알람 응답 형식 감지');
+
+        final Map<String, dynamic> formattedResponse = {
+          'name': data['routeNo'] ?? '',
+          'sub': '',
+          'id': routeId,
+          'forward': data['moveDir'] ?? '알 수 없음',
+          'bus': []
+        };
+
+        // arrList 필드 처리
+        if (data.containsKey('arrList') && data['arrList'] is List) {
+          formattedResponse['bus'] = _formatBusListFromArrList(data['arrList']);
+        }
+
+        return BusArrivalInfo.fromJson(formattedResponse);
+      }
+
+      // 일반 객체 형식 처리
+      if (data is Map<String, dynamic>) {
+        return BusArrivalInfo.fromJson(data);
+      }
+
+      debugPrint('❌ [JSON 처리] 지원되지 않는 JSON 구조: ${data.runtimeType}');
       return null;
     } catch (e) {
-      debugPrint('❌ [ERROR] 예상치 못한 오류: $e');
+      debugPrint('❌ [JSON 처리] 처리 중 오류: $e');
       return null;
+    }
+  }
+
+  /// arrList 필드를 버스 정보 리스트로 변환
+  List<Map<String, dynamic>> _formatBusListFromArrList(List<dynamic> arrList) {
+    final List<Map<String, dynamic>> busList = [];
+
+    for (var arr in arrList) {
+      if (arr is Map<String, dynamic>) {
+        final Map<String, dynamic> busInfo = {
+          'busNumber': arr['vhcNo2'] ?? '',
+          'currentStation': arr['bsNm'] ?? '정보 없음',
+          'remainingStops': '${arr['bsGap'] ?? 0} 개소',
+          'estimatedTime': arr['arrState'] ?? '${arr['bsGap'] ?? 0}분',
+          'isLowFloor': arr['busTCd2'] == '1',
+          'isOutOfService': arr['busTCd3'] == '1'
+        };
+        busList.add(busInfo);
+      }
+    }
+
+    return busList;
+  }
+
+  /// API 호출 결과 저장 (분석용)
+  Future<void> _saveApiCallResult({
+    required String routeId,
+    required String stationId,
+    required bool success,
+    required int duration,
+    String? errorMsg,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now().toIso8601String();
+
+      // 최근 API 호출 결과 목록 가져오기
+      final apiCallHistoryJson = prefs.getString('api_call_history') ?? '[]';
+      final List<dynamic> apiCallHistory = jsonDecode(apiCallHistoryJson);
+
+      // 최근 20개 결과만 유지
+      if (apiCallHistory.length >= 20) {
+        apiCallHistory.removeAt(0);
+      }
+
+      // 새 결과 추가
+      apiCallHistory.add({
+        'routeId': routeId,
+        'stationId': stationId,
+        'success': success,
+        'timestamp': now,
+        'duration': duration,
+        'error': errorMsg,
+      });
+
+      // 결과 저장
+      await prefs.setString('api_call_history', jsonEncode(apiCallHistory));
+    } catch (e) {
+      debugPrint('⚠️ API 호출 결과 저장 중 오류: $e');
+    }
+  }
+
+  /// 성공한 API 응답 저장 (분석용)
+  void _saveSuccessfulResponse(dynamic response, int duration) {
+    try {
+      debugPrint('✅ API 응답 저장 (${duration}ms)');
+      // TODO: 필요한 경우 성공한 응답 저장 로직 구현
+    } catch (e) {
+      debugPrint('⚠️ API 응답 저장 중 오류: $e');
     }
   }
 

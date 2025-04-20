@@ -7,6 +7,8 @@ import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
 import '../services/alarm_service.dart';
 import '../services/api_service.dart';
+import 'package:daegu_bus_app/utils/tts_switcher.dart' show TtsSwitcher;
+import 'package:daegu_bus_app/services/settings_service.dart';
 
 class CompactBusCard extends StatefulWidget {
   final BusArrival busArrival;
@@ -399,6 +401,30 @@ class _CompactBusCardState extends State<CompactBusCard> {
               currentStation: busInfo.currentStation,
               routeId: routeId,
             );
+
+            // TTS 알림 즉시 시작 (useTts 설정 및 이어폰 연결 여부 확인)
+            final settings =
+                Provider.of<SettingsService>(context, listen: false);
+            if (settings.useTts) {
+              final ttsSwitcher = TtsSwitcher();
+              await ttsSwitcher.initialize();
+              final headphoneConnected =
+                  await ttsSwitcher.isHeadphoneConnected();
+              if (headphoneConnected) {
+                await TtsSwitcher.startTtsTracking(
+                  routeId: routeId,
+                  stationId: widget.busArrival.routeId.split('_').last,
+                  busNo: widget.busArrival.routeNo,
+                  stationName: widget.stationName!,
+                  remainingMinutes: remainingMinutes,
+                );
+              } else {
+                logMessage('🎧 이어폰 미연결 - 컴팩트 승차 알람 TTS 건너뜀',
+                    level: LogLevel.info);
+              }
+            } else {
+              logMessage('🔇 컴팩트 승차 알람 TTS 설정 비활성화', level: LogLevel.info);
+            }
 
             // 중복 알림 제거 - 알람 서비스에서 이미 알림을 표시함
 

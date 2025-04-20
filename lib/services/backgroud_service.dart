@@ -1,13 +1,10 @@
 import 'package:daegu_bus_app/main.dart';
 import 'package:daegu_bus_app/services/bus_api_service.dart';
-import 'package:daegu_bus_app/services/api_service.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 import '../utils/simple_tts_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'dart:ui';
 import 'alarm_service.dart';
 import '../models/auto_alarm.dart';
 import '../models/bus_info.dart';
@@ -194,6 +191,37 @@ Future<bool> _handleInitAutoAlarms() async {
   return false;
 }
 
+Future<void> _showLocalNotification(int id, String busNo, String stationName,
+    int remainingMinutes, String routeId) async {
+  try {
+    // 로컬 알림 대신 MethodChannel을 사용하여 네이티브 알림 표시
+    const MethodChannel channel =
+        MethodChannel('com.example.daegu_bus_app/notification');
+    final int safeNotificationId = id.abs() % 2147483647;
+
+    // 네이티브 메서드 호출
+    await channel.invokeMethod('showNotification', {
+      'id': safeNotificationId,
+      'busNo': busNo,
+      'stationName': stationName,
+      'remainingMinutes': remainingMinutes,
+      'currentStation': '자동 알람',
+      'payload': routeId,
+      'isAutoAlarm': true,
+      'isOngoing': false,
+      'routeId': routeId,
+      'notificationTime': DateTime.now().millisecondsSinceEpoch,
+      'useTTS': false,
+      'actions': ['cancel_alarm'],
+    });
+
+    logMessage('✅ 로컬 알림 표시 성공: $busNo, $stationName ($id)');
+  } catch (e) {
+    logMessage('❌ 로컬 알림 표시 실패: $e', level: LogLevel.error);
+    rethrow;
+  }
+}
+
 Future<bool> _handleAutoAlarmTask({
   required String busNo,
   required String stationName,
@@ -206,272 +234,161 @@ Future<bool> _handleAutoAlarmTask({
   try {
     logMessage("🔔 자동 알람 작업 실행: $busNo번 버스, 현재시간: ${DateTime.now()}");
 
-    // BackgroundIsolateBinaryMessenger 초기화
-    if (!kIsWeb) {
-      try {
-        final rootIsolateToken = RootIsolateToken.instance;
-        if (rootIsolateToken != null) {
-          BackgroundIsolateBinaryMessenger.ensureInitialized(rootIsolateToken);
-          logMessage('✅ BackgroundIsolateBinaryMessenger 초기화 성공');
-        } else {
-          logMessage('⚠️ RootIsolateToken이 null입니다', level: LogLevel.warning);
-        }
-      } catch (e) {
-        logMessage('⚠️ BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
+    // 알람 시간 제한 확인 (예약된 시간으로부터 10분까지만 허용)
+    final prefs = await SharedPreferences.getInstance();
+    final alarmDataStr = prefs.getString('last_executed_alarm_$alarmId');
+    if (alarmDataStr != null) {
+      final alarmData = jsonDecode(alarmDataStr);
+      final scheduledTime = DateTime.parse(
+          alarmData['scheduledTime'] ?? DateTime.now().toIso8601String());
+      final now = DateTime.now();
+      final difference = now.difference(scheduledTime).inMinutes;
+
+      if (difference > 10) {
+        logMessage("⚠️ 예약된 알람 시간으로부터 10분이 지났습니다. 알람을 취소합니다.",
             level: LogLevel.warning);
+        return false;
       }
     }
 
-    // 알람 서비스 초기화
-    final alarmService = AlarmService();
+    // 먼저 실시간 버스 정보 가져오기
+    BusArrivalInfo? busArrivalInfo;
+    String? currentStation;
+    int actualRemainingMinutes = remainingMinutes;
+
     try {
-      await alarmService.initialize();
-      logMessage("✅ 알람 서비스 초기화 성공");
-    } catch (e) {
-      logMessage("❌ 알람 서비스 초기화 오류: $e");
-    }
+      logMessage("🚌 자동 알람 버스 정보 업데이트 시도: $busNo번, $stationName");
+      int apiRetryCount = 0;
+      const maxRetries = 3;
 
-    // 백그라운드에서 알림 전송 방식 개선
-    try {
-      // 자동 알람 시작 알림
-      if (useTTS) {
+      while (busArrivalInfo == null && apiRetryCount < maxRetries) {
         try {
-          await SimpleTTSHelper.initialize();
-          await SimpleTTSHelper.speak("$busNo번 버스 $stationName 승차 알람이 시작됩니다.");
-          logMessage("🔊 TTS 알람 발화 성공");
-        } catch (e) {
-          logMessage("🔊 TTS 알람 발화 오류: $e");
-        }
-      }
-
-      // ApiService를 사용하여 백그라운드 알림 표시 (첫 번째 알림)
-      try {
-        final bool success = await ApiService.showBackgroundNotification(
-          id: alarmId,
-          busNo: busNo,
-          stationName: stationName,
-          remainingMinutes: remainingMinutes,
-          currentStation: '자동 알람',
-          routeId: routeId,
-          isAutoAlarm: true,
-        );
-
-        if (success) {
-          logMessage("✅ ApiService를 통한 알림 표시 성공");
-        } else {
-          logMessage("⚠️ ApiService를 통한 알림 표시 실패");
-
-          // 실패 시 기존 방식으로 시도
-          const MethodChannel channel =
-              MethodChannel('com.example.daegu_bus_app/notification');
-          final int safeNotificationId = alarmId.abs() % 2147483647;
-
-          await channel.invokeMethod('showNotification', {
-            'id': safeNotificationId,
-            'busNo': busNo,
-            'stationName': stationName,
-            'remainingMinutes': remainingMinutes,
-            'currentStation': '자동 알람',
-            'payload': routeId,
-            'isAutoAlarm': true,
-            'isOngoing': true,
-            'routeId': routeId,
-            'notificationTime': DateTime.now().millisecondsSinceEpoch,
-            'useTTS': true,
-            'actions': ['cancel_alarm'],
-          });
-          logMessage("✅ 기존 방식으로 백업 알림 표시 성공");
-        }
-      } catch (e) {
-        logMessage("❌ 첫 번째 알림 표시 오류: $e");
-      }
-
-      // 버스 도착 정보 API 호출
-      logMessage("🐛 [DEBUG] 자동 알람 버스 정보 업데이트 시도: $busNo번, $stationName");
-
-      // 기본값 설정
-      int actualRemainingMinutes = remainingMinutes;
-      String? currentStation;
-
-      // TTS 발화 - 기본 정보로 안내
-      if (useTTS) {
-        try {
-          // 기본 안내 메시지 사용
-          await SimpleTTSHelper.speak(
-              "$busNo번 버스 $stationName 정류장 알람이 시작되었습니다. 잠시 후 실시간 정보를 안내해 드리겠습니다.");
-          logMessage("🔊 TTS 알람 발화 성공");
-        } catch (e) {
-          logMessage("🔊 TTS 알람 발화 오류: $e");
-        }
-      }
-
-      // 백그라운드에서도 실시간 버스 정보 가져오기 시도
-      try {
-        logMessage("🐛 [DEBUG] 백그라운드에서 실시간 버스 정보 가져오기 시도");
-
-        // 버스 API 직접 호출
-        final busArrivalInfo =
-            await BusApiService().getBusArrivalByRouteId(stationId, routeId);
-
-        if (busArrivalInfo != null && busArrivalInfo.bus.isNotEmpty) {
-          // 버스 정보 추출
-          final busData = busArrivalInfo.bus.first;
-          final busInfo = BusInfo.fromBusInfoData(busData);
-          currentStation = busInfo.currentStation;
-
-          // 남은 시간 추출
-          final estimatedTimeStr =
-              busInfo.estimatedTime.replaceAll(RegExp(r'[^0-9]'), '');
-          if (estimatedTimeStr.isNotEmpty) {
-            actualRemainingMinutes = int.parse(estimatedTimeStr);
+          busArrivalInfo =
+              await BusApiService().getBusArrivalByRouteId(stationId, routeId);
+          if (busArrivalInfo == null) {
+            apiRetryCount++;
+            logMessage("⚠️ 버스 정보 API 응답 없음. 재시도 #$apiRetryCount");
+            await Future.delayed(const Duration(seconds: 2));
+          } else {
+            logMessage("✅ 버스 정보 API 응답 성공");
           }
+        } catch (e) {
+          apiRetryCount++;
+          logMessage("❌ 버스 정보 API 호출 오류. 재시도 #$apiRetryCount: $e");
+          await Future.delayed(const Duration(seconds: 2));
+        }
+      }
 
+      if (busArrivalInfo != null && busArrivalInfo.bus.isNotEmpty) {
+        final busInfo = busArrivalInfo.bus.first;
+        currentStation = busInfo.currentStation;
+        final estimatedTimeStr =
+            busInfo.estimatedTime.replaceAll(RegExp(r'[^0-9]'), '');
+
+        // 도착 예정 시간이 유효한 경우에만 업데이트
+        if (estimatedTimeStr.isNotEmpty) {
+          actualRemainingMinutes = int.parse(estimatedTimeStr);
           logMessage(
               "✅ 실시간 버스 정보 가져오기 성공: $busNo, 남은 시간: $actualRemainingMinutes분, 위치: $currentStation");
         } else {
-          logMessage("⚠️ 실시간 버스 정보를 가져오지 못했습니다. 기본 정보로 진행합니다.");
+          logMessage("⚠️ 유효한 도착 시간 정보가 없습니다.", level: LogLevel.warning);
+          actualRemainingMinutes = remainingMinutes; // 기본값 사용
         }
-      } catch (e) {
-        logMessage("❌ 실시간 버스 정보 가져오기 오류: $e");
-        logMessage("⚠️ 기본 정보로 진행합니다.");
+      } else {
+        logMessage("⚠️ 버스 정보를 가져올 수 없습니다.", level: LogLevel.warning);
+        actualRemainingMinutes = remainingMinutes; // 기본값 사용
       }
-
-      // 업데이트된 정보로 알림 표시
-      try {
-        final bool success = await ApiService.showBackgroundNotification(
-          id: alarmId,
-          busNo: busNo,
-          stationName: stationName,
-          remainingMinutes: actualRemainingMinutes,
-          currentStation: currentStation ?? '자동 알람 - 실시간 정보 로드 중',
-          routeId: routeId,
-          isAutoAlarm: true,
-        );
-
-        if (success) {
-          logMessage("✅ 알림 표시 성공");
-        } else {
-          logMessage("⚠️ 알림 표시 실패");
-        }
-      } catch (e) {
-        logMessage("❌ 알림 표시 오류: $e");
-      }
-
-      // 백업 방법: SharedPreferences에 알람 정보 저장 (앱이 활성화될 때 표시하기 위함)
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(
-            'last_auto_alarm_data',
-            jsonEncode({
-              'alarmId': alarmId,
-              'busNo': busNo,
-              'stationName': stationName,
-              'remainingMinutes': actualRemainingMinutes,
-              'routeId': routeId,
-              'stationId': stationId,
-              'currentStation': currentStation,
-              'timestamp': DateTime.now().millisecondsSinceEpoch,
-              'isAutoAlarm': true,
-              'hasRealTimeInfo':
-                  currentStation != null && currentStation.isNotEmpty
-            }));
-        await prefs.setBool('has_new_auto_alarm', true);
-        logMessage("✅ 자동 알람 정보 저장 완료 - 메인 앱에서도 이를 감지하여 알림을 표시할 것입니다");
-
-        if (currentStation != null && currentStation.isNotEmpty) {
-          logMessage(
-              "🐛 [DEBUG] 실시간 버스 정보 포함하여 저장 완료: $busNo, 남은 시간: $actualRemainingMinutes분, 위치: $currentStation");
-        } else {
-          logMessage("🐛 [DEBUG] 기본 정보로 저장 완료. 앱이 활성화될 때 업데이트 예정.");
-        }
-      } catch (e) {
-        logMessage("❌ 자동 알람 정보 저장 실패: $e");
-      }
-
-      // 성공 반환
-      logMessage("✅ 자동 알람 작동 완료: $busNo");
-      return true;
     } catch (e) {
-      logMessage("⚠️ 버스 정보 조회 또는 알림 표시 오류: $e");
-
-      // 오류 발생 시에도 ApiService로 알림 표시 시도
-      try {
-        await ApiService.showBackgroundNotification(
-          id: alarmId,
-          busNo: busNo,
-          stationName: stationName,
-          remainingMinutes: remainingMinutes,
-          currentStation: '자동 알람 (정보 로드 실패)',
-          routeId: routeId,
-          isAutoAlarm: true,
-        );
-        logMessage("✅ 오류 상황에서도 ApiService로 알림 표시 성공");
-      } catch (e) {
-        logMessage("❌ 오류 상황에서 ApiService 알림 실패: $e");
-      }
-
-      // SharedPreferences에도 정보 저장 (백업)
-      try {
-        // 오류 발생 시에도 버스 정보 가져오기 시도
-        String? currentStation;
-        int actualRemainingMinutes = remainingMinutes;
-
-        try {
-          logMessage("🐛 [DEBUG] 오류 발생 후 실시간 버스 정보 가져오기 시도");
-          final busArrivalInfo =
-              await BusApiService().getBusArrivalByRouteId(stationId, routeId);
-
-          if (busArrivalInfo != null && busArrivalInfo.bus.isNotEmpty) {
-            final busData = busArrivalInfo.bus.first;
-            final busInfo = BusInfo.fromBusInfoData(busData);
-            currentStation = busInfo.currentStation;
-
-            final estimatedTimeStr =
-                busInfo.estimatedTime.replaceAll(RegExp(r'[^0-9]'), '');
-            if (estimatedTimeStr.isNotEmpty) {
-              actualRemainingMinutes = int.parse(estimatedTimeStr);
-            }
-
-            logMessage(
-                "✅ 오류 후 실시간 버스 정보 가져오기 성공: $busNo, 남은 시간: $actualRemainingMinutes분, 위치: $currentStation");
-          }
-        } catch (e2) {
-          logMessage("❌ 오류 후 실시간 버스 정보 가져오기 실패: $e2");
-        }
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(
-            'last_auto_alarm_data',
-            jsonEncode({
-              'alarmId': alarmId,
-              'busNo': busNo,
-              'stationName': stationName,
-              'remainingMinutes': actualRemainingMinutes,
-              'routeId': routeId,
-              'stationId': stationId,
-              'currentStation': currentStation,
-              'timestamp': DateTime.now().millisecondsSinceEpoch,
-              'isAutoAlarm': true,
-              'hasError': currentStation == null || currentStation.isEmpty,
-              'hasRealTimeInfo':
-                  currentStation != null && currentStation.isNotEmpty
-            }));
-        await prefs.setBool('has_new_auto_alarm', true);
-
-        if (currentStation != null && currentStation.isNotEmpty) {
-          logMessage(
-              "✅ 오류 후 실시간 정보 포함하여 저장 완료: $busNo, 남은 시간: $actualRemainingMinutes분, 위치: $currentStation");
-        } else {
-          logMessage("✅ 오류 상황에서의 기본 알람 정보 저장 완료");
-        }
-      } catch (e2) {
-        logMessage("❌ 기본 알람 정보 저장 실패: $e2");
-      }
-
-      return true; // 오류가 있어도 작업은 성공으로 처리
+      logMessage("❌ 버스 정보 업데이트 중 오류: $e", level: LogLevel.error);
+      actualRemainingMinutes = remainingMinutes; // 오류 시 기본값 사용
     }
+
+    // 알림 표시 시도
+    bool notificationSent = false;
+
+    // MethodChannel을 통한 알림 시도
+    try {
+      const MethodChannel channel =
+          MethodChannel('com.example.daegu_bus_app/notification');
+      final int safeNotificationId = alarmId.abs() % 2147483647;
+
+      await channel.invokeMethod('showNotification', {
+        'id': safeNotificationId,
+        'busNo': busNo,
+        'stationName': stationName,
+        'remainingMinutes': actualRemainingMinutes,
+        'currentStation': currentStation ?? '실시간 정보 로드 중...',
+        'payload': routeId,
+        'isAutoAlarm': true,
+        'isOngoing': true,
+        'routeId': routeId,
+        'notificationTime': DateTime.now().millisecondsSinceEpoch,
+        'useTTS': false,
+        'actions': ['cancel_alarm'],
+        'actionLabels': {'cancel_alarm': '알람 취소'}
+      });
+      logMessage("✅ 알림 표시 성공");
+      notificationSent = true;
+    } catch (e) {
+      logMessage("❌ 알림 표시 오류: $e");
+    }
+
+    // 로컬 알림으로 시도 (백업)
+    if (!notificationSent) {
+      try {
+        await _showLocalNotification(
+            alarmId, busNo, stationName, actualRemainingMinutes, routeId);
+        logMessage("✅ 로컬 알림 표시 성공");
+        notificationSent = true;
+      } catch (e) {
+        logMessage("❌ 로컬 알림 표시 오류: $e");
+      }
+    }
+
+    // TTS 알림 발화
+    if (useTTS) {
+      try {
+        await _speakAlarm(busNo, stationName, actualRemainingMinutes);
+        logMessage("🔊 TTS 알람 발화 성공");
+      } catch (e) {
+        logMessage("🔊 TTS 알람 발화 오류: $e", level: LogLevel.error);
+        try {
+          await SimpleTTSHelper.initialize();
+          await SimpleTTSHelper.speak(
+              "$busNo번 버스가 $stationName 정류장에 $actualRemainingMinutes분 후 도착 예정입니다.");
+          logMessage("🔊 백업 TTS 발화 성공");
+        } catch (fallbackError) {
+          logMessage("🔊 백업 TTS 발화도 실패: $fallbackError", level: LogLevel.error);
+        }
+      }
+    }
+
+    // 메인 앱에 알람 정보 저장
+    try {
+      await _saveAlarmInfoForMainApp(
+        alarmId,
+        busNo,
+        stationName,
+        actualRemainingMinutes,
+        routeId,
+        stationId,
+        currentStation,
+      );
+      logMessage("✅ 메인 앱 알람 정보 저장 성공");
+    } catch (e) {
+      logMessage("❌ 메인 앱 알람 정보 저장 실패: $e", level: LogLevel.error);
+    }
+
+    return true;
   } catch (e) {
-    logMessage("❌ 자동 알람 작업 실행 오류: $e");
+    logMessage("❌ 자동 알람 작업 실행 오류: $e", level: LogLevel.error);
+    try {
+      await _showLocalNotification(
+          alarmId, busNo, stationName, remainingMinutes, routeId);
+      logMessage("✅ 오류 발생 시 로컬 알림 표시 성공");
+    } catch (e) {
+      logMessage("❌ 오류 발생 시 로컬 알림 표시 실패: $e", level: LogLevel.error);
+    }
     return false;
   }
 }
@@ -626,18 +543,21 @@ Future<bool> _registerAutoAlarmTask(
     final now = DateTime.now();
     final initialDelay = scheduledTime.difference(now);
 
-    // 이미 시간이 지난 경우 처리
-    if (initialDelay.isNegative) {
-      logMessage('⚠️ 알람 시간이 이미 지났습니다. 다음 알람 시간을 계산합니다.');
-      // 다음 알람 시간 계산
-      final nextScheduledTime = _calculateNextScheduledTime(alarm, now);
-      if (nextScheduledTime != null) {
-        return _registerAutoAlarmTask(alarm, nextScheduledTime);
-      }
-      return false;
+    // 이미 시간이 지났거나 1분 이내인 경우 즉시 실행
+    if (initialDelay.isNegative || initialDelay.inMinutes <= 1) {
+      logMessage(
+          '🔔 알람 시간이 이미 지났거나 1분 이내입니다. 즉시 실행: ${alarm.routeNo}, ${alarm.stationName}');
+
+      // 즉시 알람 실행
+      return await _executeAlarmDirectly(alarm);
     }
 
-    final inputData = {
+    // 작업 ID 생성 (고유성 보장)
+    final String uniqueTaskId =
+        'autoAlarm_${alarm.id}_${DateTime.now().millisecondsSinceEpoch}';
+
+    // 입력 데이터 (확장)
+    final Map<String, dynamic> inputData = {
       'alarmId': alarm.id,
       'busNo': alarm.routeNo,
       'stationName': alarm.stationName,
@@ -645,20 +565,17 @@ Future<bool> _registerAutoAlarmTask(
       'stationId': alarm.stationId,
       'useTTS': alarm.useTTS,
       'remainingMinutes': 3,
-      'showNotification': true,
+      'scheduledTime': scheduledTime.millisecondsSinceEpoch,
+      'createdAt': now.millisecondsSinceEpoch,
+      'requiredStrict': initialDelay.inMinutes < 10, // 10분 이내는 엄격하게 실행
     };
 
-    // 이전 동일 작업 취소
-    try {
-      await Workmanager().cancelByUniqueName('autoAlarm_${alarm.id}');
-      logMessage('✅ 기존 자동 알람 작업 취소: ${alarm.routeNo} ${alarm.stationName}');
-    } catch (e) {
-      logMessage('⚠️ 기존 자동 알람 작업 취소 오류 (무시): $e');
-    }
+    // 기존 알람 취소
+    await Workmanager().cancelByUniqueName('autoAlarm_${alarm.id}');
 
-    // 자동 알람 작업 등록
+    // 알람 예약 (테스트를 위해 짧은 간격으로 설정)
     await Workmanager().registerOneOffTask(
-      'autoAlarm_${alarm.id}',
+      uniqueTaskId,
       'autoAlarmTask',
       initialDelay: initialDelay,
       inputData: inputData,
@@ -669,47 +586,103 @@ Future<bool> _registerAutoAlarmTask(
         requiresDeviceIdle: false,
         requiresStorageNotLow: false,
       ),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
       backoffPolicy: BackoffPolicy.linear,
-      backoffPolicyDelay: const Duration(minutes: 1),
+      existingWorkPolicy: ExistingWorkPolicy.replace,
     );
 
-    // 디버그 로그 추가
-    logMessage('✅ 자동 알람 작업 등록 완료: ${alarm.routeNo} ${alarm.stationName}');
-    logMessage('⏰ 예약 시간: $scheduledTime (${initialDelay.inMinutes}분 후)');
-
-    // 백업 알람 등록 - 5분 후 재시도
-    try {
-      final backupTaskId = 'autoAlarm_backup_${alarm.id}';
-      await Workmanager().cancelByUniqueName(backupTaskId);
-
-      // 백업 알람은 원래 알람보다 5분 뒤에 실행
-      final backupDelay = initialDelay + const Duration(minutes: 5);
-
-      await Workmanager().registerOneOffTask(
-        backupTaskId,
-        'autoAlarmTask',
-        initialDelay: backupDelay,
-        inputData: inputData,
-        constraints: Constraints(
-          networkType: NetworkType.connected,
-          requiresBatteryNotLow: false,
-          requiresCharging: false,
-          requiresDeviceIdle: false,
-          requiresStorageNotLow: false,
-        ),
-        existingWorkPolicy: ExistingWorkPolicy.replace,
-      );
-
-      logMessage('✅ 백업 자동 알람 작업 등록 완료: ${backupDelay.inMinutes}분 후');
-    } catch (e) {
-      logMessage('⚠️ 백업 알람 등록 오류 (무시): $e');
+    // 백업 알람 등록 (5분 또는 1분 전)
+    Duration backupDelay =
+        initialDelay - Duration(minutes: initialDelay.inMinutes > 10 ? 5 : 1);
+    if (backupDelay.inSeconds > 0) {
+      await _registerBackupAlarm(alarm, scheduledTime, backupDelay);
     }
+
+    // 저장 및 로깅
+    await _saveRegisteredAlarmInfo(alarm, scheduledTime, uniqueTaskId);
 
     return true;
   } catch (e) {
-    logMessage("❌ 자동 알람 작업 등록 실패: $e");
+    logMessage('❌ 알람 예약 오류: $e', level: LogLevel.error);
     return false;
+  }
+}
+
+/// TTS로 알람 발화
+Future<void> _speakAlarm(
+    String busNo, String stationName, int remainingMinutes) async {
+  try {
+    // TTS 엔진 초기화
+    await SimpleTTSHelper.initialize();
+
+    String message;
+    if (remainingMinutes <= 0) {
+      message = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.";
+    } else {
+      message =
+          "$busNo번 버스가 $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.";
+    }
+
+    // 볼륨 최대화 및 스피커 모드 설정
+    await SimpleTTSHelper.setVolume(1.0);
+    await SimpleTTSHelper.setAudioOutputMode(1); // 스피커 모드
+
+    // TTS 발화
+    await SimpleTTSHelper.speak(message);
+    logMessage("🔊 TTS 발화 완료: $message");
+  } catch (e) {
+    logMessage("❌ TTS 발화 중 오류: $e", level: LogLevel.error);
+    rethrow; // 호출자가 처리할 수 있도록 예외 다시 던지기
+  }
+}
+
+/// 메인 앱에서 알림을 표시할 수 있도록 SharedPreferences에 알람 정보 저장
+Future<void> _saveAlarmInfoForMainApp(int alarmId, String busNo,
+    String stationName, int remainingMinutes, String routeId, String stationId,
+    [String? currentStation]) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+
+    // 알람 정보 저장
+    await prefs.setString(
+        'last_auto_alarm_data',
+        jsonEncode({
+          'alarmId': alarmId,
+          'busNo': busNo,
+          'stationName': stationName,
+          'remainingMinutes': remainingMinutes,
+          'routeId': routeId,
+          'stationId': stationId,
+          'currentStation': currentStation,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'isAutoAlarm': true,
+          'hasRealTimeInfo': currentStation != null && currentStation.isNotEmpty
+        }));
+
+    // 새 알람 플래그 설정
+    await prefs.setBool('has_new_auto_alarm', true);
+
+    // 알람 이력에 추가
+    final alarmHistoryJson = prefs.getString('auto_alarm_history') ?? '[]';
+    final List<dynamic> alarmHistory = jsonDecode(alarmHistoryJson);
+
+    // 최근 10개 알람만 유지
+    if (alarmHistory.length >= 10) {
+      alarmHistory.removeAt(0);
+    }
+
+    // 새 알람 이력 추가
+    alarmHistory.add({
+      'alarmId': alarmId,
+      'busNo': busNo,
+      'stationName': stationName,
+      'executedAt': DateTime.now().toIso8601String(),
+      'success': true
+    });
+
+    await prefs.setString('auto_alarm_history', jsonEncode(alarmHistory));
+    logMessage("✅ 알람 정보 저장 완료 - 메인 앱에서 처리 가능");
+  } catch (e) {
+    logMessage("❌ 알람 정보 저장 실패: $e", level: LogLevel.error);
   }
 }
 
@@ -734,4 +707,110 @@ Future<void> _speakBusInfo(
     currentStation: bus.currentStation,
     remainingStops: remainingStops,
   );
+}
+
+/// 알람 직접 실행 메소드
+Future<bool> _executeAlarmDirectly(AutoAlarm alarm) async {
+  try {
+    logMessage('🔔 알람 즉시 실행: ${alarm.routeNo}, ${alarm.stationName}');
+
+    return await _handleAutoAlarmTask(
+      busNo: alarm.routeNo,
+      stationName: alarm.stationName,
+      routeId: alarm.routeId,
+      stationId: alarm.stationId,
+      remainingMinutes: 3,
+      useTTS: alarm.useTTS,
+      alarmId: int.parse(alarm.id),
+    );
+  } catch (e) {
+    logMessage('❌ 알람 즉시 실행 오류: $e', level: LogLevel.error);
+    return false;
+  }
+}
+
+/// 백업 알람 등록 메소드
+Future<void> _registerBackupAlarm(
+  AutoAlarm alarm,
+  DateTime scheduledTime,
+  Duration backupDelay,
+) async {
+  try {
+    final String backupTaskId =
+        'autoAlarm_backup_${alarm.id}_${DateTime.now().millisecondsSinceEpoch}';
+
+    // 백업 알람 입력 데이터
+    final Map<String, dynamic> backupInputData = {
+      'alarmId': alarm.id,
+      'busNo': alarm.routeNo,
+      'stationName': alarm.stationName,
+      'routeId': alarm.routeId,
+      'stationId': alarm.stationId,
+      'useTTS': alarm.useTTS,
+      'remainingMinutes': 3,
+      'scheduledTime': scheduledTime.millisecondsSinceEpoch,
+      'isBackup': true,
+    };
+
+    // 백업 알람 등록
+    await Workmanager().registerOneOffTask(
+      backupTaskId,
+      'autoAlarmTask',
+      initialDelay: backupDelay,
+      inputData: backupInputData,
+      constraints: Constraints(
+        networkType: NetworkType.connected,
+        requiresBatteryNotLow: false,
+        requiresCharging: false,
+        requiresDeviceIdle: false,
+        requiresStorageNotLow: false,
+      ),
+      backoffPolicy: BackoffPolicy.linear,
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+    );
+
+    logMessage('✅ 백업 알람 등록 완료: ${backupDelay.inMinutes}분 전');
+  } catch (e) {
+    logMessage('❌ 백업 알람 등록 오류: $e', level: LogLevel.error);
+  }
+}
+
+/// 등록된 알람 정보 저장 메소드
+Future<void> _saveRegisteredAlarmInfo(
+  AutoAlarm alarm,
+  DateTime scheduledTime,
+  String taskId,
+) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+
+    // 알람 등록 정보 생성
+    final Map<String, dynamic> registrationInfo = {
+      'alarmId': alarm.id,
+      'busNo': alarm.routeNo,
+      'stationName': alarm.stationName,
+      'routeId': alarm.routeId,
+      'scheduledTime': scheduledTime.toIso8601String(),
+      'taskId': taskId,
+      'registeredAt': DateTime.now().toIso8601String(),
+    };
+
+    // 등록된 알람 목록 가져오기
+    final registeredAlarmsJson = prefs.getString('registered_alarms') ?? '[]';
+    final List<dynamic> registeredAlarms = jsonDecode(registeredAlarmsJson);
+
+    // 이전 등록 정보 제거
+    registeredAlarms.removeWhere((item) => item['alarmId'] == alarm.id);
+
+    // 새 등록 정보 추가
+    registeredAlarms.add(registrationInfo);
+
+    // 업데이트된 목록 저장
+    await prefs.setString('registered_alarms', jsonEncode(registeredAlarms));
+
+    logMessage(
+        '✅ 알람 등록 정보 저장 완료: ${alarm.routeNo}, ${scheduledTime.toString()}');
+  } catch (e) {
+    logMessage('❌ 알람 등록 정보 저장 오류: $e', level: LogLevel.error);
+  }
 }
