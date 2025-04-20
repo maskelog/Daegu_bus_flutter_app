@@ -106,9 +106,16 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             }
 
             try {
+                // First get the instance with context
+                busAlertService = BusAlertService.getInstance(this)
+
+                // Then start the service
                 val serviceIntent = Intent(this, BusAlertService::class.java)
                 startService(serviceIntent)
-                busAlertService = BusAlertService.getInstance(this)
+
+                // Ensure it's properly initialized
+                busAlertService?.initialize(this)
+                Log.d(TAG, "BusAlertService 초기화 완료")
             } catch (e: Exception) {
                 Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
             }
@@ -170,7 +177,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
             LOCATION_PERMISSION_REQUEST_CODE -> {
-                if (grantResults.isNotEmpty() && 
+                if (grantResults.isNotEmpty() &&
                     grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     Log.d(TAG, "위치 권한 승인됨")
                     // 권한이 승인되면 Flutter 측에 알림
@@ -182,7 +189,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 }
             }
             NOTIFICATION_PERMISSION_REQUEST_CODE -> {
-                if (grantResults.isNotEmpty() && 
+                if (grantResults.isNotEmpty() &&
                     grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     Log.d(TAG, "알림 권한 승인됨")
                 } else {
@@ -368,10 +375,10 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         CoroutineScope(Dispatchers.Main).launch {
                             try {
                                 Log.d(TAG, "주변 정류장 검색 요청: lat=$latitude, lon=$longitude, radius=${radiusMeters}m")
-                                
+
                                 // 데이터베이스 초기화 확인
                                 val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
-                                
+
                                 // 데이터베이스 재설치 시도 (오류 발생 시)
                                 try {
                                     val nearbyStations = databaseHelper.searchStations(
@@ -401,7 +408,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                     // SQLite 오류 발생 시 데이터베이스 재설치 시도
                                     Log.e(TAG, "SQLite 오류 발생: ${e.message}. 데이터베이스 재설치 시도", e)
                                     databaseHelper.forceReinstallDatabase()
-                                    
+
                                     // 재설치 후 다시 시도
                                     val nearbyStations = databaseHelper.searchStations(
                                         searchText = "",
@@ -630,25 +637,61 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         val stationName = call.argument<String>("stationName") ?: ""
                         val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
                         val currentStation = call.argument<String>("currentStation")
-                        val isUpdate = call.argument<Boolean>("isUpdate") ?: false
+                        val allBusesSummary = call.argument<String>("allBusesSummary")
+                        val routeId = call.argument<String>("routeId")
+                        // Flutter에서 전달된 action 파라미터 사용
+                        val action = call.argument<String>("action") ?: BusAlertService.ACTION_START_TRACKING_FOREGROUND
+
                         try {
-                            val routeId = call.argument<String>("routeId")
-                            val allBusesSummary = call.argument<String>("allBusesSummary")
-                            busAlertService?.showNotification(
-                                id = ONGOING_NOTIFICATION_ID,
+                            Log.d(TAG, "실시간 추적 서비스 시작: busNo=$busNo, action=$action, routeId=$routeId")
+
+                            // First ensure BusAlertService is initialized
+                            if (busAlertService == null) {
+                                busAlertService = BusAlertService.getInstance(this)
+                                busAlertService?.initialize(this, flutterEngine)
+                                Log.d(TAG, "BusAlertService 초기화 완료 (showOngoingBusTracking)")
+                            }
+
+                            // Add route to monitored routes if routeId is provided
+                            if (routeId != null && routeId.isNotEmpty()) {
+                                busAlertService?.addMonitoredRoute(routeId, "", stationName)
+                                Log.d(TAG, "노선 모니터링 추가: $routeId, $stationName")
+                            }
+
+                            // Launch foreground service for real-time tracking
+                            val intent = Intent(this, BusAlertService::class.java).apply {
+                                // Flutter에서 전달된 action 사용
+                                this.action = action
+                                putExtra("busNo", busNo)
+                                putExtra("stationName", stationName)
+                                putExtra("remainingMinutes", remainingMinutes)
+                                putExtra("currentStation", currentStation)
+                                putExtra("allBusesSummary", allBusesSummary)
+                                putExtra("routeId", routeId) // routeId도 추가
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(intent)
+                                Log.d(TAG, "Foreground 서비스 시작됨 (Android O+)")
+                            } else {
+                                startService(intent)
+                                Log.d(TAG, "일반 서비스 시작됨 (Android N 이하)")
+                            }
+
+                            // Also directly call the method to ensure it works even if service has issues
+                            busAlertService?.showOngoingBusTracking(
                                 busNo = busNo,
                                 stationName = stationName,
                                 remainingMinutes = remainingMinutes,
                                 currentStation = currentStation,
-                                payload = "bus_tracking_$busNo",
-                                isOngoing = true,
-                                routeId = routeId,
+                                isUpdate = false,
+                                notificationId = ONGOING_NOTIFICATION_ID,
                                 allBusesSummary = allBusesSummary
                             )
+
                             result.success(true)
                         } catch (e: Exception) {
-                            Log.e(TAG, "지속 알림 표시 오류: ${e.message}", e)
-                            result.error("NOTIFICATION_ERROR", "지속 알림 표시 중 오류 발생: ${e.message}", null)
+                            Log.e(TAG, "실시간 추적 Foreground 서비스 시작 오류: ${e.message}", e)
+                            result.error("NOTIFICATION_ERROR", "Foreground 추적 서비스 시작 실패: ${e.message}", null)
                         }
                     }
                     "showBusArrivingSoon" -> {
@@ -950,24 +993,24 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     // 알림 취소
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     notificationManager.cancel(alarmId)
-                    
+
                     // TTS 서비스 중지
                     var ttsIntent = Intent(this, TTSService::class.java)
                     ttsIntent.action = "STOP_TTS"
                     startService(ttsIntent)
-                    
+
                     // 현재 알람만 취소 상태로 저장
                     val prefs = getSharedPreferences("alarm_preferences", Context.MODE_PRIVATE)
                     val editor = prefs.edit()
                     editor.putBoolean("alarm_cancelled_$alarmId", true).apply()
-                    
+
                     // 토스트 메시지로 알림
                     Toast.makeText(
                         this,
                         "현재 알람이 취소되었습니다",
                         Toast.LENGTH_SHORT
                     ).show()
-                    
+
                     Log.d(TAG, "Alarm notification cancelled: $alarmId (one-time cancel)")
                 }
             }

@@ -183,9 +183,9 @@ class NotificationService {
 
       // TTS 알림 - 설정 및 이어폰 연결 여부 확인
       if (_settingsService.useTts) {
-        final switcher = TtsSwitcher();
-        await switcher.initialize();
-        final shouldUse = await switcher.shouldUseNativeTts();
+        final ttsSwitcher = TtsSwitcher();
+        await ttsSwitcher.initialize();
+        final shouldUse = await ttsSwitcher.shouldUseNativeTts();
         if (shouldUse) {
           await SimpleTTSHelper.speak(
               "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
@@ -272,13 +272,15 @@ class NotificationService {
         'allBusesSummary': allBusesSummary,
         'id': notificationId,
         'isUpdate': false,
+        'action':
+            'com.example.daegu_bus_app.action.START_TRACKING_FOREGROUND', // Foreground 서비스 시작을 위한 액션
       });
 
       if (result) {
         debugPrint(
             '🔔 지속적인 버스 추적 알림 표시 완료 (ID: $notificationId, routeId: $routeId)');
       } else {
-        debugPrint('�� 지속적인 버스 추적 알림 표시 실패');
+        debugPrint('🔔 지속적인 버스 추적 알림 표시 실패');
       }
       return result;
     } on PlatformException catch (e) {

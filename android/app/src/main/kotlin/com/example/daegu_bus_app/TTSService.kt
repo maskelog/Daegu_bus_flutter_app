@@ -11,7 +11,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import android.speech.tts.TextToSpeech
-import android.speech.tts.TextToSpeech.OnUtteranceProgressListener
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.util.Locale
@@ -109,7 +109,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 Log.e(TAG, "한국어가 지원되지 않습니다")
             }
             
-            tts?.setOnUtteranceProgressListener(object : OnUtteranceProgressListener() {
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
                     Log.d(TAG, "TTS 발화 시작: $utteranceId")
                 }

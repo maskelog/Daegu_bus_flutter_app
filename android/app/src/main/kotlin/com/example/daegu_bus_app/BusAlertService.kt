@@ -69,6 +69,9 @@ class BusAlertService : Service() {
                 }
             }
         }
+
+        const val ACTION_START_TRACKING_FOREGROUND = "com.example.daegu_bus_app.action.START_TRACKING_FOREGROUND"
+        const val ACTION_UPDATE_TRACKING = "com.example.daegu_bus_app.action.UPDATE_TRACKING"
     }
 
     // 서비스 상태 및 설정
@@ -121,16 +124,22 @@ class BusAlertService : Service() {
 
     fun initialize(context: Context? = null, flutterEngine: FlutterEngine? = null) {
         try {
-            val actualContext = context ?: this.context
-            if (actualContext == null) {
-                Log.e(TAG, "🔔 컨텍스트가 없어 알림 서비스를 초기화할 수 없습니다")
-                return
+            // Always use applicationContext if available, otherwise use provided context
+            if (context != null) {
+                this.context = context.applicationContext
+            } else if (!::context.isInitialized) {
+                // If no context is provided and context is not initialized, try to use applicationContext
+                if (this.applicationContext != null) {
+                    this.context = this.applicationContext
+                } else {
+                    Log.e(TAG, "🔔 컨텍스트가 없어 알림 서비스를 초기화할 수 없습니다")
+                    return
+                }
             }
-            this.context = actualContext.applicationContext
             Log.d(TAG, "🔔 알림 서비스 초기화")
 
             if (!::busApiService.isInitialized) {
-                busApiService = BusApiService(actualContext)
+                busApiService = BusApiService(this.context)
                 Log.d(TAG, "🚌 BusApiService 초기화 완료")
             }
 
@@ -229,7 +238,7 @@ class BusAlertService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                
+
                 // 기존 채널 삭제
                 notificationManager.deleteNotificationChannel(CHANNEL_BUS_ALERTS)
                 notificationManager.deleteNotificationChannel(CHANNEL_BUS_ONGOING)
@@ -237,7 +246,7 @@ class BusAlertService : Service() {
                 // 알림 채널 생성
                 createBusAlertsChannel(notificationManager)
                 createBusOngoingChannel(notificationManager)
-                
+
                 Log.d(TAG, "🔔 알림 채널 생성 완료")
             } catch (e: Exception) {
                 Log.e(TAG, "🔔 알림 채널 생성 오류: ${e.message}", e)
@@ -256,7 +265,7 @@ class BusAlertService : Service() {
                 enableLights(true)
                 lightColor = Color.RED
                 enableVibration(true)
-                
+
                 if (currentAlarmSound.isNotEmpty()) {
                     setSound(
                         Uri.parse("android.resource://${context.packageName}/raw/$currentAlarmSound"),
@@ -368,12 +377,12 @@ class BusAlertService : Service() {
 
     private suspend fun collectBusArrivals(): List<Triple<String, String, BusInfo>> {
         val allBusInfos = mutableListOf<Triple<String, String, BusInfo>>()
-        
+
         for ((routeId, stationInfo) in monitoredRoutes) {
             val (stationId, stationName) = stationInfo
             try {
                 val arrivalInfo = busApiService.getBusArrivalInfoByRouteId(stationId, routeId)
-                
+
                 if (arrivalInfo?.bus?.isNotEmpty() == true) {
                     processBusArrivals(arrivalInfo.bus, routeId, stationName, allBusInfos)
                 } else {
@@ -383,7 +392,7 @@ class BusAlertService : Service() {
                 Log.e(TAG, "❌ [Timer] $routeId 노선 정보 조회 중 오류: ${e.message}")
             }
         }
-        
+
         return allBusInfos
     }
 
@@ -735,6 +744,17 @@ class BusAlertService : Service() {
         allBusesSummary: String? = null
     ) {
         try {
+            // Ensure context is initialized
+            if (!::context.isInitialized) {
+                Log.e(TAG, "🚌 Context not initialized in showOngoingBusTracking, initializing now")
+                if (applicationContext != null) {
+                    context = applicationContext
+                } else {
+                    Log.e(TAG, "🚌 Cannot initialize context in showOngoingBusTracking - applicationContext is null")
+                    return
+                }
+            }
+
             Log.d(TAG, "🚌 버스 추적 알림 표시 시도: $busNo, $stationName, ${remainingMinutes}분")
 
             val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
@@ -1198,10 +1218,10 @@ class BusAlertService : Service() {
             audioOutputMode = prefs.getInt(PREF_SPEAKER_MODE, OUTPUT_MODE_AUTO)
             notificationDisplayMode = prefs.getInt(PREF_NOTIFICATION_DISPLAY_MODE_KEY, DISPLAY_MODE_ALARMED_ONLY)
             ttsVolume = prefs.getFloat(PREF_TTS_VOLUME, 1.0f)
-            
+
             // AudioManager 초기화
             audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            
+
             Log.d(TAG, "설정 로드 완료 - 알람음: $currentAlarmSound, TTS: $useTextToSpeech, 볼륨: ${ttsVolume * 100}%")
         } catch (e: Exception) {
             Log.e(TAG, "설정 로드 중 오류: ${e.message}")
@@ -1288,21 +1308,21 @@ class BusAlertService : Service() {
                 val message = text
 
                 val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                
+
                 // 자동 알람인지 확인 (busInfo가 null이 아니고 isAutoAlarm이 true인 경우)
                 val isAutoAlarm = busInfo?.get("isAutoAlarm") as? Boolean ?: false
-                
+
                 Log.d(TAG, "🔊 TTS 발화 시도: \"$message\", 자동 알람: $isAutoAlarm")
-                
+
                 // 이어폰 전용 모드인 경우 이어폰 연결 상태 확인
                 val isHeadsetConnected = isHeadsetConnected()
-                
+
                 // 일반 승차 알람에서 earphoneOnly가 true인 경우 이어폰이 연결되어 있지 않으면 발화 중지
                 if (earphoneOnly && !isAutoAlarm && !isHeadsetConnected) {
                     Log.d(TAG, "🎧 이어폰이 연결되어 있지 않아 일반 승차 알람 TTS 발화를 중지합니다.")
                     return
                 }
-                
+
                 // 자동 알람인 경우 스피커로 강제 설정, 그 외에는 설정된 모드 사용
                 val useSpeaker = if (isAutoAlarm) {
                     Log.d(TAG, "🔊 자동 알람 감지! 스피커 모드로 강제 설정")
@@ -1334,14 +1354,14 @@ class BusAlertService : Service() {
                     try {
                         // 현재 오디오 스트림의 최대 볼륨 가져오기
                         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-                        
+
                         // 자동 알람인 경우 최대 볼륨으로 설정
                         audioManager.setStreamVolume(
                             AudioManager.STREAM_ALARM,
                             maxVolume,
                             0  // 볼륨 변경 시 사운드 재생하지 않음
                         )
-                        
+
                         Log.d(TAG, "🔊 자동 알람 시스템 볼륨 조정: $maxVolume/$maxVolume (100%)")
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ 볼륨 조정 오류: ${e.message}")
@@ -1359,7 +1379,7 @@ class BusAlertService : Service() {
                 // 추가: 포커스 관련 처리
                 val audioFocusRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     val focusDuration = if (isAutoAlarm) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN
-                    
+
                     AudioFocusRequest.Builder(focusDuration)
                         .setAudioAttributes(AudioAttributes.Builder()
                             .setUsage(if (isAutoAlarm) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
@@ -1535,30 +1555,72 @@ class BusAlertService : Service() {
         try {
             // 볼륨 값을 0.0 ~ 1.0 범위로 제한
             ttsVolume = volume.toFloat().coerceIn(0f, 1f)
-            
+
             // 현재 오디오 스트림의 최대 볼륨 가져오기
             val maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
-            
+
             // 설정된 볼륨 비율을 실제 볼륨 값으로 변환
             val targetVolume = (maxVolume * ttsVolume).toInt()
-            
+
             // 오디오 스트림 볼륨 설정
             audioManager?.setStreamVolume(
                 AudioManager.STREAM_MUSIC,
                 targetVolume,
                 0  // 볼륨 변경 시 사운드 재생하지 않음
             )
-            
+
             // 설정 저장
             context.getSharedPreferences("bus_alert_settings", Context.MODE_PRIVATE)
                 .edit()
                 .putFloat(PREF_TTS_VOLUME, ttsVolume)
                 .apply()
-            
+
             Log.d(TAG, "TTS 볼륨 설정: ${ttsVolume * 100}% (시스템 볼륨: $targetVolume/$maxVolume)")
         } catch (e: Exception) {
             Log.e(TAG, "볼륨 설정 오류: ${e.message}")
         }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        try {
+            // Ensure context is initialized
+            if (!::context.isInitialized) {
+                Log.d(TAG, "Context not initialized in onStartCommand, initializing now")
+                context = applicationContext
+            }
+
+            val action = intent?.action
+            if (action == ACTION_START_TRACKING_FOREGROUND || action == ACTION_UPDATE_TRACKING) {
+                // Parse extras
+                val busNo = intent.getStringExtra("busNo") ?: ""
+                val stationName = intent.getStringExtra("stationName") ?: ""
+                val remainingMinutes = intent.getIntExtra("remainingMinutes", 0)
+                val currentStation = intent.getStringExtra("currentStation")
+                val isUpdate = action == ACTION_UPDATE_TRACKING
+                val allBusesSummary = intent.getStringExtra("allBusesSummary")
+                val routeId = intent.getStringExtra("routeId")
+
+                // Add route to monitored routes if not already there
+                if (routeId != null && !monitoredRoutes.containsKey(routeId)) {
+                    addMonitoredRoute(routeId, stationId = "", stationName)
+                }
+
+                // Show or update notification
+                showOngoingBusTracking(
+                    busNo = busNo,
+                    stationName = stationName,
+                    remainingMinutes = remainingMinutes,
+                    currentStation = currentStation,
+                    isUpdate = isUpdate,
+                    notificationId = ONGOING_NOTIFICATION_ID,
+                    allBusesSummary = allBusesSummary
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "onStartCommand error: ${e.message}", e)
+        }
+        // Keep service running
+        return START_STICKY
     }
 }
 
