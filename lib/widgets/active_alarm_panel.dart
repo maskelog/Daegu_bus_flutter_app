@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // MethodChannel을 위해 추가
+// import 'package:flutter/services.dart'; // MethodChannel을 위해 추가 - REMOVED (Unnecessary)
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
 import '../models/alarm_data.dart';
 import '../main.dart' show logMessage, LogLevel;
-import '../services/notification_service.dart'; // NotificationService를 위해 추가
-import '../utils/tts_switcher.dart'; // TtsSwitcher를 위해 추가
+// import '../services/notification_service.dart'; // NotificationService를 위해 추가 - REMOVED (Unused)
+// import '../utils/tts_switcher.dart'; // TtsSwitcher를 위해 추가 - REMOVED (Unused)
 
 class ActiveAlarmPanel extends StatefulWidget {
   const ActiveAlarmPanel({super.key});
@@ -315,60 +315,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
       try {
         logMessage('${alarm.busNo}번 버스 $alarmType 취소 시작', level: LogLevel.info);
 
-        // 1. 정류장 추적 서비스 중지
-        try {
-          await const MethodChannel(
-                  'com.example.daegu_bus_app/station_tracking')
-              .invokeMethod('stopStationTracking');
-          logMessage('정류장 추적 서비스 중지 요청 완료', level: LogLevel.debug);
-        } catch (e) {
-          logMessage('정류장 추적 서비스 중지 요청 실패: $e', level: LogLevel.warning);
-        }
-
-        // 2. 네이티브 알림 취소
-        try {
-          final notificationService = NotificationService();
-          await notificationService.cancelOngoingTracking();
-          logMessage('네이티브 지속 알림 취소 완료', level: LogLevel.debug);
-
-          // 포그라운드 서비스 중지 확실히 처리
-          try {
-            // stationId 추출 또는 기본값 설정
-            String stationId = "";
-            if (alarm.routeId.contains('_')) {
-              // routeId에서 stationId 추출 시도
-              final parts = alarm.routeId.split('_');
-              if (parts.length > 1) {
-                stationId = parts.last;
-              }
-            }
-
-            await const MethodChannel('com.example.daegu_bus_app/bus_tracking')
-                .invokeMethod('stopBusTracking', {
-              'busNo': alarm.busNo,
-              'routeId': alarm.routeId,
-              'stationId': stationId,
-              'stationName': alarm.stationName,
-            });
-            logMessage('포그라운드 서비스 중지 요청 완료', level: LogLevel.debug);
-          } catch (e) {
-            logMessage('포그라운드 서비스 중지 요청 실패: $e', level: LogLevel.warning);
-          }
-        } catch (e) {
-          logMessage('네이티브 알림 취소 실패: $e', level: LogLevel.error);
-        }
-
-        // 3. TTS 추적 중지
-        try {
-          await TtsSwitcher.stopTtsTracking(alarm.busNo);
-          logMessage('TTS 추적 중지 완료', level: LogLevel.debug);
-        } catch (e) {
-          logMessage('TTS 추적 중지 실패: $e', level: LogLevel.error);
-        }
-
-        // 4. 버스 추적 서비스 중지 요청 - 이미 위에서 처리했으니 삭제
-
-        // 5. AlarmService를 통한 알람 상태 관리
+        // 4. AlarmService를 통한 알람 상태 관리 및 Native 취소 요청
         final success = await alarmService.cancelAlarmByRoute(
           alarm.busNo,
           alarm.stationName,

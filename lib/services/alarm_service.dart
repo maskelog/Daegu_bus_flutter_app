@@ -69,6 +69,7 @@ class AlarmService extends ChangeNotifier {
   final Map<String, CachedBusInfo> _cachedBusInfo = {};
   MethodChannel? _methodChannel;
   bool _isInTrackingMode = false;
+  String? _trackedRouteId;
   final Set<String> _processedNotifications = {};
   Timer? _refreshTimer;
 
@@ -97,34 +98,30 @@ class AlarmService extends ChangeNotifier {
           final String stationName = args['stationName'] ?? '';
 
           logMessage(
-              '포그라운드 노티피케이션에서 알람 취소 이벤트 수신: $busNo, $stationName, $routeId',
+              'ℹ️ 네이티브에서 알람 취소 이벤트 수신 완료: $busNo, $stationName, $routeId. (Flutter 상태는 cancelAlarmByRoute에서 이미 처리됨)',
               level: LogLevel.info);
 
-          if (busNo.isNotEmpty && routeId.isNotEmpty) {
-            // 알람 취소 처리
-            await cancelAlarmByRoute(busNo, stationName, routeId);
-            await loadAlarms();
-            await refreshAlarms();
-
-            // 버스 카드 UI 업데이트를 위한 이벤트 발생
+          // Optional: Double-check state or perform minor cleanup if needed,
+          // but the main removal logic is now synchronous in cancelAlarmByRoute.
+          // Example: Ensure tracking mode is correctly off if no alarms left.
+          if (_activeAlarms.isEmpty && _isInTrackingMode) {
             _isInTrackingMode = false;
-
-            // 모든 리스너에게 알림
-            notifyListeners();
-
-            // 추가 알림 - 다른 위젯들이 상태 변경을 감지할 수 있도록
-            Future.delayed(const Duration(milliseconds: 100), () {
-              notifyListeners();
-            });
-
-            return true;
+            _trackedRouteId = null; // Ensure trackedRouteId is also cleared
+            logMessage("네이티브 이벤트 수신 후 추적 모드 강제 비활성화",
+                level: LogLevel
+                    .debug); // "Forcibly deactivated tracking mode after receiving event from native"
+            notifyListeners(); // Notify if state was potentially inconsistent
           }
-          return false;
+
+          return true; // Acknowledge event received
         default:
+          // Ensure other method calls are still handled if any exist
+          logMessage('Unhandled method call: ${call.method}',
+              level: LogLevel.warning);
           return null;
       }
     } catch (e) {
-      logMessage('메서드 채널 핸들러 오류: $e', level: LogLevel.error);
+      logMessage('메서드 채널 핸들러 오류 (${call.method}): $e', level: LogLevel.error);
       return null;
     }
   }
@@ -318,6 +315,9 @@ class AlarmService extends ChangeNotifier {
       await _methodChannel?.invokeMethod(
           'startBusMonitoringService', arguments);
       _isInTrackingMode = true;
+      _trackedRouteId = effectiveRouteId;
+      logMessage(
+          '\ud83d\ude8c \ubc84\uc2a4 \ucd94\uc801 \uc2dc\uc791: $_trackedRouteId');
       notifyListeners();
       return true;
     } catch (e) {
@@ -376,6 +376,9 @@ class AlarmService extends ChangeNotifier {
 
       // 5. 마지막으로 상태 변경
       _isInTrackingMode = false;
+      _trackedRouteId = null;
+      logMessage(
+          '\ud83d\ude8c \ubc84\uc2a4 \ucd94\uc801 \uc911\uc9c0: \ucd94\uc801 \uc544\uc774\ub514 \ucd08\uae30\ud654');
       notifyListeners();
 
       // 6. TTS로 알림 중지 알림
@@ -1033,8 +1036,18 @@ class AlarmService extends ChangeNotifier {
         alarm.stationName == stationName &&
         alarm.routeId == routeId);
 
+    // 추적 중인지 여부 확인
+    final bool isTracking = isInTrackingMode;
+    bool isThisBusTracked = false;
+    if (isTracking && _trackedRouteId != null) {
+      // 현재 추적 중인 버스와 동일한지 확인
+      isThisBusTracked = _trackedRouteId == routeId;
+    }
+
     // 자동 알람이 있으면 승차 알람은 비활성화
-    return hasRegularAlarm && !hasAutoAlarm;
+    return hasRegularAlarm &&
+        !hasAutoAlarm &&
+        (!isTracking || isThisBusTracked);
   }
 
   bool hasAutoAlarm(String busNo, String stationName, String routeId) {
@@ -1150,108 +1163,85 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
+  /// 알람 취소 메서드
   Future<bool> cancelAlarmByRoute(
     String busNo,
     String stationName,
     String routeId,
   ) async {
+    logMessage(
+        '🚌 [Request] 알람 취소 요청: $busNo번 버스, $stationName, routeId: $routeId');
+
+    final String alarmKey = "${busNo}_${stationName}_$routeId";
+    final String cacheKey = "${busNo}_$routeId";
+    // bool nativeCallSuccess = false; // No longer needed to track this separately here
+
     try {
-      logMessage('🚌 알람 취소 시작: $busNo번 버스, $stationName, routeId: $routeId');
-
-      // 알람 찾기 - 여러 방법으로 시도
-      alarm_model.AlarmData? alarm;
-
-      // 1. 정확한 키로 찾기
-      final exactKey = "${busNo}_${stationName}_$routeId";
-      alarm = _activeAlarms[exactKey];
-
-      // 2. 키가 없으면 해시코드로 찾기
-      if (alarm == null) {
-        final hashKey =
-            getAlarmId(busNo, stationName, routeId: routeId).toString();
-        alarm = _activeAlarms[hashKey];
-        logMessage('🐛 [DEBUG] 해시 키로 알람 찾기 시도: $hashKey');
+      // --- Perform Flutter state update immediately ---
+      final removedAlarm = _activeAlarms.remove(alarmKey);
+      if (removedAlarm != null) {
+        logMessage('[$alarmKey] Flutter activeAlarms 목록에서 즉시 제거',
+            level: LogLevel.debug);
+      } else {
+        logMessage('⚠️ 취소 요청한 알람($alarmKey)이 Flutter 활성 알람 목록에 없음 (취소 전).',
+            level: LogLevel.warning);
       }
 
-      // 3. 여전히 없으면 모든 알람에서 찾기
-      if (alarm == null) {
-        for (var entry in _activeAlarms.entries) {
-          if (entry.value.busNo == busNo &&
-              entry.value.stationName == stationName) {
-            alarm = entry.value;
-            logMessage('🐛 [DEBUG] 일치하는 버스번호와 정류장으로 알람 찾음: ${entry.key}');
-            break;
-          }
+      _cachedBusInfo.remove(cacheKey);
+      logMessage('[$cacheKey] 버스 정보 캐시 즉시 제거', level: LogLevel.debug);
+
+      // Check if the route being cancelled is the one being tracked
+      if (_trackedRouteId == routeId) {
+        _trackedRouteId = null;
+        logMessage('추적 Route ID 즉시 초기화됨 (취소된 알람과 일치)', level: LogLevel.debug);
+        // If this was the tracked route, also ensure tracking mode reflects this removal
+        if (_activeAlarms.isEmpty) {
+          _isInTrackingMode = false;
+          logMessage('추적 모드 즉시 비활성화 (활성 알람 없음)', level: LogLevel.debug);
+        } else {
+          // If other alarms exist, we might still be tracking one of them.
+          // Let the native side handle the potential transition or update.
+          // Or, find the next alarm and potentially start tracking it? (More complex)
+          // For now, just clearing _trackedRouteId if it matches is safest.
+          // _isInTrackingMode remains true if _activeAlarms is not empty.
+          _isInTrackingMode =
+              true; // Explicitly keep tracking if other alarms exist
+          logMessage('다른 활성 알람 존재, 추적 모드 유지', level: LogLevel.debug);
         }
+      } else if (_activeAlarms.isEmpty) {
+        // If the cancelled alarm wasn't the tracked one, but it was the *last* one
+        _isInTrackingMode = false;
+        _trackedRouteId = null; // Also clear trackedRouteId here
+        logMessage('마지막 활성 알람 취소됨, 추적 모드 비활성화', level: LogLevel.debug);
       }
 
-      // 4. 자동 알람에서 찾기
-      if (alarm == null) {
-        for (var autoAlarm in _autoAlarms) {
-          if (autoAlarm.busNo == busNo &&
-              autoAlarm.stationName == stationName) {
-            alarm = autoAlarm;
-            logMessage('🐛 [DEBUG] 자동 알람에서 일치하는 알람 찾음');
-            break;
-          }
-        }
+      await _saveAlarms(); // Persist the removal immediately
+      notifyListeners(); // Update UI immediately
+      logMessage('[$alarmKey] Flutter 상태 즉시 업데이트 및 리스너 알림 완료',
+          level: LogLevel.debug);
+      // --- End immediate Flutter state update ---
+
+      // --- Send request to Native ---
+      try {
+        await _methodChannel?.invokeMethod('cancelAlarmNotification',
+            {'routeId': routeId, 'busNo': busNo, 'stationName': stationName});
+        logMessage('✅ 네이티브 알람 취소 요청 전송 완료', level: LogLevel.debug);
+        // nativeCallSuccess = true; // Not strictly needed now
+      } catch (nativeError) {
+        logMessage('❌ 네이티브 알람 취소 요청 전송 오류: $nativeError',
+            level: LogLevel.error);
+        // Even if native call fails, Flutter state was updated. Consider logging this specific failure.
+        // Depending on requirements, maybe re-add the alarm to Flutter state? (complex rollback)
+        return false; // Indicate that the native part failed
       }
+      // --- End Native request ---
 
-      // 알람 취소 이벤트 발생 - UI 업데이트를 위해 일찍 호출
-      _isInTrackingMode = false;
-      notifyListeners();
-
-      if (alarm == null) {
-        logMessage('❌ 취소할 알람을 찾을 수 없음: $exactKey');
-
-        // 알람을 찾지 못해도 알림과 모니터링 서비스는 취소
-        await _notificationService.cancelNotification(
-            getAlarmId(busNo, stationName, routeId: routeId));
-        await stopBusMonitoringService();
-
-        // 자동 알람 작업 취소
-        final workId =
-            'autoAlarm_${getAlarmId(busNo, stationName, routeId: routeId)}';
-        await Workmanager().cancelByUniqueName(workId);
-        logMessage('🐛 [DEBUG] 자동 알람 작업 취소 시도: $workId');
-
-        // 캐시에서 버스 정보 삭제
-        // _removeBusInfoFromCache(busNo, routeId);
-
-        return true; // 알람을 찾지 못해도 성공으로 처리
-      }
-
-      // 알람 취소
-      for (var key in _activeAlarms.keys.toList()) {
-        if (_activeAlarms[key]?.busNo == busNo &&
-            _activeAlarms[key]?.stationName == stationName) {
-          _activeAlarms.remove(key);
-          logMessage('🐛 [DEBUG] 알람 삭제: $key');
-        }
-      }
-      await _saveAlarms();
-
-      // 알림 취소
-      await _notificationService.cancelNotification(alarm.getAlarmId());
-
-      // 버스 모니터링 서비스 중지
-      await stopBusMonitoringService();
-
-      // 자동 알람 작업 취소
-      final workId = 'autoAlarm_${alarm.getAlarmId()}';
-      await Workmanager().cancelByUniqueName(workId);
-      logMessage('🐛 [DEBUG] 자동 알람 작업 취소: $workId');
-
-      // TTS 알림 중지
-      if (alarm.useTTS) {
-        await SimpleTTSHelper.speak("$busNo번 버스 알람이 취소되었습니다.");
-      }
-
-      logMessage('✅ 알람 취소 완료: $busNo번 버스');
-      notifyListeners();
-      return true;
+      return true; // Return true as the action was initiated and Flutter state updated.
     } catch (e) {
-      logMessage('❌ 알람 취소 오류: $e', level: LogLevel.error);
+      logMessage('❌ 알람 취소 처리 중 오류 (Flutter 업데이트): $e', level: LogLevel.error);
+      // Error during Flutter state update. UI might be inconsistent.
+      // Notify listeners anyway to potentially refresh from a partially updated state.
+      notifyListeners();
       return false;
     }
   }

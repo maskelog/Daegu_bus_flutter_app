@@ -1,6 +1,8 @@
 package com.example.daegu_bus_app
 
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel.Result
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -95,6 +97,7 @@ class BusAlertService : Service() {
     private var isTtsInitialized = false
     private var isTtsTrackingActive = false
     private var isInForeground = false // Track foreground state - Correctly declared
+    private var isInitialCheckPending = false // Add this flag
 
     // Settings (loaded in initialize)
     private var currentAlarmSound = DEFAULT_ALARM_SOUND
@@ -165,6 +168,10 @@ class BusAlertService : Service() {
             createNotificationChannels()
             // TTS is initialized in onCreate
             Log.d(TAG, "✅ BusAlertService 초기화 완료")
+
+            registerBusArrivalReceiver()
+            // Set the flag when monitoring starts for a new route
+            isInitialCheckPending = true 
         } catch (e: Exception) {
             Log.e(TAG, "🔔 BusAlertService 초기화 오류: ${e.message}", e)
         }
@@ -515,9 +522,16 @@ class BusAlertService : Service() {
         val context = getAppContext()
         val notificationManager = NotificationManagerCompat.from(context)
         if (allBusInfos.isEmpty()) {
-            Log.d(TAG,"도착 예정 버스 정보 없음. 알림 업데이트 (정보 없음)")
-            updateEmptyNotification()
+            // Only update to empty state if it's not the initial check after starting
+            if (!isInitialCheckPending) {
+                Log.d(TAG,"도착 예정 버스 정보 없음. 알림 업데이트 (정보 없음)")
+                updateEmptyNotification()
+            } else {
+                Log.d(TAG, "초기 확인 중, 도착 정보 없음. 알림 업데이트 보류.")
+                // Optionally keep the previous notification visible or show a generic "Initializing..."
+            }
         } else {
+            isInitialCheckPending = false // Reset flag once we have data
             val sortedBusInfos = allBusInfos.sortedBy { it.third.getRemainingMinutes().let { time -> if (time < 0) Int.MAX_VALUE else time } }
             val displayBusTriple = sortedBusInfos.first()
             val (busNo, stationName, busInfo) = displayBusTriple
@@ -861,9 +875,17 @@ class BusAlertService : Service() {
             NotificationManagerCompat.from(context).cancel(ONGOING_NOTIFICATION_ID)
             Log.d(TAG,"Ongoing notification (ID: $ONGOING_NOTIFICATION_ID) 취소 완료.")
             if (isInForeground) {
-                Log.d(TAG, "Service is in foreground, calling stopForeground(true).")
-                stopForeground(true)
+                Log.d(TAG, "Service is in foreground, calling stopForeground with remove flag.")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true) // Fallback for older versions
+                }
                 isInForeground = false
+                Log.d(TAG, "stopForeground called and isInForeground set to false.")
+            } else {
+                 Log.w(TAG, "cancelOngoingTracking called, but isInForeground was false. Not calling stopForeground.")
             }
         } catch (e: Exception) {
             Log.e(TAG, "🚌 Ongoing 알림 취소/Foreground 중지 오류: ${e.message}", e)
@@ -916,33 +938,44 @@ class BusAlertService : Service() {
                  return@launch
              }
              Log.i(TAG, "stopTrackingForRoute 시작: Route=$routeId, Station=$stationId, Bus=$busNo")
-             // TTS 추적 중지
+
+             // 1. Stop TTS first
              stopTtsTracking(routeId = routeId, stationId = stationId, forceStop = true)
 
-             // 포그라운드 알림 취소 - 여기서 추가
+             // 2. Cancel the ongoing notification *immediately*
+             // This ensures the notification disappears right away when requested.
              cancelOngoingTracking()
-             Log.d(TAG, "포그라운드 알림 취소 완료 (stopTrackingForRoute)")
-             // 모니터링 노선 제거
+             Log.d(TAG, "포그라운드 알림 즉시 취소 완료 (stopTrackingForRoute)")
+
+             // 3. Remove the route from monitoring
              val removedRouteInfo = monitoredRoutes.remove(routeId)
              if (removedRouteInfo != null) {
                  Log.d(TAG, "모니터링 목록에서 $routeId 제거됨 (Station: ${removedRouteInfo.first})")
              } else {
                  Log.d(TAG, "모니터링 목록에 $routeId 없음")
              }
-             // 도착 임박 플래그 제거
+
+             // 4. Clear related flags (e.g., arriving soon notification state)
              if (stationId != null && busNo != null) {
                   val notificationKey = "${routeId}_${stationId}_$busNo"
                   if (arrivingSoonNotified.remove(notificationKey)) {
                       Log.d(TAG, "'곧 도착' 플래그 제거됨: $notificationKey")
                   }
              }
-             // 모니터링 노선이 없으면 전체 추적 중지, 있으면 알림 업데이트
+
+             // 5. Decide next step: Stop completely or update for remaining routes
              if (monitoredRoutes.isEmpty()) {
                  Log.i(TAG, "$routeId 제거 후 남은 노선 없음. 전체 추적 중지 호출.")
+                 // Call stopTracking directly, which handles further cleanup including timer stop,
+                 // clearing caches, and invoking onBusMonitoringStopped for Flutter.
+                 // stopTracking also calls cancelOngoingTracking again, which is harmless.
                  stopTracking()
              } else {
+                 // Only update if other routes are still being monitored.
                  Log.i(TAG, "$routeId 제거 후 ${monitoredRoutes.size}개 노선 남음. 알림 업데이트 필요.")
-                 checkBusArrivals()
+                 // Launch checkBusArrivals to update the notification for remaining routes.
+                 // This runs asynchronously.
+                 serviceScope.launch { checkBusArrivals() }
              }
          }
     }
@@ -1269,6 +1302,8 @@ class BusAlertService : Service() {
                                  _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
                                  Log.i(TAG, "Flutter 측에 알람 취소 알림 전송 완료: $busNo, $routeId")
 
+                                 // --- REMOVE BROADCAST ---
+                                 /*
                                  // 앱 컨텍스트를 통해 이벤트 발생
                                  val intent = Intent("com.example.daegu_bus_app.ALARM_CANCELED")
                                  intent.putExtra("busNo", busNo)
@@ -1276,6 +1311,8 @@ class BusAlertService : Service() {
                                  intent.putExtra("stationName", stationName ?: "")
                                  applicationContext.sendBroadcast(intent)
                                  Log.i(TAG, "Broadcast 이벤트 발생: ALARM_CANCELED")
+                                 */
+                                 // --- END REMOVE BROADCAST ---
                              } catch (e: Exception) {
                                  Log.e(TAG, "Flutter 측에 알람 취소 알림 전송 오류: ${e.message}")
                              }
@@ -1301,6 +1338,7 @@ class BusAlertService : Service() {
          serviceScope.launch {
              if (monitoredRoutes.isEmpty() && !isTtsTrackingActive) {
                  Log.i(TAG, "서비스 유휴 상태 감지. 전체 추적 중지 호출.")
+                 isInitialCheckPending = false // Reset flag when stopping
                  stopTracking()
              } else {
                   Log.d(TAG,"서비스 유휴 상태 아님 (모니터링: ${monitoredRoutes.size}, TTS: $isTtsTrackingActive).")

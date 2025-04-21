@@ -127,7 +127,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             checkAndRequestPermissions()
 
             // 알람 취소 이벤트 수신을 위한 브로드캩0스트 리시버 등록
-            registerAlarmCancelReceiver()
+            // registerAlarmCancelReceiver()
 
         } catch (e: Exception) {
             Log.e(TAG, "MainActivity onCreate 오류: ${e.message}", e)
@@ -248,6 +248,39 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         try {
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL).setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "cancelAlarmNotification" -> {
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        
+                        try {
+                            Log.i(TAG, "Flutter에서 알람/추적 중지 요청: Bus=$busNo, Route=$routeId, Station=$stationName")
+                            
+                            // 1. Service에 특정 경로 추적 중지 요청 (이것이 알림 취소 등 내부 로직 처리)
+                            val stationId = if (routeId.contains("_")) {
+                                val parts = routeId.split("_")
+                                if (parts.size > 1) parts.last() else ""
+                            } else ""
+                            busAlertService?.stopTrackingForRoute(routeId, stationId, busNo)
+                            Log.i(TAG, "BusAlertService.stopTrackingForRoute 호출 완료")
+
+                            // 2. Flutter 측에 알림 취소 완료 이벤트 전송 
+                            // (stopTrackingForRoute가 비동기일 수 있으므로 약간의 지연 고려 가능하나, 
+                            // 일단 직접 호출 후 바로 전송. BusAlertService 내부에서 이벤트 전송도 고려 가능)
+                            val alarmCancelData = mapOf(
+                                "busNo" to busNo,
+                                "routeId" to routeId,
+                                "stationName" to stationName
+                            )
+                            _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
+                            Log.i(TAG, "Flutter 측에 알람 취소 알림 전송 완료 (From cancelAlarmNotification handler)")
+                            
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "알람/추적 중지 처리 오류: ${e.message}", e)
+                            result.error("CANCEL_ERROR", "알람/추적 중지 처리 실패: ${e.message}", null)
+                        }
+                    }
                     "searchStations" -> {
                         val searchText = call.argument<String>("searchText") ?: ""
                         if (searchText.isEmpty()) {
@@ -1024,59 +1057,12 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             }
 
             // 브로드캠스트 리시버 해제
-            unregisterAlarmCancelReceiver()
+            // unregisterAlarmCancelReceiver()
 
             super.onDestroy()
         } catch (e: Exception) {
             Log.e(TAG, "onDestroy 오류: ${e.message}", e)
             super.onDestroy()
-        }
-    }
-
-    private fun registerAlarmCancelReceiver() {
-        try {
-            alarmCancelReceiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context?, intent: Intent?) {
-                    if (intent?.action == "com.example.daegu_bus_app.ALARM_CANCELED") {
-                        val busNo = intent.getStringExtra("busNo") ?: ""
-                        val routeId = intent.getStringExtra("routeId") ?: ""
-                        val stationName = intent.getStringExtra("stationName") ?: ""
-
-                        Log.i(TAG, "알람 취소 브로드캠스트 수신: Bus=$busNo, Route=$routeId, Station=$stationName")
-
-                        // Flutter 측에 알림 취소 이벤트 전송
-                        try {
-                            val alarmCancelData = mapOf(
-                                "busNo" to busNo,
-                                "routeId" to routeId,
-                                "stationName" to stationName
-                            )
-                            _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
-                            Log.i(TAG, "Flutter 측에 알람 취소 알림 전송 완료: $busNo, $routeId")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Flutter 측에 알람 취소 알림 전송 오류: ${e.message}")
-                        }
-                    }
-                }
-            }
-
-            val filter = IntentFilter("com.example.daegu_bus_app.ALARM_CANCELED")
-            registerReceiver(alarmCancelReceiver, filter)
-            Log.d(TAG, "알람 취소 브로드캠스트 리시버 등록 완료")
-        } catch (e: Exception) {
-            Log.e(TAG, "알람 취소 브로드캠스트 리시버 등록 오류: ${e.message}")
-        }
-    }
-
-    private fun unregisterAlarmCancelReceiver() {
-        try {
-            if (alarmCancelReceiver != null) {
-                unregisterReceiver(alarmCancelReceiver)
-                alarmCancelReceiver = null
-                Log.d(TAG, "알람 취소 브로드캠스트 리시버 해제 완료")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "알람 취소 브로드캠스트 리시버 해제 오류: ${e.message}")
         }
     }
 
