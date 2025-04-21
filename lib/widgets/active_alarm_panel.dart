@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // MethodChannel을 위해 추가
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
 import '../models/alarm_data.dart';
 import '../main.dart' show logMessage, LogLevel;
+import '../services/notification_service.dart'; // NotificationService를 위해 추가
+import '../utils/tts_switcher.dart'; // TtsSwitcher를 위해 추가
 
 class ActiveAlarmPanel extends StatefulWidget {
   const ActiveAlarmPanel({super.key});
@@ -23,6 +26,19 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeAlarms();
     });
+
+    // AlarmService 리스너 등록 - 포그라운드 노티피케이션에서 취소 시 UI 업데이트
+    final alarmService = Provider.of<AlarmService>(context, listen: false);
+    alarmService.addListener(_updateAlarmState);
+  }
+
+  // 알람 상태 변경 시 UI 업데이트
+  void _updateAlarmState() {
+    if (mounted) {
+      setState(() {
+        // UI 강제 갱신
+      });
+    }
   }
 
   Future<void> _initializeAlarms() async {
@@ -108,22 +124,58 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
   @override
   void dispose() {
     _progressTimer?.cancel();
+
+    // AlarmService 리스너 해제
+    final alarmService = Provider.of<AlarmService>(context, listen: false);
+    alarmService.removeListener(_updateAlarmState);
+
     super.dispose();
   }
 
   // 알람 목록 아이템 위젯 생성 메서드
   Widget _buildAlarmListItem(AlarmData alarm, AlarmService alarmService) {
+    // 자동 알람인지 확인
+    final isAutoAlarm = alarmService.autoAlarms.contains(alarm);
+
     // 캐시된 정보를 가져와서 최신화
     final cachedBusInfo = alarmService.getCachedBusInfo(
       alarm.busNo,
       alarm.routeId,
     );
 
-    // 남은 시간 계산 - 일반 알람만 표시
+    // 남은 시간 계산 - 자동 알람과 일반 알람 구분
     int arrivalMinutes;
     String arrivalText;
 
-    if (cachedBusInfo != null) {
+    if (isAutoAlarm) {
+      // 자동 알람의 경우 예약된 시간 표시
+      final now = DateTime.now();
+      final alarmTime = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        alarm.scheduledTime.hour,
+        alarm.scheduledTime.minute,
+      );
+
+      // 오늘 알람 시간이 지났는지 확인
+      if (now.isAfter(alarmTime)) {
+        // 다음 날 알람 시간 계산
+        final tomorrow = DateTime(now.year, now.month, now.day + 1,
+            alarm.scheduledTime.hour, alarm.scheduledTime.minute);
+        arrivalMinutes = tomorrow.difference(now).inMinutes;
+        arrivalText = '다음 알람: ${_getFormattedTime(alarm.scheduledTime)}';
+      } else {
+        arrivalMinutes = alarmTime.difference(now).inMinutes;
+        if (arrivalMinutes <= 0) {
+          arrivalText =
+              '알람 시간: ${_getFormattedTime(alarm.scheduledTime)} (진행 중)';
+        } else {
+          arrivalText =
+              '알람 시간: ${_getFormattedTime(alarm.scheduledTime)} ($arrivalMinutes분 후)';
+        }
+      }
+    } else if (cachedBusInfo != null) {
       // 일반 알람의 경우 실시간 도착 정보 사용
       arrivalMinutes = cachedBusInfo.getRemainingMinutes();
       arrivalText = arrivalMinutes <= 1 ? '곧 도착' : '$arrivalMinutes분 후 도착';
@@ -142,7 +194,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     String? currentStation =
         cachedBusInfo?.currentStation ?? alarm.currentStation;
     String locationText = '';
-    if (currentStation != null && currentStation.isNotEmpty) {
+    if (!isAutoAlarm && currentStation != null && currentStation.isNotEmpty) {
       locationText = ' ($currentStation)';
     }
 
@@ -150,10 +202,12 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          // 알람 아이콘
+          // 알람 아이콘 - 자동 알람은 다른 아이콘 사용
           Icon(
-            Icons.alarm,
-            color: arrivalMinutes <= 3 ? Colors.red : Colors.orange,
+            isAutoAlarm ? Icons.schedule : Icons.alarm,
+            color: isAutoAlarm
+                ? Colors.blue
+                : (arrivalMinutes <= 3 ? Colors.red : Colors.orange),
             size: 20,
           ),
           const SizedBox(width: 8),
@@ -161,18 +215,44 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${alarm.busNo}번 버스 - ${alarm.stationName}',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      '${alarm.busNo}번 버스 - ${alarm.stationName}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (isAutoAlarm) ...[
+                      // 자동 알람 표시
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[100],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          '자동',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 Text(
                   '$arrivalText$locationText',
                   style: TextStyle(
                     fontSize: 14,
-                    color: arrivalMinutes <= 3 ? Colors.red : Colors.black87,
+                    color: isAutoAlarm
+                        ? Colors.blue[700]
+                        : (arrivalMinutes <= 3 ? Colors.red : Colors.black87),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -232,28 +312,100 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     );
 
     if (confirmDelete == true && context.mounted) {
-      // 알람 즉시 취소
-      final success = await alarmService.cancelAlarmByRoute(
-        alarm.busNo,
-        alarm.stationName,
-        alarm.routeId,
-      );
+      try {
+        logMessage('${alarm.busNo}번 버스 $alarmType 취소 시작', level: LogLevel.info);
 
-      if (success) {
-        // 알람 취소 성공 로그
-        logMessage('${alarm.busNo}번 버스 $alarmType 취소 성공', level: LogLevel.info);
+        // 1. 정류장 추적 서비스 중지
+        try {
+          await const MethodChannel(
+                  'com.example.daegu_bus_app/station_tracking')
+              .invokeMethod('stopStationTracking');
+          logMessage('정류장 추적 서비스 중지 요청 완료', level: LogLevel.debug);
+        } catch (e) {
+          logMessage('정류장 추적 서비스 중지 요청 실패: $e', level: LogLevel.warning);
+        }
 
-        // 알람 목록 다시 로드
+        // 2. 네이티브 알림 취소
+        try {
+          final notificationService = NotificationService();
+          await notificationService.cancelOngoingTracking();
+          logMessage('네이티브 지속 알림 취소 완료', level: LogLevel.debug);
+
+          // 포그라운드 서비스 중지 확실히 처리
+          try {
+            // stationId 추출 또는 기본값 설정
+            String stationId = "";
+            if (alarm.routeId.contains('_')) {
+              // routeId에서 stationId 추출 시도
+              final parts = alarm.routeId.split('_');
+              if (parts.length > 1) {
+                stationId = parts.last;
+              }
+            }
+
+            await const MethodChannel('com.example.daegu_bus_app/bus_tracking')
+                .invokeMethod('stopBusTracking', {
+              'busNo': alarm.busNo,
+              'routeId': alarm.routeId,
+              'stationId': stationId,
+              'stationName': alarm.stationName,
+            });
+            logMessage('포그라운드 서비스 중지 요청 완료', level: LogLevel.debug);
+          } catch (e) {
+            logMessage('포그라운드 서비스 중지 요청 실패: $e', level: LogLevel.warning);
+          }
+        } catch (e) {
+          logMessage('네이티브 알림 취소 실패: $e', level: LogLevel.error);
+        }
+
+        // 3. TTS 추적 중지
+        try {
+          await TtsSwitcher.stopTtsTracking(alarm.busNo);
+          logMessage('TTS 추적 중지 완료', level: LogLevel.debug);
+        } catch (e) {
+          logMessage('TTS 추적 중지 실패: $e', level: LogLevel.error);
+        }
+
+        // 4. 버스 추적 서비스 중지 요청 - 이미 위에서 처리했으니 삭제
+
+        // 5. AlarmService를 통한 알람 상태 관리
+        final success = await alarmService.cancelAlarmByRoute(
+          alarm.busNo,
+          alarm.stationName,
+          alarm.routeId,
+        );
+
+        // 알람 상태 갱신
         await alarmService.loadAlarms();
+        await alarmService.refreshAlarms();
 
-        // 스낵바 표시
-        if (mounted) {
+        // 사용자에게 결과 알림
+        if (success && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${alarm.busNo}번 버스 $alarmType이 취소되었습니다')),
+          );
+          logMessage('${alarm.busNo}번 버스 $alarmType 취소 성공',
+              level: LogLevel.info);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('${alarm.busNo}번 버스 $alarmType 취소에 문제가 발생했습니다')),
+          );
+        }
+      } catch (e) {
+        logMessage('알람 취소 중 오류 발생: $e', level: LogLevel.error);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('알람 취소 중 오류가 발생했습니다: $e')),
           );
         }
       }
     }
+  }
+
+  // 시간을 HH:mm 형식으로 포맷팅하는 헬퍼 함수
+  String _getFormattedTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -298,7 +450,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         // 알람이 있는 경우 - 첫 번째 알람에 대한 상세 패널 표시
         final firstAlarm = allAlarms.first;
 
-        // routeId가 null이면 기본값 설정
+        // routeId가 비어있으면 기본값 설정
         final String routeId = firstAlarm.routeId.isNotEmpty
             ? firstAlarm.routeId
             : '${firstAlarm.busNo}_${firstAlarm.stationName}';
@@ -309,10 +461,10 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
           routeId,
         );
 
-        // 남은 시간 계산 (일반 알람만 표시)
+        // 남은 시간 계산
         int remainingMinutes;
         if (cachedBusInfo != null) {
-          // 일반 알람의 경우 실시간 도착 정보 사용
+          // 실시간 도착 정보 사용
           remainingMinutes = cachedBusInfo.getRemainingMinutes();
           logMessage(
               '버스 도착 정보 (캐시): ${firstAlarm.busNo}번, $remainingMinutes분 후',

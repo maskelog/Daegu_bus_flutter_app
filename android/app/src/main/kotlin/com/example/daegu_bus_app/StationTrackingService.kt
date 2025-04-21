@@ -30,7 +30,7 @@ class StationTrackingService : Service() {
     companion object {
         private const val TAG = "StationTrackingService"
         private const val CHANNEL_STATION_TRACKING = "station_tracking" // 새로운 알림 채널 ID
-        private const val STATION_TRACKING_NOTIFICATION_ID = 10001 // 다른 서비스의 알림 ID와 충돌하지 않도록 함
+        const val STATION_TRACKING_NOTIFICATION_ID = 10001 // 다른 서비스의 알림 ID와 충돌하지 않도록 함 (public으로 변경)
         const val ACTION_START_TRACKING = "com.example.daegu_bus_app.action.START_STATION_TRACKING"
         const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_STATION_TRACKING"
         const val EXTRA_STATION_ID = "com.example.daegu_bus_app.extra.STATION_ID"
@@ -70,8 +70,35 @@ class StationTrackingService : Service() {
                 }
             }
             ACTION_STOP_TRACKING -> { // 추적 중지 액션 처리
+                Log.i(TAG, "정류장 추적 중지 요청 받음")
+                // 추적 중지 전 현재 추적 중인 정류장 정보 기록
+                val trackingStationId = currentStationId
+                val trackingStationName = currentStationName
+
+                // 추적 중지 실행
                 stopTrackingInternal()
-                stopSelf() // 서비스 종료 요청
+
+                // 알림 강제 취소
+                try {
+                    val notificationManager = NotificationManagerCompat.from(this)
+                    notificationManager.cancel(STATION_TRACKING_NOTIFICATION_ID)
+                    Log.i(TAG, "정류장 추적 알림 취소 완료")
+                } catch (e: Exception) {
+                    Log.e(TAG, "알림 취소 오류: ${e.message}")
+                }
+
+                // 서비스 종료 요청 - 알림 취소 후 종료
+                try {
+                    // 알림 취소 확실하게 처리
+                    NotificationManagerCompat.from(this).cancel(STATION_TRACKING_NOTIFICATION_ID)
+                    Log.d(TAG, "알림 취소 완료 (ACTION_STOP_TRACKING)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "알림 취소 중 오류 (ACTION_STOP_TRACKING): ${e.message}")
+                }
+
+                // 서비스 종료
+                stopSelf()
+                Log.i(TAG, "정류장 추적 중지 완료: 이전 추적 정류장= ${trackingStationId ?: "없음"}, 이름= ${trackingStationName ?: "없음"}")
             }
         }
         // START_NOT_STICKY: 시스템에 의해 서비스가 강제 종료될 경우, 자동으로 재시작하지 않음
@@ -103,13 +130,62 @@ class StationTrackingService : Service() {
 
     // 내부적으로 추적을 중지하는 로직
     private fun stopTrackingInternal() {
-        Log.i(TAG, "정류장 추적 중지: ID=$currentStationId")
-        trackingTimer?.cancel() // 타이머 취소
-        trackingTimer = null
-        currentStationId = null // 추적 정보 초기화
-        currentStationName = null
-        // 진행 중이던 알림 취소
-        NotificationManagerCompat.from(this).cancel(STATION_TRACKING_NOTIFICATION_ID)
+        Log.i(TAG, "정류장 추적 중지 시도: ID=$currentStationId, 타이머=${if (trackingTimer != null) "있음" else "없음"}")
+
+        try {
+            // 타이머 취소
+            if (trackingTimer != null) {
+                trackingTimer?.cancel()
+                trackingTimer = null
+                Log.d(TAG, "타이머 취소 완료")
+            } else {
+                Log.d(TAG, "취소할 타이머가 없음")
+            }
+
+            // 알림 취소 시도 - 명시적으로 Foreground 상태도 중단
+            try {
+                // 포그라운드 서비스 중단 전에 알림 먼저 취소
+                try {
+                    NotificationManagerCompat.from(this).cancel(STATION_TRACKING_NOTIFICATION_ID)
+                    Log.d(TAG, "알림 취소 완료 (stopTrackingInternal)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "알림 취소 중 오류: ${e.message}")
+                }
+
+                // 포그라운드 서비스 중단
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        Log.d(TAG, "Foreground 서비스 중단 완료 (Android N+)")
+                    } else {
+                        stopForeground(true)
+                        Log.d(TAG, "Foreground 서비스 중단 완료 (레거시)")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Foreground 서비스 중단 중 오류: ${e.message}")
+                }
+
+                // 알림 취소 확실하게 처리
+                NotificationManagerCompat.from(this).cancel(STATION_TRACKING_NOTIFICATION_ID)
+                Log.d(TAG, "알림 취소 완료 (stopTrackingInternal)")
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 취소 중 오류: ${e.message}")
+            }
+
+            // 추적 정보 초기화
+            val oldStationId = currentStationId
+            val oldStationName = currentStationName
+            currentStationId = null
+            currentStationName = null
+
+            Log.i(TAG, "정류장 추적 중지 완료: 이전 ID= ${oldStationId ?: "없음"}, 이름= ${oldStationName ?: "없음"}")
+        } catch (e: Exception) {
+            Log.e(TAG, "정류장 추적 중지 중 오류: ${e.message}")
+            // 오류가 발생해도 추적 정보는 반드시 초기화
+            currentStationId = null
+            currentStationName = null
+            trackingTimer = null
+        }
     }
 
     // 서버에서 도착 정보를 가져와서 알림을 업데이트하는 함수
@@ -259,7 +335,15 @@ class StationTrackingService : Service() {
                 .setWhen(System.currentTimeMillis())
                 .setShowWhen(true)
 
-            startForeground(STATION_TRACKING_NOTIFICATION_ID, builder.build())
+            // 알림 먼저 생성
+            val notification = builder.build()
+
+            // 포그라운드 서비스 시작 전에 알림 먼저 표시
+            val notificationManager = NotificationManagerCompat.from(this)
+            notificationManager.notify(STATION_TRACKING_NOTIFICATION_ID, notification)
+
+            // 포그라운드 서비스 시작
+            startForeground(STATION_TRACKING_NOTIFICATION_ID, notification)
             Log.d(TAG, "정류장 추적 알림 표시/업데이트 완료 (Foreground): $stationName")
         } catch (e: Exception) {
             Log.e(TAG, "정류장 추적 알림 표시 중 오류: ${e.message}", e)
@@ -279,7 +363,7 @@ class StationTrackingService : Service() {
          // 남은 정류장 수 표시 (선택 사항, 현재 주석 처리)
          // val stopsStr = arrival.remainingStops?.let { "($it 정류장)" } ?: ""
          val routeNoStr = arrival.routeNo // 버스 번호
-         
+
          // moveDir 값은 표시하지 않음 (인덱스 숫자 제거)
          // val directionStr = arrival.moveDir?.let { " [$it]" } ?: ""
 
@@ -323,8 +407,33 @@ class StationTrackingService : Service() {
 
     override fun onDestroy() {
         Log.i(TAG, "서비스 소멸됨")
-        stopTrackingInternal() // 서비스 종료 시 추적 중지 및 리소스 정리
-        serviceScope.cancel() // 코루틴 스코프 취소 (진행 중이던 작업 중단)
-        super.onDestroy()
+
+        try {
+            // 추적 중지 및 리소스 정리
+            stopTrackingInternal()
+
+            // 코루틴 스코프 취소
+            try {
+                serviceScope.cancel()
+                Log.d(TAG, "코루틴 스코프 취소 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "코루틴 스코프 취소 중 오류: ${e.message}")
+            }
+
+            // 알림 추가 취소 시도
+            try {
+                val notificationManager = NotificationManagerCompat.from(this)
+                notificationManager.cancel(STATION_TRACKING_NOTIFICATION_ID)
+                Log.d(TAG, "알림 취소 완료 (onDestroy)")
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 취소 중 오류 (onDestroy): ${e.message}")
+            }
+
+            Log.i(TAG, "정류장 추적 서비스 종료 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "서비스 종료 중 오류: ${e.message}")
+        } finally {
+            super.onDestroy()
+        }
     }
 }

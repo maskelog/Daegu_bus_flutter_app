@@ -225,11 +225,34 @@ class NotificationService {
   /// 지속적인 추적 알림 취소
   Future<bool> cancelOngoingTracking() async {
     try {
+      // 1. 기존 방식: 'cancelOngoingTracking' 메서드 호출
       final bool result = await _channel.invokeMethod('cancelOngoingTracking');
-      debugPrint('🚌 지속적인 추적 알림 취소');
+
+      // 2. 추가: 'stopStationTracking' 메서드 호출하여 정류장 추적 서비스도 확실하게 중지
+      try {
+        await const MethodChannel('com.example.daegu_bus_app/station_tracking')
+            .invokeMethod('stopStationTracking');
+        debugPrint('🚌 정류장 추적 서비스도 중지 요청 완료');
+      } catch (e) {
+        debugPrint('🚌 정류장 추적 서비스 중지 요청 중 오류: ${e.toString()}');
+      }
+
+      // 3. 추가: 'stopBusTracking' 메서드 호출하여 버스 추적 서비스 중지
+      try {
+        await const MethodChannel('com.example.daegu_bus_app/bus_tracking')
+            .invokeMethod('stopBusTracking', {});
+        debugPrint('🚌 버스 추적 서비스 중지 요청 완료');
+      } catch (e) {
+        debugPrint('🚌 버스 추적 서비스 중지 요청 중 오류: ${e.toString()}');
+      }
+
+      debugPrint('🚌 모든 지속적인 추적 알림 취소 시도 완료');
       return result;
     } on PlatformException catch (e) {
       debugPrint('🚌 지속적인 추적 알림 취소 오류: ${e.message}');
+      return false;
+    } catch (e) {
+      debugPrint('🚌 추적 알림 취소 중 예외 발생: ${e.toString()}');
       return false;
     }
   }

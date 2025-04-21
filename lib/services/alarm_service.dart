@@ -78,6 +78,55 @@ class AlarmService extends ChangeNotifier {
 
   AlarmService._internal() {
     initialize();
+    _setupMethodChannel();
+  }
+
+  void _setupMethodChannel() {
+    _methodChannel = const MethodChannel('com.example.daegu_bus_app/bus_api');
+    _methodChannel?.setMethodCallHandler(_handleMethodCall);
+  }
+
+  Future<dynamic> _handleMethodCall(MethodCall call) async {
+    try {
+      switch (call.method) {
+        case 'onAlarmCanceledFromNotification':
+          final Map<String, dynamic> args =
+              Map<String, dynamic>.from(call.arguments);
+          final String busNo = args['busNo'] ?? '';
+          final String routeId = args['routeId'] ?? '';
+          final String stationName = args['stationName'] ?? '';
+
+          logMessage(
+              '포그라운드 노티피케이션에서 알람 취소 이벤트 수신: $busNo, $stationName, $routeId',
+              level: LogLevel.info);
+
+          if (busNo.isNotEmpty && routeId.isNotEmpty) {
+            // 알람 취소 처리
+            await cancelAlarmByRoute(busNo, stationName, routeId);
+            await loadAlarms();
+            await refreshAlarms();
+
+            // 버스 카드 UI 업데이트를 위한 이벤트 발생
+            _isInTrackingMode = false;
+
+            // 모든 리스너에게 알림
+            notifyListeners();
+
+            // 추가 알림 - 다른 위젯들이 상태 변경을 감지할 수 있도록
+            Future.delayed(const Duration(milliseconds: 100), () {
+              notifyListeners();
+            });
+
+            return true;
+          }
+          return false;
+        default:
+          return null;
+      }
+    } catch (e) {
+      logMessage('메서드 채널 핸들러 오류: $e', level: LogLevel.error);
+      return null;
+    }
   }
 
   Future<void> initialize() async {
@@ -1147,6 +1196,10 @@ class AlarmService extends ChangeNotifier {
           }
         }
       }
+
+      // 알람 취소 이벤트 발생 - UI 업데이트를 위해 일찍 호출
+      _isInTrackingMode = false;
+      notifyListeners();
 
       if (alarm == null) {
         logMessage('❌ 취소할 알람을 찾을 수 없음: $exactKey');

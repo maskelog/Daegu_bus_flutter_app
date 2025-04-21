@@ -306,12 +306,26 @@ class _CompactBusCardState extends State<CompactBusCard> {
       final notificationService = NotificationService();
       await notificationService.initialize();
 
+      // 정류장 ID 추출
+      final String stationId =
+          widget.busArrival.routeId.split('_').lastOrNull ?? '';
+      if (stationId.isEmpty) {
+        logMessage('❌ 정류장 ID를 추출할 수 없습니다.', level: LogLevel.error);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('정류장 정보가 완전하지 않습니다. 알람을 설정할 수 없습니다.')),
+          );
+        }
+        return;
+      }
+
       // routeId가 비어있는 경우 기본값 설정
       final String routeId = widget.busArrival.routeId.isNotEmpty
           ? widget.busArrival.routeId
           : '${widget.busArrival.routeNo}_${widget.stationName}';
 
-      logMessage('사용할 routeId: $routeId', level: LogLevel.debug);
+      logMessage('사용할 routeId: $routeId, stationId: $stationId',
+          level: LogLevel.debug);
 
       bool hasAlarm = alarmService.hasAlarm(
         widget.busArrival.routeNo,
@@ -359,6 +373,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
           logMessage("Station Name: ${widget.stationName}",
               level: LogLevel.debug);
           logMessage("Route ID: $routeId", level: LogLevel.debug);
+          logMessage("Station ID: $stationId", level: LogLevel.debug);
           logMessage("Remaining Time: $remainingMinutes mins",
               level: LogLevel.debug);
           logMessage("Arrival Time: $arrivalTime", level: LogLevel.debug);
@@ -386,8 +401,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
 
             // 승차 알람은 즉시 모니터링 시작
             await alarmService.startBusMonitoringService(
-              stationId:
-                  widget.busArrival.routeId.split('_').last, // stationId 추출
+              stationId: stationId, // 명시적으로 stationId 전달
               stationName: widget.stationName!,
               routeId: routeId,
               busNo: widget.busArrival.routeNo,
@@ -402,18 +416,21 @@ class _CompactBusCardState extends State<CompactBusCard> {
               routeId: routeId,
             );
 
-            // TTS 알림 즉시 시작 (useTts 설정 및 이어폰 연결 여부 확인)
+            // TTS 알림 즉시 시작 (설정 및 이어폰 연결 여부 확인)
             final settings =
                 Provider.of<SettingsService>(context, listen: false);
             if (settings.useTts) {
               final ttsSwitcher = TtsSwitcher();
               await ttsSwitcher.initialize();
               final headphoneConnected =
-                  await ttsSwitcher.isHeadphoneConnected();
+                  await ttsSwitcher.isHeadphoneConnected().catchError((e) {
+                logMessage('이어폰 연결 상태 확인 중 오류: $e', level: LogLevel.error);
+                return false; // 에러 발생시 이어폰 미연결로 처리
+              });
               if (headphoneConnected) {
                 await TtsSwitcher.startTtsTracking(
                   routeId: routeId,
-                  stationId: widget.busArrival.routeId.split('_').last,
+                  stationId: stationId,
                   busNo: widget.busArrival.routeNo,
                   stationName: widget.stationName!,
                   remainingMinutes: remainingMinutes,
