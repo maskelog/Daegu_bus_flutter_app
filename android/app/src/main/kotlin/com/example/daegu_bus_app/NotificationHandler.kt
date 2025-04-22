@@ -152,6 +152,8 @@ class NotificationHandler(private val context: Context) {
 
         val stopAllIntent = Intent(context, BusAlertService::class.java).apply { // Target BusAlertService
             action = ACTION_STOP_TRACKING
+            // 명시적으로 서비스 중지 플래그 추가
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
         val stopAllPendingIntent = PendingIntent.getService( // Use getService
             context, 1, stopAllIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

@@ -163,7 +163,33 @@ class BusAlertService : Service() {
             }
             ACTION_STOP_TRACKING -> {
                 Log.i(TAG, "ACTION_STOP_TRACKING: Stopping all tracking.")
-                stopTracking()
+
+                // Flutter 측에 알림 취소 이벤트 전송 시도 (모든 활성 추적에 대해)
+                try {
+                    val context = applicationContext
+                    val activeTrackingsCopy = HashMap(activeTrackings) // 복사본 생성
+
+                    // 각 활성 추적에 대해 Flutter에 취소 이벤트 전송
+                    for ((routeId, trackingInfo) in activeTrackingsCopy) {
+                        val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
+                        intent.putExtra("routeId", routeId)
+                        intent.putExtra("busNo", trackingInfo.busNo)
+                        intent.putExtra("stationName", trackingInfo.stationName)
+                        intent.putExtra("source", "notification_button")
+                        context.sendBroadcast(intent)
+                        Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: ${trackingInfo.busNo}, $routeId, ${trackingInfo.stationName}")
+                    }
+
+                    // 전체 취소 이벤트도 전송
+                    val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                    context.sendBroadcast(allCancelIntent)
+                    Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
+                } catch (e: Exception) {
+                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
+                }
+
+                // 전체 추적 중지 및 서비스 종료
+                stopAllTrackingAndService()
             }
             ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> {
                 val routeId = intent.getStringExtra("routeId")
@@ -178,7 +204,25 @@ class BusAlertService : Service() {
             ACTION_CANCEL_NOTIFICATION -> {
                 val notificationId = intent.getIntExtra("notificationId", -1)
                 if (notificationId != -1) {
+                    Log.i(TAG, "ACTION_CANCEL_NOTIFICATION: notificationId=$notificationId")
                     notificationHandler.cancelNotification(notificationId)
+
+                    // 알림이 지속적인 추적 알림인 경우 서비스도 중지
+                    if (notificationId == ONGOING_NOTIFICATION_ID) {
+                        Log.i(TAG, "지속적인 추적 알림 취소. 서비스 중지 시도.")
+                        stopAllTrackingAndService()
+                    }
+
+                    // Flutter 측에 알림 취소 이벤트 전송 시도
+                    try {
+                        val context = applicationContext
+                        val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
+                        intent.putExtra("notificationId", notificationId)
+                        context.sendBroadcast(intent)
+                        Log.d(TAG, "알림 취소 이벤트 브로드캩0스트 전송: $notificationId")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
+                    }
                 }
             }
             ACTION_START_TTS_TRACKING -> {
