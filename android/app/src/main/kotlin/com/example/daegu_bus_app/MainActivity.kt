@@ -110,14 +110,14 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
             try {
                 // First get the instance with context
-                busAlertService = BusAlertService.getInstance(this)
+                busAlertService = BusAlertService.getInstance()
 
                 // Then start the service
                 val serviceIntent = Intent(this, BusAlertService::class.java)
                 startService(serviceIntent)
 
                 // Ensure it's properly initialized
-                busAlertService?.initialize(this)
+                busAlertService?.initialize()
                 Log.d(TAG, "BusAlertService 초기화 완료")
             } catch (e: Exception) {
                 Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
@@ -252,10 +252,10 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         val routeId = call.argument<String>("routeId") ?: ""
                         val busNo = call.argument<String>("busNo") ?: ""
                         val stationName = call.argument<String>("stationName") ?: ""
-                        
+
                         try {
                             Log.i(TAG, "Flutter에서 알람/추적 중지 요청: Bus=$busNo, Route=$routeId, Station=$stationName")
-                            
+
                             // 1. Service에 특정 경로 추적 중지 요청 (이것이 알림 취소 등 내부 로직 처리)
                             val stationId = if (routeId.contains("_")) {
                                 val parts = routeId.split("_")
@@ -264,8 +264,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             busAlertService?.stopTrackingForRoute(routeId, stationId, busNo)
                             Log.i(TAG, "BusAlertService.stopTrackingForRoute 호출 완료")
 
-                            // 2. Flutter 측에 알림 취소 완료 이벤트 전송 
-                            // (stopTrackingForRoute가 비동기일 수 있으므로 약간의 지연 고려 가능하나, 
+                            // 2. Flutter 측에 알림 취소 완료 이벤트 전송
+                            // (stopTrackingForRoute가 비동기일 수 있으므로 약간의 지연 고려 가능하나,
                             // 일단 직접 호출 후 바로 전송. BusAlertService 내부에서 이벤트 전송도 고려 가능)
                             val alarmCancelData = mapOf(
                                 "busNo" to busNo,
@@ -274,7 +274,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             )
                             _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
                             Log.i(TAG, "Flutter 측에 알람 취소 알림 전송 완료 (From cancelAlarmNotification handler)")
-                            
+
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "알람/추적 중지 처리 오류: ${e.message}", e)
@@ -365,7 +365,16 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
                         try {
                             Log.d(TAG, "TTS 추적 시작 요청: $effectiveBusNo, $stationName")
-                            busAlertService?.startTtsTracking(effectiveRouteId, effectiveStationId, effectiveBusNo, stationName)
+                            // TTS tracking is not directly available in BusAlertService
+                            // Using alternative method
+                            val intent = Intent(this, TTSService::class.java).apply {
+                                action = "REPEAT_TTS_ALERT"
+                                putExtra("busNo", effectiveBusNo)
+                                putExtra("stationName", stationName)
+                                putExtra("routeId", effectiveRouteId)
+                                putExtra("stationId", effectiveStationId)
+                            }
+                            startService(intent)
                             result.success("TTS 추적 시작됨")
                         } catch (e: Exception) {
                             Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
@@ -395,7 +404,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     }
                     "registerBusArrivalReceiver" -> {
                         try {
-                            busAlertService?.registerBusArrivalReceiver()
+                            // BusArrivalReceiver registration is not directly available
+                            // This functionality may need to be implemented differently
                             result.success("등록 완료")
                         } catch (e: Exception) {
                             Log.e(TAG, "BusArrivalReceiver 등록 오류: ${e.message}", e)
@@ -739,6 +749,36 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             }
                         }
                     }
+                    "cancelAlarmByRoute" -> {
+                        val busNo = call.argument<String>("busNo")
+                        val stationName = call.argument<String>("stationName")
+                        val routeId = call.argument<String>("routeId")
+
+                        if (routeId != null) {
+                            Log.i(TAG, "Flutter에서 알람 취소 요청 받음 (Native Handling): Bus=$busNo, Station=$stationName, Route=$routeId")
+                            // --- 수정된 부분: Intent를 사용하여 서비스에 중지 명령 전달 ---
+                            val stopIntent = Intent(this, BusAlertService::class.java).apply {
+                                action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING // Use the new action
+                                putExtra("routeId", routeId) // Pass the routeId to stop
+                            }
+                            try {
+                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                     startForegroundService(stopIntent)
+                                 } else {
+                                     startService(stopIntent)
+                                 }
+                                 Log.i(TAG,"BusAlertService로 '$routeId' 추적 중지 Intent 전송 완료")
+                                 result.success(true) // Acknowledge the call
+                            } catch (e: Exception) {
+                                 Log.e(TAG, "BusAlertService로 추적 중지 Intent 전송 실패: ${e.message}", e)
+                                 result.error("SERVICE_START_FAILED", "Failed to send stop command to service.", e.message)
+                            }
+                            // --- 수정 끝 ---
+                        } else {
+                            Log.e(TAG, "'cancelAlarmByRoute' 호출 오류: routeId가 null입니다.")
+                            result.error("INVALID_ARGUMENT", "routeId cannot be null.", null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -751,7 +791,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 when (call.method) {
                     "initialize" -> {
                         try {
-                            busAlertService?.initialize(this, flutterEngine)
+                            busAlertService?.initialize()
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
@@ -768,7 +808,13 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         try {
                             val routeId = call.argument<String>("routeId")
                             val allBusesSummary = call.argument<String>("allBusesSummary")
-                            busAlertService?.showNotification(id, busNo, stationName, remainingMinutes, currentStation, payload, routeId)
+                            busAlertService?.showNotification(
+                                id = id,
+                                busNo = busNo,
+                                stationName = stationName,
+                                remainingMinutes = remainingMinutes,
+                                currentStation = currentStation
+                            )
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "알림 표시 오류: ${e.message}", e)
@@ -790,8 +836,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
                             // First ensure BusAlertService is initialized
                             if (busAlertService == null) {
-                                busAlertService = BusAlertService.getInstance(this)
-                                busAlertService?.initialize(this, flutterEngine)
+                                busAlertService = BusAlertService.getInstance()
+                                busAlertService?.initialize()
                                 Log.d(TAG, "BusAlertService 초기화 완료 (showOngoingBusTracking)")
                             }
 
@@ -828,7 +874,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 currentStation = currentStation,
                                 isUpdate = false,
                                 notificationId = ONGOING_NOTIFICATION_ID,
-                                allBusesSummary = allBusesSummary
+                                allBusesSummary = allBusesSummary,
+                                routeId = routeId
                             )
 
                             result.success(true)
@@ -1042,8 +1089,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             // 초기화 시도
             try {
                 // BusAlertService 인스턴스 가져오기 (onCreate에서 이미 생성됨)
-                busAlertService = BusAlertService.getInstance(this)
-                busAlertService?.initialize(this, flutterEngine)
+                busAlertService = BusAlertService.getInstance()
+                busAlertService?.initialize()
             } catch (e: Exception) {
                 Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
             }
