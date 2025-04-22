@@ -281,6 +281,18 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             result.error("CANCEL_ERROR", "알람/추적 중지 처리 실패: ${e.message}", null)
                         }
                     }
+                    "forceStopTracking" -> {
+                        try {
+                            Log.i(TAG, "Flutter에서 강제 전체 추적 중지 요청 받음")
+                            // Call the comprehensive stopTracking method in BusAlertService
+                            busAlertService?.stopTracking()
+                            Log.i(TAG, "BusAlertService.stopTracking() 호출 완료")
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "강제 전체 추적 중지 처리 오류: ${e.message}", e)
+                            result.error("FORCE_STOP_ERROR", "강제 전체 추적 중지 처리 실패: ${e.message}", null)
+                        }
+                    }
                     "searchStations" -> {
                         val searchText = call.argument<String>("searchText") ?: ""
                         if (searchText.isEmpty()) {
@@ -926,15 +938,12 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         val stationId = call.argument<String>("stationId") ?: ""
                         val stationName = call.argument<String>("stationName") ?: ""
                         try {
-                            Log.i(TAG, "버스 추적 중지 요청: Bus=$busNo, Route=$routeId, Station=$stationName")
+                            Log.i(TAG, "버스 추적 중지 요청 (BUS_TRACKING_CHANNEL): Bus=$busNo, Route=$routeId, Station=$stationName")
 
-                            // 1. 포그라운드 알림 취소
-                            busAlertService?.cancelOngoingTracking()
-
-                            // 2. 추적 중지
+                            // stopTrackingForRoute만 호출 (내부에서 알림 취소 처리)
                             busAlertService?.stopTrackingForRoute(routeId, stationId, busNo)
 
-                            // 3. Flutter 측에 알림 취소 이벤트 전송
+                            // Flutter 측에 알림 취소 이벤트 전송
                             try {
                                 val alarmCancelData = mapOf(
                                     "busNo" to busNo,

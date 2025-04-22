@@ -1174,7 +1174,7 @@ class AlarmService extends ChangeNotifier {
 
     final String alarmKey = "${busNo}_${stationName}_$routeId";
     final String cacheKey = "${busNo}_$routeId";
-    // bool nativeCallSuccess = false; // No longer needed to track this separately here
+    bool shouldForceStopNative = false;
 
     try {
       // --- Perform Flutter state update immediately ---
@@ -1190,28 +1190,24 @@ class AlarmService extends ChangeNotifier {
       _cachedBusInfo.remove(cacheKey);
       logMessage('[$cacheKey] 버스 정보 캐시 즉시 제거', level: LogLevel.debug);
 
-      // Check if the route being cancelled is the one being tracked
+      // Check if the route being cancelled is the one being tracked OR if it's the last alarm
       if (_trackedRouteId == routeId) {
         _trackedRouteId = null;
         logMessage('추적 Route ID 즉시 초기화됨 (취소된 알람과 일치)', level: LogLevel.debug);
-        // If this was the tracked route, also ensure tracking mode reflects this removal
         if (_activeAlarms.isEmpty) {
           _isInTrackingMode = false;
+          shouldForceStopNative = true; // Last tracked alarm removed
           logMessage('추적 모드 즉시 비활성화 (활성 알람 없음)', level: LogLevel.debug);
         } else {
-          // If other alarms exist, we might still be tracking one of them.
-          // Let the native side handle the potential transition or update.
-          // Or, find the next alarm and potentially start tracking it? (More complex)
-          // For now, just clearing _trackedRouteId if it matches is safest.
-          // _isInTrackingMode remains true if _activeAlarms is not empty.
-          _isInTrackingMode =
-              true; // Explicitly keep tracking if other alarms exist
+          _isInTrackingMode = true;
           logMessage('다른 활성 알람 존재, 추적 모드 유지', level: LogLevel.debug);
+          // Decide if we need to start tracking the next alarm? For now, no.
         }
       } else if (_activeAlarms.isEmpty) {
         // If the cancelled alarm wasn't the tracked one, but it was the *last* one
         _isInTrackingMode = false;
-        _trackedRouteId = null; // Also clear trackedRouteId here
+        _trackedRouteId = null;
+        shouldForceStopNative = true; // Last alarm overall removed
         logMessage('마지막 활성 알람 취소됨, 추적 모드 비활성화', level: LogLevel.debug);
       }
 
@@ -1223,15 +1219,20 @@ class AlarmService extends ChangeNotifier {
 
       // --- Send request to Native ---
       try {
-        await _methodChannel?.invokeMethod('cancelAlarmNotification',
-            {'routeId': routeId, 'busNo': busNo, 'stationName': stationName});
-        logMessage('✅ 네이티브 알람 취소 요청 전송 완료', level: LogLevel.debug);
-        // nativeCallSuccess = true; // Not strictly needed now
+        if (shouldForceStopNative) {
+          logMessage('마지막 알람 취소됨, 네이티브 강제 전체 중지 요청', level: LogLevel.debug);
+          await _methodChannel?.invokeMethod('forceStopTracking');
+          logMessage('✅ 네이티브 강제 전체 중지 요청 전송 완료', level: LogLevel.debug);
+        } else {
+          // If not the last alarm, just cancel the specific notification/route tracking
+          logMessage('다른 알람 존재, 네이티브 특정 알람($routeId) 취소 요청',
+              level: LogLevel.debug);
+          await _methodChannel?.invokeMethod('cancelAlarmNotification',
+              {'routeId': routeId, 'busNo': busNo, 'stationName': stationName});
+          logMessage('✅ 네이티브 특정 알람 취소 요청 전송 완료', level: LogLevel.debug);
+        }
       } catch (nativeError) {
-        logMessage('❌ 네이티브 알람 취소 요청 전송 오류: $nativeError',
-            level: LogLevel.error);
-        // Even if native call fails, Flutter state was updated. Consider logging this specific failure.
-        // Depending on requirements, maybe re-add the alarm to Flutter state? (complex rollback)
+        logMessage('❌ 네이티브 요청 전송 오류: $nativeError', level: LogLevel.error);
         return false; // Indicate that the native part failed
       }
       // --- End Native request ---
@@ -1239,8 +1240,6 @@ class AlarmService extends ChangeNotifier {
       return true; // Return true as the action was initiated and Flutter state updated.
     } catch (e) {
       logMessage('❌ 알람 취소 처리 중 오류 (Flutter 업데이트): $e', level: LogLevel.error);
-      // Error during Flutter state update. UI might be inconsistent.
-      // Notify listeners anyway to potentially refresh from a partially updated state.
       notifyListeners();
       return false;
     }

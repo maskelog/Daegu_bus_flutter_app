@@ -389,6 +389,19 @@ class _BusCardState extends State<BusCard> {
         // 알람 상태 갱신 및 UI 업데이트
         await _alarmService.loadAlarms();
         await _alarmService.refreshAlarms();
+
+        // 명시적으로 포그라운드 알림 취소 추가
+        if (success) {
+          // 1. 포그라운드 알림 취소
+          await _notificationService.cancelOngoingTracking();
+
+          // 2. TTS 추적 중단
+          await TtsSwitcher.stopTtsTracking(busNo);
+
+          // 3. 버스 모니터링 서비스 중지
+          await _alarmService.stopBusMonitoringService();
+        }
+
         setState(() {});
 
         // 사용자에게 결과 알림

@@ -336,13 +336,28 @@ class _CompactBusCardState extends State<CompactBusCard> {
       logMessage('기존 알람 존재 여부: $hasAlarm', level: LogLevel.debug);
 
       if (hasAlarm) {
+        // 알람 취소 시 필요한 정보 미리 저장
+        final busNo = widget.busArrival.routeNo;
+        final stationName = widget.stationName!;
+
+        // 모든 취소 작업을 순차적으로 실행
         await alarmService.cancelAlarmByRoute(
-          widget.busArrival.routeNo,
-          widget.stationName!,
+          busNo,
+          stationName,
           routeId,
         );
+
+        // 명시적으로 포그라운드 알림 취소
         await notificationService.cancelOngoingTracking();
-        await alarmService.refreshAlarms(); // 알람 상태 갱신
+
+        // TTS 추적 중단
+        await TtsSwitcher.stopTtsTracking(busNo);
+
+        // 버스 모니터링 서비스 중지
+        await alarmService.stopBusMonitoringService();
+
+        // 알람 상태 갱신
+        await alarmService.refreshAlarms();
 
         // UI 업데이트를 위한 setState 추가
         setState(() {});
