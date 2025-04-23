@@ -183,7 +183,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             // 권한 요청 처리
             checkAndRequestPermissions()
 
-            // 알람 취소 이벤트 수신을 위한 브로드캩0스트 리시버 등록
+            // 알람 취소 이벤트 수신을 위한 브로드캐스트 리시버 등록
             // registerAlarmCancelReceiver()
 
         } catch (e: Exception) {
@@ -1344,6 +1344,46 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // 브로드캐스트 리시버 등록 메소드
+    private fun registerNotificationCancelReceiver() {
+        val intentFilter = IntentFilter().apply {
+            addAction("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
+            addAction("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+            // 필요하다면 다른 액션도 추가
+        }
+        // Android 버전에 따른 리시버 등록 방식 분기 (Exported/Not Exported)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(notificationCancelReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(notificationCancelReceiver, intentFilter)
+            }
+            Log.d(TAG, "NotificationCancelReceiver 등록됨")
+        } catch (e: Exception) {
+            Log.e(TAG, "NotificationCancelReceiver 등록 오류: ${e.message}", e)
+        }
+    }
+
+    private fun unregisterNotificationCancelReceiver() {
+        try {
+            unregisterReceiver(notificationCancelReceiver)
+            Log.d(TAG, "NotificationCancelReceiver 해제됨")
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "NotificationCancelReceiver 해제 시도 중 오류 (이미 해제되었거나 등록되지 않음): ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "NotificationCancelReceiver 해제 중 예외 발생: ${e.message}", e)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        registerNotificationCancelReceiver() // 리시버 등록
+    }
+
+    override fun onPause() {
+        super.onPause()
+        unregisterNotificationCancelReceiver() // 리시버 해제
+    }
 
 }
 
