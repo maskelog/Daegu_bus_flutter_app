@@ -340,32 +340,41 @@ class _CompactBusCardState extends State<CompactBusCard> {
         final busNo = widget.busArrival.routeNo;
         final stationName = widget.stationName!;
 
-        // 모든 취소 작업을 순차적으로 실행
-        await alarmService.cancelAlarmByRoute(
-          busNo,
-          stationName,
-          routeId,
-        );
-
-        // 명시적으로 포그라운드 알림 취소
-        await notificationService.cancelOngoingTracking();
-
-        // TTS 추적 중단
-        await TtsSwitcher.stopTtsTracking(busNo);
-
-        // 버스 모니터링 서비스 중지
-        await alarmService.stopBusMonitoringService();
-
-        // 알람 상태 갱신
-        await alarmService.refreshAlarms();
-
-        // UI 업데이트를 위한 setState 추가
-        setState(() {});
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('승차 알람이 취소되었습니다')),
+        try {
+          // 모든 취소 작업을 순차적으로 실행
+          await alarmService.cancelAlarmByRoute(
+            busNo,
+            stationName,
+            routeId,
           );
+
+          // 명시적으로 포그라운드 알림 취소
+          await notificationService.cancelOngoingTracking();
+
+          // TTS 추적 중단
+          await TtsSwitcher.stopTtsTracking(busNo);
+
+          // 버스 모니터링 서비스 중지
+          await alarmService.stopBusMonitoringService();
+
+          // 알람 상태 갱신
+          await alarmService.refreshAlarms();
+
+          // UI 업데이트를 위한 setState 추가
+          setState(() {});
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('승차 알람이 취소되었습니다')),
+            );
+          }
+        } catch (e) {
+          logMessage('알람 취소 중 오류 발생: $e', level: LogLevel.error);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('알람 취소 중 오류가 발생했습니다: $e')),
+            );
+          }
         }
       } else {
         if (remainingMinutes > 0) {
@@ -396,6 +405,45 @@ class _CompactBusCardState extends State<CompactBusCard> {
               level: LogLevel.debug);
           logMessage("Current Station: ${busInfo.currentStation}",
               level: LogLevel.debug);
+
+          // 동일한 정류장의 다른 버스 알람이 있는지 확인하고 해제
+          final activeAlarms = alarmService.activeAlarms;
+          for (var alarm in activeAlarms) {
+            if (alarm.stationName == widget.stationName &&
+                alarm.busNo != widget.busArrival.routeNo) {
+              logMessage('🚌 동일 정류장의 다른 버스(${alarm.busNo}) 알람 해제 시도',
+                  level: LogLevel.info);
+
+              try {
+                // 이전 알람 취소
+                final success = await alarmService.cancelAlarmByRoute(
+                  alarm.busNo,
+                  alarm.stationName,
+                  alarm.routeId,
+                );
+
+                if (success) {
+                  // 포그라운드 알림 취소
+                  await notificationService.cancelOngoingTracking();
+
+                  // TTS 추적 중단
+                  await TtsSwitcher.stopTtsTracking(alarm.busNo);
+
+                  // 버스 모니터링 서비스 중지
+                  await alarmService.stopBusMonitoringService();
+
+                  // 알람 상태 갱신
+                  await alarmService.loadAlarms();
+                  await alarmService.refreshAlarms();
+
+                  logMessage('🚌 이전 버스 알람 해제 성공: ${alarm.busNo}',
+                      level: LogLevel.info);
+                }
+              } catch (e) {
+                logMessage('이전 버스 알람 해제 중 오류: $e', level: LogLevel.error);
+              }
+            }
+          }
 
           bool success = await alarmService.setOneTimeAlarm(
             widget.busArrival.routeNo,

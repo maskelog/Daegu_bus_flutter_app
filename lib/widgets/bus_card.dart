@@ -379,37 +379,35 @@ class _BusCardState extends State<BusCard> {
         final busNo = widget.busArrival.routeNo;
         final routeId = widget.busArrival.routeId;
 
-        // 4. AlarmService의 알람 취소 (메인 알람 상태 관리 + Native Coordination)
+        // 모든 취소 작업을 순차적으로 실행
         final success = await _alarmService.cancelAlarmByRoute(
           busNo,
           stationName,
           routeId,
         );
 
-        // 알람 상태 갱신 및 UI 업데이트
-        await _alarmService.loadAlarms();
-        await _alarmService.refreshAlarms();
-
-        // 명시적으로 포그라운드 알림 취소 추가
         if (success) {
-          // 1. 포그라운드 알림 취소
+          // 명시적으로 포그라운드 알림 취소
           await _notificationService.cancelOngoingTracking();
 
-          // 2. TTS 추적 중단
+          // TTS 추적 중단
           await TtsSwitcher.stopTtsTracking(busNo);
 
-          // 3. 버스 모니터링 서비스 중지
+          // 버스 모니터링 서비스 중지
           await _alarmService.stopBusMonitoringService();
-        }
 
-        setState(() {});
+          // 알람 상태 갱신
+          await _alarmService.loadAlarms();
+          await _alarmService.refreshAlarms();
 
-        // 사용자에게 결과 알림
-        if (success && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('승차 알람이 취소되었습니다')),
-          );
-          logMessage('🔔 승차 알람 취소 완료', level: LogLevel.info);
+          setState(() {});
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('승차 알람이 취소되었습니다')),
+            );
+            logMessage('🔔 승차 알람 취소 완료', level: LogLevel.info);
+          }
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('승차 알람 취소 실패')),
@@ -439,6 +437,45 @@ class _BusCardState extends State<BusCard> {
 
         logMessage('🚌 사용할 routeId: $routeId, stationId: $stationId',
             level: LogLevel.debug);
+
+        // 동일한 정류장의 다른 버스 알람이 있는지 확인하고 해제
+        final activeAlarms = _alarmService.activeAlarms;
+        for (var alarm in activeAlarms) {
+          if (alarm.stationName == widget.stationName &&
+              alarm.busNo != widget.busArrival.routeNo) {
+            logMessage('🚌 동일 정류장의 다른 버스(${alarm.busNo}) 알람 해제 시도',
+                level: LogLevel.info);
+
+            try {
+              // 이전 알람 취소
+              final success = await _alarmService.cancelAlarmByRoute(
+                alarm.busNo,
+                alarm.stationName,
+                alarm.routeId,
+              );
+
+              if (success) {
+                // 포그라운드 알림 취소
+                await _notificationService.cancelOngoingTracking();
+
+                // TTS 추적 중단
+                await TtsSwitcher.stopTtsTracking(alarm.busNo);
+
+                // 버스 모니터링 서비스 중지
+                await _alarmService.stopBusMonitoringService();
+
+                // 알람 상태 갱신
+                await _alarmService.loadAlarms();
+                await _alarmService.refreshAlarms();
+
+                logMessage('🚌 이전 버스 알람 해제 성공: ${alarm.busNo}',
+                    level: LogLevel.info);
+              }
+            } catch (e) {
+              logMessage('이전 버스 알람 해제 중 오류: $e', level: LogLevel.error);
+            }
+          }
+        }
 
         // 알람 설정 로직 추가
         int alarmId = _alarmService.getAlarmId(
@@ -558,24 +595,50 @@ class _BusCardState extends State<BusCard> {
   Widget _showBoardingButton() {
     return ElevatedButton.icon(
       onPressed: () async {
-        setState(() => hasBoarded = true);
-        final bool success = await _alarmService.cancelAlarmByRoute(
-          widget.busArrival.routeNo,
-          widget.stationName ?? '정류장 정보 없음',
-          widget.busArrival.routeId,
-        );
-        if (success && mounted) {
-          // 1. 포그라운드 알림 취소
-          await _notificationService.cancelOngoingTracking();
+        try {
+          setState(() => hasBoarded = true);
 
-          // 2. TTS 추적 중단
-          await TtsSwitcher.stopTtsTracking(widget.busArrival.routeNo);
+          // 필요한 정보 미리 저장
+          final busNo = widget.busArrival.routeNo;
+          final stationName = widget.stationName ?? '정류장 정보 없음';
+          final routeId = widget.busArrival.routeId;
 
-          // 3. 버스 모니터링 서비스 중지
-          await _alarmService.stopBusMonitoringService();
+          // 모든 취소 작업을 순차적으로 실행
+          final success = await _alarmService.cancelAlarmByRoute(
+            busNo,
+            stationName,
+            routeId,
+          );
 
-          // 4. 알람 상태 갱신
-          _alarmService.refreshAlarms();
+          if (success) {
+            // 명시적으로 포그라운드 알림 취소
+            await _notificationService.cancelOngoingTracking();
+
+            // TTS 추적 중단
+            await TtsSwitcher.stopTtsTracking(busNo);
+
+            // 버스 모니터링 서비스 중지
+            await _alarmService.stopBusMonitoringService();
+
+            // 알람 상태 갱신
+            await _alarmService.loadAlarms();
+            await _alarmService.refreshAlarms();
+
+            setState(() {});
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('승차 완료 처리되었습니다')),
+              );
+            }
+          }
+        } catch (e) {
+          logMessage('승차 완료 처리 중 오류 발생: $e', level: LogLevel.error);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('승차 완료 처리 중 오류가 발생했습니다: $e')),
+            );
+          }
         }
       },
       icon: const Icon(Icons.check_circle_outline, color: Colors.white),

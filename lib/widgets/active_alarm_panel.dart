@@ -5,8 +5,8 @@ import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
 import '../models/alarm_data.dart';
 import '../main.dart' show logMessage, LogLevel;
-// import '../services/notification_service.dart'; // NotificationService를 위해 추가 - REMOVED (Unused)
-// import '../utils/tts_switcher.dart'; // TtsSwitcher를 위해 추가 - REMOVED (Unused)
+import '../services/notification_service.dart';
+import '../utils/tts_switcher.dart';
 
 class ActiveAlarmPanel extends StatefulWidget {
   const ActiveAlarmPanel({super.key});
@@ -315,29 +315,46 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
       try {
         logMessage('${alarm.busNo}번 버스 $alarmType 취소 시작', level: LogLevel.info);
 
-        // 4. AlarmService를 통한 알람 상태 관리 및 Native 취소 요청
+        // 필요한 정보 미리 저장
+        final busNo = alarm.busNo;
+        final stationName = alarm.stationName;
+        final routeId = alarm.routeId;
+
+        // 모든 취소 작업을 순차적으로 실행
         final success = await alarmService.cancelAlarmByRoute(
-          alarm.busNo,
-          alarm.stationName,
-          alarm.routeId,
+          busNo,
+          stationName,
+          routeId,
         );
 
-        // 알람 상태 갱신
-        await alarmService.loadAlarms();
-        await alarmService.refreshAlarms();
+        if (success) {
+          // 명시적으로 포그라운드 알림 취소
+          final notificationService = NotificationService();
+          await notificationService.cancelOngoingTracking();
 
-        // 사용자에게 결과 알림
-        if (success && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${alarm.busNo}번 버스 $alarmType이 취소되었습니다')),
-          );
-          logMessage('${alarm.busNo}번 버스 $alarmType 취소 성공',
-              level: LogLevel.info);
+          // TTS 추적 중단
+          await TtsSwitcher.stopTtsTracking(busNo);
+
+          // 버스 모니터링 서비스 중지
+          await alarmService.stopBusMonitoringService();
+
+          // 알람 상태 갱신
+          await alarmService.loadAlarms();
+          await alarmService.refreshAlarms();
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${alarm.busNo}번 버스 $alarmType이 취소되었습니다')),
+            );
+            logMessage('${alarm.busNo}번 버스 $alarmType 취소 성공',
+                level: LogLevel.info);
+          }
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('${alarm.busNo}번 버스 $alarmType 취소에 문제가 발생했습니다')),
+            SnackBar(content: Text('${alarm.busNo}번 버스 $alarmType 취소에 실패했습니다')),
           );
+          logMessage('${alarm.busNo}번 버스 $alarmType 취소 실패',
+              level: LogLevel.error);
         }
       } catch (e) {
         logMessage('알람 취소 중 오류 발생: $e', level: LogLevel.error);
