@@ -561,22 +561,53 @@ class BusAlertService : Service() {
     fun stopTrackingForRoute(routeId: String, stationId: String? = null, busNo: String? = null, cancelNotification: Boolean = true) {
         Log.i(TAG, "Stopping tracking for route $routeId. Cancel notification: $cancelNotification")
         try {
+            // 1. 추적 작업 취소
             monitoringJobs[routeId]?.cancel("Tracking stopped for route $routeId")
             monitoringJobs.remove(routeId)
+
+            // 2. 추적 정보 저장 (Flutter에 전송하기 위해)
+            val trackingInfo = activeTrackings[routeId]
+            val busNumber = busNo ?: trackingInfo?.busNo ?: ""
+            val stationName = trackingInfo?.stationName ?: ""
+
+            // 3. 추적 목록에서 제거
             activeTrackings.remove(routeId)
             monitoredRoutes.remove(routeId)
 
+            // 4. TTS 추적 중지
             stopTtsTracking(routeId = routeId, stationId = stationId, forceStop = true)
 
+            // 5. 알림 처리
             if (cancelNotification) {
                 if (activeTrackings.isEmpty()) {
+                    // 마지막 추적이 취소된 경우 전체 서비스 중지
+                    Log.i(TAG, "Last tracking canceled. Stopping service completely.")
                     cancelOngoingTracking()
                 } else {
+                    // 다른 추적이 남아있는 경우 알림 업데이트
                     updateForegroundNotification()
                 }
             }
+
+            // 6. Flutter 측에 알림 취소 이벤트 전송
+            try {
+                val context = applicationContext
+                val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
+                intent.putExtra("routeId", routeId)
+                intent.putExtra("busNo", busNumber)
+                intent.putExtra("stationName", stationName)
+                intent.putExtra("source", "native_service")
+                context.sendBroadcast(intent)
+                Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $busNumber, $routeId, $stationName")
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping tracking for route $routeId: ${e.message}", e)
+            // 오류 발생 시에도 서비스 상태 확인
+            if (activeTrackings.isEmpty()) {
+                cancelOngoingTracking()
+            }
         } finally {
             checkAndStopServiceIfNeeded()
         }
@@ -836,17 +867,55 @@ class BusAlertService : Service() {
     fun cancelOngoingTracking() {
         Log.d(TAG, "cancelOngoingTracking called (ID: $ONGOING_NOTIFICATION_ID)")
         try {
+            // 1. 먼저 모든 추적 작업 중지
+            monitoringJobs.values.forEach { it.cancel() }
+            monitoringJobs.clear()
+            activeTrackings.clear()
+            monitoredRoutes.clear()
+
+            // 2. 포그라운드 서비스 중지
             if (isInForeground) {
                 Log.d(TAG, "Service is in foreground, calling stopForeground(STOP_FOREGROUND_REMOVE).")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 isInForeground = false
             }
-            NotificationManagerCompat.from(this).cancel(ONGOING_NOTIFICATION_ID)
-            Log.d(TAG, "Ongoing notification (ID: $ONGOING_NOTIFICATION_ID) cancelled.")
+
+            // 3. 알림 직접 취소 (모든 알림 취소)
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancelAll() // 모든 알림 취소
+            Log.d(TAG, "All notifications cancelled via NotificationManager.")
+
+            // 4. NotificationManagerCompat을 통한 취소 (백업)
+            try {
+                NotificationManagerCompat.from(this).cancelAll() // 모든 알림 취소
+                Log.d(TAG, "All notifications cancelled via NotificationManagerCompat (backup).")
+            } catch (e: Exception) {
+                Log.e(TAG, "NotificationManagerCompat 취소 오류: ${e.message}", e)
+            }
+
+            // 5. Flutter 측에 알림 취소 이벤트 전송 시도
+            try {
+                val context = applicationContext
+                val intent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                context.sendBroadcast(intent)
+                Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
+            }
+
+            // 6. 서비스 중지 요청
+            stopSelf()
+            Log.d(TAG, "Service stop requested from cancelOngoingTracking.")
         } catch (e: Exception) {
             Log.e(TAG, "🚌 Ongoing notification cancellation/Foreground stop error: ${e.message}", e)
             try {
+                // 오류 발생 시 강제 중지 시도
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancelAll()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                isInForeground = false
                 stopSelf()
+                Log.d(TAG, "Force stop attempted after error.")
             } catch (ex: Exception) {
                 Log.e(TAG, "Additional error when trying to stop service: ${ex.message}", ex)
             }
@@ -857,6 +926,7 @@ class BusAlertService : Service() {
         serviceScope.launch {
             Log.i(TAG, "--- BusAlertService stopTracking Starting ---")
             try {
+                // 1. 모든 추적 작업 중지
                 monitoringJobs.values.forEach { it.cancel() }
                 monitoringJobs.clear()
                 stopMonitoringTimer()
@@ -864,17 +934,42 @@ class BusAlertService : Service() {
                 monitoredRoutes.clear()
                 cachedBusInfo.clear()
                 arrivingSoonNotified.clear()
+                activeTrackings.clear() // 추가: 활성 추적 목록 초기화
                 Log.d(TAG, "Monitoring, jobs, and related caches/flags reset.")
+
+                // 2. 모든 알림 직접 취소
+                try {
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.cancelAll()
+                    Log.i(TAG, "모든 알림 직접 취소 완료 (stopTracking)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "알림 취소 오류: ${e.message}", e)
+                }
+
+                // 3. 포그라운드 서비스 중지
                 if (isInForeground) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     isInForeground = false
                     Log.d(TAG, "Foreground service stopped explicitly.")
                 }
-                cancelOngoingTracking()
+
+                // 4. Flutter 측에 알림 취소 이벤트 전송 시도
+                try {
+                    val context = applicationContext
+                    val intent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                    context.sendBroadcast(intent)
+                    Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송 (stopTracking)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
+                }
+
+                // 5. 서비스 중지 요청
                 Log.i("BusAlertService", "All tasks stopped. Service stop requested.")
                 stopSelf()
             } catch (e: Exception) {
                 Log.e(TAG, "Error in stopTracking: ${e.message}", e)
+
+                // 오류 발생 시 강제 중지 시도
                 if (isInForeground) {
                     try {
                         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -884,6 +979,16 @@ class BusAlertService : Service() {
                         Log.e(TAG, "Error stopping foreground service: ${ex.message}", ex)
                     }
                 }
+
+                // 모든 알림 강제 취소 시도
+                try {
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.cancelAll()
+                    Log.i(TAG, "모든 알림 강제 취소 완료 (오류 복구)")
+                } catch (ex: Exception) {
+                    Log.e(TAG, "모든 알림 강제 취소 오류: ${ex.message}", ex)
+                }
+
                 stopSelf()
             } finally {
                 Log.i(TAG, "--- BusAlertService stopTracking Finished ---")

@@ -93,47 +93,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private var bottomSheetBehavior: BottomSheetBehavior<View>? = null
     private var alarmCancelReceiver: BroadcastReceiver? = null
 
-    // 알림 취소 이벤트를 수신하기 위한 BroadcastReceiver
-    private val notificationCancelReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                "com.example.daegu_bus_app.NOTIFICATION_CANCELLED" -> {
-                    val routeId = intent.getStringExtra("routeId") ?: ""
-                    val busNo = intent.getStringExtra("busNo") ?: ""
-                    val stationName = intent.getStringExtra("stationName") ?: ""
-                    val source = intent.getStringExtra("source") ?: ""
-
-                    Log.i(TAG, "알림 취소 이벤트 수신: Bus=$busNo, Route=$routeId, Station=$stationName, Source=$source")
-
-                    // Flutter 측에 알림 취소 이벤트 전송
-                    try {
-                        val alarmCancelData = mapOf(
-                            "busNo" to busNo,
-                            "routeId" to routeId,
-                            "stationName" to stationName,
-                            "source" to source
-                        )
-                        _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
-                        Log.i(TAG, "Flutter 측에 알림 취소 이벤트 전송 완료: $busNo, $routeId")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Flutter 측에 알림 취소 이벤트 전송 오류: ${e.message}")
-                    }
-                }
-
-                "com.example.daegu_bus_app.ALL_TRACKING_CANCELLED" -> {
-                    Log.i(TAG, "모든 추적 취소 이벤트 수신")
-
-                    // Flutter 측에 모든 알림 취소 이벤트 전송
-                    try {
-                        _methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
-                        Log.i(TAG, "Flutter 측에 모든 알림 취소 이벤트 전송 완료")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Flutter 측에 모든 알림 취소 이벤트 전송 오류: ${e.message}")
-                    }
-                }
-            }
-        }
-    }
+    // 알림 취소 이벤트를 수신하기 위한 BroadcastReceiver는 아래에 정의되어 있음
 
     // TTS 중복 방지를 위한 트래킹 맵 (BusAlertService로 이동 예정)
     // private val ttsTracker = ConcurrentHashMap<String, Long>()
@@ -170,6 +130,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 Log.e(TAG, "TTS 초기화 오류: ${e.message}", e)
             }
 
+            // 알림 취소 이벤트 수신을 위한 브로드캐스트 리시버 등록
+            registerNotificationCancelReceiver()
+
             try {
                 // 서비스 시작 및 바인딩
                 val serviceIntent = Intent(this, BusAlertService::class.java)
@@ -182,9 +145,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
             // 권한 요청 처리
             checkAndRequestPermissions()
-
-            // 알람 취소 이벤트 수신을 위한 브로드캐스트 리시버 등록
-            // registerAlarmCancelReceiver()
 
         } catch (e: Exception) {
             Log.e(TAG, "MainActivity onCreate 오류: ${e.message}", e)
@@ -313,11 +273,58 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         try {
                             Log.i(TAG, "Flutter에서 알람/추적 중지 요청: Bus=$busNo, Route=$routeId, Station=$stationName")
 
-                            // NotificationHelper를 사용하여 알림 취소
+                            // 1. 모든 알림 직접 취소 (가장 확실한 방법)
+                            try {
+                                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                notificationManager.cancelAll()
+                                Log.i(TAG, "모든 알림 직접 취소 완료")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "모든 알림 직접 취소 오류: ${e.message}", e)
+                            }
+
+                            // 2. 포그라운드 알림 취소 (직접 호출)
+                            if (busAlertService != null) {
+                                busAlertService?.cancelOngoingTracking()
+                                Log.i(TAG, "포그라운드 알림 직접 취소 완료")
+
+                                // 3. 특정 노선 추적 중지
+                                busAlertService?.stopTrackingForRoute(routeId, stationName, busNo, true)
+                                Log.i(TAG, "특정 노선 추적 중지 완료: $routeId")
+                            } else {
+                                // BusAlertService가 null인 경우 서비스 시작 및 바인딩
+                                try {
+                                    // 서비스 시작 및 바인딩
+                                    val serviceIntent = Intent(this, BusAlertService::class.java)
+                                    startService(serviceIntent)
+                                    bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+                                    Log.d(TAG, "BusAlertService 시작 및 바인딩 요청 완료")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
+                                }
+
+                                // 직접 서비스 인텐트를 보내서 중지 시도
+                                val stopIntent = Intent(this, BusAlertService::class.java).apply {
+                                    action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+                                    putExtra("routeId", routeId)
+                                    putExtra("busNo", busNo)
+                                    putExtra("stationName", stationName)
+                                }
+                                startService(stopIntent)
+                                Log.i(TAG, "특정 노선 추적 중지 인텐트 전송 완료")
+
+                                // 전체 중지 인텐트도 전송 (백업)
+                                val stopAllIntent = Intent(this, BusAlertService::class.java).apply {
+                                    action = BusAlertService.ACTION_STOP_TRACKING
+                                }
+                                startService(stopAllIntent)
+                                Log.i(TAG, "전체 추적 중지 인텐트 전송 완료 (백업)")
+                            }
+
+                            // 4. NotificationHelper를 사용하여 알림 취소 (백업 방법)
                             notificationHelper.cancelBusTrackingNotification(routeId, busNo, stationName)
                             Log.i(TAG, "NotificationHelper를 통한 알림 취소 완료")
 
-                            // Flutter 측에 알림 취소 완료 이벤트 전송
+                            // 5. Flutter 측에 알림 취소 완료 이벤트 전송
                             val alarmCancelData = mapOf(
                                 "busNo" to busNo,
                                 "routeId" to routeId,
@@ -329,6 +336,27 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "알람/추적 중지 처리 오류: ${e.message}", e)
+
+                            // 오류 발생 시에도 알림 취소 시도
+                            try {
+                                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                notificationManager.cancelAll()
+                                Log.i(TAG, "오류 후 모든 알림 강제 취소 완료")
+
+                                // Flutter 측에 알림 취소 완료 이벤트 전송
+                                val alarmCancelData = mapOf(
+                                    "busNo" to busNo,
+                                    "routeId" to routeId,
+                                    "stationName" to stationName
+                                )
+                                _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
+
+                                result.success(true)
+                                return@setMethodCallHandler
+                            } catch (ex: Exception) {
+                                Log.e(TAG, "오류 후 알림 취소 시도 실패: ${ex.message}", ex)
+                            }
+
                             result.error("CANCEL_ERROR", "알람/추적 중지 처리 실패: ${e.message}", null)
                         }
                     }
@@ -836,6 +864,18 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
                 if (busAlertService == null) {
+                    Log.e(TAG, "알림 채널 호출 시 BusAlertService가 null입니다.")
+
+                    // BusAlertService가 null인 경우 서비스 시작 및 바인딩 시도
+                    try {
+                        val serviceIntent = Intent(this, BusAlertService::class.java)
+                        startService(serviceIntent)
+                        bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+                        Log.d(TAG, "BusAlertService 시작 및 바인딩 요청 완료 (알림 채널)")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
+                    }
+
                     result.error("SERVICE_UNAVAILABLE", "알림 서비스가 초기화되지 않았습니다", null)
                     return@setMethodCallHandler
                 }
@@ -979,6 +1019,17 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_CHANNEL).setMethodCallHandler { call, result ->
                 if (busAlertService == null) {
                     Log.e(TAG, "TTS 채널 호출 시 BusAlertService가 null입니다.")
+
+                    // BusAlertService가 null인 경우 서비스 시작 및 바인딩 시도
+                    try {
+                        val serviceIntent = Intent(this, BusAlertService::class.java)
+                        startService(serviceIntent)
+                        bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+                        Log.d(TAG, "BusAlertService 시작 및 바인딩 요청 완료 (TTS 채널)")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
+                    }
+
                     result.error("SERVICE_UNAVAILABLE", "TTS 서비스가 초기화되지 않았습니다.", null)
                     return@setMethodCallHandler
                 }
@@ -1346,21 +1397,64 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
     // 브로드캐스트 리시버 등록 메소드
     private fun registerNotificationCancelReceiver() {
-        val intentFilter = IntentFilter().apply {
-            addAction("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
-            addAction("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
-            // 필요하다면 다른 액션도 추가
-        }
-        // Android 버전에 따른 리시버 등록 방식 분기 (Exported/Not Exported)
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(notificationCancelReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                registerReceiver(notificationCancelReceiver, intentFilter)
+            val intentFilter = IntentFilter().apply {
+                addAction("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
+                addAction("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                // 필요하다면 다른 액션도 추가
             }
-            Log.d(TAG, "NotificationCancelReceiver 등록됨")
+            // Android 버전에 따른 리시버 등록 방식 분기 (Exported/Not Exported)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    registerReceiver(notificationCancelReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
+                } else {
+                    registerReceiver(notificationCancelReceiver, intentFilter)
+                }
+                Log.d(TAG, "NotificationCancelReceiver 등록됨")
+            } catch (e: Exception) {
+                Log.e(TAG, "NotificationCancelReceiver 등록 오류: ${e.message}", e)
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "NotificationCancelReceiver 등록 오류: ${e.message}", e)
+            Log.e(TAG, "알림 취소 이벤트 수신 리시버 등록 오류: ${e.message}", e)
+        }
+    }
+
+    // 알림 취소 이벤트를 수신하는 브로드캐스트 리시버
+    private val notificationCancelReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            try {
+                val action = intent.action
+                Log.d(TAG, "NotificationCancelReceiver: 액션 수신: $action")
+
+                when (action) {
+                    "com.example.daegu_bus_app.NOTIFICATION_CANCELLED" -> {
+                        val routeId = intent.getStringExtra("routeId") ?: ""
+                        val busNo = intent.getStringExtra("busNo") ?: ""
+                        val stationName = intent.getStringExtra("stationName") ?: ""
+                        val source = intent.getStringExtra("source") ?: "unknown"
+
+                        Log.i(TAG, "알림 취소 이벤트 수신: Bus=$busNo, Route=$routeId, Station=$stationName, Source=$source")
+
+                        // Flutter 측에 알림 취소 이벤트 전송
+                        val alarmCancelData = mapOf(
+                            "busNo" to busNo,
+                            "routeId" to routeId,
+                            "stationName" to stationName
+                        )
+                        _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
+                        Log.i(TAG, "Flutter 측에 알람 취소 알림 전송 완료 (From BroadcastReceiver)")
+                    }
+                    "com.example.daegu_bus_app.ALL_TRACKING_CANCELLED" -> {
+                        Log.i(TAG, "모든 추적 취소 이벤트 수신")
+
+                        // Flutter 측에 모든 알림 취소 이벤트 전송
+                        _methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                        Log.i(TAG, "Flutter 측에 모든 알람 취소 알림 전송 완료")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 취소 이벤트 처리 중 오류: ${e.message}", e)
+            }
         }
     }
 
