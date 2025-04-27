@@ -7,6 +7,7 @@ import '../models/alarm_data.dart';
 import '../main.dart' show logMessage, LogLevel;
 import '../services/notification_service.dart';
 import '../utils/tts_switcher.dart';
+import '../services/api_service.dart';
 
 class ActiveAlarmPanel extends StatefulWidget {
   const ActiveAlarmPanel({super.key});
@@ -71,32 +72,51 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
         return;
       }
 
-      // 정기적인 알람 데이터 갱신 설정 (2초마다)
-      if (mounted) {
-        Future.delayed(const Duration(seconds: 2), () async {
-          if (!mounted) return;
+      // 30초마다 실시간 버스 정보 업데이트
+      Timer.periodic(const Duration(seconds: 30), (timer) async {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
 
-          // 알람 데이터 갱신
-          await alarmService.loadAlarms();
+        try {
+          // 활성화된 알람들의 실시간 정보 업데이트
+          for (var alarm in alarmService.activeAlarms) {
+            if (!mounted) break;
 
-          // 캐시된 버스 정보 확인 및 업데이트
-          if (alarmService.activeAlarms.isNotEmpty) {
-            final firstAlarm = alarmService.activeAlarms.first;
-            final cachedBusInfo = alarmService.getCachedBusInfo(
-              firstAlarm.busNo,
-              firstAlarm.routeId,
+            // API를 통해 실시간 버스 도착 정보 가져오기
+            final updatedBusArrivals = await ApiService.getBusArrivalByRouteId(
+              alarm.routeId.split('_').last,
+              alarm.routeId,
             );
 
-            if (cachedBusInfo != null) {
+            if (updatedBusArrivals.isNotEmpty &&
+                updatedBusArrivals[0].busInfoList.isNotEmpty) {
+              final firstBus = updatedBusArrivals[0].busInfoList.first;
+
+              // 캐시 업데이트
+              alarmService.updateBusInfoCache(
+                alarm.busNo,
+                alarm.routeId,
+                firstBus,
+                firstBus.getRemainingMinutes(),
+              );
+
               logMessage(
-                  '캐시된 버스 정보 발견: ${firstAlarm.busNo}, 남은 시간: ${cachedBusInfo.getRemainingMinutes()}분',
-                  level: LogLevel.debug);
+                '실시간 버스 정보 업데이트: ${alarm.busNo}번, ${firstBus.getRemainingMinutes()}분 후 도착',
+                level: LogLevel.debug,
+              );
             }
           }
 
-          if (mounted) setState(() {}); // UI 갱신
-        });
-      }
+          // UI 갱신
+          if (mounted) {
+            setState(() {});
+          }
+        } catch (e) {
+          logMessage('실시간 버스 정보 업데이트 오류: $e', level: LogLevel.error);
+        }
+      });
 
       // 버스 이동 애니메이션 타이머 설정
       _startProgressAnimation();

@@ -38,34 +38,30 @@ class RouteTracker(
                     trackingInfo.consecutiveErrors = 0
 
                     // 2. Find the next relevant bus
-                    val firstBus = arrivals.firstOrNull { it.estimatedTime != "운행종료" }
+                    val firstBus = arrivals.firstOrNull { !it.isOutOfService }
 
                     // 3. Update TrackingInfo state
-                    trackingInfo.lastBusInfo = firstBus
-                    var remainingMinutes = when {
-                        firstBus?.estimatedTime == "곧 도착" -> 0
-                        firstBus?.estimatedTime == "운행종료" -> -1
-                        firstBus?.estimatedTime?.contains("분") == true -> {
-                            firstBus.estimatedTime.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
-                        }
-                        else -> Int.MAX_VALUE
+                    if (firstBus != null) {
+                        trackingInfo.lastBusInfo = firstBus
+                        val remainingMinutes = firstBus.getRemainingMinutes()
+                        Log.d(TAG, "[${trackingInfo.routeId}] Updated bus info - Remaining time: $remainingMinutes min, Current station: ${firstBus.currentStation}")
+
+                        // 4. Trigger updates/notifications via callback
+                        onUpdate(trackingInfo) // Notify BusAlertService of the update
+
+                        // 5. Trigger TTS if needed
+                        triggerTTSIfNeeded(firstBus, remainingMinutes)
+
+                        // 6. Calculate delay and wait
+                        val delayTime = calculateDelay(remainingMinutes)
+                        Log.d(TAG, "[${trackingInfo.routeId}] Delaying for ${delayTime}ms")
+                        delay(delayTime)
+                    } else {
+                        Log.w(TAG, "[${trackingInfo.routeId}] No available buses found. Continuing monitoring for now.")
+                        trackingInfo.lastBusInfo = null
+                        onUpdate(trackingInfo) // Update to show no available buses
+                        delay(30000L) // Wait 30 seconds before next check
                     }
-
-                    // 4. Trigger updates/notifications via callback
-                    onUpdate(trackingInfo) // Notify BusAlertService of the update
-
-                    // 5. Trigger TTS if needed
-                    triggerTTSIfNeeded(firstBus, remainingMinutes)
-
-                    // 6. Check if tracking should stop (e.g., bus passed, no more buses)
-                    if (firstBus == null) {
-                         Log.w(TAG, "[${trackingInfo.routeId}] No available buses found. Continuing monitoring for now.")
-                    }
-
-                    // 7. Calculate delay and wait
-                    val delayTime = calculateDelay(remainingMinutes)
-                    Log.d(TAG, "[${trackingInfo.routeId}] Delaying for ${delayTime}ms")
-                    delay(delayTime)
 
                 } catch (e: CancellationException) {
                     Log.i(TAG, "[${trackingInfo.routeId}] Monitoring job cancelled.")
@@ -92,10 +88,10 @@ class RouteTracker(
                 }
             }
             Log.i(TAG, "[${trackingInfo.routeId}] Monitoring loop finished (isActive=$isActive, coroutineContext.isActive=${coroutineContext.isActive})")
-             // If the loop finishes naturally and wasn't stopped externally, call onStop
-             if (isActive) { // Loop finished without external cancellation or max errors
-                 onStop(trackingInfo.routeId)
-             }
+            // If the loop finishes naturally and wasn't stopped externally, call onStop
+            if (isActive) { // Loop finished without external cancellation or max errors
+                onStop(trackingInfo.routeId)
+            }
         }
     }
 

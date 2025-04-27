@@ -531,7 +531,7 @@ class BusAlertService : Service() {
             // 추적 목록에 추가
             activeTrackings[effectiveRouteId] = trackingInfo
             Log.d(TAG, "Added bus tracking info: $busNo at $stationName (ID: $effectiveRouteId)")
-        } else if (isUpdate) {
+        } else {
             // 기존 추적 정보 업데이트
             val trackingInfo = activeTrackings[effectiveRouteId]
             if (trackingInfo != null && remainingMinutes >= 0) {
@@ -542,7 +542,7 @@ class BusAlertService : Service() {
                     remainingStops = trackingInfo.lastBusInfo?.remainingStops ?: "0"
                 )
                 trackingInfo.lastBusInfo = busInfo
-                Log.d(TAG, "Updated bus tracking info: $busNo, ${busInfo.estimatedTime}")
+                Log.d(TAG, "Updated bus tracking info: $busNo, ${busInfo.estimatedTime}, currentStation: ${busInfo.currentStation}")
             }
         }
 

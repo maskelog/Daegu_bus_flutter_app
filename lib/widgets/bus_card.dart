@@ -122,19 +122,30 @@ class _BusCardState extends State<BusCard> {
               firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
           logMessage('BusCard - 업데이트된 남은 시간: $remainingTime',
               level: LogLevel.debug);
-          _updateAlarmServiceCache();
 
-          final bool hasAlarm = _alarmService.hasAlarm(
+          // AlarmService 캐시 업데이트 - 알람이 있는 경우에만
+          final hasAlarm = _alarmService.hasAlarm(
             widget.busArrival.routeNo,
             widget.stationName ?? '정류장 정보 없음',
             widget.busArrival.routeId,
           );
 
-          if (hasAlarm &&
-              !hasBoarded &&
-              remainingTime <= 3 &&
-              remainingTime > 0) {
-            _playAlarm();
+          if (hasAlarm) {
+            _alarmService.updateBusInfoCache(
+              widget.busArrival.routeNo,
+              widget.busArrival.routeId,
+              firstBus,
+              remainingTime,
+            );
+            logMessage(
+              '버스 카드 캐시 업데이트: ${widget.busArrival.routeNo}번, $remainingTime분 후 도착',
+              level: LogLevel.debug,
+            );
+
+            // 알람이 있고 곧 도착하는 경우 알람 재생
+            if (!hasBoarded && remainingTime <= 3 && remainingTime > 0) {
+              _playAlarm();
+            }
           }
 
           if (!hasBoarded &&
@@ -153,7 +164,6 @@ class _BusCardState extends State<BusCard> {
       logMessage('버스 도착 정보 업데이트 오류: $e');
       setState(() {
         _isUpdating = false;
-        // 오류 발생 시 기존 정보 유지, 화면에 오류 메시지 표시하지 않음
       });
     }
   }
