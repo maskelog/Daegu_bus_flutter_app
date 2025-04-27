@@ -163,33 +163,18 @@ class BusAlertService : Service() {
             }
             ACTION_STOP_TRACKING -> {
                 Log.i(TAG, "ACTION_STOP_TRACKING: Stopping all tracking.")
-
-                // Flutter 측에 알림 취소 이벤트 전송 시도 (모든 활성 추적에 대해)
-                try {
-                    val context = applicationContext
-                    val activeTrackingsCopy = HashMap(activeTrackings) // 복사본 생성
-
-                    // 각 활성 추적에 대해 Flutter에 취소 이벤트 전송
-                    for ((routeId, trackingInfo) in activeTrackingsCopy) {
-                        val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
-                        intent.putExtra("routeId", routeId)
-                        intent.putExtra("busNo", trackingInfo.busNo)
-                        intent.putExtra("stationName", trackingInfo.stationName)
-                        intent.putExtra("source", "notification_button")
-                        context.sendBroadcast(intent)
-                        Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: ${trackingInfo.busNo}, $routeId, ${trackingInfo.stationName}")
-                    }
-
-                    // 전체 취소 이벤트도 전송
-                    val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
-                    context.sendBroadcast(allCancelIntent)
-                    Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
-                } catch (e: Exception) {
-                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
+                
+                // 현재 추적 중인 모든 버스에 대해 취소 이벤트 발송
+                activeTrackings.forEach { (routeId, info) ->
+                    sendCancellationBroadcast(info.busNo, routeId, info.stationName)
                 }
-
-                // 전체 추적 중지 및 서비스 종료
-                stopAllTrackingAndService()
+                
+                // 전체 취소 이벤트 발송
+                sendAllCancellationBroadcast()
+                
+                // 모든 추적 작업과 서비스 중지
+                Log.i(TAG, "Stopping all tracking jobs and the service.")
+                stopAllTracking()
             }
             ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> {
                 val routeId = intent.getStringExtra("routeId")
@@ -210,7 +195,7 @@ class BusAlertService : Service() {
                     // 알림이 지속적인 추적 알림인 경우 서비스도 중지
                     if (notificationId == ONGOING_NOTIFICATION_ID) {
                         Log.i(TAG, "지속적인 추적 알림 취소. 서비스 중지 시도.")
-                        stopAllTrackingAndService()
+                        stopAllTracking()
                     }
 
                     // Flutter 측에 알림 취소 이벤트 전송 시도
@@ -561,14 +546,14 @@ class BusAlertService : Service() {
     fun stopTrackingForRoute(routeId: String, stationId: String? = null, busNo: String? = null, cancelNotification: Boolean = true) {
         Log.i(TAG, "Stopping tracking for route $routeId. Cancel notification: $cancelNotification")
         try {
-            // 1. 추적 작업 취소
-            monitoringJobs[routeId]?.cancel("Tracking stopped for route $routeId")
-            monitoringJobs.remove(routeId)
-
-            // 2. 추적 정보 저장 (Flutter에 전송하기 위해)
+            // 1. 추적 정보 저장 (Flutter에 전송하기 위해)
             val trackingInfo = activeTrackings[routeId]
             val busNumber = busNo ?: trackingInfo?.busNo ?: ""
             val stationName = trackingInfo?.stationName ?: ""
+
+            // 2. 추적 작업 취소
+            monitoringJobs[routeId]?.cancel("Tracking stopped for route $routeId")
+            monitoringJobs.remove(routeId)
 
             // 3. 추적 목록에서 제거
             activeTrackings.remove(routeId)
@@ -589,19 +574,34 @@ class BusAlertService : Service() {
                 }
             }
 
-            // 6. Flutter 측에 알림 취소 이벤트 전송
+            // 6. Flutter 측에 알림 취소 이벤트 전송 (브로드캐스트 방식)
             try {
-                val context = applicationContext
-                val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
-                intent.putExtra("routeId", routeId)
-                intent.putExtra("busNo", busNumber)
-                intent.putExtra("stationName", stationName)
-                intent.putExtra("source", "native_service")
-                context.sendBroadcast(intent)
+                // 개별 알림 취소 이벤트
+                val cancelIntent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED").apply {
+                    putExtra("routeId", routeId)
+                    putExtra("busNo", busNumber)
+                    putExtra("stationName", stationName)
+                    putExtra("source", "native_service")
+                }
+                applicationContext.sendBroadcast(cancelIntent)
                 Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $busNumber, $routeId, $stationName")
+
+                // 모든 추적이 취소된 경우 전체 취소 이벤트도 전송
+                if (activeTrackings.isEmpty()) {
+                    val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                    applicationContext.sendBroadcast(allCancelIntent)
+                    Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
+                }
+
+                // 추가: 명시적으로 NotificationManager를 통해 알림 취소
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                Log.d(TAG, "알림 직접 취소 완료: ID=$ONGOING_NOTIFICATION_ID")
+
             } catch (e: Exception) {
                 Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
             }
+
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping tracking for route $routeId: ${e.message}", e)
             // 오류 발생 시에도 서비스 상태 확인
@@ -671,22 +671,63 @@ class BusAlertService : Service() {
         monitoringTimer = null
     }
 
-    private fun stopAllTrackingAndService() {
-        Log.i(TAG, "Stopping all tracking jobs and the service.")
-        val routeIdsToStop = ArrayList(activeTrackings.keys)
-        routeIdsToStop.forEach { routeId ->
-            stopTrackingForRoute(routeId, cancelNotification = false)
+    private fun stopAllTracking() {
+        Log.i(TAG, "Stopping all tracking.")
+        
+        // 현재 추적 중인 모든 버스에 대해 취소 이벤트 발송
+        activeTrackings.forEach { (routeId, info) ->
+            sendCancellationBroadcast(info.busNo, routeId, info.stationName)
         }
+        
+        // 전체 취소 이벤트 발송
+        sendAllCancellationBroadcast()
+        
+        // 모든 추적 작업과 서비스 중지
+        monitoringJobs.values.forEach { it.cancel() }
         monitoringJobs.clear()
+        
+        // 모니터링 타이머 중지
+        stopMonitoringTimer()
+        
+        // TTS 추적 중지
+        stopTtsTracking(forceStop = true)
+        
+        // 모든 데이터 초기화
         activeTrackings.clear()
         monitoredRoutes.clear()
         cachedBusInfo.clear()
         arrivingSoonNotified.clear()
-
-        stopTtsTracking(forceStop = true)
-        stopMonitoringTimer()
+        
+        // 알림 취소
         cancelOngoingTracking()
-        stopSelf()
+        
+        // 서비스가 유휴 상태인지 확인하고 중지
+        checkAndStopService()
+    }
+
+    private fun stopInternalTtsTracking(routeId: String) {
+        if (routeId == "all") {
+            isTtsTrackingActive = false
+            ttsEngine?.stop()
+            Log.i(TAG, "모든 TTS 추적 중지")
+        } else {
+            // 해당 노선에 대한 TTS 추적만 중지
+            ttsEngine?.stop()
+            Log.i(TAG, "노선 $routeId 에 대한 TTS 추적 중지")
+            
+            // 다른 활성 추적이 없으면 TTS 전체 중지
+            if (activeTrackings.isEmpty()) {
+                isTtsTrackingActive = false
+                ttsEngine?.stop()
+                Log.i(TAG, "남은 추적이 없어 TTS 전체 중지")
+            }
+        }
+        
+        // TTS 서비스도 중지
+        stopTTSServiceTracking(routeId)
+        
+        // 서비스 상태 확인
+        checkAndStopServiceIfNeeded()
     }
 
     private fun calculateDelay(remainingMinutes: Int?): Long {
@@ -1010,6 +1051,72 @@ class BusAlertService : Service() {
     private fun stopTrackingIfIdle() {
         serviceScope.launch {
             checkAndStopServiceIfNeeded()
+        }
+    }
+
+    private fun sendCancellationBroadcast(busNo: String, routeId: String, stationName: String) {
+        try {
+            val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED").apply {
+                putExtra("busNo", busNo)
+                putExtra("routeId", routeId)
+                putExtra("stationName", stationName)
+                putExtra("source", "native_service")
+                flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
+            }
+            sendBroadcast(intent)
+            Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $busNo, $routeId, $stationName")
+
+            // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+            try {
+                val context = applicationContext
+                if (context is MainActivity) {
+                    context._methodChannel?.invokeMethod("onAlarmCanceledFromNotification", mapOf(
+                        "busNo" to busNo,
+                        "routeId" to routeId,
+                        "stationName" to stationName
+                    ))
+                    Log.d(TAG, "Flutter 메서드 채널로 알림 취소 이벤트 직접 전송 완료")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Flutter 메서드 채널 전송 오류: ${e.message}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
+        }
+    }
+
+    private fun sendAllCancellationBroadcast() {
+        try {
+            val intent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED").apply {
+                flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
+            }
+            sendBroadcast(intent)
+            Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
+
+            // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+            try {
+                val context = applicationContext
+                if (context is MainActivity) {
+                    context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                    Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Flutter 메서드 채널 전송 오류: ${e.message}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "모든 알람 취소 이벤트 전송 오류: ${e.message}")
+        }
+    }
+
+    private fun checkAndStopService() {
+        if (activeTrackings.isEmpty() && monitoredRoutes.isEmpty() && !isTtsTrackingActive) {
+            Log.i(TAG, "Service idle. Requesting stop.")
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (activeTrackings.isEmpty() && monitoredRoutes.isEmpty() && !isTtsTrackingActive) {
+                    stopSelf()
+                    Log.i(TAG, "Service stopped after delay check.")
+                }
+            }, 1000) // 1초 후 다시 확인
         }
     }
 }

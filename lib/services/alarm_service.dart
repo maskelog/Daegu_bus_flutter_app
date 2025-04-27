@@ -97,23 +97,53 @@ class AlarmService extends ChangeNotifier {
           final String routeId = args['routeId'] ?? '';
           final String stationName = args['stationName'] ?? '';
 
-          logMessage(
-              'ℹ️ 네이티브에서 알람 취소 이벤트 수신 완료: $busNo, $stationName, $routeId. (Flutter 상태는 cancelAlarmByRoute에서 이미 처리됨)',
+          logMessage('ℹ️ 네이티브에서 알람 취소 이벤트 수신: $busNo, $stationName, $routeId',
               level: LogLevel.info);
 
-          // Optional: Double-check state or perform minor cleanup if needed,
-          // but the main removal logic is now synchronous in cancelAlarmByRoute.
-          // Example: Ensure tracking mode is correctly off if no alarms left.
-          if (_activeAlarms.isEmpty && _isInTrackingMode) {
-            _isInTrackingMode = false;
-            _trackedRouteId = null; // Ensure trackedRouteId is also cleared
-            logMessage("네이티브 이벤트 수신 후 추적 모드 강제 비활성화",
-                level: LogLevel
-                    .debug); // "Forcibly deactivated tracking mode after receiving event from native"
-            notifyListeners(); // Notify if state was potentially inconsistent
+          // 알람이 존재하는지 확인
+          final String alarmKey = "${busNo}_${stationName}_$routeId";
+          if (_activeAlarms.containsKey(alarmKey)) {
+            // 알람이 존재하면 Flutter 측에서도 취소 처리
+            logMessage('🚌 네이티브 알림 취소 이벤트에 따라 Flutter 알람 취소 처리 시작: $alarmKey',
+                level: LogLevel.info);
+
+            // cancelAlarmByRoute 호출하여 Flutter 측 상태 업데이트
+            await cancelAlarmByRoute(busNo, stationName, routeId);
+
+            logMessage('✅ 네이티브 알림 취소 이벤트에 따른 Flutter 알람 취소 완료',
+                level: LogLevel.info);
+          } else {
+            // 이미 취소된 알람이거나 존재하지 않는 알람
+            logMessage(
+                '⚠️ 네이티브 알림 취소 이벤트 수신했으나 해당 알람($alarmKey)이 Flutter 활성 알람 목록에 없음',
+                level: LogLevel.warning);
+
+            // 상태 확인 및 정리
+            if (_activeAlarms.isEmpty && _isInTrackingMode) {
+              _isInTrackingMode = false;
+              _trackedRouteId = null;
+              logMessage("네이티브 이벤트 수신 후 추적 모드 강제 비활성화", level: LogLevel.debug);
+              notifyListeners();
+            }
           }
 
           return true; // Acknowledge event received
+        case 'onAllAlarmsCanceled':
+          // 모든 알람 취소 이벤트 처리
+          logMessage('🚌 네이티브에서 모든 알람 취소 이벤트 수신', level: LogLevel.info);
+
+          // 모든 활성 알람 제거
+          if (_activeAlarms.isNotEmpty) {
+            _activeAlarms.clear();
+            _cachedBusInfo.clear();
+            _isInTrackingMode = false;
+            _trackedRouteId = null;
+            await _saveAlarms();
+            logMessage('✅ 모든 알람 취소 완료 (네이티브 이벤트에 의해)', level: LogLevel.info);
+            notifyListeners();
+          }
+
+          return true;
         default:
           // Ensure other method calls are still handled if any exist
           logMessage('Unhandled method call: ${call.method}',

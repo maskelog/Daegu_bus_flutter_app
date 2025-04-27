@@ -70,6 +70,10 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private var busAlertService: BusAlertService? = null
     private lateinit var notificationHelper: NotificationHelper
 
+    // Make _methodChannel public for BusAlertService access
+    var _methodChannel: MethodChannel? = null
+        private set
+
     // 서비스 바인딩을 위한 커넥션 객체
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -88,7 +92,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val LOCATION_PERMISSION_REQUEST_CODE = 124
     private lateinit var audioManager: AudioManager
     private lateinit var tts: TextToSpeech
-    private var _methodChannel: MethodChannel? = null
     private var bottomSheetDialog: BottomSheetDialog? = null
     private var bottomSheetBehavior: BottomSheetBehavior<View>? = null
     private var alarmCancelReceiver: BroadcastReceiver? = null

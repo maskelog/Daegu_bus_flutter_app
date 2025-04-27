@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -251,6 +253,26 @@ class NotificationHandler(private val context: Context) {
          try {
              val notificationManager = NotificationManagerCompat.from(context)
              notificationManager.cancel(id)
+
+             // 진행 중인 추적 알림인 경우 BusAlertService에도 알림
+             if (id == ONGOING_NOTIFICATION_ID) {
+                 // 1. 서비스에 중지 요청 전송
+                 val stopIntent = Intent(context, BusAlertService::class.java).apply {
+                     action = BusAlertService.ACTION_STOP_TRACKING
+                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                 }
+                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                     context.startForegroundService(stopIntent)
+                 } else {
+                     context.startService(stopIntent)
+                 }
+                 Log.d(TAG, "Sent stop tracking request to BusAlertService")
+
+                 // 2. 전체 취소 이벤트 브로드캐스트
+                 val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                 context.sendBroadcast(allCancelIntent)
+                 Log.d(TAG, "Sent ALL_TRACKING_CANCELLED broadcast")
+             }
          } catch (e: Exception) {
              Log.e(TAG, "Error cancelling notification ID $id: ${e.message}", e)
          }
@@ -258,14 +280,61 @@ class NotificationHandler(private val context: Context) {
 
      fun cancelOngoingTrackingNotification() {
          Log.d(TAG, "Canceling ongoing tracking notification ID: $ONGOING_NOTIFICATION_ID")
-         cancelNotification(ONGOING_NOTIFICATION_ID)
+         try {
+             // 1. 알림 직접 취소
+             val notificationManager = NotificationManagerCompat.from(context)
+             notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+
+             // 2. BusAlertService에 중지 요청
+             val stopIntent = Intent(context, BusAlertService::class.java).apply {
+                 action = BusAlertService.ACTION_STOP_TRACKING
+                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
+             }
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                 context.startForegroundService(stopIntent)
+             } else {
+                 context.startService(stopIntent)
+             }
+             Log.d(TAG, "Sent stop tracking request to BusAlertService")
+
+             // 3. 전체 취소 이벤트 브로드캐스트 (즉시)
+             val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+             context.sendBroadcast(allCancelIntent)
+             Log.d(TAG, "Sent ALL_TRACKING_CANCELLED broadcast")
+
+             // 4. 지연된 두 번째 브로드캐스트 (서비스 정리 후)
+             Handler(Looper.getMainLooper()).postDelayed({
+                 context.sendBroadcast(allCancelIntent)
+                 Log.d(TAG, "Sent delayed ALL_TRACKING_CANCELLED broadcast")
+             }, 500)
+         } catch (e: Exception) {
+             Log.e(TAG, "Error cancelling ongoing tracking notification: ${e.message}", e)
+         }
      }
 
      fun cancelAllNotifications() {
          Log.d(TAG, "Request to cancel ALL notifications")
          try {
+             // 1. 모든 알림 직접 취소
              val notificationManager = NotificationManagerCompat.from(context)
              notificationManager.cancelAll()
+
+             // 2. BusAlertService에 중지 요청
+             val stopIntent = Intent(context, BusAlertService::class.java).apply {
+                 action = BusAlertService.ACTION_STOP_TRACKING
+             }
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                 context.startForegroundService(stopIntent)
+             } else {
+                 context.startService(stopIntent)
+             }
+             Log.d(TAG, "Sent stop tracking request to BusAlertService")
+
+             // 3. 전체 취소 이벤트 브로드캐스트
+             val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+             context.sendBroadcast(allCancelIntent)
+             Log.d(TAG, "Sent ALL_TRACKING_CANCELLED broadcast")
+
          } catch (e: Exception) {
              Log.e(TAG, "Error cancelling all notifications: ${e.message}", e)
          }
