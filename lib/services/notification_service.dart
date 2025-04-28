@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +9,91 @@ import 'package:daegu_bus_app/utils/tts_switcher.dart' show TtsSwitcher;
 
 /// NotificationService: 네이티브 BusAlertService와 통신하는 Flutter 서비스
 class NotificationService {
+  // ===== [실시간 자동 알람 갱신용 상태 및 Timer 추가] =====
+  Timer? _autoAlarmTimer;
+  int? _currentAutoAlarmId;
+
+  // 실시간 버스 정보 업데이트를 위한 타이머
+  Timer? _busUpdateTimer;
+  String? _currentBusNo;
+  String? _currentStationName;
+  String? _currentRouteId;
+  String? _currentStationId;
+
+  /// 1분마다 실시간 버스 정보를 가져와 알림을 갱신하는 주기적 타이머 시작
+  void startAutoAlarmUpdates({
+    required int id,
+    required String busNo,
+    required String stationName,
+    required String routeId,
+  }) {
+    stopAutoAlarmUpdates(); // 기존 타이머가 있다면 중지
+    _currentAutoAlarmId = id;
+    _currentBusNo = busNo;
+    _currentStationName = stationName;
+    _currentRouteId = routeId;
+    // 즉시 1회 실행 후 1분마다 반복
+    _updateAutoAlarmNotification();
+    _autoAlarmTimer = Timer.periodic(const Duration(minutes: 1), (_) async {
+      await _updateAutoAlarmNotification();
+    });
+    debugPrint('🔄 실시간 자동 알람 갱신 타이머 시작: $busNo ($stationName)');
+  }
+
+  /// 실시간 자동 알람 갱신 타이머 중지
+  void stopAutoAlarmUpdates() {
+    _autoAlarmTimer?.cancel();
+    _autoAlarmTimer = null;
+    _currentAutoAlarmId = null;
+    _currentBusNo = null;
+    _currentStationName = null;
+    _currentRouteId = null;
+    debugPrint('⏹️ 실시간 자동 알람 갱신 타이머 중지');
+  }
+
+  static const MethodChannel _stationTrackingChannel =
+      MethodChannel('com.example.daegu_bus_app/station_tracking');
+
+  /// 실시간 버스 정보를 fetch하여 알림 갱신
+  Future<void> _updateAutoAlarmNotification() async {
+    if (_currentAutoAlarmId == null ||
+        _currentBusNo == null ||
+        _currentStationName == null ||
+        _currentRouteId == null) {
+      debugPrint('⚠️ 자동 알람 정보 부족으로 갱신 중단');
+      stopAutoAlarmUpdates();
+      return;
+    }
+    try {
+      final result = await _stationTrackingChannel.invokeMethod('getBusInfo', {
+        'routeId': _currentRouteId,
+        'stationName': _currentStationName,
+      });
+      Map<String, dynamic> info;
+      if (result is String) {
+        info = Map<String, dynamic>.from(jsonDecode(result));
+      } else {
+        info = Map<String, dynamic>.from(result);
+      }
+      int updatedRemainingMinutes = info['remainingMinutes'] ?? 0;
+      String? updatedCurrentStation = info['currentStation'];
+
+      await showAutoAlarmNotification(
+        id: _currentAutoAlarmId!,
+        busNo: _currentBusNo!,
+        stationName: _currentStationName!,
+        remainingMinutes: updatedRemainingMinutes,
+        routeId: _currentRouteId,
+        isAutoAlarm: true,
+        currentStation: updatedCurrentStation,
+      );
+      debugPrint('🔄 실시간 자동 알람 노티 갱신 완료');
+    } catch (e) {
+      debugPrint('❌ 실시간 자동 알람 갱신 오류: $e');
+    }
+  }
+  // ===== [END: 실시간 자동 알람 갱신용 추가] =====
+
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
@@ -42,6 +129,13 @@ class NotificationService {
     bool isAutoAlarm = true, // 기본값은 true로 설정
     String? currentStation, // 버스 현재 위치 정보 추가
   }) async {
+    // 알림이 취소되었으면 실시간 갱신도 중단
+    final prefs = await SharedPreferences.getInstance();
+    final isAlarmCancelled = prefs.getBool('alarm_cancelled_$id') ?? false;
+    if (isAlarmCancelled) {
+      stopAutoAlarmUpdates();
+    }
+
     try {
       debugPrint(
           '🔔 자동 알람 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, ID: $id');
@@ -225,6 +319,9 @@ class NotificationService {
   /// 지속적인 추적 알림 취소
   Future<bool> cancelOngoingTracking() async {
     try {
+      // 0. 실시간 버스 정보 업데이트 타이머 중지
+      _stopRealTimeBusUpdates();
+
       // 1. 기존 방식: 'cancelOngoingTracking' 메서드 호출
       final bool result = await _channel.invokeMethod('cancelOngoingTracking');
 
@@ -245,6 +342,9 @@ class NotificationService {
       } catch (e) {
         debugPrint('🚌 버스 추적 서비스 중지 요청 중 오류: ${e.toString()}');
       }
+
+      // 4. 자동 알람 업데이트 타이머도 중지
+      stopAutoAlarmUpdates();
 
       debugPrint('🚌 모든 지속적인 추적 알림 취소 시도 완료');
       return result;
@@ -280,10 +380,18 @@ class NotificationService {
   }) async {
     try {
       debugPrint(
-          '🔔 지속적인 버스 추적 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, routeId: $routeId');
+          '🔔 지속적인 버스 추적 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, routeId: $routeId, 현재 위치: $currentStation');
 
       // 알림 ID 생성 (버스 번호와 정류장 이름으로)
       final int notificationId = _generateNotificationId(busNo, stationName);
+
+      // 실시간 버스 정보 업데이트를 위한 타이머 시작
+      _startRealTimeBusUpdates(
+        busNo: busNo,
+        stationName: stationName,
+        routeId: routeId,
+        stationId: routeId?.split('_').lastOrNull,
+      );
 
       final bool result =
           await _channel.invokeMethod('showOngoingBusTracking', {
@@ -309,6 +417,93 @@ class NotificationService {
     } on PlatformException catch (e) {
       debugPrint('🔔 지속적인 버스 추적 알림 표시 오류: ${e.message}');
       return false;
+    }
+  }
+
+  // 실시간 버스 정보 업데이트 관련 변수는 클래스 상단에 이미 선언되어 있음
+
+  // 실시간 버스 정보 업데이트 타이머 시작
+  void _startRealTimeBusUpdates({
+    required String busNo,
+    required String stationName,
+    String? routeId,
+    String? stationId,
+  }) {
+    // 기존 타이머 중지
+    _stopRealTimeBusUpdates();
+
+    // 정보 저장
+    _currentBusNo = busNo;
+    _currentStationName = stationName;
+    _currentRouteId = routeId;
+    _currentStationId = stationId;
+
+    // 타이머 시작 (1분마다 업데이트)
+    _busUpdateTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _updateBusInfo();
+    });
+
+    // 즉시 한 번 업데이트
+    _updateBusInfo();
+
+    debugPrint('🚌 실시간 버스 정보 업데이트 타이머 시작: $busNo, $stationName');
+  }
+
+  // 실시간 버스 정보 업데이트 타이머 중지
+  void _stopRealTimeBusUpdates() {
+    _busUpdateTimer?.cancel();
+    _busUpdateTimer = null;
+    _currentBusNo = null;
+    _currentStationName = null;
+    _currentRouteId = null;
+    _currentStationId = null;
+    debugPrint('🚌 실시간 버스 정보 업데이트 타이머 중지');
+  }
+
+  // 실시간 버스 정보 업데이트
+  Future<void> _updateBusInfo() async {
+    if (_currentBusNo == null ||
+        _currentStationName == null ||
+        _currentRouteId == null ||
+        _currentStationId == null) {
+      debugPrint('⚠️ 버스 정보 업데이트 실패: 필요한 정보가 없습니다');
+      return;
+    }
+
+    try {
+      // 버스 정보 조회
+      final result = await _stationTrackingChannel.invokeMethod('getBusInfo', {
+        'routeId': _currentRouteId,
+        'stationId': _currentStationId,
+      });
+
+      // 결과 파싱
+      Map<String, dynamic> info;
+      if (result is String) {
+        info = Map<String, dynamic>.from(jsonDecode(result));
+      } else {
+        info = Map<String, dynamic>.from(result);
+      }
+
+      // 정보 추출
+      int remainingMinutes = info['remainingMinutes'] ?? 0;
+      String? currentStation = info['currentStation'];
+
+      // 알림 업데이트
+      await _channel.invokeMethod('showOngoingBusTracking', {
+        'busNo': _currentBusNo,
+        'stationName': _currentStationName,
+        'remainingMinutes': remainingMinutes,
+        'currentStation': currentStation,
+        'routeId': _currentRouteId,
+        'isUpdate': true,
+        'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
+      });
+
+      debugPrint(
+          '🚌 버스 정보 업데이트 완료: $_currentBusNo, $remainingMinutes분, 현재 위치: $currentStation');
+    } catch (e) {
+      debugPrint('❌ 버스 정보 업데이트 오류: $e');
     }
   }
 }

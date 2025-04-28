@@ -163,15 +163,15 @@ class BusAlertService : Service() {
             }
             ACTION_STOP_TRACKING -> {
                 Log.i(TAG, "ACTION_STOP_TRACKING: Stopping all tracking.")
-                
+
                 // 현재 추적 중인 모든 버스에 대해 취소 이벤트 발송
                 activeTrackings.forEach { (routeId, info) ->
                     sendCancellationBroadcast(info.busNo, routeId, info.stationName)
                 }
-                
+
                 // 전체 취소 이벤트 발송
                 sendAllCancellationBroadcast()
-                
+
                 // 모든 추적 작업과 서비스 중지
                 Log.i(TAG, "Stopping all tracking jobs and the service.")
                 stopAllTracking()
@@ -346,7 +346,18 @@ class BusAlertService : Service() {
                             } else if (remainingMinutes > 1) {
                                 currentInfo.lastNotifiedMinutes = Int.MAX_VALUE
                             }
-                            updateForegroundNotification()
+
+                            // 실시간 버스 정보로 포그라운드 알림 업데이트
+                            showOngoingBusTracking(
+                                busNo = busNo,
+                                stationName = stationName,
+                                remainingMinutes = remainingMinutes,
+                                currentStation = firstBus.currentStation,
+                                isUpdate = true,
+                                notificationId = ONGOING_NOTIFICATION_ID,
+                                allBusesSummary = null,
+                                routeId = routeId
+                            )
                         } else {
                             Log.w(TAG, "No available buses for route $routeId at $stationId.")
                             currentInfo.lastBusInfo = null
@@ -531,8 +542,27 @@ class BusAlertService : Service() {
             }
         }
 
-        // 포그라운드 알림 업데이트
-        updateForegroundNotification()
+        // 포그라운드 알림 직접 업데이트 (실시간 정보 반영)
+        try {
+            val notification = notificationHandler.buildOngoingNotification(activeTrackings)
+            if (!isInForeground) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(ONGOING_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                } else {
+                    @Suppress("DEPRECATION")
+                    startForeground(ONGOING_NOTIFICATION_ID, notification)
+                }
+                isInForeground = true
+                Log.d(TAG, "Foreground service started with real-time bus info.")
+            } else {
+                NotificationManagerCompat.from(this).notify(ONGOING_NOTIFICATION_ID, notification)
+                Log.d(TAG, "Foreground notification updated with real-time bus info.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating foreground notification with real-time info: ${e.message}")
+            // 기존 방식으로 폴백
+            updateForegroundNotification()
+        }
     }
 
     fun stopTtsTracking(routeId: String? = null, stationId: String? = null, forceStop: Boolean = false) {
@@ -562,8 +592,19 @@ class BusAlertService : Service() {
             // 4. TTS 추적 중지
             stopTtsTracking(routeId = routeId, stationId = stationId, forceStop = true)
 
-            // 5. 알림 처리
+            // 5. 알림 처리 - 항상 포그라운드 알림 취소 시도
             if (cancelNotification) {
+                // 명시적으로 NotificationManager를 통해 알림 취소
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                Log.d(TAG, "알림 직접 취소 완료: ID=$ONGOING_NOTIFICATION_ID")
+
+                if (isInForeground) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    isInForeground = false
+                    Log.d(TAG, "Foreground service stopped for route $routeId")
+                }
+
                 if (activeTrackings.isEmpty()) {
                     // 마지막 추적이 취소된 경우 전체 서비스 중지
                     Log.i(TAG, "Last tracking canceled. Stopping service completely.")
@@ -592,11 +633,6 @@ class BusAlertService : Service() {
                     applicationContext.sendBroadcast(allCancelIntent)
                     Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
                 }
-
-                // 추가: 명시적으로 NotificationManager를 통해 알림 취소
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                Log.d(TAG, "알림 직접 취소 완료: ID=$ONGOING_NOTIFICATION_ID")
 
             } catch (e: Exception) {
                 Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
@@ -673,34 +709,34 @@ class BusAlertService : Service() {
 
     private fun stopAllTracking() {
         Log.i(TAG, "Stopping all tracking.")
-        
+
         // 현재 추적 중인 모든 버스에 대해 취소 이벤트 발송
         activeTrackings.forEach { (routeId, info) ->
             sendCancellationBroadcast(info.busNo, routeId, info.stationName)
         }
-        
+
         // 전체 취소 이벤트 발송
         sendAllCancellationBroadcast()
-        
+
         // 모든 추적 작업과 서비스 중지
         monitoringJobs.values.forEach { it.cancel() }
         monitoringJobs.clear()
-        
+
         // 모니터링 타이머 중지
         stopMonitoringTimer()
-        
+
         // TTS 추적 중지
         stopTtsTracking(forceStop = true)
-        
+
         // 모든 데이터 초기화
         activeTrackings.clear()
         monitoredRoutes.clear()
         cachedBusInfo.clear()
         arrivingSoonNotified.clear()
-        
+
         // 알림 취소
         cancelOngoingTracking()
-        
+
         // 서비스가 유휴 상태인지 확인하고 중지
         checkAndStopService()
     }
@@ -714,7 +750,7 @@ class BusAlertService : Service() {
             // 해당 노선에 대한 TTS 추적만 중지
             ttsEngine?.stop()
             Log.i(TAG, "노선 $routeId 에 대한 TTS 추적 중지")
-            
+
             // 다른 활성 추적이 없으면 TTS 전체 중지
             if (activeTrackings.isEmpty()) {
                 isTtsTrackingActive = false
@@ -722,10 +758,10 @@ class BusAlertService : Service() {
                 Log.i(TAG, "남은 추적이 없어 TTS 전체 중지")
             }
         }
-        
+
         // TTS 서비스도 중지
         stopTTSServiceTracking(routeId)
-        
+
         // 서비스 상태 확인
         checkAndStopServiceIfNeeded()
     }

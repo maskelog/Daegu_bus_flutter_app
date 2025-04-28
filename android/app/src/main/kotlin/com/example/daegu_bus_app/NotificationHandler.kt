@@ -123,8 +123,16 @@ class NotificationHandler(private val context: Context) {
                     busInfo.estimatedTime.contains("분") -> busInfo.estimatedTime
                     else -> "정보 없음"
                 }
-                 val lowFloorStr = if (busInfo?.isLowFloor == true) "(저)" else ""
-                inboxStyle.addLine("$busNo$lowFloorStr (${stationNameShort}): $timeStr")
+
+                // 현재 위치 정보 추가
+                val locationInfo = if (busInfo?.currentStation != null && busInfo.currentStation.isNotEmpty()) {
+                    " [현재: ${busInfo.currentStation.take(8)}${if (busInfo.currentStation.length > 8) ".." else ""}]"
+                } else {
+                    ""
+                }
+
+                val lowFloorStr = if (busInfo?.isLowFloor == true) "(저)" else ""
+                inboxStyle.addLine("$busNo$lowFloorStr (${stationNameShort}): $timeStr$locationInfo")
             }
             if (activeTrackings.size > 5) {
                 inboxStyle.setSummaryText("+${activeTrackings.size - 5}개 더 추적 중")
@@ -141,7 +149,15 @@ class NotificationHandler(private val context: Context) {
                      busInfo.estimatedTime.contains("분") -> busInfo.estimatedTime
                      else -> "정보 없음"
                  }
-                 contentText = "$busNo (${firstTracking.stationName.take(5)}..): $timeStr ${if (activeTrackings.size > 1) "+${activeTrackings.size - 1}" else ""}"
+
+                 // 현재 위치 정보 추가
+                 val locationInfo = if (busInfo?.currentStation != null && busInfo.currentStation.isNotEmpty()) {
+                     " [${busInfo.currentStation.take(5)}${if (busInfo.currentStation.length > 5) ".." else ""}]"
+                 } else {
+                     ""
+                 }
+
+                 contentText = "$busNo (${firstTracking.stationName.take(5)}..): $timeStr$locationInfo ${if (activeTrackings.size > 1) "+${activeTrackings.size - 1}" else ""}"
             }
         }
 
@@ -173,8 +189,8 @@ class NotificationHandler(private val context: Context) {
             .setOnlyAlertOnce(true)
             .setShowWhen(true)
             .setWhen(System.currentTimeMillis())
-             .setColor(ContextCompat.getColor(context, R.color.tracking_color)) // Use context
-             .setColorized(true)
+            .setColor(ContextCompat.getColor(context, R.color.tracking_color)) // Use context
+            .setColorized(true)
             .addAction(R.drawable.ic_stop_tracking, "추적 중지", stopAllPendingIntent)
 
         return builder.build()
