@@ -223,7 +223,8 @@ class StationTrackingService : Service() {
         val estimatedMinutes: Int?, // 예상 도착 시간(분), null 가능
         val remainingStops: Int?,   // 남은 정류장 수, null 가능
         val isLowFloor: Boolean,    // 저상 버스 여부
-        val moveDir: String?        // 버스 진행 방향 (ex: "종점")
+        val moveDir: String?,       // 버스 진행 방향 (ex: "종점")
+        val arrState: String        // 도착 상태 문자열 ("운행종료" 등)
     )
 
     // JSON 문자열을 파싱하여 ParsedArrivalInfo 리스트로 변환하는 함수
@@ -254,21 +255,20 @@ class StationTrackingService : Service() {
                     // 버스 진행 방향 추출
                     val direction = busObj.optString("moveDir", null)
 
-                    // "운행종료" 상태가 아닌 버스만 결과 리스트에 추가
-                    if (arrState != "운행종료") {
-                        results.add(
-                            ParsedArrivalInfo(
-                                routeNo = busObj.optString("routeNo", routeObj.optString("routeNo")), // routeNo 추출
-                                estimatedMinutes = minutes,
-                                remainingStops = stops,
-                                isLowFloor = isLow,
-                                moveDir = direction
-                            )
+                    // 모든 버스를 결과 리스트에 추가 (운행종료 포함)
+                    results.add(
+                        ParsedArrivalInfo(
+                            routeNo = busObj.optString("routeNo", routeObj.optString("routeNo")),
+                            estimatedMinutes = if (arrState == "운행종료") null else minutes,
+                            remainingStops = stops,
+                            isLowFloor = isLow,
+                            moveDir = direction,
+                            arrState = arrState
                         )
-                    }
+                    )
                 }
             }
-             // 파싱된 결과를 예상 도착 시간 순서로 정렬 (null 값은 가장 뒤로)
+             // 파싱된 결과를 예상 도착 시간 순서로 정렬 (운행종료는 가장 뒤로)
              results.sortBy { it.estimatedMinutes ?: Int.MAX_VALUE }
              Log.d(TAG, "정류장 도착 정보 파싱 완료: ${results.size}개 항목")
         } catch (e: Exception) {
@@ -276,7 +276,6 @@ class StationTrackingService : Service() {
         }
         return results // 파싱된 도착 정보 리스트 반환
     }
-
 
     // 진행 중인 정류장 추적 알림을 표시하거나 업데이트하는 함수
     private fun showStationTrackingNotification(stationName: String, arrivals: List<ParsedArrivalInfo>, isError: Boolean = false) {
@@ -352,29 +351,21 @@ class StationTrackingService : Service() {
 
     // 도착 정보를 포맷팅하여 문자열로 반환하는 함수
     private fun formatArrival(arrival: ParsedArrivalInfo, compact: Boolean): String {
-         // 예상 도착 시간을 문자열로 변환 ("정보없음", "곧 도착", "5분" 등)
-         val timeStr = when (arrival.estimatedMinutes) {
-            null -> "정보없음"
-            0 -> "곧 도착"
+         // 예상 도착 시간을 문자열로 변환 ("정보없음", "곧 도착", "5분", "운행종료" 등)
+         val timeStr = when {
+            arrival.arrState == "운행종료" -> "운행종료"
+            arrival.estimatedMinutes == null -> "정보없음"
+            arrival.estimatedMinutes == 0 -> "곧 도착"
             else -> "${arrival.estimatedMinutes}분"
         }
-         // 저상 버스인 경우 표시 추가
          val lowFloorStr = if (arrival.isLowFloor) "(저)" else ""
-         // 남은 정류장 수 표시 (선택 사항, 현재 주석 처리)
-         // val stopsStr = arrival.remainingStops?.let { "($it 정류장)" } ?: ""
-         val routeNoStr = arrival.routeNo // 버스 번호
-
-         // moveDir 값은 표시하지 않음 (인덱스 숫자 제거)
-         // val directionStr = arrival.moveDir?.let { " [$it]" } ?: ""
-
-         // compact 플래그에 따라 다른 포맷으로 반환
-         return if (compact) { // 축소 상태 포맷
+         val routeNoStr = arrival.routeNo
+         return if (compact) {
              "$routeNoStr$lowFloorStr: $timeStr"
-         } else { // 확장 상태 포맷
-             "$routeNoStr$lowFloorStr - $timeStr" // + stopsStr
+         } else {
+             "$routeNoStr$lowFloorStr - $timeStr"
          }
     }
-
 
     // 알림 채널 생성 (API 레벨 26 이상에서 필요)
     private fun createNotificationChannel() {

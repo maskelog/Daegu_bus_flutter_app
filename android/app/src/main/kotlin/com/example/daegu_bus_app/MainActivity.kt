@@ -466,18 +466,24 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     "updateBusTrackingNotification" -> {
                         val busNo = call.argument<String>("busNo") ?: ""
                         val stationName = call.argument<String>("stationName") ?: ""
-                        // Ensure remainingMinutes is an Integer
                         val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
                         val currentStation = call.argument<String>("currentStation") ?: ""
+                        val routeId = call.argument<String>("routeId") ?: ""
                         try {
                             Log.d(TAG, "Flutter에서 버스 추적 알림 업데이트 요청: $busNo, 남은 시간: $remainingMinutes 분")
-                            busAlertService?.showNotification(
-                                id = ONGOING_NOTIFICATION_ID,
-                                busNo = busNo,
-                                stationName = stationName,
-                                remainingMinutes = remainingMinutes,
-                                currentStation = currentStation
-                            )
+                            val intent = Intent(this, BusAlertService::class.java).apply {
+                                action = BusAlertService.ACTION_UPDATE_TRACKING
+                                putExtra("busNo", busNo)
+                                putExtra("stationName", stationName)
+                                putExtra("remainingMinutes", remainingMinutes)
+                                putExtra("currentStation", currentStation)
+                                putExtra("routeId", routeId)
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(intent)
+                            } else {
+                                startService(intent)
+                            }
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "버스 추적 알림 업데이트 오류: ${e.message}", e)
