@@ -31,6 +31,8 @@ import android.speech.tts.UtteranceProgressListener
 import android.os.Bundle
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
+import org.json.JSONArray
+import org.json.JSONObject
 
 class BusAlertService : Service() {
     companion object {
@@ -79,6 +81,9 @@ class BusAlertService : Service() {
         // Keep instance for potential Singleton-like access if needed
         private var instance: BusAlertService? = null
         fun getInstance(): BusAlertService? = instance
+
+        private const val ARRIVAL_THRESHOLD_MINUTES = 1
+        private const val MAX_CONSECUTIVE_ERRORS = 3
     }
 
     private val binder = LocalBinder()
@@ -303,12 +308,13 @@ class BusAlertService : Service() {
 
     data class TrackingInfo(
         val routeId: String,
-        val stationId: String,
         val stationName: String,
         val busNo: String,
-        var lastBusInfo: com.example.daegu_bus_app.BusInfo? = null,
+        var lastBusInfo: BusInfo? = null,
+        var consecutiveErrors: Int = 0,
+        var lastUpdateTime: Long = System.currentTimeMillis(),
         var lastNotifiedMinutes: Int = Int.MAX_VALUE,
-        var consecutiveErrors: Int = 0
+        val stationId: String = ""
     )
 
     private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String) {
@@ -318,14 +324,19 @@ class BusAlertService : Service() {
         }
 
         Log.i(TAG, "Starting tracking for route $routeId ($busNo) at station $stationName ($stationId)")
-        val trackingInfo = TrackingInfo(routeId, stationId, stationName, busNo)
+        val trackingInfo = TrackingInfo(routeId, stationName, busNo, stationId = stationId)
         activeTrackings[routeId] = trackingInfo
 
         monitoringJobs[routeId] = serviceScope.launch {
             try {
                 while (isActive) {
                     try {
-                        val arrivals = busApiService.getBusArrivals(stationId, routeId)
+                        val arrivals = busApiService.getStationInfo(stationId)
+                            .let { jsonString -> 
+                                if (jsonString.isBlank() || jsonString == "[]") emptyList()
+                                else parseJsonBusArrivals(jsonString, routeId)
+                            }
+                            
                         if (!activeTrackings.containsKey(routeId)) {
                             Log.w(TAG, "Tracking info for $routeId removed. Stopping loop.")
                             break
@@ -337,17 +348,17 @@ class BusAlertService : Service() {
 
                         if (firstBus != null) {
                             val remainingMinutes = firstBus.getRemainingMinutes()
-                            Log.d(TAG, "Route $routeId ($busNo): Next bus in $remainingMinutes min. At: ${firstBus.currentStation}")
+                            Log.d(TAG, "🚌 Route $routeId ($busNo): Next bus in $remainingMinutes min. At: ${firstBus.currentStation}")
+                            
+                            // 버스 정보 업데이트
                             currentInfo.lastBusInfo = firstBus
-
-                            if (useTextToSpeech && remainingMinutes <= 1 && currentInfo.lastNotifiedMinutes > 1) {
-                                startTTSServiceSpeak(busNo, stationName, routeId, stationId)
-                                currentInfo.lastNotifiedMinutes = remainingMinutes
-                            } else if (remainingMinutes > 1) {
-                                currentInfo.lastNotifiedMinutes = Int.MAX_VALUE
+                            currentInfo.lastUpdateTime = System.currentTimeMillis()
+                            
+                            // 실시간 버스 정보로 포그라운드 알림 즉시 업데이트
+                            val allBusesSummary = activeTrackings.values.joinToString("\n") { info ->
+                                "${info.busNo}: ${info.lastBusInfo?.estimatedTime ?: "정보 없음"} (${info.lastBusInfo?.currentStation ?: "위치 정보 없음"})"
                             }
-
-                            // 실시간 버스 정보로 포그라운드 알림 업데이트
+                            
                             showOngoingBusTracking(
                                 busNo = busNo,
                                 stationName = stationName,
@@ -355,15 +366,34 @@ class BusAlertService : Service() {
                                 currentStation = firstBus.currentStation,
                                 isUpdate = true,
                                 notificationId = ONGOING_NOTIFICATION_ID,
-                                allBusesSummary = null,
+                                allBusesSummary = allBusesSummary,
                                 routeId = routeId
                             )
+                            // 알림 강제 갱신(백업)
+                            updateForegroundNotification()
+                            // 도착 알림 체크
+                            checkArrivalAndNotify(currentInfo, firstBus)
+                            
+                            // 음성 알림
+                            if (useTextToSpeech && remainingMinutes <= 1 && currentInfo.lastNotifiedMinutes > 1) {
+                                startTTSServiceSpeak(busNo, stationName, routeId, stationId)
+                                currentInfo.lastNotifiedMinutes = remainingMinutes
+                            } else if (remainingMinutes > 1) {
+                                currentInfo.lastNotifiedMinutes = Int.MAX_VALUE
+                            }
                         } else {
                             Log.w(TAG, "No available buses for route $routeId at $stationId.")
                             currentInfo.lastBusInfo = null
                             updateForegroundNotification()
                         }
-                        delay(calculateDelay(firstBus?.getRemainingMinutes()))
+                        
+                        // 정기적인 업데이트 - 15초 간격으로 로그 출력 (디버깅용)
+                        if (activeTrackings.isNotEmpty()) {
+                            Log.d(TAG, "⏰ 현재 추적 중: ${activeTrackings.size}개 노선, 다음 업데이트 30초 후")
+                        }
+                        
+                        // 30초마다 업데이트 (기존 60초에서 변경)
+                        delay(30000)
                     } catch (e: CancellationException) {
                         Log.i(TAG, "Tracking job for $routeId cancelled.")
                         break
@@ -390,6 +420,183 @@ class BusAlertService : Service() {
                     stopTrackingForRoute(routeId, cancelNotification = true)
                 }
             }
+        }
+        
+        // 백업 타이머 시작 - 5분마다 알림 갱신 (메인 업데이트가 실패할 경우를 대비)
+        startBackupUpdateTimer()
+    }
+    
+    // 백업 타이머 추가 - 노티피케이션이 갱신되지 않는 문제 해결
+    private fun startBackupUpdateTimer() {
+        if (monitoringTimer != null) {
+            try {
+                monitoringTimer?.cancel()
+                monitoringTimer = null
+                Log.d(TAG, "기존 백업 타이머 취소")
+            } catch (e: Exception) {
+                Log.e(TAG, "기존 타이머 취소 중 오류: ${e.message}", e)
+            }
+        }
+        
+        monitoringTimer = Timer("BackupUpdateTimer")
+        monitoringTimer?.schedule(object : TimerTask() {
+            override fun run() {
+                try {
+                    if (activeTrackings.isEmpty()) {
+                        Log.d(TAG, "백업 타이머: 활성 추적 없음, 타이머 종료")
+                        monitoringTimer?.cancel()
+                        monitoringTimer = null
+                        return
+                    }
+                    
+                    Log.d(TAG, "🔄 백업 타이머: 활성 노티피케이션 갱신 (${activeTrackings.size}개 추적 중)")
+                    
+                    // 메인 스레드에서 UI 작업 실행
+                    Handler(Looper.getMainLooper()).post {
+                        // 포그라운드 알림 즉시 업데이트
+                        try {
+                            val notification = notificationHandler.buildOngoingNotification(activeTrackings)
+                            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                            notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
+                            Log.d(TAG, "✅ 백업 타이머: 포그라운드 알림 업데이트 성공")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ 백업 타이머: 포그라운드 알림 업데이트 실패: ${e.message}", e)
+                        }
+                        
+                        // 각 추적 중인 노선의 정보도 업데이트 (백그라운드에서)
+                        serviceScope.launch {
+                            activeTrackings.forEach { (routeId, info) ->
+                                try {
+                                    val stationId = info.stationId
+                                    if (stationId.isNotEmpty()) {
+                                        Log.d(TAG, "🔄 백업 타이머: $routeId 노선 정보 업데이트 시도")
+                                        updateBusInfo(routeId, stationId, info.stationName)
+                                    } else {
+                                        Log.w(TAG, "⚠️ 백업 타이머: $routeId 노선의 stationId가 비어있음")
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ 백업 타이머 노선 업데이트 오류: ${e.message}", e)
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 백업 타이머 오류: ${e.message}", e)
+                }
+            }
+        }, 10000, 30000)  // 10초 후 시작, 30초마다 반복 (기존 60초에서 변경)
+        
+        Log.d(TAG, "✅ 백업 타이머 시작됨: 10초 후 첫 실행, 30초 간격")
+    }
+
+    // JSON에서 버스 도착 정보 파싱하는 함수
+    private fun parseJsonBusArrivals(jsonString: String, routeId: String): List<BusInfo> {
+        try {
+            val jsonArray = JSONArray(jsonString)
+            val busInfoList = mutableListOf<BusInfo>()
+            
+            for (i in 0 until jsonArray.length()) {
+                val routeObj = jsonArray.getJSONObject(i)
+                
+                // 현재 함수 호출자가 지정한 노선 ID와 일치하는 경우만 처리
+                val currentRouteId = routeObj.optString("routeId", "")
+                if (currentRouteId != routeId) continue
+                
+                val arrList = routeObj.optJSONArray("arrList")
+                if (arrList == null || arrList.length() == 0) continue
+                
+                for (j in 0 until arrList.length()) {
+                    val busObj = arrList.getJSONObject(j)
+                    val busNumber = busObj.optString("routeNo", "")
+                    val estimatedTime = busObj.optString("arrState", "정보 없음")
+                    val currentStation = busObj.optString("bsNm", "정보 없음")
+                    val remainingStops = busObj.optString("bsGap", "0")
+                    val isLowFloor = busObj.optString("busTCd2", "N") == "1"
+                    
+                    // BusInfo 객체 생성 및 추가
+                    busInfoList.add(BusInfo(
+                        busNumber = busNumber,
+                        estimatedTime = estimatedTime,
+                        currentStation = currentStation,
+                        remainingStops = remainingStops,
+                        isLowFloor = isLowFloor,
+                        isOutOfService = estimatedTime == "운행종료"
+                    ))
+                }
+            }
+            
+            return busInfoList
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "버스 도착 정보 파싱 오류: ${e.message}", e)
+            return emptyList()
+        }
+    }
+
+    // 버스 업데이트 함수 개선
+    private fun updateBusInfo(routeId: String, stationId: String, stationName: String) {
+        try {
+            serviceScope.launch {
+                try {
+                    val jsonString = busApiService.getStationInfo(stationId)
+                    val busInfoList = parseJsonBusArrivals(jsonString, routeId)
+                    val firstBus = busInfoList.firstOrNull { !it.isOutOfService }
+                    val trackingInfo = activeTrackings[routeId]
+
+                    if (trackingInfo != null) {
+                        if (firstBus != null) {
+                            trackingInfo.lastBusInfo = firstBus
+                            trackingInfo.consecutiveErrors = 0
+                            trackingInfo.lastUpdateTime = System.currentTimeMillis()
+                            
+                            val remainingMinutes = firstBus.getRemainingMinutes()
+
+                            // 실시간 정보 로깅
+                            Log.d(TAG, "🔄 버스 정보 업데이트: ${trackingInfo.busNo}번 버스, ${remainingMinutes}분 후 도착 예정, 현재 위치: ${firstBus.currentStation}")
+
+                            // 노티피케이션 업데이트
+                            try {
+                                showOngoingBusTracking(
+                                    busNo = trackingInfo.busNo,
+                                    stationName = stationName,
+                                    remainingMinutes = remainingMinutes,
+                                    currentStation = firstBus.currentStation,
+                                    isUpdate = true,
+                                    notificationId = ONGOING_NOTIFICATION_ID,
+                                    routeId = routeId,
+                                    allBusesSummary = null
+                                )
+                                updateForegroundNotification()
+                                Log.d(TAG, "✅ 노티피케이션 업데이트 완료: ${trackingInfo.busNo}번")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "❌ 노티피케이션 업데이트 실패: ${e.message}", e)
+                                // 실패 시 백업 방법으로 노티피케이션 업데이트
+                                updateForegroundNotification()
+                            }
+
+                            // 도착 임박 체크
+                            checkArrivalAndNotify(trackingInfo, firstBus)
+                        } else {
+                            trackingInfo.consecutiveErrors++
+                            Log.w(TAG, "⚠️ 버스 정보 없음 (${trackingInfo.consecutiveErrors}번째): ${trackingInfo.busNo}번")
+
+                            if (trackingInfo.consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                                Log.e(TAG, "❌ 연속 오류 한도 초과로 추적 중단: ${trackingInfo.busNo}번")
+                                stopTrackingForRoute(routeId, cancelNotification = true)
+                            } else {
+                                // 정보가 없어도 노티피케이션은 업데이트
+                                updateForegroundNotification()
+                            }
+                        }
+                    }
+                } catch(e: Exception) {
+                    Log.e(TAG, "버스 정보 업데이트 코루틴 오류: ${e.message}", e)
+                    // 오류 발생 시에도 노티피케이션 업데이트 시도
+                    updateForegroundNotification()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "버스 정보 업데이트 오류: ${e.message}", e)
         }
     }
 
@@ -555,7 +762,8 @@ class BusAlertService : Service() {
                 isInForeground = true
                 Log.d(TAG, "Foreground service started with real-time bus info.")
             } else {
-                NotificationManagerCompat.from(this).notify(ONGOING_NOTIFICATION_ID, notification)
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
                 Log.d(TAG, "Foreground notification updated with real-time bus info.")
             }
         } catch (e: Exception) {
@@ -788,10 +996,23 @@ class BusAlertService : Service() {
                             startForeground(ONGOING_NOTIFICATION_ID, notification)
                         }
                         isInForeground = true
-                        Log.d(TAG, "Foreground service started.")
+                        Log.d(TAG, "✅ Foreground service started.")
                     } else {
-                        NotificationManagerCompat.from(this).notify(ONGOING_NOTIFICATION_ID, notification)
-                        Log.d(TAG, "Foreground notification updated.")
+                        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
+                        Log.d(TAG, "✅ Foreground notification updated: ${System.currentTimeMillis()}")
+                        
+                        // 현재 시간 추가
+                        val currentTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                        Log.d(TAG, "⏰ 현재 시간: $currentTime, 추적 중: ${activeTrackings.size}개 노선")
+                        
+                        // 각 추적 정보 로그
+                        activeTrackings.forEach { (routeId, info) ->
+                            val busInfo = info.lastBusInfo
+                            Log.d(TAG, "📊 추적 정보: ${info.busNo}번, ${busInfo?.estimatedTime ?: "정보 없음"}, " +
+                                    "현재 위치: ${busInfo?.currentStation ?: "위치 정보 없음"}, " +
+                                    "마지막 업데이트: ${System.currentTimeMillis() - info.lastUpdateTime}ms 전")
+                        }
                     }
                 } else {
                     Log.d(TAG, "No active trackings. Stopping foreground.")
@@ -1153,6 +1374,37 @@ class BusAlertService : Service() {
                     Log.i(TAG, "Service stopped after delay check.")
                 }
             }, 1000) // 1초 후 다시 확인
+        }
+    }
+
+    private val hasNotifiedTts = HashSet<String>()
+    private val hasNotifiedArrival = HashSet<String>()
+
+    private fun checkArrivalAndNotify(trackingInfo: TrackingInfo, busInfo: BusInfo) {
+        val remainingMinutes = when {
+            busInfo.estimatedTime == "곧 도착" -> 0
+            busInfo.estimatedTime == "운행종료" -> -1
+            busInfo.estimatedTime.contains("분") -> 
+                busInfo.estimatedTime.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
+            else -> Int.MAX_VALUE
+        }
+        
+        if (remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES) {
+            if (useTextToSpeech && !hasNotifiedTts.contains(trackingInfo.routeId)) {
+                val message = "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
+                speakTts(message)
+                hasNotifiedTts.add(trackingInfo.routeId)
+            }
+
+            // 도착 알림
+            if (!hasNotifiedArrival.contains(trackingInfo.routeId)) {
+                notificationHandler.sendAlertNotification(
+                    trackingInfo.routeId,
+                    trackingInfo.busNo,
+                    trackingInfo.stationName
+                )
+                hasNotifiedArrival.add(trackingInfo.routeId)
+            }
         }
     }
 }

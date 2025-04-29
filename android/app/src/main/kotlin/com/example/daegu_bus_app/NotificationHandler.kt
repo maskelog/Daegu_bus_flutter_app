@@ -100,28 +100,42 @@ class NotificationHandler(private val context: Context) {
     // --- Ongoing Notification ---
 
     fun buildOngoingNotification(activeTrackings: Map<String, BusAlertService.TrackingInfo>): Notification {
-        val title = "버스 알람 추적 중"
+        val startTime = System.currentTimeMillis()
+        val currentTimeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        Log.d(TAG, "🔔 알림 생성 시작 - $currentTimeStr")
+        
+        val currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()) // 현재 시간을 초 단위까지 표시
+        val title = "버스 알람 추적 중 ($currentTime)"
         var contentText = "추적 중인 버스: ${activeTrackings.size}개"
-        val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
 
         val inboxStyle = NotificationCompat.InboxStyle()
-            .setBigContentTitle("$title ($currentTime)")
+            .setBigContentTitle(title)
 
         if (activeTrackings.isEmpty()) {
             contentText = "추적 중인 버스가 없습니다."
             inboxStyle.addLine(contentText)
+            Log.d(TAG, "🚫 추적 중인 버스 없음")
         } else {
+            Log.d(TAG, "📊 추적 중인 버스 수: ${activeTrackings.size}")
             activeTrackings.values.take(5).forEach { trackingInfo ->
                 val busInfo = trackingInfo.lastBusInfo
                 val busNo = trackingInfo.busNo
                 val stationNameShort = trackingInfo.stationName.take(10) + if (trackingInfo.stationName.length > 10) "..." else ""
+                
+                // 시간 정보 처리 개선
                 val timeStr = when {
                     trackingInfo.consecutiveErrors > 0 -> "오류"
                     busInfo == null -> "정보 없음"
                     busInfo.estimatedTime == "운행종료" -> "운행종료"
                     busInfo.estimatedTime == "곧 도착" -> "곧 도착"
-                    busInfo.estimatedTime.contains("분") -> busInfo.estimatedTime
-                    else -> "정보 없음"
+                    busInfo.estimatedTime.contains("분") -> {
+                        val minutes = busInfo.estimatedTime.replace("[^0-9]".toRegex(), "").toIntOrNull()
+                        if (minutes != null) {
+                            if (minutes <= 0) "곧 도착" else "${minutes}분"
+                        } else busInfo.estimatedTime
+                    }
+                    busInfo.getRemainingMinutes() <= 0 -> "곧 도착"
+                    else -> busInfo.estimatedTime
                 }
 
                 // 현재 위치 정보 추가
@@ -132,68 +146,93 @@ class NotificationHandler(private val context: Context) {
                 }
 
                 val lowFloorStr = if (busInfo?.isLowFloor == true) "(저)" else ""
-                inboxStyle.addLine("$busNo$lowFloorStr (${stationNameShort}): $timeStr$locationInfo")
+                val infoLine = "$busNo$lowFloorStr (${stationNameShort}): $timeStr$locationInfo"
+                inboxStyle.addLine(infoLine)
+                Log.d(TAG, "➕ 알림 라인 추가: $infoLine")
             }
+
             if (activeTrackings.size > 5) {
                 inboxStyle.setSummaryText("+${activeTrackings.size - 5}개 더 추적 중")
             }
+
+            // 첫 번째 버스 정보를 contentText에 표시
             val firstTracking = activeTrackings.values.firstOrNull()
-            if(firstTracking != null) {
-                 val busInfo = firstTracking.lastBusInfo
-                 val busNo = firstTracking.busNo
-                 val timeStr = when {
-                     firstTracking.consecutiveErrors > 0 -> "오류"
-                     busInfo == null -> "정보 없음"
-                     busInfo.estimatedTime == "운행종료" -> "운행종료"
-                     busInfo.estimatedTime == "곧 도착" -> "곧 도착"
-                     busInfo.estimatedTime.contains("분") -> busInfo.estimatedTime
-                     else -> "정보 없음"
-                 }
+            if (firstTracking != null) {
+                val busInfo = firstTracking.lastBusInfo
+                val busNo = firstTracking.busNo
+                val timeStr = when {
+                    firstTracking.consecutiveErrors > 0 -> "오류"
+                    busInfo == null -> "정보 없음"
+                    busInfo.estimatedTime == "운행종료" -> "운행종료"
+                    busInfo.estimatedTime == "곧 도착" -> "곧 도착"
+                    busInfo.estimatedTime.contains("분") -> {
+                        val minutes = busInfo.estimatedTime.replace("[^0-9]".toRegex(), "").toIntOrNull()
+                        if (minutes != null) {
+                            if (minutes <= 0) "곧 도착" else "${minutes}분"
+                        } else busInfo.estimatedTime
+                    }
+                    busInfo.getRemainingMinutes() <= 0 -> "곧 도착"
+                    else -> busInfo.estimatedTime
+                }
 
-                 // 현재 위치 정보 추가
-                 val locationInfo = if (busInfo?.currentStation != null && busInfo.currentStation.isNotEmpty()) {
-                     " [${busInfo.currentStation.take(5)}${if (busInfo.currentStation.length > 5) ".." else ""}]"
-                 } else {
-                     ""
-                 }
+                // 현재 위치 정보 추가 (짧게)
+                val locationInfo = if (busInfo?.currentStation != null && busInfo.currentStation.isNotEmpty()) {
+                    " [${busInfo.currentStation.take(5)}${if (busInfo.currentStation.length > 5) ".." else ""}]"
+                } else {
+                    ""
+                }
 
-                 contentText = "$busNo (${firstTracking.stationName.take(5)}..): $timeStr$locationInfo ${if (activeTrackings.size > 1) "+${activeTrackings.size - 1}" else ""}"
+                contentText = "$busNo (${firstTracking.stationName.take(5)}..): $timeStr$locationInfo ${if (activeTrackings.size > 1) "+${activeTrackings.size - 1}" else ""}"
+                Log.d(TAG, "📝 알림 텍스트 업데이트: $contentText")
             }
         }
 
-        val openAppIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        }
-        val pendingIntent = if (openAppIntent != null) PendingIntent.getActivity(
-            context, 0, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        ) else null
-
-        val stopAllIntent = Intent(context, BusAlertService::class.java).apply { // Target BusAlertService
-            action = ACTION_STOP_TRACKING
-            // 명시적으로 서비스 중지 플래그 추가
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        val stopAllPendingIntent = PendingIntent.getService( // Use getService
-            context, 1, stopAllIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val builder = NotificationCompat.Builder(context, CHANNEL_ID_ONGOING)
+        // NotificationCompat.Builder에 setWhen 추가 및 FLAG_ONGOING_EVENT 플래그 추가
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID_ONGOING)
             .setContentTitle(title)
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_bus_notification)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setStyle(inboxStyle)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(createPendingIntent())
             .setOngoing(true)
             .setAutoCancel(false)
             .setOnlyAlertOnce(true)
             .setShowWhen(true)
             .setWhen(System.currentTimeMillis())
-            .setColor(ContextCompat.getColor(context, R.color.tracking_color)) // Use context
+            .setColor(ContextCompat.getColor(context, R.color.tracking_color))
             .setColorized(true)
-            .addAction(R.drawable.ic_stop_tracking, "추적 중지", stopAllPendingIntent)
+            .addAction(R.drawable.ic_stop_tracking, "추적 중지", createStopPendingIntent())
+            .build()
 
-        return builder.build()
+        // 노티피케이션 플래그 직접 설정 (필요 시)
+        notification.flags = notification.flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR
+
+        val endTime = System.currentTimeMillis()
+        Log.d(TAG, "✅ 알림 생성 완료 - 소요시간: ${endTime - startTime}ms, 현재 시간: $currentTime")
+        
+        return notification
+    }
+
+    private fun createPendingIntent(): PendingIntent? {
+        val openAppIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        return if (openAppIntent != null) {
+            PendingIntent.getActivity(
+                context, 0, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else null
+    }
+
+    private fun createStopPendingIntent(): PendingIntent {
+        val stopAllIntent = Intent(context, BusAlertService::class.java).apply {
+            action = ACTION_STOP_TRACKING
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        return PendingIntent.getService(
+            context, 1, stopAllIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
      // --- Alert Notification ---

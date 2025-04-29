@@ -30,15 +30,21 @@ class RouteTracker(
         coroutineScope.launch { // Launch within the provided scope
             while (isActive && coroutineContext.isActive) { // Check both flags
                 try {
-                    // 1. Fetch bus arrivals
-                    val arrivals = busApiService.getBusArrivals(trackingInfo.stationId, trackingInfo.routeId)
+                    // 1. Fetch bus arrivals - 여기서 getStationInfo와 parseJsonBusArrivals 사용
+                    val jsonString = busApiService.getStationInfo(trackingInfo.stationId)
+                    val arrivals = if (jsonString.isBlank() || jsonString == "[]") {
+                        emptyList()
+                    } else {
+                        parseJsonBusArrivals(jsonString, trackingInfo.routeId)
+                    }
+                    
                     Log.d(TAG, "[${trackingInfo.routeId}] Fetched arrivals: Count=${arrivals.size}")
 
                     // Reset error count on successful fetch
                     trackingInfo.consecutiveErrors = 0
 
-                    // 2. Find the next relevant bus
-                    val firstBus = arrivals.firstOrNull { !it.isOutOfService }
+                    // 2. Find the next relevant bus - isOutOfService 확장 속성은 BusInfoExtensions에 정의됨
+                    val firstBus = arrivals.firstOrNull { bus -> bus.estimatedTime != "운행종료" }
 
                     // 3. Update TrackingInfo state
                     if (firstBus != null) {
@@ -92,6 +98,50 @@ class RouteTracker(
             if (isActive) { // Loop finished without external cancellation or max errors
                 onStop(trackingInfo.routeId)
             }
+        }
+    }
+
+    // BusAlertService에 있는 parseJsonBusArrivals 메서드를 추가
+    private fun parseJsonBusArrivals(jsonString: String, routeId: String): List<BusInfo> {
+        try {
+            val jsonArray = org.json.JSONArray(jsonString)
+            val busInfoList = mutableListOf<BusInfo>()
+            
+            for (i in 0 until jsonArray.length()) {
+                val routeObj = jsonArray.getJSONObject(i)
+                
+                // 현재 함수 호출자가 지정한 노선 ID와 일치하는 경우만 처리
+                val currentRouteId = routeObj.optString("routeId", "")
+                if (currentRouteId != routeId) continue
+                
+                val arrList = routeObj.optJSONArray("arrList")
+                if (arrList == null || arrList.length() == 0) continue
+                
+                for (j in 0 until arrList.length()) {
+                    val busObj = arrList.getJSONObject(j)
+                    val busNumber = busObj.optString("routeNo", "")
+                    val estimatedTime = busObj.optString("arrState", "정보 없음")
+                    val currentStation = busObj.optString("bsNm", "정보 없음")
+                    val remainingStops = busObj.optString("bsGap", "0")
+                    val isLowFloor = busObj.optString("busTCd2", "N") == "1"
+                    
+                    // BusInfo 객체 생성 및 추가
+                    busInfoList.add(BusInfo(
+                        busNumber = busNumber,
+                        estimatedTime = estimatedTime,
+                        currentStation = currentStation,
+                        remainingStops = remainingStops,
+                        isLowFloor = isLowFloor,
+                        isOutOfService = estimatedTime == "운행종료"
+                    ))
+                }
+            }
+            
+            return busInfoList
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "버스 도착 정보 파싱 오류: ${e.message}", e)
+            return emptyList()
         }
     }
 
