@@ -211,6 +211,8 @@ class NotificationHandler(private val context: Context) {
         val endTime = System.currentTimeMillis()
         Log.d(TAG, "✅ 알림 생성 완료 - 소요시간: ${endTime - startTime}ms, 현재 시간: $currentTime")
         
+        Log.d(TAG, "buildOngoingNotification: ${activeTrackings.mapValues { it.value.lastBusInfo }}")
+        
         return notification
     }
 

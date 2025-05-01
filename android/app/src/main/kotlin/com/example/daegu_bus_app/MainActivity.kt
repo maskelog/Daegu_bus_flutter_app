@@ -1090,6 +1090,138 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_TRACKING_CHANNEL).setMethodCallHandler { call, result ->
                 Log.d(TAG, "BUS_TRACKING_CHANNEL 호출: ${call.method}")
                 when (call.method) {
+                    "updateBusTrackingNotification" -> {
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                        val currentStation = call.argument<String>("currentStation") ?: ""
+                        val routeId = call.argument<String>("routeId") ?: ""
+
+                        try {
+                            Log.d(TAG, "Flutter에서 버스 추적 알림 업데이트 요청 (BUS_TRACKING_CHANNEL): $busNo, 남은 시간: ${remainingMinutes}분, 현재 위치: $currentStation")
+
+                            // 여러 방법으로 알림 업데이트 시도 (병렬 실행)
+
+                            // 1. BusAlertService를 통해 알림 업데이트 (직접 메서드 호출)
+                            if (busAlertService != null) {
+                                // 1.1. updateTrackingNotification 메서드 직접 호출 (가장 확실한 방법)
+                                busAlertService?.updateTrackingNotification(
+                                    busNo = busNo,
+                                    stationName = stationName,
+                                    remainingMinutes = remainingMinutes,
+                                    currentStation = currentStation,
+                                    routeId = routeId
+                                )
+
+                                // 1.2. updateTrackingInfoFromFlutter 메서드 직접 호출 (백업)
+                                busAlertService?.updateTrackingInfoFromFlutter(
+                                    routeId = routeId,
+                                    busNo = busNo,
+                                    stationName = stationName,
+                                    remainingMinutes = remainingMinutes,
+                                    currentStation = currentStation
+                                )
+
+                                // 1.3. showOngoingBusTracking 메서드 직접 호출 (추가 백업)
+                                busAlertService?.showOngoingBusTracking(
+                                    busNo = busNo,
+                                    stationName = stationName,
+                                    remainingMinutes = remainingMinutes,
+                                    currentStation = currentStation,
+                                    isUpdate = true,
+                                    notificationId = BusAlertService.ONGOING_NOTIFICATION_ID,
+                                    allBusesSummary = null,
+                                    routeId = routeId
+                                )
+
+                                Log.d(TAG, "✅ 버스 추적 알림 직접 메서드 호출 완료")
+                            }
+
+                            // 2. 인텐트를 통한 업데이트 (서비스가 null이거나 직접 호출이 실패한 경우를 대비)
+                            // 2.1. ACTION_UPDATE_TRACKING 인텐트 전송
+                            val updateIntent = Intent(this, BusAlertService::class.java).apply {
+                                action = BusAlertService.ACTION_UPDATE_TRACKING
+                                putExtra("busNo", busNo)
+                                putExtra("stationName", stationName)
+                                putExtra("remainingMinutes", remainingMinutes)
+                                putExtra("currentStation", currentStation)
+                                putExtra("routeId", routeId)
+                            }
+
+                            // Android 버전에 따라 적절한 방법으로 서비스 시작
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(updateIntent)
+                            } else {
+                                startService(updateIntent)
+                            }
+                            Log.d(TAG, "✅ 버스 추적 알림 업데이트 인텐트 전송 완료")
+
+                            // 3. BusAlertService가 null인 경우 서비스 시작 및 바인딩 시도
+                            if (busAlertService == null) {
+                                try {
+                                    val serviceIntent = Intent(this, BusAlertService::class.java)
+                                    startService(serviceIntent)
+                                    bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+                                    Log.d(TAG, "✅ BusAlertService 시작 및 바인딩 요청 완료")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ BusAlertService 초기화 실패: ${e.message}", e)
+                                }
+                            }
+
+                            // 4. 1초 후 지연 업데이트 시도 (백업)
+                            android.os.Handler(mainLooper).postDelayed({
+                                try {
+                                    // 지연 인텐트 전송
+                                    val delayedIntent = Intent(this, BusAlertService::class.java).apply {
+                                        action = BusAlertService.ACTION_UPDATE_TRACKING
+                                        putExtra("busNo", busNo)
+                                        putExtra("stationName", stationName)
+                                        putExtra("remainingMinutes", remainingMinutes)
+                                        putExtra("currentStation", currentStation)
+                                        putExtra("routeId", routeId)
+                                    }
+                                    startService(delayedIntent)
+                                    Log.d(TAG, "✅ 지연 업데이트 인텐트 전송 완료")
+
+                                    // 서비스가 초기화되었으면 직접 메서드 호출도 시도
+                                    if (busAlertService != null) {
+                                        busAlertService?.updateTrackingNotification(
+                                            busNo = busNo,
+                                            stationName = stationName,
+                                            remainingMinutes = remainingMinutes,
+                                            currentStation = currentStation,
+                                            routeId = routeId
+                                        )
+                                        Log.d(TAG, "✅ 지연 직접 메서드 호출 완료")
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ 지연 업데이트 오류: ${e.message}", e)
+                                }
+                            }, 1000)
+
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ 버스 추적 알림 업데이트 오류: ${e.message}", e)
+
+                            // 오류 발생 시에도 인텐트 전송 시도 (최후의 수단)
+                            try {
+                                val fallbackIntent = Intent(this, BusAlertService::class.java).apply {
+                                    action = BusAlertService.ACTION_UPDATE_TRACKING
+                                    putExtra("busNo", busNo)
+                                    putExtra("stationName", stationName)
+                                    putExtra("remainingMinutes", remainingMinutes)
+                                    putExtra("currentStation", currentStation)
+                                    putExtra("routeId", routeId)
+                                }
+                                startService(fallbackIntent)
+                                Log.d(TAG, "✅ 오류 후 인텐트 전송 완료")
+                                result.success(true)
+                            } catch (ex: Exception) {
+                                Log.e(TAG, "❌ 오류 후 인텐트 전송 실패: ${ex.message}", ex)
+                                result.error("UPDATE_ERROR", "버스 추적 알림 업데이트 실패: ${e.message}", null)
+                            }
+                        }
+                    }
                     "stopBusTracking" -> {
                         val busNo = call.argument<String>("busNo") ?: ""
                         val routeId = call.argument<String>("routeId") ?: ""

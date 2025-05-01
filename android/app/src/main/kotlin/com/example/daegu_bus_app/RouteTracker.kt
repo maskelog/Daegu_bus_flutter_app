@@ -102,21 +102,25 @@ class RouteTracker(
     }
 
     // BusAlertService에 있는 parseJsonBusArrivals 메서드를 추가
-    private fun parseJsonBusArrivals(jsonString: String, routeId: String): List<BusInfo> {
+    private fun parseJsonBusArrivals(jsonString: String, routeId: String, routeNo: String? = null, busNo: String? = null): List<BusInfo> {
         try {
             val jsonArray = org.json.JSONArray(jsonString)
             val busInfoList = mutableListOf<BusInfo>()
-            
             for (i in 0 until jsonArray.length()) {
                 val routeObj = jsonArray.getJSONObject(i)
-                
-                // 현재 함수 호출자가 지정한 노선 ID와 일치하는 경우만 처리
                 val currentRouteId = routeObj.optString("routeId", "")
-                if (currentRouteId != routeId) continue
-                
+                val currentRouteNo = routeObj.optString("routeNo", "")
+
+                // routeId, routeNo, busNo 중 하나라도 일치하면 파싱
+                val match =
+                    (routeId.isNotEmpty() && currentRouteId == routeId) ||
+                    (routeNo != null && routeNo.isNotEmpty() && currentRouteNo == routeNo) ||
+                    (busNo != null && busNo.isNotEmpty() && currentRouteNo == busNo)
+                if (!match) continue
+
                 val arrList = routeObj.optJSONArray("arrList")
                 if (arrList == null || arrList.length() == 0) continue
-                
+
                 for (j in 0 until arrList.length()) {
                     val busObj = arrList.getJSONObject(j)
                     val busNumber = busObj.optString("routeNo", "")
@@ -124,21 +128,19 @@ class RouteTracker(
                     val currentStation = busObj.optString("bsNm", "정보 없음")
                     val remainingStops = busObj.optString("bsGap", "0")
                     val isLowFloor = busObj.optString("busTCd2", "N") == "1"
-                    
-                    // BusInfo 객체 생성 및 추가
+                    val isOutOfService = estimatedTime == "운행종료"
+
                     busInfoList.add(BusInfo(
                         busNumber = busNumber,
                         estimatedTime = estimatedTime,
                         currentStation = currentStation,
                         remainingStops = remainingStops,
                         isLowFloor = isLowFloor,
-                        isOutOfService = estimatedTime == "운행종료"
+                        isOutOfService = isOutOfService
                     ))
                 }
             }
-            
             return busInfoList
-            
         } catch (e: Exception) {
             Log.e(TAG, "버스 도착 정보 파싱 오류: ${e.message}", e)
             return emptyList()
