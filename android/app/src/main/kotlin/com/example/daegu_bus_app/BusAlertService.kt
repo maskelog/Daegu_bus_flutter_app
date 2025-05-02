@@ -1466,7 +1466,7 @@ class BusAlertService : Service() {
         currentStation: String,
         routeId: String
     ) {
-        Log.d(TAG, "🔄 updateTrackingNotification 호출: $busNo, $stationName, ${remainingMinutes}분, 현재 위치: $currentStation")
+        Log.d(TAG, "🔄 updateTrackingNotification 호출: $busNo, $stationName, $remainingMinutes, $currentStation, $routeId")
         try {
             // 1. 추적 정보 업데이트 또는 생성
             val info = activeTrackings[routeId] ?: TrackingInfo(
