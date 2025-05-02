@@ -146,8 +146,16 @@ class _BusCardState extends State<BusCard> {
             if (!hasBoarded && remainingTime <= 3 && remainingTime > 0) {
               _playAlarm();
             }
-          }
 
+            // [추가] 실시간 알림도 항상 갱신
+            _notificationService.showOngoingBusTracking(
+              busNo: widget.busArrival.routeNo,
+              stationName: widget.stationName ?? '정류장 정보 없음',
+              remainingMinutes: remainingTime,
+              currentStation: firstBus.currentStation,
+              routeId: widget.busArrival.routeId,
+            );
+          }
           if (!hasBoarded &&
               remainingTime <= 0 &&
               updatedBusArrival.busInfoList.length > 1) {

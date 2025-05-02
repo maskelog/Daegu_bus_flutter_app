@@ -73,21 +73,48 @@ class _CompactBusCardState extends State<CompactBusCard> {
           widget.busArrival.busInfoList
               .addAll(updatedBusArrivals[0].busInfoList);
           logMessage(
-              '컴팩트 버스 카드 정보 업데이트 성공: ${updatedBusArrivals[0].busInfoList.first.estimatedTime}',
+              'CompactBusCard - 업데이트된 남은 시간: ${widget.busArrival.busInfoList.first.getRemainingMinutes()}',
               level: LogLevel.debug);
 
           // 알람 서비스 캐시 업데이트
           if (widget.busArrival.busInfoList.isNotEmpty) {
-            final firstBus = widget.busArrival.busInfoList.first;
             final alarmService =
                 Provider.of<AlarmService>(context, listen: false);
+            final firstBus = widget.busArrival.busInfoList.first;
+            final remainingMinutes = firstBus.getRemainingMinutes();
             alarmService.updateBusInfoCache(
               widget.busArrival.routeNo,
               widget.busArrival.routeId,
               firstBus,
-              firstBus.getRemainingMinutes(),
+              remainingMinutes,
             );
-            _cacheUpdated = true;
+            // [추가] 알람이 있으면 Notification도 함께 갱신
+            if (widget.stationName != null &&
+                alarmService.hasAlarm(
+                  widget.busArrival.routeNo,
+                  widget.stationName!,
+                  widget.busArrival.routeId,
+                )) {
+              logMessage(
+                '[CompactBusCard] updateBusTrackingNotification 호출: busNo=${widget.busArrival.routeNo}, stationName=${widget.stationName}, remainingMinutes=[1m$remainingMinutes\u001b[0m, currentStation=${firstBus.currentStation}, routeId=${widget.busArrival.routeId}',
+                level: LogLevel.info,
+              );
+              NotificationService().updateBusTrackingNotification(
+                busNo: widget.busArrival.routeNo,
+                stationName: widget.stationName!,
+                remainingMinutes: remainingMinutes,
+                currentStation: firstBus.currentStation,
+                routeId: widget.busArrival.routeId,
+              );
+              // [핵심 추가] 네이티브 알림이 항상 표시되도록 showOngoingBusTracking 호출
+              NotificationService().showOngoingBusTracking(
+                busNo: widget.busArrival.routeNo,
+                stationName: widget.stationName!,
+                remainingMinutes: remainingMinutes,
+                currentStation: firstBus.currentStation,
+                routeId: widget.busArrival.routeId,
+              );
+            }
           }
         });
       }
@@ -470,7 +497,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
               busNo: widget.busArrival.routeNo,
             );
 
-            // 네이티브 알림 표시 (이 부분이 누락되어 있었음)
+            // 네이티브 알림 표시 및 실시간 업데이트 시작
             await notificationService.showOngoingBusTracking(
               busNo: widget.busArrival.routeNo,
               stationName: widget.stationName!,
@@ -479,10 +506,23 @@ class _CompactBusCardState extends State<CompactBusCard> {
               routeId: routeId,
             );
 
+            // 실시간 버스 정보 업데이트를 위한 타이머 시작
+            notificationService.startRealTimeBusUpdates(
+              busNo: widget.busArrival.routeNo,
+              stationName: widget.stationName!,
+              routeId: routeId,
+              stationId: stationId,
+            );
+
             // TTS 알림 즉시 시작 (설정 및 이어폰 연결 여부 확인)
+            // BuildContext 사용 전 mounted 체크
+            if (!mounted) return;
+
             final settings =
                 Provider.of<SettingsService>(context, listen: false);
-            if (settings.useTts) {
+            final bool useTts = settings.useTts; // 로컬 변수로 저장
+
+            if (useTts) {
               final ttsSwitcher = TtsSwitcher();
               await ttsSwitcher.initialize();
               final headphoneConnected =
@@ -490,6 +530,10 @@ class _CompactBusCardState extends State<CompactBusCard> {
                 logMessage('이어폰 연결 상태 확인 중 오류: $e', level: LogLevel.error);
                 return false; // 에러 발생시 이어폰 미연결로 처리
               });
+
+              // 다시 mounted 체크
+              if (!mounted) return;
+
               if (headphoneConnected) {
                 await TtsSwitcher.startTtsTracking(
                   routeId: routeId,
