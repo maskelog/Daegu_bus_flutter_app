@@ -1,7 +1,10 @@
 data class BusInfo(
     val currentStation: String,
     val estimatedTime: String,
-    val remainingStops: Int
+    val remainingStops: String = "0",
+    val busNumber: String = "",
+    val isLowFloor: Boolean = false,
+    val isOutOfService: Boolean = false
 ) {
     fun getRemainingMinutes(): Int {
         return try {

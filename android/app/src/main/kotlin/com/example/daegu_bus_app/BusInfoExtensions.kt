@@ -20,3 +20,10 @@ fun BusInfo.getRemainingMinutes(): Int {
  */
 val BusInfo.isOutOfService: Boolean
     get() = estimatedTime == "운행종료"
+    
+/**
+ * 버스 정보를 로깅하기 위한 확장 함수
+ */
+fun BusInfo.toLogString(): String {
+    return "BusInfo(busNumber='$busNumber', currentStation='$currentStation', estimatedTime='$estimatedTime', remainingMinutes=${getRemainingMinutes()}, isLowFloor=$isLowFloor, isOutOfService=$isOutOfService)"
+}

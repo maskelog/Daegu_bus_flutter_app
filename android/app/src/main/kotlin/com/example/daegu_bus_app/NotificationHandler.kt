@@ -104,6 +104,12 @@ class NotificationHandler(private val context: Context) {
         val currentTimeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         Log.d(TAG, "🔔 알림 생성 시작 - $currentTimeStr")
         
+        // 각 활성 추적의 버스 정보를 로그로 출력
+        activeTrackings.forEach { (routeId, info) ->
+            val busInfo = info.lastBusInfo
+            Log.d(TAG, "🔍 추적 상태: ${info.busNo}번 버스, 시간=${busInfo?.estimatedTime ?: "정보 없음"}, 위치=${busInfo?.currentStation ?: "위치 정보 없음"}")
+        }
+        
         val currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()) // 현재 시간을 초 단위까지 표시
         val title = "버스 알람 추적 중 ($currentTime)"
         var contentText = "추적 중인 버스: ${activeTrackings.size}개"
@@ -140,7 +146,7 @@ class NotificationHandler(private val context: Context) {
 
                 // 현재 위치 정보 추가
                 val locationInfo = if (busInfo?.currentStation != null && busInfo.currentStation.isNotEmpty()) {
-                    " [현재: ${busInfo.currentStation.take(8)}${if (busInfo.currentStation.length > 8) ".." else ""}]"
+                    " [현재: ${busInfo.currentStation}]"
                 } else {
                     ""
                 }
@@ -149,6 +155,7 @@ class NotificationHandler(private val context: Context) {
                 val infoLine = "$busNo$lowFloorStr (${stationNameShort}): $timeStr$locationInfo"
                 inboxStyle.addLine(infoLine)
                 Log.d(TAG, "➕ 알림 라인 추가: $infoLine")
+                Log.d(TAG, "🚍 버스 정보 디버깅: 버스=$busNo, 위치=${busInfo?.currentStation ?: "위치 없음"}, 시간=$timeStr")
             }
 
             if (activeTrackings.size > 5) {
@@ -175,9 +182,9 @@ class NotificationHandler(private val context: Context) {
                     else -> busInfo.estimatedTime
                 }
 
-                // 현재 위치 정보 추가 (짧게)
+                // 현재 위치 정보 추가 (전체 표시)
                 val locationInfo = if (busInfo?.currentStation != null && busInfo.currentStation.isNotEmpty()) {
-                    " [${busInfo.currentStation.take(5)}${if (busInfo.currentStation.length > 5) ".." else ""}]"
+                    " [${busInfo.currentStation}]"
                 } else {
                     ""
                 }
@@ -192,7 +199,7 @@ class NotificationHandler(private val context: Context) {
             .setContentTitle(title)
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_bus_notification)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setStyle(inboxStyle)
             .setContentIntent(createPendingIntent())
             .setOngoing(true)
@@ -205,13 +212,30 @@ class NotificationHandler(private val context: Context) {
             .addAction(R.drawable.ic_stop_tracking, "추적 중지", createStopPendingIntent())
             .build()
 
-        // 노티피케이션 플래그 직접 설정 (필요 시)
-        notification.flags = notification.flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR
+        // 노티피케이션 플래그 직접 설정 - 항상 최신 정보로 표시되도록 함
+        notification.flags = notification.flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR or Notification.FLAG_FOREGROUND_SERVICE
 
         val endTime = System.currentTimeMillis()
         Log.d(TAG, "✅ 알림 생성 완료 - 소요시간: ${endTime - startTime}ms, 현재 시간: $currentTime")
         
         Log.d(TAG, "buildOngoingNotification: ${activeTrackings.mapValues { it.value.lastBusInfo }}")
+        
+        // 디버깅: 생성된 알림 내용 로깅
+        try {
+            val extras = notification.extras
+            Log.d(TAG, "📝 생성된 알림 내용 확인:")
+            Log.d(TAG, "  제목: ${extras.getString(Notification.EXTRA_TITLE)}")
+            Log.d(TAG, "  내용: ${extras.getString(Notification.EXTRA_TEXT)}")
+            
+            // InboxStyle 내용 로깅
+            val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+            if (lines != null) {
+                Log.d(TAG, "  확장 내용 (${lines.size}줄):")
+                lines.forEachIndexed { i, line -> Log.d(TAG, "    $i: $line") }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "알림 내용 로깅 중 오류: ${e.message}")
+        }
         
         return notification
     }

@@ -229,10 +229,27 @@ class BusAlertService : Service() {
                 val isUpdate = intent.action == ACTION_UPDATE_TRACKING
                 val allBusesSummary = intent.getStringExtra("allBusesSummary")
                 val routeId = intent.getStringExtra("routeId")
-                val stationId = intent.getStringExtra("stationId")
+                var stationId = intent.getStringExtra("stationId")
 
                 if (routeId == null || busNo.isBlank() || stationName.isBlank()) {
-                    Log.e(TAG, "$intent.action Aborted: Missing required info")
+                    Log.e(TAG, "${intent.action} Aborted: Missing required info")
+                    stopTrackingIfIdle()
+                    return START_NOT_STICKY
+                }
+
+                // --- stationId 보정 로직 추가 ---
+                if (stationId.isNullOrBlank()) {
+                    // routeId에서 stationId 추출 시도 (예: routeId가 '623_7012345678' 형태라면)
+                    if (routeId.contains("_")) {
+                        val parts = routeId.split("_")
+                        if (parts.size > 1 && parts[1].length == 10 && parts[1].startsWith("7")) {
+                            stationId = parts[1]
+                            Log.d(TAG, "stationId가 비어있어 routeId에서 추출: $stationId")
+                        }
+                    }
+                }
+                if (stationId.isNullOrBlank()) {
+                    Log.e(TAG, "stationId가 여전히 비어있음. 추적 불가: routeId=$routeId, busNo=$busNo, stationName=$stationName")
                     stopTrackingIfIdle()
                     return START_NOT_STICKY
                 }
@@ -733,10 +750,19 @@ class BusAlertService : Service() {
             busNo = busNo
         ).also { activeTrackings[effectiveRouteId] = it }
 
+        // currentStation 값이 null이 아니거나 빈 문자열이 아닌 경우에만 업데이트
+        val currentStationFinal = if (!currentStation.isNullOrBlank()) {
+            // 로그 출력을 추가하여 currentStation 값 확인
+            Log.d(TAG, "현재 버스 위치 정보 업데이트: $busNo, $currentStation")
+            currentStation
+        } else {
+            trackingInfo.lastBusInfo?.currentStation ?: "정보 없음"
+        }
+
         trackingInfo.lastBusInfo = BusInfo(
             busNumber = busNo,
             estimatedTime = if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분",
-            currentStation = currentStation ?: "정보 없음",
+            currentStation = currentStationFinal, // 업데이트된 현재 위치 정보
             remainingStops = trackingInfo.lastBusInfo?.remainingStops ?: "0"
         )
         trackingInfo.lastUpdateTime = System.currentTimeMillis()
@@ -745,6 +771,8 @@ class BusAlertService : Service() {
         val notification = notificationHandler.buildOngoingNotification(activeTrackings)
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
+        
+        Log.d(TAG, "알림 업데이트 완료: $busNo, $remainingMinutes 분, 현재 위치: $currentStationFinal")
     }
 
     fun stopTtsTracking(routeId: String? = null, stationId: String? = null, forceStop: Boolean = false) {
@@ -1214,7 +1242,7 @@ class BusAlertService : Service() {
                     notificationManager.cancelAll()
                     Log.i(TAG, "모든 알림 직접 취소 완료 (stopTracking)")
                 } catch (e: Exception) {
-                    Log.e(TAG, "알림 취소 오류: ${e.message}", e)
+                    Log.e(TAG, "알림 취소 오류: ${e.message}")
                 }
 
                 // 3. 포그라운드 서비스 중지
@@ -1231,7 +1259,7 @@ class BusAlertService : Service() {
                     context.sendBroadcast(intent)
                     Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송 (stopTracking)")
                 } catch (e: Exception) {
-                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
+                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
                 }
 
                 // 5. 서비스 중지 요청
@@ -1426,6 +1454,8 @@ class BusAlertService : Service() {
                 allBusesSummary = null,
                 routeId = routeId
             )
+            
+            // 4. 메인 스레드에서 알림 강제 업데이트 (추가)
             Handler(Looper.getMainLooper()).post {
                 try {
                     val notification = notificationHandler.buildOngoingNotification(activeTrackings)
@@ -1437,7 +1467,7 @@ class BusAlertService : Service() {
                 }
             }
 
-            // 1초 후 다시 한 번 강제 갱신 (지연 백업)
+            // 5. 1초 후 다시 한번 업데이트 (지연 백업)
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
                     val notification = notificationHandler.buildOngoingNotification(activeTrackings)
@@ -1452,7 +1482,7 @@ class BusAlertService : Service() {
             Log.d(TAG, "✅ updateTrackingInfoFromFlutter 완료: $busNo, ${remainingMinutes}분")
         } catch (e: Exception) {
             Log.e(TAG, "❌ updateTrackingInfoFromFlutter 오류: ${e.message}", e)
-            updateForegroundNotification()
+            updateForegroundNotification() // 오류 발생 시에도 알림 업데이트 시도
         }
     }
 

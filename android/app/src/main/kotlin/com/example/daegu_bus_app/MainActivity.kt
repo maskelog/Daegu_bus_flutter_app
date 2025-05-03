@@ -56,6 +56,7 @@ import io.flutter.plugins.GeneratedPluginRegistrant
 import java.util.Calendar
 import android.app.Notification
 import android.database.sqlite.SQLiteException
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
@@ -762,9 +763,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         }
                         CoroutineScope(Dispatchers.Main).launch {
                             try {
-                                val stationInfoJson = busApiService.getStationInfo(stationId)
+                                val jsonString = runBlocking { busApiService.getStationInfo(stationId) }
                                 Log.d(TAG, "정류장 정보 조회 완료: $stationId")
-                                result.success(stationInfoJson)
+                                result.success(jsonString)
                             } catch (e: Exception) {
                                 Log.e(TAG, "정류장 정보 조회 오류: ${e.message}", e)
                                 result.error("API_ERROR", "정류장 정보 조회 중 오류 발생: ${e.message}", null)
@@ -1083,8 +1084,70 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             }
 
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, STATION_TRACKING_CHANNEL).setMethodCallHandler { call, result ->
-                Log.d(TAG, "STATION_TRACKING_CHANNEL 호출: ${call.method}")
-
+                Log.d(TAG, "STATION_TRACKING_CHANNEL: method=${call.method}, args=${call.arguments}")
+                if (call.method == "getBusInfo") {
+                    val routeId = call.argument<String>("routeId") ?: ""
+                    var stationId = call.argument<String>("stationId") ?: ""
+                    // stationId가 10자리 숫자가 아니면 변환 시도 (wincId -> stationId)
+                    if (stationId.length < 10 || !stationId.startsWith("7")) {
+                        // BusApiService의 getStationIdFromBsId를 동기로 호출
+                        try {
+                            val convertedId = runBlocking { busApiService.getStationIdFromBsId(stationId) }
+                            if (!convertedId.isNullOrEmpty()) {
+                                Log.d(TAG, "STATION_TRACKING_CHANNEL: 변환된 stationId: $stationId -> $convertedId")
+                                stationId = convertedId
+                            } else {
+                                Log.e(TAG, "STATION_TRACKING_CHANNEL: stationId 변환 실패: $stationId")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "STATION_TRACKING_CHANNEL: stationId 변환 중 오류: ${e.message}", e)
+                        }
+                    }
+                    try {
+                        val jsonString = runBlocking { busApiService.getStationInfo(stationId) }
+                        Log.d(TAG, "STATION_TRACKING rawData: $jsonString")
+                        val routesArray = try {
+                            JSONArray(jsonString)
+                        } catch (e: org.json.JSONException) {
+                            JSONObject(jsonString).optJSONObject("body")?.optJSONArray("list") ?: JSONArray()
+                        }
+                        var remainingMinutes = Int.MAX_VALUE
+                        var currentStation = ""
+                        var found = false
+                        for (i in 0 until routesArray.length()) {
+                            val routeObj = routesArray.getJSONObject(i)
+                            Log.d(TAG, "STATION_TRACKING routeObj[$i]: $routeObj")
+                            val buses = routeObj.optJSONArray("arrList") ?: continue
+                            for (j in 0 until buses.length()) {
+                                val busObj = buses.getJSONObject(j)
+                                Log.d(TAG, "STATION_TRACKING busObj[$j]: $busObj")
+                                // routeId가 일치하는 버스 우선, 없으면 첫 번째 버스 정보 사용
+                                if (busObj.optString("routeId") == routeId || !found) {
+                                    val estState = busObj.optString("arrState")
+                                    currentStation = busObj.optString("bsNm")
+                                    remainingMinutes = when {
+                                        estState == "곧 도착" -> 0
+                                        estState == "운행종료" -> -1
+                                        estState.contains("분") -> estState.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
+                                        estState.all { it.isDigit() } -> estState.toIntOrNull() ?: Int.MAX_VALUE
+                                        else -> Int.MAX_VALUE
+                                    }
+                                    found = busObj.optString("routeId") == routeId
+                                    if (found) break
+                                }
+                            }
+                            if (found) break
+                        }
+                        if (remainingMinutes == Int.MAX_VALUE) remainingMinutes = -1
+                        Log.d(TAG, "getBusInfo returning remainingMinutes=$remainingMinutes, currentStation=$currentStation")
+                        result.success(mapOf("remainingMinutes" to remainingMinutes, "currentStation" to currentStation))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "getBusInfo error: ${e.message}", e)
+                        result.error("BUS_INFO_ERROR", e.message, null)
+                    }
+                } else {
+                    result.notImplemented()
+                }
             }
 
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_TRACKING_CHANNEL).setMethodCallHandler { call, result ->
@@ -1106,12 +1169,13 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             if (busAlertService != null) {
                                 // 1.1. updateTrackingNotification 메서드 직접 호출 (가장 확실한 방법)
                                 busAlertService?.updateTrackingNotification(
-                                    busNo = busNo,
-                                    stationName = stationName,
-                                    remainingMinutes = remainingMinutes,
-                                    currentStation = currentStation,
-                                    routeId = routeId
+                                busNo = busNo,
+                                stationName = stationName,
+                                remainingMinutes = remainingMinutes,
+                                currentStation = currentStation,
+                                routeId = routeId
                                 )
+                            Log.d(TAG, "🚌 업데이트 완료 - 버스 $busNo, 현재 위치: $currentStation")
 
                                 // 1.2. updateTrackingInfoFromFlutter 메서드 직접 호출 (백업)
                                 busAlertService?.updateTrackingInfoFromFlutter(
