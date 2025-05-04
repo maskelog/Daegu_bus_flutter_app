@@ -318,6 +318,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                             busArrival: arrival,
                             onTap: () {},
                             stationName: matchingStation.stationName,
+                            stationId: matchingStation.stationId,
                           );
                         },
                       ),

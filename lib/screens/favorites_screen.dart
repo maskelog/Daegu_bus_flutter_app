@@ -247,6 +247,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                 return CompactBusCard(
                                   busArrival: busArrival,
                                   stationName: station.name,
+                                  stationId: station.id,
                                   onTap: () => _showBusDetailModal(
                                       context, station, busArrival),
                                 );

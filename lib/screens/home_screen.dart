@@ -920,6 +920,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 return CompactBusCard(
                                   busArrival: _busArrivals[index],
                                   stationName: _selectedStop?.name,
+                                  stationId: _selectedStop?.stationId ??
+                                      _selectedStop?.id ??
+                                      '',
                                   onTap: () {
                                     _showBusDetailModal(_busArrivals[index]);
                                   },

@@ -151,9 +151,10 @@ class _SearchScreenState extends State<SearchScreen> {
             // 따라서 일반 정류장만 한 번에 20개까지만 변환 시도
             if (i < 20) {
               debugPrint('정류장 ID 변환 시도: ${station.name} (${station.id})');
-              
+
               // getStationIdFromBsId 메서드 사용
-              final String? convertedId = await ApiService.getStationIdFromBsId(station.id);
+              final String? convertedId =
+                  await ApiService.getStationIdFromBsId(station.id);
               if (convertedId != null && convertedId.isNotEmpty) {
                 limitedResults[i] = station.copyWith(
                   stationId: convertedId,
@@ -395,6 +396,9 @@ class _SearchScreenState extends State<SearchScreen> {
                                   .map((arrival) => CompactBusCard(
                                         busArrival: arrival,
                                         onTap: () {},
+                                        stationName: station.name,
+                                        stationId:
+                                            station.stationId ?? station.id,
                                       ))
                                   .toList(),
                             ),

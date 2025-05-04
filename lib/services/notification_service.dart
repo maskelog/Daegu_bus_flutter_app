@@ -68,7 +68,7 @@ class NotificationService {
     try {
       final result = await _stationTrackingChannel.invokeMethod('getBusInfo', {
         'routeId': _currentRouteId,
-        'stationName': _currentStationName,
+        'stationId': _currentStationId,
       });
       Map<String, dynamic> info;
       if (result is String) {
@@ -384,16 +384,13 @@ class NotificationService {
     required String routeId,
   }) async {
     logMessage(
-        '🔔 [Flutter] showOngoingBusTracking 호출: $busNo, $stationName, $remainingMinutes, $currentStation, $routeId');
+        '🔔 [Flutter] showOngoingBusTracking 호출: $busNo, $stationName, $remainingMinutes, $currentStation, $routeId',
+        level: LogLevel.info);
     try {
-      logMessage(
-          '🔔 지속적인 버스 추적 알림 표시 시도: $busNo, $stationName, $remainingMinutes분, routeId: $routeId, 현재 위치: $currentStation',
-          level: LogLevel.info);
-
       // 알림 ID 생성 (버스 번호와 정류장 이름으로)
       final int notificationId = _generateNotificationId(busNo, stationName);
 
-      // 실시간 버스 정보 업데이트를 위한 타이머 시작
+      // 실시간 버스 정보 업데이트를 위한 타이머 시작 (더 짧은 간격으로 변경)
       _startRealTimeBusUpdates(
         busNo: busNo,
         stationName: stationName,
@@ -409,11 +406,10 @@ class NotificationService {
         'remainingMinutes': remainingMinutes,
         'currentStation': currentStation,
         'routeId': routeId,
-        'allBusesSummary': routeId,
+        'stationId': _currentStationId,
         'id': notificationId,
         'isUpdate': false,
-        'action':
-            'com.example.daegu_bus_app.action.START_TRACKING_FOREGROUND', // Foreground 서비스 시작을 위한 액션
+        'action': 'com.example.daegu_bus_app.action.START_TRACKING_FOREGROUND',
       });
 
       // 2. 추가: bus_tracking 채널을 통해 직접 updateBusTrackingNotification 호출
@@ -434,23 +430,17 @@ class NotificationService {
         logMessage('⚠️ bus_tracking 채널 호출 오류: $e', level: LogLevel.error);
       }
 
-      if (result) {
-        logMessage(
-            '✅ 지속적인 버스 추적 알림 표시 완료 (ID: $notificationId, routeId: $routeId)',
-            level: LogLevel.info);
-      } else {
-        logMessage('❌ 지속적인 버스 추적 알림 표시 실패', level: LogLevel.error);
-      }
+      // 3. 즉시 실시간 업데이트 시작 (지연 없이)
+      _updateBusInfo();
+
       return result;
-    } on PlatformException catch (e) {
-      logMessage('❌ 지속적인 버스 추적 알림 표시 오류: ${e.message}', level: LogLevel.error);
+    } catch (e) {
+      logMessage('❌ 지속적인 버스 추적 알림 표시 오류: $e', level: LogLevel.error);
       return false;
     }
   }
 
-  // 실시간 버스 정보 업데이트 관련 변수는 클래스 상단에 이미 선언되어 있음
-
-  // 실시간 버스 정보 업데이트 타이머 시작 (내부 메서드)
+// 실시간 버스 정보 업데이트 타이머 시작 (내부 메서드) - 주기 단축
   void _startRealTimeBusUpdates({
     required String busNo,
     required String stationName,
@@ -466,8 +456,8 @@ class NotificationService {
     _currentRouteId = routeId;
     _currentStationId = stationId;
 
-    // 타이머 시작 (30초마다 업데이트 - 더 빈번하게 변경)
-    _busUpdateTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    // 타이머 시작 (15초마다 업데이트 - 더 빈번하게)
+    _busUpdateTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _updateBusInfo();
     });
 
@@ -476,6 +466,101 @@ class NotificationService {
 
     logMessage('🚌 실시간 버스 정보 업데이트 타이머 시작: $busNo, $stationName',
         level: LogLevel.info);
+  }
+
+// 실시간 버스 정보 업데이트 - 강화된 업데이트 메커니즘
+  Future<void> _updateBusInfo() async {
+    if (_currentBusNo == null ||
+        _currentStationName == null ||
+        _currentRouteId == null ||
+        _currentStationId == null) {
+      logMessage('⚠️ 버스 정보 업데이트 실패: 필요한 정보가 없습니다', level: LogLevel.warning);
+      return;
+    }
+
+    try {
+      // 버스 정보 조회
+      final result = await _stationTrackingChannel.invokeMethod('getBusInfo', {
+        'routeId': _currentRouteId,
+        'stationId': _currentStationId,
+      });
+
+      // 결과 파싱
+      Map<String, dynamic> info;
+      if (result is String) {
+        info = Map<String, dynamic>.from(jsonDecode(result));
+      } else {
+        info = Map<String, dynamic>.from(result);
+      }
+
+      // 정보 추출
+      int remainingMinutes = info['remainingMinutes'] ?? 0;
+      String currentStation = info['currentStation'] ?? '위치 정보 없음';
+
+      logMessage('[DEBUG] _updateBusInfo: $remainingMinutes분, $currentStation',
+          level: LogLevel.debug);
+
+      // 모든 업데이트 방법을 병렬로 시도하여 최대한 확실하게 업데이트
+      List<Future> updateMethods = [];
+
+      // 1. bus_tracking 채널 호출
+      updateMethods.add(
+          const MethodChannel('com.example.daegu_bus_app/bus_tracking')
+              .invokeMethod(
+        'updateBusTrackingNotification',
+        {
+          'busNo': _currentBusNo!,
+          'stationName': _currentStationName!,
+          'remainingMinutes': remainingMinutes,
+          'currentStation': currentStation,
+          'routeId': _currentRouteId!,
+        },
+      ).then((_) {
+        logMessage('✅ bus_tracking 채널로 알림 업데이트 요청 완료', level: LogLevel.debug);
+      }).catchError((e) {
+        logMessage('⚠️ bus_tracking 채널 호출 오류: $e', level: LogLevel.error);
+      }));
+
+      // 2. 직접 서비스 시작 인텐트 전송 (ACTION_UPDATE_TRACKING)
+      updateMethods.add(_channel.invokeMethod('startBusTrackingService', {
+        'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
+        'busNo': _currentBusNo!,
+        'stationName': _currentStationName!,
+        'remainingMinutes': remainingMinutes,
+        'currentStation': currentStation,
+        'routeId': _currentRouteId!,
+      }).then((_) {
+        logMessage('✅ ACTION_UPDATE_TRACKING 인텐트 전송 완료', level: LogLevel.debug);
+      }).catchError((e) {
+        logMessage('⚠️ ACTION_UPDATE_TRACKING 인텐트 전송 오류: $e',
+            level: LogLevel.error);
+      }));
+
+      // 3. 메인 채널을 통해 showOngoingBusTracking 호출 (실시간 업데이트)
+      updateMethods.add(_channel.invokeMethod('showOngoingBusTracking', {
+        'busNo': _currentBusNo!,
+        'stationName': _currentStationName!,
+        'remainingMinutes': remainingMinutes,
+        'currentStation': currentStation,
+        'routeId': _currentRouteId!,
+        'isUpdate': true,
+        'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
+      }).then((_) {
+        logMessage('✅ showOngoingBusTracking 호출 완료', level: LogLevel.debug);
+      }).catchError((e) {
+        logMessage('⚠️ showOngoingBusTracking 호출 오류: $e',
+            level: LogLevel.error);
+      }));
+
+      // 모든 방법 병렬 실행
+      await Future.wait(updateMethods);
+
+      logMessage(
+          '✅ 실시간 버스 추적 알림 업데이트 완료: $_currentBusNo, $remainingMinutes분, 현재 위치: $currentStation',
+          level: LogLevel.info);
+    } catch (e) {
+      logMessage('❌ 버스 정보 업데이트 오류: $e', level: LogLevel.error);
+    }
   }
 
   /// 실시간 버스 정보 업데이트 타이머 시작 (외부에서 호출 가능한 공개 메서드)
@@ -502,52 +587,6 @@ class NotificationService {
     _currentRouteId = null;
     _currentStationId = null;
     debugPrint('🚌 실시간 버스 정보 업데이트 타이머 중지');
-  }
-
-  // 실시간 버스 정보 업데이트
-  Future<void> _updateBusInfo() async {
-    if (_currentBusNo == null ||
-        _currentStationName == null ||
-        _currentRouteId == null ||
-        _currentStationId == null) {
-      debugPrint('⚠️ 버스 정보 업데이트 실패: 필요한 정보가 없습니다');
-      return;
-    }
-
-    try {
-      // 버스 정보 조회
-      final result = await _stationTrackingChannel.invokeMethod('getBusInfo', {
-        'routeId': _currentRouteId,
-        'stationId': _currentStationId,
-      });
-
-      // 결과 파싱
-      Map<String, dynamic> info;
-      if (result is String) {
-        info = Map<String, dynamic>.from(jsonDecode(result));
-      } else {
-        info = Map<String, dynamic>.from(result);
-      }
-
-      // 정보 추출
-      int remainingMinutes = info['remainingMinutes'] ?? 0;
-      String? currentStation = info['currentStation'];
-
-      logMessage('[DEBUG] _updateBusInfo: $remainingMinutes분, $currentStation');
-      await updateBusTrackingNotification(
-        busNo: _currentBusNo!,
-        stationName: _currentStationName!,
-        remainingMinutes: remainingMinutes,
-        currentStation: currentStation!,
-        routeId: _currentRouteId!,
-      );
-
-      logMessage(
-          '🚌 버스 정보 업데이트 완료: $_currentBusNo, $remainingMinutes분, 현재 위치: $currentStation',
-          level: LogLevel.debug);
-    } catch (e) {
-      logMessage('❌ 버스 정보 업데이트 오류: $e', level: LogLevel.error);
-    }
   }
 
   /// 실시간 버스 추적 알림을 즉시 갱신 (패널 등에서 호출)

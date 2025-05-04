@@ -14,11 +14,13 @@ class CompactBusCard extends StatefulWidget {
   final BusArrival busArrival;
   final VoidCallback onTap;
   final String? stationName; // 정류장 이름
+  final String stationId; // 정류장 ID 추가
 
   const CompactBusCard({
     super.key,
     required this.busArrival,
     required this.onTap,
+    required this.stationId, // 필수 파라미터로 변경
     this.stationName,
   });
 
@@ -333,18 +335,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
       final notificationService = NotificationService();
       await notificationService.initialize();
 
-      // 정류장 ID 추출
-      final String stationId =
-          widget.busArrival.routeId.split('_').lastOrNull ?? '';
-      if (stationId.isEmpty) {
-        logMessage('❌ 정류장 ID를 추출할 수 없습니다.', level: LogLevel.error);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('정류장 정보가 완전하지 않습니다. 알람을 설정할 수 없습니다.')),
-          );
-        }
-        return;
-      }
+      final String stationId = widget.stationId;
 
       // routeId가 비어있는 경우 기본값 설정
       final String routeId = widget.busArrival.routeId.isNotEmpty
@@ -491,7 +482,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
 
             // 승차 알람은 즉시 모니터링 시작
             await alarmService.startBusMonitoringService(
-              stationId: stationId, // 명시적으로 stationId 전달
+              stationId: stationId,
               stationName: widget.stationName!,
               routeId: routeId,
               busNo: widget.busArrival.routeNo,
