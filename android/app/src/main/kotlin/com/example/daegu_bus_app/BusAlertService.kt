@@ -767,6 +767,27 @@ class BusAlertService : Service() {
         )
         trackingInfo.lastUpdateTime = System.currentTimeMillis()
 
+        // ====== [TTS 도착 임박 알림 추가] ======
+        try {
+            if (remainingMinutes <= 1 && !hasNotifiedTts.contains(effectiveRouteId)) {
+                val ttsIntent = Intent(this, TTSService::class.java).apply {
+                    action = "REPEAT_TTS_ALERT"
+                    putExtra("busNo", busNo)
+                    putExtra("stationName", stationName)
+                    putExtra("routeId", effectiveRouteId)
+                    putExtra("stationId", trackingInfo.stationId)
+                }
+                startService(ttsIntent)
+                hasNotifiedTts.add(effectiveRouteId)
+                Log.d(TAG, "[TTS] 도착 임박 TTSService 호출: $busNo, $stationName, $remainingMinutes")
+            } else if (remainingMinutes > 1) {
+                hasNotifiedTts.remove(effectiveRouteId)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "[TTS] 도착 임박 TTSService 호출 오류: ${e.message}", e)
+        }
+        // ====== [END TTS 추가] ======
+
         // 알림 갱신
         val notification = notificationHandler.buildOngoingNotification(activeTrackings)
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
