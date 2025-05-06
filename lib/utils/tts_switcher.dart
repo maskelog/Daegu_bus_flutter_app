@@ -136,15 +136,10 @@ class TtsSwitcher {
     int remainingMinutes = 5,
     Future<int> Function()? getRemainingTimeCallback,
   }) async {
-    // Respect output mode and headphone connection
+    // Directly invoke native TTS tracking without headphone check
     final switcher = TtsSwitcher();
     await switcher.initialize();
-    final bool shouldUse = await switcher.shouldUseNativeTts();
-    if (!shouldUse) {
-      logMessage('🔇 TTS 모드 비활성화 또는 이어폰 미연결로 TTS 스킵: $busNo',
-          level: LogLevel.info);
-      return false;
-    }
+
     try {
       // 네이티브 메서드로 TTS 추적 시작
       final result = await _platform.invokeMethod('startTtsTracking', {

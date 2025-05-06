@@ -9,7 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -25,9 +27,21 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     private var stationName: String = ""
     private var routeId: String = ""
     private var stationId: String = ""
+    private var remainingMinutes: Int = 0
     private var isTracking = false
     private var lastSpokenTime = 0L
     private val SPEAK_INTERVAL = 30000L // 30초마다 말하기
+    
+    // Handler for repeating TTS announcements
+    private val ttsHandler = Handler(Looper.getMainLooper())
+    private val ttsRunnable = object : Runnable {
+        override fun run() {
+            if (isTracking && isInitialized) {
+                speakBusAlert()
+                ttsHandler.postDelayed(this, SPEAK_INTERVAL)
+            }
+        }
+    }
     
     companion object {
         private const val NOTIFICATION_ID = 1002
@@ -37,7 +51,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "TTS 서비스 생성")
+        Log.d(TAG, "TTS 서비스 생성: onCreate")
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification("TTS 서비스 실행 중"))
     }
@@ -51,9 +65,11 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 stationName = intent.getStringExtra("stationName") ?: ""
                 routeId = intent.getStringExtra("routeId") ?: ""
                 stationId = intent.getStringExtra("stationId") ?: ""
+                remainingMinutes = intent.getIntExtra("remainingMinutes", remainingMinutes)
                 
-                Log.d(TAG, "TTS 추적 시작: $busNo 번 버스, $stationName")
+                Log.d(TAG, "TTS 추적 시작: $busNo 번 버스, $stationName, 남은시간=${remainingMinutes}분")
                 
+                isTracking = true
                 if (!isInitialized) {
                     initializeTTS()
                 } else {
@@ -65,8 +81,9 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 stationName = intent.getStringExtra("stationName") ?: ""
                 routeId = intent.getStringExtra("routeId") ?: ""
                 stationId = intent.getStringExtra("stationId") ?: ""
+                remainingMinutes = intent.getIntExtra("remainingMinutes", remainingMinutes)
                 
-                Log.d(TAG, "TTS 알림 반복: $busNo 번 버스, $stationName")
+                Log.d(TAG, "TTS 알림 반복: $busNo 번 버스, $stationName, 남은시간=${remainingMinutes}분")
                 
                 if (isInitialized) {
                     speakBusAlert()
@@ -74,6 +91,9 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             }
             "STOP_TTS_TRACKING" -> {
                 Log.d(TAG, "TTS 추적 중지")
+                isTracking = false
+                // Stop periodic announcements
+                ttsHandler.removeCallbacks(ttsRunnable)
                 stopTracking()
                 stopSelf()
             }
@@ -88,6 +108,9 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     
     override fun onDestroy() {
         Log.d(TAG, "TTS 서비스 종료")
+        // Clean up handler callbacks
+        isTracking = false
+        ttsHandler.removeCallbacks(ttsRunnable)
         stopTracking()
         tts?.stop()
         tts?.shutdown()
@@ -117,7 +140,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 override fun onDone(utteranceId: String?) {
                     Log.d(TAG, "TTS 발화 완료: $utteranceId")
                 }
-                
+
                 override fun onError(utteranceId: String?) {
                     Log.e(TAG, "TTS 발화 오류: $utteranceId")
                 }
@@ -138,6 +161,9 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         
         isTracking = true
         speakBusAlert()
+        // schedule periodic announcements
+        ttsHandler.removeCallbacks(ttsRunnable)
+        ttsHandler.postDelayed(ttsRunnable, SPEAK_INTERVAL)
     }
     
     private fun stopTracking() {
@@ -146,14 +172,6 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     }
     
     private fun speakBusAlert() {
-        // 이어폰/블루투스 이어셋 연결 여부 확인, 미연결 시 TTS 건너뜀
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val isWired = audioManager.isWiredHeadsetOn
-        val isBt = audioManager.isBluetoothA2dpOn
-        if (!isWired && !isBt) {
-            Log.d(TAG, "🎧 이어셋 미연결 - TTS 발화 스킵")
-            return
-        }
         if (!isTracking || !isInitialized) {
             return
         }
@@ -165,7 +183,12 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         lastSpokenTime = currentTime
 
         val utteranceId = UUID.randomUUID().toString()
-        val message = "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
+        // Build message using proper interpolation
+        val message = if (remainingMinutes > 0) {
+            "$busNo 번 버스가 $stationName 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
+        } else {
+            "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
+        }
 
         Log.d(TAG, "TTS 발화: $message")
 

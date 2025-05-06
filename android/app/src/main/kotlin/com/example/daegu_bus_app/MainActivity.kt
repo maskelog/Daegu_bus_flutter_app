@@ -433,35 +433,29 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         val stationId = call.argument<String>("stationId") ?: ""
                         val busNo = call.argument<String>("busNo") ?: ""
                         val stationName = call.argument<String>("stationName") ?: ""
-
-                        // 유효성 검사 - 빈 인자를 대체 값으로 채우기
-                        val effectiveRouteId = routeId.takeIf { it.isNotEmpty() } ?: busNo
-                        val effectiveStationId = stationId.takeIf { it.isNotEmpty() } ?: effectiveRouteId
-                        val effectiveBusNo = busNo.takeIf { it.isNotEmpty() } ?: effectiveRouteId
-
-                        if (effectiveRouteId.isEmpty() || effectiveStationId.isEmpty() ||
-                            effectiveBusNo.isEmpty() || stationName.isEmpty()) {
-                            Log.e(TAG, "필수 인자 오류 - routeId:$routeId, stationId:$stationId, busNo:$busNo, stationName:$stationName")
-                            result.error("INVALID_ARGUMENT", "필수 인자 누락", null)
+                        val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                        if (routeId.isEmpty() || stationId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "startTtsTracking requires routeId, stationId, busNo, stationName", null)
                             return@setMethodCallHandler
                         }
-
                         try {
-                            Log.d(TAG, "TTS 추적 시작 요청: $effectiveBusNo, $stationName")
-                            // TTS tracking is not directly available in BusAlertService
-                            // Using alternative method
-                            val intent = Intent(this, TTSService::class.java).apply {
-                                action = "REPEAT_TTS_ALERT"
-                                putExtra("busNo", effectiveBusNo)
+                            val ttsIntent = Intent(this, TTSService::class.java).apply {
+                                action = "START_TTS_TRACKING"
+                                putExtra("busNo", busNo)
                                 putExtra("stationName", stationName)
-                                putExtra("routeId", effectiveRouteId)
-                                putExtra("stationId", effectiveStationId)
+                                putExtra("routeId", routeId)
+                                putExtra("stationId", stationId)
+                                putExtra("remainingMinutes", remainingMinutes)
                             }
-                            startService(intent)
-                            result.success("TTS 추적 시작됨")
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(ttsIntent)
+                            } else {
+                                startService(ttsIntent)
+                            }
+                            result.success(true)
                         } catch (e: Exception) {
-                            Log.e(TAG, "TTS 추적 시작 오류: ${e.message}", e)
-                            result.error("TTS_ERROR", "TTS 추적 시작 실패: ${e.message}", null)
+                            Log.e(TAG, "startTtsTracking 호출 오류: ${e.message}", e)
+                            result.error("TTS_ERROR", "startTtsTracking 실패: ${e.message}", null)
                         }
                     }
                     "updateBusTrackingNotification" -> {
@@ -1022,6 +1016,43 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             result.error("ALARM_SOUND_ERROR", "알람음 설정 중 오류 발생: ${e.message}", null)
                         }
                     }
+                    "stopTTS" -> {
+                        // BusAlertService의 stopTtsTracking을 호출하여 TTS 중지
+                        busAlertService?.stopTtsTracking(forceStop = true)
+                        Log.d(TAG, "네이티브 TTS 중지 요청 (BusAlertService 호출)")
+                        result.success(true)
+                    }
+                    "startTtsTracking" -> {
+                        // Flutter에서 요청한 TTS 트래킹 시작 처리
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        val stationId = call.argument<String>("stationId") ?: ""
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                        if (routeId.isEmpty() || stationId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "startTtsTracking requires routeId, stationId, busNo, stationName", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val ttsIntent = Intent(this, TTSService::class.java).apply {
+                                action = "START_TTS_TRACKING"
+                                putExtra("routeId", routeId)
+                                putExtra("stationId", stationId)
+                                putExtra("busNo", busNo)
+                                putExtra("stationName", stationName)
+                                putExtra("remainingMinutes", remainingMinutes)
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(ttsIntent)
+                            } else {
+                                startService(ttsIntent)
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "startTtsTracking error: ${e.message}", e)
+                            result.error("TTS_ERROR", "startTtsTracking failed: ${e.message}", null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -1078,6 +1109,37 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         busAlertService?.stopTtsTracking(forceStop = true)
                         Log.d(TAG, "네이티브 TTS 중지 요청 (BusAlertService 호출)")
                         result.success(true)
+                    }
+                    "startTtsTracking" -> {
+                        // Flutter에서 요청한 TTS 트래킹 시작 처리
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        val stationId = call.argument<String>("stationId") ?: ""
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                        if (routeId.isEmpty() || stationId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "startTtsTracking requires routeId, stationId, busNo, stationName", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val ttsIntent = Intent(this, TTSService::class.java).apply {
+                                action = "START_TTS_TRACKING"
+                                putExtra("routeId", routeId)
+                                putExtra("stationId", stationId)
+                                putExtra("busNo", busNo)
+                                putExtra("stationName", stationName)
+                                putExtra("remainingMinutes", remainingMinutes)
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(ttsIntent)
+                            } else {
+                                startService(ttsIntent)
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "startTtsTracking error: ${e.message}", e)
+                            result.error("TTS_ERROR", "startTtsTracking failed: ${e.message}", null)
+                        }
                     }
                     else -> result.notImplemented()
                 }
