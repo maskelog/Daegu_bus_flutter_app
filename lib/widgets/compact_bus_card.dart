@@ -107,6 +107,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
                 remainingMinutes: remainingMinutes,
                 currentStation: firstBus.currentStation,
                 routeId: widget.busArrival.routeId,
+                stationId: widget.stationId,
               );
               // [핵심 추가] 네이티브 알림이 항상 표시되도록 showOngoingBusTracking 호출
               NotificationService().showOngoingBusTracking(
@@ -115,6 +116,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
                 remainingMinutes: remainingMinutes,
                 currentStation: firstBus.currentStation,
                 routeId: widget.busArrival.routeId,
+                stationId: widget.stationId,
               );
             }
           }
@@ -335,12 +337,11 @@ class _CompactBusCardState extends State<CompactBusCard> {
       final notificationService = NotificationService();
       await notificationService.initialize();
 
-      final String stationId = widget.stationId;
-
-      // routeId가 비어있는 경우 기본값 설정
       final String routeId = widget.busArrival.routeId.isNotEmpty
           ? widget.busArrival.routeId
           : '${widget.busArrival.routeNo}_${widget.stationName}';
+
+      final String stationId = widget.stationId;
 
       logMessage('사용할 routeId: $routeId, stationId: $stationId',
           level: LogLevel.debug);
@@ -495,6 +496,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
               remainingMinutes: remainingMinutes,
               currentStation: busInfo.currentStation,
               routeId: routeId,
+              stationId: stationId,
             );
 
             // 실시간 버스 정보 업데이트를 위한 타이머 시작
@@ -506,12 +508,12 @@ class _CompactBusCardState extends State<CompactBusCard> {
             );
 
             // TTS 알림 즉시 시작 (설정 및 이어폰 연결 여부 확인)
-            // BuildContext 사용 전 mounted 체크
             if (!mounted) return;
 
             final settings =
                 Provider.of<SettingsService>(context, listen: false);
-            final bool useTts = settings.useTts; // 로컬 변수로 저장
+            final bool useTts = settings.useTts;
+            final int speakerMode = settings.speakerMode;
 
             if (useTts) {
               final ttsSwitcher = TtsSwitcher();
@@ -519,13 +521,25 @@ class _CompactBusCardState extends State<CompactBusCard> {
               final headphoneConnected =
                   await ttsSwitcher.isHeadphoneConnected().catchError((e) {
                 logMessage('이어폰 연결 상태 확인 중 오류: $e', level: LogLevel.error);
-                return false; // 에러 발생시 이어폰 미연결로 처리
+                return false;
               });
 
-              // 다시 mounted 체크
-              if (!mounted) return;
-
-              if (headphoneConnected) {
+              if (speakerMode == SettingsService.speakerModeHeadset) {
+                // 이어폰 전용 모드: 이어폰 연결 시에만 TTS
+                if (headphoneConnected) {
+                  await TtsSwitcher.startTtsTracking(
+                    routeId: routeId,
+                    stationId: stationId,
+                    busNo: widget.busArrival.routeNo,
+                    stationName: widget.stationName!,
+                    remainingMinutes: remainingMinutes,
+                  );
+                } else {
+                  logMessage('🎧 이어폰 미연결 - 이어폰 전용 모드에서 TTS 건너뜀',
+                      level: LogLevel.info);
+                }
+              } else if (speakerMode == SettingsService.speakerModeSpeaker) {
+                // 스피커 전용 모드: 이어폰 연결 여부와 상관없이 TTS 실행
                 await TtsSwitcher.startTtsTracking(
                   routeId: routeId,
                   stationId: stationId,
@@ -534,8 +548,19 @@ class _CompactBusCardState extends State<CompactBusCard> {
                   remainingMinutes: remainingMinutes,
                 );
               } else {
-                logMessage('🎧 이어폰 미연결 - 컴팩트 승차 알람 TTS 건너뜀',
-                    level: LogLevel.info);
+                // 자동 모드: 이어폰 연결 시 TTS, 아니면 Flutter TTS 등 대체 로직
+                if (headphoneConnected) {
+                  await TtsSwitcher.startTtsTracking(
+                    routeId: routeId,
+                    stationId: stationId,
+                    busNo: widget.busArrival.routeNo,
+                    stationName: widget.stationName!,
+                    remainingMinutes: remainingMinutes,
+                  );
+                } else {
+                  logMessage('🔇 자동 모드 - 이어폰 미연결, Flutter TTS 등 대체 로직 필요',
+                      level: LogLevel.info);
+                }
               }
             } else {
               logMessage('🔇 컴팩트 승차 알람 TTS 설정 비활성화', level: LogLevel.info);

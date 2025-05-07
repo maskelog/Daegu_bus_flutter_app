@@ -1119,22 +1119,22 @@ class BusAlertService : Service() {
                     OUTPUT_MODE_AUTO -> !isHeadsetConnected()
                     else -> !isHeadsetConnected()
                 }
-                val streamType = if (useSpeaker) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
-                Log.d(TAG, "🔊 Preparing TTS: Stream=${if(streamType == AudioManager.STREAM_ALARM) "ALARM" else "MUSIC"}, Speaker=$useSpeaker")
+                val streamType = android.media.AudioManager.STREAM_MUSIC // 이어폰 전용 모드 강제 MUSIC
+                Log.d(TAG, "🔊 Preparing TTS: Stream=MUSIC, Speaker=$useSpeaker")
 
                 val utteranceId = "tts_${System.currentTimeMillis()}"
-                val params = Bundle().apply {
-                    putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-                    putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, streamType)
-                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, ttsVolume)
+                val params = android.os.Bundle().apply {
+                    putString(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+                    putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
+                    putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, ttsVolume)
                 }
 
                 val focusResult = requestAudioFocus(useSpeaker)
 
-                if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                if (focusResult == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                     Log.d(TAG, "🔊 Audio focus granted. Speaking.")
                     ttsEngine?.setOnUtteranceProgressListener(createTtsListener())
-                    ttsEngine?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                    ttsEngine?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, params, utteranceId)
                 } else {
                     Log.e(TAG, "🔊 Audio focus request failed ($focusResult). Speak cancelled.")
                 }

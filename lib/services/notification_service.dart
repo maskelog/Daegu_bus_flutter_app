@@ -382,6 +382,7 @@ class NotificationService {
     required int remainingMinutes,
     required String currentStation,
     required String routeId,
+    required String stationId,
   }) async {
     logMessage(
         '🔔 [Flutter] showOngoingBusTracking 호출: $busNo, $stationName, $remainingMinutes, $currentStation, $routeId',
@@ -395,7 +396,7 @@ class NotificationService {
         busNo: busNo,
         stationName: stationName,
         routeId: routeId,
-        stationId: routeId.split('_').lastOrNull,
+        stationId: stationId,
       );
 
       // 1. 메인 채널을 통해 Foreground 서비스 시작
@@ -445,7 +446,7 @@ class NotificationService {
     required String busNo,
     required String stationName,
     String? routeId,
-    String? stationId,
+    required String stationId,
   }) {
     // 기존 타이머 중지
     _stopRealTimeBusUpdates();
@@ -568,7 +569,7 @@ class NotificationService {
     required String busNo,
     required String stationName,
     String? routeId,
-    String? stationId,
+    required String stationId,
   }) {
     _startRealTimeBusUpdates(
       busNo: busNo,
@@ -596,6 +597,7 @@ class NotificationService {
     required int remainingMinutes,
     required String currentStation,
     required String routeId,
+    required String stationId,
   }) async {
     try {
       logMessage(
@@ -676,7 +678,7 @@ class NotificationService {
       _currentBusNo = busNo;
       _currentStationName = stationName;
       _currentRouteId = routeId;
-      _currentStationId = routeId.split('_').lastOrNull;
+      _currentStationId = stationId;
 
       // 6. 추가: 1초 후 다시 한번 업데이트 시도 (백업)
       Future.delayed(const Duration(seconds: 1), () {

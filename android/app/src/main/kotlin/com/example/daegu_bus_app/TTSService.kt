@@ -183,7 +183,6 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         lastSpokenTime = currentTime
 
         val utteranceId = UUID.randomUUID().toString()
-        // Build message using proper interpolation
         val message = if (remainingMinutes > 0) {
             "$busNo 번 버스가 $stationName 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
         } else {
@@ -192,11 +191,18 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
 
         Log.d(TAG, "TTS 발화: $message")
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            tts?.speak(message, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+            val params = android.os.Bundle().apply {
+                putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
+            }
+            tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         } else {
+            val params = HashMap<String, String>().apply {
+                put(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC.toString())
+                put(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            }
             @Suppress("DEPRECATION")
-            tts?.speak(message, TextToSpeech.QUEUE_FLUSH, null)
+            tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params)
         }
     }
     

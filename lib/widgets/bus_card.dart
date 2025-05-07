@@ -154,6 +154,7 @@ class _BusCardState extends State<BusCard> {
               remainingMinutes: remainingTime,
               currentStation: firstBus.currentStation,
               routeId: widget.busArrival.routeId,
+              stationId: widget.stationId,
             );
           }
           if (!hasBoarded &&
@@ -329,6 +330,7 @@ class _BusCardState extends State<BusCard> {
         remainingMinutes: remainingTime,
         currentStation: firstBus.currentStation,
         routeId: routeId,
+        stationId: widget.stationId,
       );
 
       // TTS 알림 즉시 시작 (일반 승차 알람에 대해 useTts 설정 및 이어폰 연결 여부 확인)
@@ -538,6 +540,7 @@ class _BusCardState extends State<BusCard> {
             remainingMinutes: remainingTime,
             currentStation: firstBus.currentStation,
             routeId: routeId,
+            stationId: stationId,
           );
 
           // TTS 알림 즉시 시작 (일반 승차 알람용, useTts 설정 및 이어폰 연결 여부 확인)
