@@ -51,13 +51,13 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "TTS 서비스 생성: onCreate")
+        Log.d(TAG, "[TTSService] onCreate 호출됨")
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification("TTS 서비스 실행 중"))
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "TTS 서비스 시작: ${intent?.action}")
+        Log.d(TAG, "[TTSService] onStartCommand: action=${intent?.action}, busNo=${intent?.getStringExtra("busNo")}, stationName=${intent?.getStringExtra("stationName")}, routeId=${intent?.getStringExtra("routeId")}, stationId=${intent?.getStringExtra("stationId")}")
         
         when (intent?.action) {
             "START_TTS_TRACKING" -> {
@@ -173,11 +173,12 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     
     private fun speakBusAlert() {
         if (!isTracking || !isInitialized) {
+            Log.w(TAG, "[TTSService] speakBusAlert: isTracking=$isTracking, isInitialized=$isInitialized. 발화 중단.")
             return
         }
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastSpokenTime < SPEAK_INTERVAL) {
-            Log.d(TAG, "TTS 발화 간격이 너무 짧습니다. 건너뜁니다.")
+            Log.d(TAG, "[TTSService] TTS 발화 간격이 너무 짧음. 건너뜀.")
             return
         }
         lastSpokenTime = currentTime
@@ -189,20 +190,22 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
         }
 
-        Log.d(TAG, "TTS 발화: $message")
+        Log.d(TAG, "[TTSService] TTS 발화: $message, utteranceId=$utteranceId")
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            val params = android.os.Bundle().apply {
-                putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                val params = android.os.Bundle().apply {
+                    putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
+                }
+                tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+            } else {
+                val params = HashMap<String, String>()
+                params[android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM] = android.media.AudioManager.STREAM_MUSIC.toString()
+                @Suppress("DEPRECATION")
+                tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params)
             }
-            tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-        } else {
-            val params = HashMap<String, String>().apply {
-                put(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC.toString())
-                put(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-            }
-            @Suppress("DEPRECATION")
-            tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params)
+        } catch (e: Exception) {
+            Log.e(TAG, "[TTSService] TTS 발화 실패: ${e.message}", e)
         }
     }
     

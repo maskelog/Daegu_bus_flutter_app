@@ -349,6 +349,18 @@ class BusAlertService : Service() {
     )
 
     private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String) {
+        serviceScope.launch {
+            var realStationId = stationId
+            if (stationId.length < 10 || !stationId.startsWith("7")) {
+                // 변환 필요
+                realStationId = busApiService.getStationIdFromBsId(stationId) ?: stationId
+                Log.d(TAG, "stationId 변환: $stationId → $realStationId")
+            }
+            startTrackingInternal(routeId, realStationId, stationName, busNo)
+        }
+    }
+
+    private fun startTrackingInternal(routeId: String, stationId: String, stationName: String, busNo: String) {
         if (monitoringJobs.containsKey(routeId)) {
             Log.d(TAG, "Tracking already active for route $routeId")
             return
@@ -412,11 +424,16 @@ class BusAlertService : Service() {
                             // 도착 알림 체크
                             checkArrivalAndNotify(currentInfo, firstBus)
 
-                            // 음성 알림
-                            if (useTextToSpeech && remainingMinutes <= 1 && currentInfo.lastNotifiedMinutes > 1) {
+                            // [수정] 음성 알림 조건 완화: 5분 이하에서 TTSService 호출, 중복 방지 개선
+                            Log.d(TAG, "[TTS] 호출 조건 체크: useTextToSpeech=$useTextToSpeech, remainingMinutes=$remainingMinutes, lastNotifiedMinutes=${currentInfo.lastNotifiedMinutes}")
+                            if (useTextToSpeech && remainingMinutes <= 5 && currentInfo.lastNotifiedMinutes > remainingMinutes) {
+                                Log.d(TAG, "[TTS] TTSService 호출 조건 충족: $busNo, $stationName, $remainingMinutes 분, stationId=$stationId, routeId=$routeId")
                                 startTTSServiceSpeak(busNo, stationName, routeId, stationId)
                                 currentInfo.lastNotifiedMinutes = remainingMinutes
-                            } else if (remainingMinutes > 1) {
+                            } else if (remainingMinutes > 5) {
+                                if (currentInfo.lastNotifiedMinutes != Int.MAX_VALUE) {
+                                    Log.d(TAG, "[TTS] 5분 초과로 lastNotifiedMinutes 초기화")
+                                }
                                 currentInfo.lastNotifiedMinutes = Int.MAX_VALUE
                             }
                         } else {
