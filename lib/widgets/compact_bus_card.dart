@@ -512,34 +512,17 @@ class _CompactBusCardState extends State<CompactBusCard> {
 
             final settings =
                 Provider.of<SettingsService>(context, listen: false);
-            final bool useTts = settings.useTts;
-            final int speakerMode = settings.speakerMode;
+            final ttsSwitcher = TtsSwitcher();
+            await ttsSwitcher.initialize();
+            final headphoneConnected =
+                await ttsSwitcher.isHeadphoneConnected().catchError((e) {
+              logMessage('이어폰 연결 상태 확인 중 오류: $e', level: LogLevel.error);
+              return false;
+            });
 
-            if (useTts) {
-              final ttsSwitcher = TtsSwitcher();
-              await ttsSwitcher.initialize();
-              final headphoneConnected =
-                  await ttsSwitcher.isHeadphoneConnected().catchError((e) {
-                logMessage('이어폰 연결 상태 확인 중 오류: $e', level: LogLevel.error);
-                return false;
-              });
-
-              if (speakerMode == SettingsService.speakerModeHeadset) {
-                // 이어폰 전용 모드: 이어폰 연결 시에만 TTS
-                if (headphoneConnected) {
-                  await TtsSwitcher.startTtsTracking(
-                    routeId: routeId,
-                    stationId: stationId,
-                    busNo: widget.busArrival.routeNo,
-                    stationName: widget.stationName!,
-                    remainingMinutes: remainingMinutes,
-                  );
-                } else {
-                  logMessage('🎧 이어폰 미연결 - 이어폰 전용 모드에서 TTS 건너뜀',
-                      level: LogLevel.info);
-                }
-              } else if (speakerMode == SettingsService.speakerModeSpeaker) {
-                // 스피커 전용 모드: 이어폰 연결 여부와 상관없이 TTS 실행
+            if (settings.speakerMode == SettingsService.speakerModeHeadset) {
+              // 이어폰 전용 모드: 이어폰 연결 시에만 TTS 실행
+              if (headphoneConnected) {
                 await TtsSwitcher.startTtsTracking(
                   routeId: routeId,
                   stationId: stationId,
@@ -548,22 +531,18 @@ class _CompactBusCardState extends State<CompactBusCard> {
                   remainingMinutes: remainingMinutes,
                 );
               } else {
-                // 자동 모드: 이어폰 연결 시 TTS, 아니면 Flutter TTS 등 대체 로직
-                if (headphoneConnected) {
-                  await TtsSwitcher.startTtsTracking(
-                    routeId: routeId,
-                    stationId: stationId,
-                    busNo: widget.busArrival.routeNo,
-                    stationName: widget.stationName!,
-                    remainingMinutes: remainingMinutes,
-                  );
-                } else {
-                  logMessage('🔇 자동 모드 - 이어폰 미연결, Flutter TTS 등 대체 로직 필요',
-                      level: LogLevel.info);
-                }
+                logMessage('🎧 이어폰 미연결 - 이어폰 전용 모드에서 TTS 실행 안함',
+                    level: LogLevel.info);
               }
             } else {
-              logMessage('🔇 컴팩트 승차 알람 TTS 설정 비활성화', level: LogLevel.info);
+              // 스피커/자동 모드: 기존대로 동작
+              await TtsSwitcher.startTtsTracking(
+                routeId: routeId,
+                stationId: stationId,
+                busNo: widget.busArrival.routeNo,
+                stationName: widget.stationName!,
+                remainingMinutes: remainingMinutes,
+              );
             }
 
             // 중복 알림 제거 - 알람 서비스에서 이미 알림을 표시함

@@ -335,22 +335,37 @@ class _BusCardState extends State<BusCard> {
 
       // TTS 알림 즉시 시작 (일반 승차 알람에 대해 useTts 설정 및 이어폰 연결 여부 확인)
       final settings = Provider.of<SettingsService>(context, listen: false);
-      if (!settings.useTts) {
-        logMessage('🔇 일반 승차 알람 TTS 설정 비활성화 - TTS 건너뜀', level: LogLevel.info);
-      } else {
-        final ttsSwitcher = TtsSwitcher();
-        await ttsSwitcher.initialize();
-        final headphoneConnected = await ttsSwitcher.isHeadphoneConnected();
+      final ttsSwitcher = TtsSwitcher();
+      await ttsSwitcher.initialize();
+      final headphoneConnected =
+          await ttsSwitcher.isHeadphoneConnected().catchError((e) {
+        logMessage('이어폰 연결 상태 확인 중 오류: $e', level: LogLevel.error);
+        return false;
+      });
+
+      if (settings.speakerMode == SettingsService.speakerModeHeadset) {
+        // 이어폰 전용 모드: 이어폰 연결 시에만 TTS 실행
         if (headphoneConnected) {
           await TtsSwitcher.startTtsTracking(
             routeId: routeId,
             stationId: widget.stationId,
             busNo: widget.busArrival.routeNo,
             stationName: widget.stationName ?? '정류장 정보 없음',
+            remainingMinutes: remainingTime,
           );
         } else {
-          logMessage('🎧 이어폰 미연결 - 승차 알람 TTS 건너뜀', level: LogLevel.info);
+          logMessage('🎧 이어폰 미연결 - 이어폰 전용 모드에서 TTS 실행 안함',
+              level: LogLevel.info);
         }
+      } else {
+        // 스피커/자동 모드: 기존대로 동작
+        await TtsSwitcher.startTtsTracking(
+          routeId: routeId,
+          stationId: widget.stationId,
+          busNo: widget.busArrival.routeNo,
+          stationName: widget.stationName ?? '정류장 정보 없음',
+          remainingMinutes: remainingTime,
+        );
       }
 
       // 승차 알람이 설정되었음을 알림
@@ -544,32 +559,38 @@ class _BusCardState extends State<BusCard> {
           );
 
           // TTS 알림 즉시 시작 (일반 승차 알람용, useTts 설정 및 이어폰 연결 여부 확인)
-          if (mounted) {
-            final settings =
-                Provider.of<SettingsService>(context, listen: false);
-            if (!settings.useTts) {
-              logMessage('🔇 일반 승차 알람 TTS 설정 비활성화 - TTS 건너뜀',
-                  level: LogLevel.info);
-            } else {
-              final ttsSwitcher = TtsSwitcher();
-              await ttsSwitcher.initialize();
-              final headphoneConnected =
-                  await ttsSwitcher.isHeadphoneConnected().catchError((e) {
-                logMessage('❌ 이어폰 연결 상태 확인 오류: $e', level: LogLevel.error);
-                return false; // 오류 발생 시 이어폰 미연결로 처리
-              });
+          final settings = Provider.of<SettingsService>(context, listen: false);
+          final ttsSwitcher = TtsSwitcher();
+          await ttsSwitcher.initialize();
+          final headphoneConnected =
+              await ttsSwitcher.isHeadphoneConnected().catchError((e) {
+            logMessage('이어폰 연결 상태 확인 중 오류: $e', level: LogLevel.error);
+            return false;
+          });
 
-              if (headphoneConnected) {
-                await TtsSwitcher.startTtsTracking(
-                  routeId: routeId,
-                  stationId: stationId, // 명시적으로 stationId 전달
-                  busNo: widget.busArrival.routeNo,
-                  stationName: widget.stationName ?? '정류장 정보 없음',
-                );
-              } else {
-                logMessage('🎧 이어폰 미연결 - 승차 알람 TTS 건너뜀', level: LogLevel.info);
-              }
+          if (settings.speakerMode == SettingsService.speakerModeHeadset) {
+            // 이어폰 전용 모드: 이어폰 연결 시에만 TTS 실행
+            if (headphoneConnected) {
+              await TtsSwitcher.startTtsTracking(
+                routeId: routeId,
+                stationId: stationId,
+                busNo: widget.busArrival.routeNo,
+                stationName: widget.stationName ?? '정류장 정보 없음',
+                remainingMinutes: remainingTime,
+              );
+            } else {
+              logMessage('🎧 이어폰 미연결 - 이어폰 전용 모드에서 TTS 실행 안함',
+                  level: LogLevel.info);
             }
+          } else {
+            // 스피커/자동 모드: 기존대로 동작
+            await TtsSwitcher.startTtsTracking(
+              routeId: routeId,
+              stationId: stationId,
+              busNo: widget.busArrival.routeNo,
+              stationName: widget.stationName ?? '정류장 정보 없음',
+              remainingMinutes: remainingTime,
+            );
           }
 
           // 알람 상태 갱신
