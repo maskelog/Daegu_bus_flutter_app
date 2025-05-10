@@ -654,19 +654,20 @@ class BusAlertService : Service() {
     }
 
     private fun startTTSServiceSpeak(busNo: String, stationName: String, routeId: String, stationId: String) {
-        try {
-            val ttsIntent = Intent(this, TTSService::class.java).apply {
-                action = "REPEAT_TTS_ALERT"
-                putExtra("busNo", busNo)
-                putExtra("stationName", stationName)
-                putExtra("routeId", routeId)
-                putExtra("stationId", stationId)
-            }
-            startService(ttsIntent)
-            Log.d(TAG, "Requested TTSService to speak for $busNo")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting TTSService for speaking: ${e.message}", e)
+        // 이어폰 전용 모드일 때 이어폰이 연결되어 있지 않으면 TTSService 호출하지 않음
+        if (audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadsetConnected()) {
+            Log.d(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTSService 호출 안함")
+            return
         }
+        val ttsIntent = Intent(this, TTSService::class.java).apply {
+            action = "REPEAT_TTS_ALERT"
+            putExtra("busNo", busNo)
+            putExtra("stationName", stationName)
+            putExtra("routeId", routeId)
+            putExtra("stationId", stationId)
+        }
+        startService(ttsIntent)
+        Log.d(TAG, "Requested TTSService to speak for $busNo")
     }
 
     private fun stopTTSServiceTracking(routeId: String? = null) {

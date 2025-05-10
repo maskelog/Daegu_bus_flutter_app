@@ -171,7 +171,22 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         tts?.stop()
     }
     
+    private fun getAudioOutputMode(): Int {
+        val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+        return prefs.getInt("speaker_mode", 0)
+    }
+
+    private fun isHeadsetConnected(): Boolean {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return audioManager.isWiredHeadsetOn || audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn
+    }
+    
     private fun speakBusAlert() {
+        val audioOutputMode = getAudioOutputMode()
+        if (audioOutputMode == 2 && !isHeadsetConnected()) {
+            Log.d(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함")
+            return
+        }
         if (!isTracking || !isInitialized) {
             Log.w(TAG, "[TTSService] speakBusAlert: isTracking=$isTracking, isInitialized=$isInitialized. 발화 중단.")
             return
