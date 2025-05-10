@@ -130,7 +130,6 @@ class NotificationHandler(private val context: Context) {
                 
                 // 시간 정보 처리 개선
                 val timeStr = when {
-                    trackingInfo.consecutiveErrors > 0 -> "오류"
                     busInfo == null -> "정보 없음"
                     busInfo.estimatedTime == "운행종료" -> "운행종료"
                     busInfo.estimatedTime == "곧 도착" -> "곧 도착"
@@ -141,6 +140,7 @@ class NotificationHandler(private val context: Context) {
                         } else busInfo.estimatedTime
                     }
                     busInfo.getRemainingMinutes() <= 0 -> "곧 도착"
+                    trackingInfo.consecutiveErrors > 0 -> "오류"
                     else -> busInfo.estimatedTime
                 }
 
@@ -168,7 +168,6 @@ class NotificationHandler(private val context: Context) {
                 val busInfo = firstTracking.lastBusInfo
                 val busNo = firstTracking.busNo
                 val timeStr = when {
-                    firstTracking.consecutiveErrors > 0 -> "오류"
                     busInfo == null -> "정보 없음"
                     busInfo.estimatedTime == "운행종료" -> "운행종료"
                     busInfo.estimatedTime == "곧 도착" -> "곧 도착"
@@ -179,6 +178,7 @@ class NotificationHandler(private val context: Context) {
                         } else busInfo.estimatedTime
                     }
                     busInfo.getRemainingMinutes() <= 0 -> "곧 도착"
+                    firstTracking.consecutiveErrors > 0 -> "오류"
                     else -> busInfo.estimatedTime
                 }
 

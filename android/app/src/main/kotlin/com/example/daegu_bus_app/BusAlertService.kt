@@ -239,18 +239,26 @@ class BusAlertService : Service() {
 
                 // --- stationId 보정 로직 추가 ---
                 if (stationId.isNullOrBlank()) {
-                    // routeId에서 stationId 추출 시도 (예: routeId가 '623_7012345678' 형태라면)
-                    if (routeId.contains("_")) {
-                        val parts = routeId.split("_")
-                        if (parts.size > 1 && parts[1].length == 10 && parts[1].startsWith("7")) {
-                            stationId = parts[1]
-                            Log.d(TAG, "stationId가 비어있어 routeId에서 추출: $stationId")
+                    // routeId가 10자리 숫자(7로 시작)면 stationId로 잘못 들어온 것일 수 있으니 분리
+                    if (routeId.length == 10 && routeId.startsWith("7")) {
+                        // 실제 routeId는 busApiService.getRouteIdByStationId 등으로 찾아야 함(여기선 생략)
+                        Log.w(TAG, "routeId가 10자리 stationId로 들어옴. stationId로 간주: $routeId");
+                        val fixedStationId = routeId
+                        addMonitoredRoute(routeId, fixedStationId, stationName)
+                        startTracking(routeId, fixedStationId, stationName, busNo)
+                        return START_STICKY
+                    }
+                    // stationId가 비어있으면 코루틴에서 보정 시도
+                    serviceScope.launch {
+                        val fixedStationId = resolveStationIdIfNeeded(routeId, stationName, "", null)
+                        if (fixedStationId.isNotBlank()) {
+                            addMonitoredRoute(routeId, fixedStationId, stationName)
+                            startTracking(routeId, fixedStationId, stationName, busNo)
+                        } else {
+                            Log.e(TAG, "stationId 보정 실패. 추적 불가: routeId=$routeId, busNo=$busNo, stationName=$stationName")
+                            stopTrackingIfIdle()
                         }
                     }
-                }
-                if (stationId.isNullOrBlank()) {
-                    Log.e(TAG, "stationId가 여전히 비어있음. 추적 불가: routeId=$routeId, busNo=$busNo, stationName=$stationName")
-                    stopTrackingIfIdle()
                     return START_NOT_STICKY
                 }
 
@@ -543,29 +551,27 @@ class BusAlertService : Service() {
     }
 
     // JSON에서 버스 도착 정보 파싱하는 함수
-    private fun parseJsonBusArrivals(jsonString: String, routeId: String): List<BusInfo> {
+    private fun parseJsonBusArrivals(jsonString: String, inputRouteId: String): List<BusInfo> {
         try {
             val jsonArray = JSONArray(jsonString)
             val busInfoList = mutableListOf<BusInfo>()
-
+            Log.d(TAG, "[파싱] 원본 jsonString: $jsonString")
             for (i in 0 until jsonArray.length()) {
                 val routeObj = jsonArray.getJSONObject(i)
-
-                // 현재 함수 호출자가 지정한 노선 ID와 일치하는 경우만 처리
-                val currentRouteId = routeObj.optString("routeId", "")
-                if (currentRouteId != routeId) continue
-
+                val currentRouteNo = routeObj.optString("routeNo", "")
+                // 1차: routeNo로 필터
                 val arrList = routeObj.optJSONArray("arrList")
                 if (arrList == null || arrList.length() == 0) continue
-
                 for (j in 0 until arrList.length()) {
                     val busObj = arrList.getJSONObject(j)
+                    val busRouteId = busObj.optString("routeId", "")
+                    // 2차: routeId로 필터
+                    if (busRouteId != inputRouteId) continue
                     val busNumber = busObj.optString("routeNo", "")
                     val estimatedTime = busObj.optString("arrState", "정보 없음")
                     val currentStation = busObj.optString("bsNm", "정보 없음")
                     val remainingStops = busObj.optString("bsGap", "0")
                     val isLowFloor = busObj.optString("busTCd2", "N") == "1"
-
                     // BusInfo 객체 생성 및 추가
                     busInfoList.add(BusInfo(
                         busNumber = busNumber,
@@ -577,9 +583,11 @@ class BusAlertService : Service() {
                     ))
                 }
             }
-
+            Log.d(TAG, "[파싱] routeId=$inputRouteId, 파싱된 busInfoList: $busInfoList")
+            if (busInfoList.isEmpty()) {
+                Log.w(TAG, "[파싱] routeId=$inputRouteId 에 해당하는 버스 정보 없음! (routeNo, stationId 매칭 실패 가능)")
+            }
             return busInfoList
-
         } catch (e: Exception) {
             Log.e(TAG, "버스 도착 정보 파싱 오류: ${e.message}", e)
             return emptyList()
@@ -631,7 +639,7 @@ class BusAlertService : Service() {
                             checkArrivalAndNotify(trackingInfo, firstBus)
                         } else {
                             trackingInfo.consecutiveErrors++
-                            Log.w(TAG, "⚠️ 버스 정보 없음 (${trackingInfo.consecutiveErrors}번째): ${trackingInfo.busNo}번")
+                            Log.w(TAG, "⚠️ 버스 정보 없음 (${trackingInfo.consecutiveErrors}번째): ${trackingInfo.busNo}번 (lastBusInfo 기존 값 유지)")
 
                             if (trackingInfo.consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
                                 Log.e(TAG, "❌ 연속 오류 한도 초과로 추적 중단: ${trackingInfo.busNo}번")
@@ -689,8 +697,10 @@ class BusAlertService : Service() {
             Log.d(TAG, "🔊 Initializing TTS Engine...")
             try {
                 ttsEngine = TextToSpeech(this, TextToSpeech.OnInitListener { status ->
+                    Log.d(TAG, "🔊 TTS OnInitListener called. Status: $status")
                     if (status == TextToSpeech.SUCCESS) {
                         val result = ttsEngine?.setLanguage(Locale.KOREAN)
+                        Log.d(TAG, "🔊 TTS setLanguage result: $result")
                         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                             Log.e(TAG, "🔊 TTS Korean language not supported.")
                             ttsEngine = null
@@ -749,6 +759,36 @@ class BusAlertService : Service() {
         Log.d(TAG, "Added route to monitored list: $routeId at $stationName ($stationId)")
     }
 
+    // stationId 보정 함수 (wincId 우선)
+    private suspend fun resolveStationIdIfNeeded(routeId: String, stationName: String, stationId: String, wincId: String?): String {
+        if (stationId.length == 10 && stationId.startsWith("7")) return stationId
+        // 1. wincId가 있으면 우선 사용
+        if (!wincId.isNullOrBlank()) {
+            val fixed = busApiService.getStationIdFromBsId(wincId)
+            if (!fixed.isNullOrBlank()) {
+                Log.d(TAG, "resolveStationIdIfNeeded: wincId=$wincId → stationId=$fixed")
+                return fixed
+            }
+        }
+        // 2. routeId로 노선 정류장 리스트 조회 후, stationName 유사 매칭(보조)
+        val stations = busApiService.getBusRouteMap(routeId)
+        val found = stations.find { normalize(it.stationName) == normalize(stationName) }
+        if (found != null && found.stationId.isNotBlank()) {
+            Log.d(TAG, "resolveStationIdIfNeeded: routeId=$routeId, stationName=$stationName → stationId=${found.stationId}")
+            return found.stationId
+        }
+        // 3. 그래도 안되면 stationName을 wincId로 간주
+        val fallback = busApiService.getStationIdFromBsId(stationName)
+        if (!fallback.isNullOrBlank()) {
+            Log.d(TAG, "resolveStationIdIfNeeded: fallback getStationIdFromBsId($stationName) → $fallback")
+            return fallback
+        }
+        Log.w(TAG, "resolveStationIdIfNeeded: stationId 보정 실패 (routeId=$routeId, stationName=$stationName, wincId=$wincId)")
+        return ""
+    }
+    private fun normalize(name: String) = name.replace("\\s".toRegex(), "").replace("[^\\p{L}\\p{N}]".toRegex(), "")
+
+    // showOngoingBusTracking에서 wincId 파라미터 추가
     fun showOngoingBusTracking(
         busNo: String,
         stationName: String,
@@ -757,54 +797,93 @@ class BusAlertService : Service() {
         isUpdate: Boolean,
         notificationId: Int,
         allBusesSummary: String?,
-        routeId: String?
+        routeId: String?,
+        stationId: String? = null,
+        wincId: String? = null
     ) {
         val effectiveRouteId = routeId ?: "temp_${busNo}_${stationName.hashCode()}"
-
-        // 항상 최신 정보로 덮어쓰기
         val trackingInfo = activeTrackings[effectiveRouteId] ?: TrackingInfo(
             routeId = effectiveRouteId,
             stationName = stationName,
             busNo = busNo
         ).also { activeTrackings[effectiveRouteId] = it }
 
+        // --- stationId 보정 ---
+        var effectiveStationId = stationId ?: trackingInfo.stationId
+        if (effectiveStationId.isBlank()) {
+            serviceScope.launch {
+                val fixedStationId = resolveStationIdIfNeeded(effectiveRouteId, stationName, effectiveStationId, wincId)
+                if (fixedStationId.isNotBlank()) {
+                    showOngoingBusTracking(
+                        busNo = busNo,
+                        stationName = stationName,
+                        remainingMinutes = remainingMinutes,
+                        currentStation = currentStation,
+                        isUpdate = isUpdate,
+                        notificationId = notificationId,
+                        allBusesSummary = allBusesSummary,
+                        routeId = routeId,
+                        stationId = fixedStationId,
+                        wincId = wincId
+                    )
+                } else {
+                    Log.e(TAG, "stationId 보정 실패. 알림/tts 갱신 불가: routeId=$routeId, busNo=$busNo, stationName=$stationName")
+                }
+            }
+            return
+        }
+
         // currentStation 값이 null이 아니거나 빈 문자열이 아닌 경우에만 업데이트
         val currentStationFinal = if (!currentStation.isNullOrBlank()) {
-            // 로그 출력을 추가하여 currentStation 값 확인
             Log.d(TAG, "현재 버스 위치 정보 업데이트: $busNo, $currentStation")
             currentStation
         } else {
             trackingInfo.lastBusInfo?.currentStation ?: "정보 없음"
         }
 
-        trackingInfo.lastBusInfo = BusInfo(
-            busNumber = busNo,
-            estimatedTime = if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분",
-            currentStation = currentStationFinal, // 업데이트된 현재 위치 정보
-            remainingStops = trackingInfo.lastBusInfo?.remainingStops ?: "0"
-        )
-        trackingInfo.lastUpdateTime = System.currentTimeMillis()
+        // lastBusInfo를 무조건 새로 생성하지 않고, 실제 버스 정보가 있을 때만 갱신
+        if (remainingMinutes >= 0 && currentStationFinal.isNotBlank() && currentStationFinal != "정보 없음") {
+            trackingInfo.lastBusInfo = BusInfo(
+                busNumber = busNo,
+                estimatedTime = if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분",
+                currentStation = currentStationFinal,
+                remainingStops = trackingInfo.lastBusInfo?.remainingStops ?: "0"
+            )
+            trackingInfo.lastUpdateTime = System.currentTimeMillis()
+            Log.d(TAG, "✅ lastBusInfo 갱신: $busNo, $remainingMinutes 분, $currentStationFinal")
+        } else {
+            Log.w(TAG, "❌ lastBusInfo 갱신 생략: $busNo, remainingMinutes=$remainingMinutes, currentStation=$currentStationFinal. 기존 lastBusInfo 유지")
+        }
 
-        // ====== [TTS 도착 임박 알림 추가] ======
+        // ====== [TTS 실시간 알림 개선] ======
         try {
-            if (remainingMinutes <= 1 && !hasNotifiedTts.contains(effectiveRouteId)) {
+            val lastSpokenMinutes = trackingInfo.lastNotifiedMinutes
+            Log.d(TAG, "[TTS] 조건 체크: useTextToSpeech=$useTextToSpeech, remainingMinutes=$remainingMinutes, lastNotifiedMinutes=$lastSpokenMinutes")
+            if ((lastSpokenMinutes == Int.MAX_VALUE || lastSpokenMinutes > remainingMinutes) && useTextToSpeech && remainingMinutes <= 5 && remainingMinutes >= 0) {
                 val ttsIntent = Intent(this, TTSService::class.java).apply {
                     action = "REPEAT_TTS_ALERT"
                     putExtra("busNo", busNo)
                     putExtra("stationName", stationName)
                     putExtra("routeId", effectiveRouteId)
-                    putExtra("stationId", trackingInfo.stationId)
+                    putExtra("stationId", effectiveStationId)
+                    putExtra("remainingMinutes", remainingMinutes)
                 }
                 startService(ttsIntent)
-                hasNotifiedTts.add(effectiveRouteId)
-                Log.d(TAG, "[TTS] 도착 임박 TTSService 호출: $busNo, $stationName, $remainingMinutes")
-            } else if (remainingMinutes > 1) {
-                hasNotifiedTts.remove(effectiveRouteId)
+                trackingInfo.lastNotifiedMinutes = remainingMinutes
+                Log.d(TAG, "[TTS] 실시간 TTSService 호출: $busNo, $stationName, $remainingMinutes, stationId=$effectiveStationId")
+            } else if (remainingMinutes > 5) {
+                if (trackingInfo.lastNotifiedMinutes != Int.MAX_VALUE) {
+                    Log.d(TAG, "[TTS] 5분 초과로 lastNotifiedMinutes 초기화")
+                }
+                trackingInfo.lastNotifiedMinutes = Int.MAX_VALUE
+                Log.d(TAG, "[TTS] 미호출: remainingMinutes=$remainingMinutes (5분 이하만 호출)")
+            } else {
+                Log.d(TAG, "[TTS] 미호출: 조건 불충족 (useTextToSpeech=$useTextToSpeech, remainingMinutes=$remainingMinutes, lastNotifiedMinutes=$lastSpokenMinutes)")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "[TTS] 도착 임박 TTSService 호출 오류: ${e.message}", e)
+            Log.e(TAG, "[TTS] 실시간 TTSService 호출 오류: ${e.message}", e)
         }
-        // ====== [END TTS 추가] ======
+        // ====== [END TTS 실시간 알림 개선] ======
 
         // 알림 갱신
         val notification = notificationHandler.buildOngoingNotification(activeTrackings)
@@ -1116,6 +1195,7 @@ class BusAlertService : Service() {
     }
 
     fun speakTts(text: String, earphoneOnly: Boolean = false) {
+        Log.d(TAG, "🔊 speakTts called: text='$text', isTtsInitialized=$isTtsInitialized, ttsEngine=${ttsEngine != null}, useTextToSpeech=$useTextToSpeech")
         if (!isTtsInitialized || ttsEngine == null) {
             Log.e(TAG, "🔊 TTS speak failed - engine not ready")
             initializeTts()
@@ -1148,6 +1228,7 @@ class BusAlertService : Service() {
                 }
 
                 val focusResult = requestAudioFocus(useSpeaker)
+                Log.d(TAG, "🔊 Audio focus request result: $focusResult")
 
                 if (focusResult == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                     Log.d(TAG, "🔊 Audio focus granted. Speaking.")
@@ -1459,7 +1540,7 @@ class BusAlertService : Service() {
 
         try {
             // 1. 추적 정보 업데이트 또는 생성
-            val info = activeTrackings[routeId] ?: BusAlertService.TrackingInfo(
+            val info = activeTrackings[routeId] ?: TrackingInfo(
                 routeId = routeId,
                 stationName = stationName,
                 busNo = busNo,
@@ -1533,8 +1614,31 @@ class BusAlertService : Service() {
         stationName: String,
         remainingMinutes: Int,
         currentStation: String,
-        routeId: String
+        routeId: String,
+        stationId: String? = null,
+        wincId: String? = null
     ) {
+        // stationId 보정
+        var effectiveStationId = stationId ?: ""
+        if (effectiveStationId.isBlank()) {
+            serviceScope.launch {
+                val fixedStationId = resolveStationIdIfNeeded(routeId, stationName, "", wincId)
+                if (fixedStationId.isNotBlank()) {
+                    updateTrackingNotification(
+                        busNo = busNo,
+                        stationName = stationName,
+                        remainingMinutes = remainingMinutes,
+                        currentStation = currentStation,
+                        routeId = routeId,
+                        stationId = fixedStationId,
+                        wincId = wincId
+                    )
+                } else {
+                    Log.e(TAG, "stationId 보정 실패. 추적 알림 갱신 불가: routeId=$routeId, busNo=$busNo, stationName=$stationName")
+                }
+            }
+            return
+        }
         Log.d(TAG, "🔄 updateTrackingNotification 호출: $busNo, $stationName, $remainingMinutes, $currentStation, $routeId")
         try {
             // 1. 추적 정보 업데이트 또는 생성
