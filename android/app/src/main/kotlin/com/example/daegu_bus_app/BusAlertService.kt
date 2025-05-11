@@ -1505,9 +1505,14 @@ class BusAlertService : Service() {
         val remainingMinutes = when {
             busInfo.estimatedTime == "곧 도착" -> 0
             busInfo.estimatedTime == "운행종료" -> -1
-            busInfo.estimatedTime.contains("분") ->
-                busInfo.estimatedTime.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
-            else -> Int.MAX_VALUE
+            busInfo.estimatedTime.contains("분") -> {
+                busInfo.estimatedTime.filter { it.isDigit() }.toIntOrNull() ?: -1
+            }
+            busInfo.estimatedTime == "전" -> 0
+            busInfo.estimatedTime == "도착" -> 0
+            busInfo.estimatedTime == "출발" -> 0
+            busInfo.estimatedTime.isBlank() || busInfo.estimatedTime == "정보 없음" -> -1
+            else -> -1 // 기타 예상치 못한 값은 -1(정보 없음)로 처리
         }
 
         if (remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES) {
