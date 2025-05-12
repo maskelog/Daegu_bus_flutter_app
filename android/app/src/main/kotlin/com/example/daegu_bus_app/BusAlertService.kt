@@ -353,7 +353,10 @@ class BusAlertService : Service() {
         var consecutiveErrors: Int = 0,
         var lastUpdateTime: Long = System.currentTimeMillis(),
         var lastNotifiedMinutes: Int = Int.MAX_VALUE,
-        val stationId: String = ""
+        val stationId: String = "",
+        // [추가] TTS 중복 방지용
+        var lastTtsAnnouncedMinutes: Int? = null,
+        var lastTtsAnnouncedStation: String? = null
     )
 
     private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String) {
@@ -434,15 +437,30 @@ class BusAlertService : Service() {
 
                             // [수정] 음성 알림 조건 완화: 5분 이하에서 TTSService 호출, 중복 방지 개선
                             Log.d(TAG, "[TTS] 호출 조건 체크: useTextToSpeech=$useTextToSpeech, remainingMinutes=$remainingMinutes, lastNotifiedMinutes=${currentInfo.lastNotifiedMinutes}")
-                            if (useTextToSpeech && remainingMinutes <= 5 && currentInfo.lastNotifiedMinutes > remainingMinutes) {
-                                Log.d(TAG, "[TTS] TTSService 호출 조건 충족: $busNo, $stationName, $remainingMinutes 분, stationId=$stationId, routeId=$routeId")
-                                startTTSServiceSpeak(busNo, stationName, routeId, stationId)
-                                currentInfo.lastNotifiedMinutes = remainingMinutes
-                            } else if (remainingMinutes > 5) {
-                                if (currentInfo.lastNotifiedMinutes != Int.MAX_VALUE) {
-                                    Log.d(TAG, "[TTS] 5분 초과로 lastNotifiedMinutes 초기화")
+                            if (useTextToSpeech && remainingMinutes <= 5 && remainingMinutes >= 0) {
+                                val ttsShouldAnnounce =
+                                    (currentInfo.lastTtsAnnouncedMinutes == null || currentInfo.lastTtsAnnouncedMinutes != remainingMinutes) ||
+                                    (currentInfo.lastTtsAnnouncedStation == null || currentInfo.lastTtsAnnouncedStation != currentStation)
+                                if (ttsShouldAnnounce) {
+                                    val ttsMessage = when (firstBus.estimatedTime) {
+                                        "곧 도착" -> "${currentInfo.busNo}번 버스가 ${currentInfo.stationName} 정류장에 곧 도착합니다."
+                                        "출발예정", "기점출발예정" -> null // TTS 울리지 않음
+                                        else -> "${currentInfo.busNo}번 버스가 ${currentInfo.stationName} 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
+                                    }
+                                    if (ttsMessage != null) {
+                                        speakTts(ttsMessage)
+                                        currentInfo.lastTtsAnnouncedMinutes = remainingMinutes
+                                        currentInfo.lastTtsAnnouncedStation = currentStation
+                                        Log.d(TAG, "[TTS] 실시간 TTS 안내: $ttsMessage (중복 방지 적용)")
+                                    } else {
+                                        Log.d(TAG, "[TTS] TTS 메시지 없음(출발예정 등): estimatedTime=${firstBus.estimatedTime}")
+                                    }
+                                } else {
+                                    Log.d(TAG, "[TTS] 중복 방지로 TTS 미호출: remainingMinutes=$remainingMinutes, currentStation=$currentStation")
                                 }
-                                currentInfo.lastNotifiedMinutes = Int.MAX_VALUE
+                            } else if (remainingMinutes < 0) {
+                                currentInfo.lastTtsAnnouncedMinutes = null
+                                currentInfo.lastTtsAnnouncedStation = null
                             }
                         } else {
                             Log.w(TAG, "No available buses for route $routeId at $stationId.")
