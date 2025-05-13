@@ -1213,6 +1213,11 @@ class BusAlertService : Service() {
     }
 
     fun speakTts(text: String, earphoneOnly: Boolean = false) {
+        // 이어폰 전용 모드일 때 이어폰이 연결되어 있지 않으면 TTS 실행하지 않음
+        if (audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadsetConnected()) {
+            Log.d(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함")
+            return
+        }
         Log.d(TAG, "🔊 speakTts called: text='$text', isTtsInitialized=$isTtsInitialized, ttsEngine=${ttsEngine != null}, useTextToSpeech=$useTextToSpeech")
         if (!isTtsInitialized || ttsEngine == null) {
             Log.e(TAG, "🔊 TTS speak failed - engine not ready")
