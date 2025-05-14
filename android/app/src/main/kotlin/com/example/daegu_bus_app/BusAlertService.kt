@@ -912,9 +912,11 @@ class BusAlertService : Service() {
     }
 
     fun stopTtsTracking(routeId: String? = null, stationId: String? = null, forceStop: Boolean = false) {
-        Log.d(TAG, "Stopping internal TTS tracking for route ${routeId ?: "all"}")
+        Log.d(TAG, "Stopping internal TTS tracking for route \\${routeId ?: "all"}")
         isTtsTrackingActive = false
         ttsEngine?.stop()
+        // 내부적으로 실행 중인 TTS 관련 코루틴 모두 취소
+        serviceScope.coroutineContext.cancelChildren() // <--- 추가: 모든 자식 코루틴 취소
         stopTTSServiceTracking(routeId)
         checkAndStopServiceIfNeeded()
     }
