@@ -200,7 +200,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
 
         val utteranceId = UUID.randomUUID().toString()
         val message = if (remainingMinutes > 0) {
-            "$busNo 번 버스가 $stationName 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
+            "$busNo 번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
         } else {
             "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
         }
