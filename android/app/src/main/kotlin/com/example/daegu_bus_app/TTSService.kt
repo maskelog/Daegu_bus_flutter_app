@@ -183,10 +183,31 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     
     private fun speakBusAlert() {
         val audioOutputMode = getAudioOutputMode()
-        if (audioOutputMode == 2 && !isHeadsetConnected()) {
-            Log.d(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함")
-            return
+        val headsetConnected = isHeadsetConnected()
+        Log.d(TAG, "speakBusAlert() - audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected, isTracking=$isTracking, isInitialized=$isInitialized")
+
+        when (audioOutputMode) {
+            0 -> { // 이어폰 전용
+                if (!headsetConnected) {
+                    Log.d(TAG, "이어폰 전용 모드, 이어폰이 연결되어 있지 않아 TTS 실행 안함")
+                    return
+                }
+                // 이어폰 연결 시 TTS (이어폰으로 출력)
+            }
+            1 -> { // 스피커 전용
+                // 이어폰 연결 시: 이어폰으로 TTS, 아니면 스피커로 TTS (별도 제어 필요 없음)
+                // 시스템이 알아서 출력 경로 선택
+            }
+            2 -> { // 자동 감지
+                // 시스템이 알아서 출력 경로 선택 (별도 제어 필요 없음)
+            }
+            else -> {
+                // 예외: 기본적으로 아무것도 안 함
+                Log.d(TAG, "알 수 없는 오디오 출력 모드: $audioOutputMode, TTS 실행 안함")
+                return
+            }
         }
+
         if (!isTracking || !isInitialized) {
             Log.w(TAG, "[TTSService] speakBusAlert: isTracking=$isTracking, isInitialized=$isInitialized. 발화 중단.")
             return
@@ -200,7 +221,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
 
         val utteranceId = UUID.randomUUID().toString()
         val message = if (remainingMinutes > 0) {
-            "$busNo 번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
+            "$busNo 번 버스가 약 \\${remainingMinutes}분 후 도착 예정입니다."
         } else {
             "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
         }
@@ -220,7 +241,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "[TTSService] TTS 발화 실패: ${e.message}", e)
+            Log.e(TAG, "[TTSService] TTS 발화 실패: \\${e.message}", e)
         }
     }
     
