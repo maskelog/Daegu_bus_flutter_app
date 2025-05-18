@@ -177,7 +177,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         return prefs.getInt("speaker_mode", 0)
     }
 
-    private fun isHeadsetConnected(): Boolean {
+    fun isHeadsetConnected(): Boolean {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         try {
             // 1. 기본 방식으로 체크 (이전 방식 - 안정성을 위해 유지)
