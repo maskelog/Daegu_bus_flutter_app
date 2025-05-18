@@ -26,11 +26,12 @@ import kotlin.collections.HashMap
 import kotlin.math.max
 import kotlin.math.roundToInt
 import android.media.AudioManager
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioDeviceInfo
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.os.Bundle
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -680,9 +681,10 @@ class BusAlertService : Service() {
     }
 
     private fun startTTSServiceSpeak(busNo: String, stationName: String, routeId: String, stationId: String) {
+        val isHeadset = isHeadsetConnected()
         // 이어폰 전용 모드일 때 이어폰이 연결되어 있지 않으면 TTSService 호출하지 않음
-        if (audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadsetConnected()) {
-            Log.d(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTSService 호출 안함")
+        if (audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadset) {
+            Log.d(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTSService 호출 안함 (audioOutputMode=$audioOutputMode, isHeadset=$isHeadset)")
             return
         }
         val ttsIntent = Intent(this, TTSService::class.java).apply {
@@ -1202,11 +1204,34 @@ class BusAlertService : Service() {
             return false
         }
         try {
+            // 1. 기본 방식으로 체크 (이전 방식 - 안정성을 위해 유지)
             val isWired = audioManager?.isWiredHeadsetOn ?: false
             val isA2dp = audioManager?.isBluetoothA2dpOn ?: false
             val isSco = audioManager?.isBluetoothScoOn ?: false
-            val isConnected = isWired || isA2dp || isSco
-            Log.d(TAG, "🎧 Headset status: Wired=$isWired, A2DP=$isA2dp, SCO=$isSco -> Connected=$isConnected")
+            
+            // 2. Android 6 이상의 경우 AudioDeviceInfo로 더 정확하게 체크 (추가)
+            var hasHeadset = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val devices = audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                if (devices != null) {
+                    for (device in devices) {
+                        val type = device.type
+                        if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET || 
+                            type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                            type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                            type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                            type == AudioDeviceInfo.TYPE_USB_HEADSET) {
+                                hasHeadset = true
+                                break
+                        }
+                    }
+                }
+                Log.d(TAG, "🎧 Modern headset check: hasHeadset=$hasHeadset")
+            }
+            
+            // 두 방식 중 하나라도 헤드셋 연결을 감지하면 true 반환
+            val isConnected = isWired || isA2dp || isSco || hasHeadset
+            Log.d(TAG, "🎧 Headset status: Wired=$isWired, A2DP=$isA2dp, SCO=$isSco, Modern=$hasHeadset -> Connected=$isConnected")
             return isConnected
         } catch (e: Exception) {
             Log.e(TAG, "🎧 Error checking headset status: ${e.message}", e)
@@ -1215,9 +1240,12 @@ class BusAlertService : Service() {
     }
 
     fun speakTts(text: String, earphoneOnly: Boolean = false) {
+        Log.d(TAG, "🎧 speakTts 이어폰 체크 시작: earphoneOnly=$earphoneOnly, audioOutputMode=$audioOutputMode")
         // 이어폰 전용 모드일 때 이어폰이 연결되어 있지 않으면 TTS 실행하지 않음
-        if (audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadsetConnected()) {
-            Log.d(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함")
+        // earphoneOnly 파라미터가 true이거나 설정이 이어폰 전용(0)인 경우 둘 다 이어폰 연결 필요
+        val headsetConnected = isHeadsetConnected()
+        if ((earphoneOnly || audioOutputMode == OUTPUT_MODE_HEADSET) && !headsetConnected) {
+            Log.d(TAG, "🚫 이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함 (earphoneOnly=$earphoneOnly, audioOutputMode=$audioOutputMode)")
             return
         }
         Log.d(TAG, "🔊 speakTts called: text='$text', isTtsInitialized=$isTtsInitialized, ttsEngine=${ttsEngine != null}, useTextToSpeech=$useTextToSpeech")

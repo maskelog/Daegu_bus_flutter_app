@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.media.AudioDeviceInfo
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -178,34 +179,54 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
 
     private fun isHeadsetConnected(): Boolean {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        return audioManager.isWiredHeadsetOn || audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn
+        try {
+            // 1. 기본 방식으로 체크 (이전 방식 - 안정성을 위해 유지)
+            val isWired = audioManager.isWiredHeadsetOn
+            val isA2dp = audioManager.isBluetoothA2dpOn
+            val isSco = audioManager.isBluetoothScoOn
+            
+            // 2. Android 6 이상의 경우 AudioDeviceInfo로 더 정확하게 체크 (추가)
+            var hasHeadset = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                if (devices != null) {
+                    for (device in devices) {
+                        val type = device.type
+                        if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET || 
+                            type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                            type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                            type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                            type == AudioDeviceInfo.TYPE_USB_HEADSET) {
+                                hasHeadset = true
+                                break
+                        }
+                    }
+                }
+                Log.d(TAG, "🎧 Modern headset check: hasHeadset=$hasHeadset")
+            }
+            
+            // 두 방식 중 하나라도 헤드셋 연결을 감지하면 true 반환
+            val isConnected = isWired || isA2dp || isSco || hasHeadset
+            Log.d(TAG, "🎧 Headset status: Wired=$isWired, A2DP=$isA2dp, SCO=$isSco, Modern=$hasHeadset -> Connected=$isConnected")
+            return isConnected
+        } catch (e: Exception) {
+            Log.e(TAG, "🎧 Error checking headset status: ${e.message}", e)
+            return false
+        }
     }
     
     private fun speakBusAlert() {
         val audioOutputMode = getAudioOutputMode()
         val headsetConnected = isHeadsetConnected()
-        Log.d(TAG, "speakBusAlert() - audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected, isTracking=$isTracking, isInitialized=$isInitialized")
+        Log.d(TAG, "speakBusAlert() - 🎧 이어폰 체크: audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected, isTracking=$isTracking, isInitialized=$isInitialized")
 
-        when (audioOutputMode) {
-            0 -> { // 이어폰 전용
-                if (!headsetConnected) {
-                    Log.d(TAG, "이어폰 전용 모드, 이어폰이 연결되어 있지 않아 TTS 실행 안함")
-                    return
-                }
-                // 이어폰 연결 시 TTS (이어폰으로 출력)
-            }
-            1 -> { // 스피커 전용
-                // 이어폰 연결 시: 이어폰으로 TTS, 아니면 스피커로 TTS (별도 제어 필요 없음)
-                // 시스템이 알아서 출력 경로 선택
-            }
-            2 -> { // 자동 감지
-                // 시스템이 알아서 출력 경로 선택 (별도 제어 필요 없음)
-            }
-            else -> {
-                // 예외: 기본적으로 아무것도 안 함
-                Log.d(TAG, "알 수 없는 오디오 출력 모드: $audioOutputMode, TTS 실행 안함")
-                return
-            }
+        // Check if we should actually speak based on audio output mode and headset connection state
+        if (audioOutputMode == 0 && !headsetConnected) { // 이어폰 전용 모드 & 이어폰 미연결
+            Log.d(TAG, "🚫 이어폰 전용 모드, 이어폰이 연결되어 있지 않아 TTS 실행 안함")
+            return
+        } else if (audioOutputMode > 2) { // 알 수 없는 모드
+            Log.d(TAG, "🚫 알 수 없는 오디오 출력 모드: $audioOutputMode, TTS 실행 안함")
+            return
         }
 
         if (!isTracking || !isInitialized) {
