@@ -1110,6 +1110,16 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         Log.d(TAG, "네이티브 TTS 중지 요청 (BusAlertService 호출)")
                         result.success(true)
                     }
+                    "isHeadphoneConnected" -> {
+                        try {
+                            val isConnected = busAlertService?.isHeadsetConnected() ?: false
+                            Log.d(TAG, "🎧 이어폰 연결 상태 확인: $isConnected")
+                            result.success(isConnected)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "🎧 이어폰 연결 상태 확인 오류: ${e.message}")
+                            result.error("HEADPHONE_CHECK_ERROR", "이어폰 연결 상태 확인 중 오류 발생: ${e.message}", null)
+                        }
+                    }
                     "startTtsTracking" -> {
                         // Flutter에서 요청한 TTS 트래킹 시작 처리
                         val routeId = call.argument<String>("routeId") ?: ""

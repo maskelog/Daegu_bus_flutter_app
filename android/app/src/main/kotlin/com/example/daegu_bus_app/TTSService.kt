@@ -32,6 +32,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     private var isTracking = false
     private var lastSpokenTime = 0L
     private val SPEAK_INTERVAL = 30000L // 30초마다 말하기
+    private var ttsVolume: Float = 1.0f
     
     // Handler for repeating TTS announcements
     private val ttsHandler = Handler(Looper.getMainLooper())
@@ -48,17 +49,20 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         private const val NOTIFICATION_ID = 1002
         private const val CHANNEL_ID = "tts_service_channel"
         private const val CHANNEL_NAME = "TTS Service"
+        private const val OUTPUT_MODE_SPEAKER = 1
+        private const val OUTPUT_MODE_HEADSET = 2
+        private const val OUTPUT_MODE_AUTO = 3
     }
     
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "[TTSService] onCreate 호출됨")
+        // Log.d(TAG, "[TTSService] onCreate 호출됨")
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification("TTS 서비스 실행 중"))
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "[TTSService] onStartCommand: action=${intent?.action}, busNo=${intent?.getStringExtra("busNo")}, stationName=${intent?.getStringExtra("stationName")}, routeId=${intent?.getStringExtra("routeId")}, stationId=${intent?.getStringExtra("stationId")}")
+        // Log.d(TAG, "[TTSService] onStartCommand: action=${intent?.action}, busNo=${intent?.getStringExtra("busNo")}, stationName=${intent?.getStringExtra("stationName")}, routeId=${intent?.getStringExtra("routeId")}, stationId=${intent?.getStringExtra("stationId")}")
         
         when (intent?.action) {
             "START_TTS_TRACKING" -> {
@@ -68,7 +72,15 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 stationId = intent.getStringExtra("stationId") ?: ""
                 remainingMinutes = intent.getIntExtra("remainingMinutes", remainingMinutes)
                 
-                Log.d(TAG, "TTS 추적 시작: $busNo 번 버스, $stationName, 남은시간=${remainingMinutes}분")
+                // 이어폰 전용 모드 & 이어폰 미연결 시 TTS 실행 금지
+                val audioOutputMode = getAudioOutputMode()
+                val headsetConnected = isHeadsetConnected()
+                if (audioOutputMode == 0 && !headsetConnected) {
+                    // Log.d(TAG, "\uD83D\uDEAB 이어폰 전용 모드, 이어폰이 연결되어 있지 않아 TTS 실행 안함 (onStartCommand: START_TTS_TRACKING)")
+                    return START_STICKY
+                }
+                
+                // Log.d(TAG, "TTS 추적 시작: $busNo 번 버스, $stationName, 남은시간=${remainingMinutes}분")
                 
                 isTracking = true
                 if (!isInitialized) {
@@ -84,14 +96,22 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 stationId = intent.getStringExtra("stationId") ?: ""
                 remainingMinutes = intent.getIntExtra("remainingMinutes", remainingMinutes)
                 
-                Log.d(TAG, "TTS 알림 반복: $busNo 번 버스, $stationName, 남은시간=${remainingMinutes}분")
+                // 이어폰 전용 모드 & 이어폰 미연결 시 TTS 실행 금지
+                val audioOutputMode = getAudioOutputMode()
+                val headsetConnected = isHeadsetConnected()
+                if (audioOutputMode == 0 && !headsetConnected) {
+                    // Log.d(TAG, "\uD83D\uDEAB 이어폰 전용 모드, 이어폰이 연결되어 있지 않아 TTS 실행 안함 (onStartCommand: REPEAT_TTS_ALERT)")
+                    return START_STICKY
+                }
+                
+                // Log.d(TAG, "TTS 알림 반복: $busNo 번 버스, $stationName, 남은시간=${remainingMinutes}분")
                 
                 if (isInitialized) {
                     speakBusAlert()
                 }
             }
             "STOP_TTS_TRACKING" -> {
-                Log.d(TAG, "TTS 추적 중지")
+                // Log.d(TAG, "TTS 추적 중지")
                 isTracking = false
                 // Stop periodic announcements
                 ttsHandler.removeCallbacks(ttsRunnable)
@@ -108,7 +128,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     }
     
     override fun onDestroy() {
-        Log.d(TAG, "TTS 서비스 종료")
+        // Log.d(TAG, "TTS 서비스 종료")
         // Clean up handler callbacks
         isTracking = false
         ttsHandler.removeCallbacks(ttsRunnable)
@@ -120,43 +140,43 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     }
     
     private fun initializeTTS() {
-        Log.d(TAG, "TTS 초기화 시작")
+        // Log.d(TAG, "TTS 초기화 시작")
         tts = TextToSpeech(this, this)
     }
     
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            Log.d(TAG, "TTS 초기화 성공")
+            // Log.d(TAG, "TTS 초기화 성공")
             
             val result = tts?.setLanguage(Locale.KOREAN)
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Log.e(TAG, "한국어가 지원되지 않습니다")
+                // Log.e(TAG, "한국어가 지원되지 않습니다")
             }
             
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
-                    Log.d(TAG, "TTS 발화 시작: $utteranceId")
+                    // Log.d(TAG, "TTS 발화 시작: $utteranceId")
                 }
                 
                 override fun onDone(utteranceId: String?) {
-                    Log.d(TAG, "TTS 발화 완료: $utteranceId")
+                    // Log.d(TAG, "TTS 발화 완료: $utteranceId")
                 }
 
                 override fun onError(utteranceId: String?) {
-                    Log.e(TAG, "TTS 발화 오류: $utteranceId")
+                    // Log.e(TAG, "TTS 발화 오류: $utteranceId")
                 }
             })
             
             isInitialized = true
             startTracking()
         } else {
-            Log.e(TAG, "TTS 초기화 실패: $status")
+            // Log.e(TAG, "TTS 초기화 실패: $status")
         }
     }
     
     private fun startTracking() {
         if (!isInitialized) {
-            Log.e(TAG, "TTS가 초기화되지 않았습니다")
+            // Log.e(TAG, "TTS가 초기화되지 않았습니다")
             return
         }
         
@@ -180,37 +200,34 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     fun isHeadsetConnected(): Boolean {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         try {
-            // 1. 기본 방식으로 체크 (이전 방식 - 안정성을 위해 유지)
             val isWired = audioManager.isWiredHeadsetOn
             val isA2dp = audioManager.isBluetoothA2dpOn
             val isSco = audioManager.isBluetoothScoOn
-            
-            // 2. Android 6 이상의 경우 AudioDeviceInfo로 더 정확하게 체크 (추가)
+
             var hasHeadset = false
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                 if (devices != null) {
+                    // Log.d(TAG, "[DEBUG] AudioDeviceInfo 목록:")
                     for (device in devices) {
-                        val type = device.type
-                        if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET || 
-                            type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                            type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                            type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                            type == AudioDeviceInfo.TYPE_USB_HEADSET) {
-                                hasHeadset = true
-                                break
+                        // Log.d(TAG, "[DEBUG] AudioDeviceInfo: type=${device.type}, productName=${device.productName}, id=${device.id}, isSink=${device.isSink}")
+                        if (device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                            device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                            device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                            device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                            device.type == AudioDeviceInfo.TYPE_USB_HEADSET) {
+                            hasHeadset = true
                         }
                     }
                 }
-                Log.d(TAG, "🎧 Modern headset check: hasHeadset=$hasHeadset")
+                // Log.d(TAG, "🎧 Modern headset check: hasHeadset=$hasHeadset")
             }
-            
-            // 두 방식 중 하나라도 헤드셋 연결을 감지하면 true 반환
+
             val isConnected = isWired || isA2dp || isSco || hasHeadset
-            Log.d(TAG, "🎧 Headset status: Wired=$isWired, A2DP=$isA2dp, SCO=$isSco, Modern=$hasHeadset -> Connected=$isConnected")
+            // Log.d(TAG, "🎧 Headset status: Wired=$isWired, A2DP=$isA2dp, SCO=$isSco, Modern=$hasHeadset -> Connected=$isConnected")
             return isConnected
         } catch (e: Exception) {
-            Log.e(TAG, "🎧 Error checking headset status: ${e.message}", e)
+            // Log.e(TAG, "🎧 Error checking headset status: ${e.message}", e)
             return false
         }
     }
@@ -218,51 +235,55 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     private fun speakBusAlert() {
         val audioOutputMode = getAudioOutputMode()
         val headsetConnected = isHeadsetConnected()
-        Log.d(TAG, "speakBusAlert() - 🎧 이어폰 체크: audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected, isTracking=$isTracking, isInitialized=$isInitialized")
-
-        // Check if we should actually speak based on audio output mode and headset connection state
-        if (audioOutputMode == 0 && !headsetConnected) { // 이어폰 전용 모드 & 이어폰 미연결
-            Log.d(TAG, "🚫 이어폰 전용 모드, 이어폰이 연결되어 있지 않아 TTS 실행 안함")
-            return
-        } else if (audioOutputMode > 2) { // 알 수 없는 모드
-            Log.d(TAG, "🚫 알 수 없는 오디오 출력 모드: $audioOutputMode, TTS 실행 안함")
-            return
+        // Log.d(TAG, "[TTSService] speakBusAlert() - audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected")
+        // 이어폰 전용 모드 + 이어폰 미연결 시 무조건 return
+        if (audioOutputMode == OUTPUT_MODE_HEADSET && !headsetConnected) {
+            // Log.w("TTS_ACTUAL_SPEAK", "🚫 [최종방어] 이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함 (speakBusAlert 마지막)");
+            return;
         }
 
         if (!isTracking || !isInitialized) {
-            Log.w(TAG, "[TTSService] speakBusAlert: isTracking=$isTracking, isInitialized=$isInitialized. 발화 중단.")
+            // Log.w(TAG, "[TTSService] speakBusAlert: isTracking=$isTracking, isInitialized=$isInitialized. 발화 중단.")
             return
         }
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastSpokenTime < SPEAK_INTERVAL) {
-            Log.d(TAG, "[TTSService] TTS 발화 간격이 너무 짧음. 건너뜀.")
+            // Log.d(TAG, "[TTSService] TTS 발화 간격이 너무 짧음. 건너뜀.")
             return
         }
         lastSpokenTime = currentTime
 
-        val utteranceId = UUID.randomUUID().toString()
+        val useSpeaker = when (audioOutputMode) {
+            OUTPUT_MODE_SPEAKER -> true
+            OUTPUT_MODE_HEADSET -> false
+            OUTPUT_MODE_AUTO -> !isHeadsetConnected()
+            else -> !isHeadsetConnected()
+        }
+        // 스피커폰 상태 명확히 세팅
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager.isSpeakerphoneOn = useSpeaker
+        val streamType = if (useSpeaker) android.media.AudioManager.STREAM_ALARM else android.media.AudioManager.STREAM_MUSIC
+        // Log.d(TAG, "🔊 Preparing TTS: Stream=${if (useSpeaker) "ALARM" else "MUSIC"}, Speaker=$useSpeaker")
+
+        val utteranceId = "tts_${System.currentTimeMillis()}"
+        val volume = getTtsVolume()
+        val params = android.os.Bundle().apply {
+            putString(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
+            putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, streamType)
+            putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
+        }
+
         val message = if (remainingMinutes > 0) {
             "$busNo 번 버스가 약 \\${remainingMinutes}분 후 도착 예정입니다."
         } else {
             "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
         }
 
-        Log.d(TAG, "[TTSService] TTS 발화: $message, utteranceId=$utteranceId")
-
+        // Log.i("TTS_ACTUAL_SPEAK", "TTS 발화: $message, outputMode=$audioOutputMode, headset=$headsetConnected, utteranceId=$utteranceId")
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                val params = android.os.Bundle().apply {
-                    putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
-                }
-                tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
-            } else {
-                val params = HashMap<String, String>()
-                params[android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM] = android.media.AudioManager.STREAM_MUSIC.toString()
-                @Suppress("DEPRECATION")
-                tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params)
-            }
+            tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         } catch (e: Exception) {
-            Log.e(TAG, "[TTSService] TTS 발화 실패: \\${e.message}", e)
+            // Log.e(TAG, "[TTSService] TTS 발화 실패: \\${e.message}", e)
         }
     }
     
@@ -296,5 +317,10 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .build()
+    }
+
+    private fun getTtsVolume(): Float {
+        val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+        return prefs.getFloat("tts_volume", 1.0f).coerceIn(0f, 1f)
     }
 } 

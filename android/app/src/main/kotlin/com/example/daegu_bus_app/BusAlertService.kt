@@ -1198,7 +1198,7 @@ class BusAlertService : Service() {
 
     fun getAudioOutputMode(): Int = audioOutputMode
 
-    private fun isHeadsetConnected(): Boolean {
+    fun isHeadsetConnected(): Boolean {
         if (audioManager == null) {
             Log.w(TAG, "AudioManager null in isHeadsetConnected")
             return false
@@ -1241,11 +1241,15 @@ class BusAlertService : Service() {
 
     fun speakTts(text: String, earphoneOnly: Boolean = false) {
         Log.d(TAG, "🎧 speakTts 이어폰 체크 시작: earphoneOnly=$earphoneOnly, audioOutputMode=$audioOutputMode")
-        // 이어폰 전용 모드일 때 이어폰이 연결되어 있지 않으면 TTS 실행하지 않음
-        // earphoneOnly 파라미터가 true이거나 설정이 이어폰 전용(0)인 경우 둘 다 이어폰 연결 필요
         val headsetConnected = isHeadsetConnected()
-        if ((earphoneOnly || audioOutputMode == OUTPUT_MODE_HEADSET) && !headsetConnected) {
-            Log.d(TAG, "🚫 이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함 (earphoneOnly=$earphoneOnly, audioOutputMode=$audioOutputMode)")
+        // 이어폰 전용 모드일 때 이어폰이 연결되어 있지 않으면 무조건 return
+        if (audioOutputMode == OUTPUT_MODE_HEADSET && !headsetConnected) {
+            Log.d(TAG, "🚫 이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함 (BusAlertService)")
+            return
+        }
+        // earphoneOnly 파라미터가 true이면 이어폰 연결 필요
+        if (earphoneOnly && !headsetConnected) {
+            Log.d(TAG, "🚫 earphoneOnly=true인데 이어폰이 연결되어 있지 않아 TTS 실행 안함 (BusAlertService)")
             return
         }
         Log.d(TAG, "🔊 speakTts called: text='$text', isTtsInitialized=$isTtsInitialized, ttsEngine=${ttsEngine != null}, useTextToSpeech=$useTextToSpeech")
