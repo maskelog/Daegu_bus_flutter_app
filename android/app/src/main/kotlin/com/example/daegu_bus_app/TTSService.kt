@@ -49,14 +49,14 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         private const val NOTIFICATION_ID = 1002
         private const val CHANNEL_ID = "tts_service_channel"
         private const val CHANNEL_NAME = "TTS Service"
+        private const val OUTPUT_MODE_HEADSET = 0
         private const val OUTPUT_MODE_SPEAKER = 1
-        private const val OUTPUT_MODE_HEADSET = 2
-        private const val OUTPUT_MODE_AUTO = 3
+        private const val OUTPUT_MODE_AUTO = 2
     }
     
     override fun onCreate() {
         super.onCreate()
-        // Log.d(TAG, "[TTSService] onCreate 호출됨")
+        Log.e(TAG, "🔴 [중요] AppSettings 확인: speaker_mode=${getAudioOutputMode()}, TTSService_HEADSET_MODE=$OUTPUT_MODE_HEADSET, BusService_HEADSET_MODE=${BusAlertService.OUTPUT_MODE_HEADSET}")
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification("TTS 서비스 실행 중"))
     }
@@ -75,8 +75,9 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 // 이어폰 전용 모드 & 이어폰 미연결 시 TTS 실행 금지
                 val audioOutputMode = getAudioOutputMode()
                 val headsetConnected = isHeadsetConnected()
-                if (audioOutputMode == 0 && !headsetConnected) {
-                    // Log.d(TAG, "\uD83D\uDEAB 이어폰 전용 모드, 이어폰이 연결되어 있지 않아 TTS 실행 안함 (onStartCommand: START_TTS_TRACKING)")
+                Log.e(TAG, "🔴 onStartCommand [START_TTS_TRACKING] - audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected, OUTPUT_MODE_HEADSET=$OUTPUT_MODE_HEADSET, BusAlertService.OUTPUT_MODE_HEADSET=${BusAlertService.OUTPUT_MODE_HEADSET}")
+                if (audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET && !headsetConnected) {
+                    Log.e(TAG, "🚫 [정책 로깅] 이어폰 전용 모드($audioOutputMode), 이어폰이 연결되어 있지 않아 TTS 실행 안함 (onStartCommand: START_TTS_TRACKING)")
                     return START_STICKY
                 }
                 
@@ -99,8 +100,9 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 // 이어폰 전용 모드 & 이어폰 미연결 시 TTS 실행 금지
                 val audioOutputMode = getAudioOutputMode()
                 val headsetConnected = isHeadsetConnected()
-                if (audioOutputMode == 0 && !headsetConnected) {
-                    // Log.d(TAG, "\uD83D\uDEAB 이어폰 전용 모드, 이어폰이 연결되어 있지 않아 TTS 실행 안함 (onStartCommand: REPEAT_TTS_ALERT)")
+                Log.e(TAG, "🔴 onStartCommand [REPEAT_TTS_ALERT] - audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected, OUTPUT_MODE_HEADSET=$OUTPUT_MODE_HEADSET, BusAlertService.OUTPUT_MODE_HEADSET=${BusAlertService.OUTPUT_MODE_HEADSET}")
+                if (audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET && !headsetConnected) {
+                    Log.e(TAG, "🚫 [정책 로깅] 이어폰 전용 모드($audioOutputMode), 이어폰이 연결되어 있지 않아 TTS 실행 안함 (onStartCommand: REPEAT_TTS_ALERT)")
                     return START_STICKY
                 }
                 
@@ -194,7 +196,11 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     
     private fun getAudioOutputMode(): Int {
         val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-        return prefs.getInt("speaker_mode", 0)
+        val mode = prefs.getInt("speaker_mode", 0)
+        Log.e(TAG, "🔴 getAudioOutputMode: AppSettings:speaker_mode=$mode, OUTPUT_MODE_HEADSET=$OUTPUT_MODE_HEADSET, BusService.OUTPUT_MODE_HEADSET=${BusAlertService.OUTPUT_MODE_HEADSET}")
+        // 상수 불일치 문제 수정: BusAlertService에서는 OUTPUT_MODE_HEADSET=2, 여기서는 OUTPUT_MODE_HEADSET=2
+        // 이어폰 전용모드인지 확인
+        return mode
     }
 
     fun isHeadsetConnected(): Boolean {
@@ -208,9 +214,9 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                 if (devices != null) {
-                    // Log.d(TAG, "[DEBUG] AudioDeviceInfo 목록:")
+                    Log.d(TAG, "[DEBUG] AudioDeviceInfo 목록:")
                     for (device in devices) {
-                        // Log.d(TAG, "[DEBUG] AudioDeviceInfo: type=${device.type}, productName=${device.productName}, id=${device.id}, isSink=${device.isSink}")
+                        Log.d(TAG, "[DEBUG] AudioDeviceInfo: type=${device.type}, productName=${device.productName}, id=${device.id}, isSink=${device.isSink}")
                         if (device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
                             device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
                             device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
@@ -220,14 +226,14 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                         }
                     }
                 }
-                // Log.d(TAG, "🎧 Modern headset check: hasHeadset=$hasHeadset")
+                Log.d(TAG, "🎧 Modern headset check: hasHeadset=$hasHeadset")
             }
 
             val isConnected = isWired || isA2dp || isSco || hasHeadset
-            // Log.d(TAG, "🎧 Headset status: Wired=$isWired, A2DP=$isA2dp, SCO=$isSco, Modern=$hasHeadset -> Connected=$isConnected")
+            Log.d(TAG, "🎧 Headset status: Wired=$isWired, A2DP=$isA2dp, SCO=$isSco, Modern=$hasHeadset -> Connected=$isConnected")
             return isConnected
         } catch (e: Exception) {
-            // Log.e(TAG, "🎧 Error checking headset status: ${e.message}", e)
+            Log.e(TAG, "🎧 Error checking headset status: ${e.message}", e)
             return false
         }
     }
@@ -237,8 +243,8 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         val headsetConnected = isHeadsetConnected()
         // Log.d(TAG, "[TTSService] speakBusAlert() - audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected")
         // 이어폰 전용 모드 + 이어폰 미연결 시 무조건 return
-        if (audioOutputMode == OUTPUT_MODE_HEADSET && !headsetConnected) {
-            // Log.w("TTS_ACTUAL_SPEAK", "🚫 [최종방어] 이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함 (speakBusAlert 마지막)");
+        if (audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET && !headsetConnected) {
+            Log.e(TAG, "🚫 [최종방어] 이어폰 전용 모드($audioOutputMode)이나 이어폰이 연결되어 있지 않아 TTS 실행 안함 (speakBusAlert 마지막)");
             return;
         }
 
@@ -274,16 +280,22 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         }
 
         val message = if (remainingMinutes > 0) {
-            "$busNo 번 버스가 약 \\${remainingMinutes}분 후 도착 예정입니다."
+            "$busNo 번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
         } else {
             "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
         }
 
-        // Log.i("TTS_ACTUAL_SPEAK", "TTS 발화: $message, outputMode=$audioOutputMode, headset=$headsetConnected, utteranceId=$utteranceId")
+        // 발화 직전에 최종적으로 한 번 더 헤드셋 연결 확인
+        if (audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET && !isHeadsetConnected()) {
+            Log.e(TAG, "🚫 [발화 직전 최종방어] 이어폰 전용 모드($audioOutputMode)이나 이어폰이 연결되어 있지 않아 TTS 발화 취소");
+            return;
+        }
+
+        Log.i(TAG, "TTS 발화: $message, outputMode=$audioOutputMode, headset=${isHeadsetConnected()}, utteranceId=$utteranceId")
         try {
             tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         } catch (e: Exception) {
-            // Log.e(TAG, "[TTSService] TTS 발화 실패: \\${e.message}", e)
+            Log.e(TAG, "[TTSService] TTS 발화 실패: ${e.message}", e)
         }
     }
     
