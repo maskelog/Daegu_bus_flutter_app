@@ -18,12 +18,13 @@ class DatabaseHelper {
     if (_database != null || _isInitializing) return;
     _isInitializing = true;
 
-    // sqflite_ffi 초기화
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-
-    // 백그라운드에서 데이터베이스 초기화 시작
     try {
+      // ✅ sqflite_ffi 초기화 - 메인 스레드에서 실행
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+      debugPrint('✅ sqflite_ffi 초기화 완료');
+
+      // 백그라운드에서 데이터베이스 초기화 시작
       final db = await compute(_initDatabaseInBackground, null);
       _database = db;
       if (!_initCompleter.isCompleted) {
@@ -37,15 +38,20 @@ class DatabaseHelper {
       if (!_initCompleter.isCompleted) {
         _initCompleter.completeError(e);
       }
+      rethrow; // 오류를 다시 던져서 상위에서 처리할 수 있게 함
     }
   }
 
   // 백그라운드에서 실행될 DB 초기화 함수
   static Future<Database> _initDatabaseInBackground(void _) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, databaseName);
-
     try {
+      // ✅ 백그라운드에서도 databaseFactory 설정
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+
+      final dbPath = await getDatabasesPath();
+      final path = join(dbPath, databaseName);
+
       bool dbExists = await databaseExists(path);
       if (!dbExists) {
         debugPrint('DB 파일이 존재하지 않음, assets에서 복사 시작');
@@ -55,15 +61,22 @@ class DatabaseHelper {
         debugPrint('DB 파일 복사 성공: $path');
       }
 
-      return await openDatabase(
+      final database = await openDatabase(
         path,
         version: 1,
         readOnly: true, // 읽기 전용으로 열어 성능 향상
       );
+
+      // ✅ 데이터베이스 유효성 검증
+      await _validateDatabase(database);
+
+      return database;
     } catch (e) {
       debugPrint('DB 초기화 오류: $e');
       // 오류 발생 시 기존 DB 파일 삭제 후 재시도
       try {
+        final dbPath = await getDatabasesPath();
+        final path = join(dbPath, databaseName);
         final file = File(path);
         if (await file.exists()) {
           await file.delete();
@@ -75,11 +88,36 @@ class DatabaseHelper {
         await File(path).writeAsBytes(buffer, flush: true);
         debugPrint('DB 파일 재복사 성공');
 
-        return await openDatabase(path, version: 1, readOnly: true);
+        final database = await openDatabase(path, version: 1, readOnly: true);
+        await _validateDatabase(database);
+        return database;
       } catch (retryError) {
         debugPrint('DB 복구 시도 실패: $retryError');
         throw Exception('데이터베이스 초기화 실패: $e, 복구 실패: $retryError');
       }
+    }
+  }
+
+  // ✅ 데이터베이스 유효성 검증 추가
+  static Future<void> _validateDatabase(Database database) async {
+    try {
+      final result = await database.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='bus_stops'");
+      if (result.isEmpty) {
+        throw Exception('bus_stops 테이블이 존재하지 않습니다');
+      }
+
+      final count =
+          await database.rawQuery("SELECT COUNT(*) as count FROM bus_stops");
+      final stationCount = count.first['count'] as int;
+      if (stationCount == 0) {
+        throw Exception('bus_stops 테이블이 비어있습니다');
+      }
+
+      debugPrint('✅ 데이터베이스 유효성 검증 완료: $stationCount개의 정류장 정보 확인');
+    } catch (e) {
+      debugPrint('❌ 데이터베이스 유효성 검증 실패: $e');
+      rethrow;
     }
   }
 
@@ -94,6 +132,12 @@ class DatabaseHelper {
     // 아직 초기화되지 않았으면 초기화 시작
     _isInitializing = true;
     try {
+      // ✅ 메인 스레드에서 sqflite_ffi 초기화
+      if (!kIsWeb) {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+      }
+
       _database = await _initDatabase();
       if (!_initCompleter.isCompleted) {
         _initCompleter.complete(_database);
@@ -105,6 +149,8 @@ class DatabaseHelper {
         _initCompleter.completeError(e);
       }
       rethrow;
+    } finally {
+      _isInitializing = false;
     }
   }
 
@@ -126,7 +172,10 @@ class DatabaseHelper {
       }
     }
 
-    return await openDatabase(path, version: databaseVersion, readOnly: true);
+    final database =
+        await openDatabase(path, version: databaseVersion, readOnly: true);
+    await _validateDatabase(database);
+    return database;
   }
 
   Future<List<BusStop>> getAllStations() async {
@@ -140,15 +189,13 @@ class DatabaseHelper {
         return [];
       }
       final stations = List.generate(maps.length, (i) {
-        final name = maps[i]['stop_name']?.toString() ??
-            '알 수 없는 정류장'; // stop-name -> stop_name
-        final bsId = maps[i]['bsId']?.toString() ?? ''; // bsld -> bsId
+        final name = maps[i]['stop_name']?.toString() ?? '알 수 없는 정류장';
+        final bsId = maps[i]['bsId']?.toString() ?? '';
 
         // 좌표 데이터 처리
         double? longitude;
         double? latitude;
 
-        // 문자열을 double로 변환
         try {
           if (maps[i]['longitude'] != null) {
             longitude = double.tryParse(maps[i]['longitude'].toString());
@@ -170,10 +217,10 @@ class DatabaseHelper {
           id: bsId,
           name: name,
           isFavorite: false,
-          stationId: stationId, // stationId 필드 추가
+          stationId: stationId,
           longitude: longitude,
           latitude: latitude,
-          wincId: bsId, // wincId와 bsId는 동일하게 설정
+          wincId: bsId,
         );
       });
       debugPrint('Successfully generated ${stations.length} BusStop objects');
@@ -182,6 +229,46 @@ class DatabaseHelper {
       debugPrint(
           'Error querying stations: $e - Stack trace: ${StackTrace.current}');
       throw Exception('Error querying stations: $e');
+    }
+  }
+
+  // ✅ wincId로 stationId 조회하는 메서드 개선
+  Future<String?> getStationIdFromWincId(String wincId) async {
+    final db = await database;
+    try {
+      // bsId 컬럼으로 검색 (wincId와 bsId는 일반적으로 동일)
+      final List<Map<String, dynamic>> maps = await db.query(
+        'bus_stops',
+        columns: ['stationId'],
+        where: 'bsId = ?',
+        whereArgs: [wincId],
+      );
+
+      if (maps.isNotEmpty) {
+        final stationId = maps.first['stationId']?.toString();
+        debugPrint('✅ wincId $wincId → stationId $stationId');
+        return stationId;
+      }
+
+      // bsId로 찾지 못한 경우 wincId 컬럼으로도 시도
+      final List<Map<String, dynamic>> maps2 = await db.query(
+        'bus_stops',
+        columns: ['stationId'],
+        where: 'wincId = ?',
+        whereArgs: [wincId],
+      );
+
+      if (maps2.isNotEmpty) {
+        final stationId = maps2.first['stationId']?.toString();
+        debugPrint('✅ wincId $wincId → stationId $stationId (wincId 컬럼 사용)');
+        return stationId;
+      }
+
+      debugPrint('⚠️ wincId $wincId에 해당하는 stationId를 찾을 수 없습니다');
+      return null;
+    } catch (e) {
+      debugPrint('❌ wincId → stationId 변환 오류: $e');
+      return null;
     }
   }
 

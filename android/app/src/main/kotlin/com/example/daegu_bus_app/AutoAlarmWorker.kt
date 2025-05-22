@@ -10,6 +10,9 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import android.app.NotificationManager
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 // ... BackgroundWorker ...
 
@@ -34,8 +37,8 @@ class AutoAlarmWorker(
         alarmId = inputData.getInt("alarmId", 0)
         busNo = inputData.getString("busNo") ?: ""
         stationName = inputData.getString("stationName") ?: ""
-        routeId = inputData.getString("routeId") ?: "" // Get routeId
-        stationId = inputData.getString("stationId") ?: "" // Get stationId
+        routeId = inputData.getString("routeId") ?: ""
+        stationId = inputData.getString("stationId") ?: ""
         useTTS = inputData.getBoolean("useTTS", true)
 
         Log.d(TAG, "⏰ Executing AutoAlarmWorker: ID=$alarmId, Bus=$busNo, Station=$stationName, TTS=$useTTS, RouteID=$routeId, StationID=$stationId")
@@ -45,21 +48,46 @@ class AutoAlarmWorker(
             return Result.failure()
         }
 
-        // Show Notification (can be done immediately)
-        showNotification(alarmId, busNo, stationName)
+        // 실시간 버스 정보 fetch 시도
+        var fetchedMinutes: Int? = null
+        var fetchedStation: String? = null
+        var fetchSuccess = false
+        try {
+            val apiService = BusApiService(applicationContext)
+            val arrivals = runBlocking {
+                apiService.getBusArrivalInfo(stationId)
+            }
+            val matched = arrivals.find { it.id == routeId }
+            val bus = matched?.bus?.firstOrNull()
+            if (bus != null) {
+                val estimated = bus.estimatedTime
+                fetchedStation = bus.currentStation
+                fetchedMinutes = Regex("\\d+").find(estimated ?: "")?.value?.toIntOrNull()
+                fetchSuccess = true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "실시간 버스 정보 fetch 실패: ${e.message}")
+        }
 
-        // If TTS is enabled, send an Intent to TTSService
+        // 알림 메시지 결정
+        val contentText = if (fetchSuccess && fetchedMinutes != null && fetchedStation != null) {
+            "$busNo 번 버스가 $stationName 정류장에 약 ${fetchedMinutes}분 후 도착 예정입니다. (현재: $fetchedStation)"
+        } else {
+            "$busNo 번 버스의 실시간 정보를 불러오지 못했습니다. 네트워크 상태를 확인해주세요."
+        }
+
+        showNotification(alarmId, busNo, stationName, contentText)
+
         if (useTTS) {
-            Log.d(TAG, "🔊 TTS 사용 설정됨. TTSService 시작 요청...")
             try {
                 val ttsIntent = Intent(applicationContext, TTSService::class.java).apply {
-                    // Use REPEAT_TTS_ALERT or a specific action for single alarm speech
-                    action = "REPEAT_TTS_ALERT" // Or define a new action like "SPEAK_ALARM"
+                    action = "REPEAT_TTS_ALERT"
                     putExtra("busNo", busNo)
                     putExtra("stationName", stationName)
                     putExtra("routeId", routeId)
                     putExtra("stationId", stationId)
-                    // Add any other necessary data for TTSService
+                    putExtra("remainingMinutes", fetchedMinutes ?: -1)
+                    putExtra("currentStation", fetchedStation ?: "")
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     applicationContext.startForegroundService(ttsIntent)
@@ -69,19 +97,14 @@ class AutoAlarmWorker(
                 Log.d(TAG, "✅ TTSService 시작 요청 완료.")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ TTSService 시작 중 오류: ${e.message}", e)
-                // Decide if this should be a failure
-                // return Result.failure()
             }
-        } else {
-             Log.d(TAG, "🔊 TTS 사용 안 함 설정됨.")
         }
 
-        // Worker result indicates successful scheduling/dispatching, not necessarily TTS completion
-        Log.d(TAG, "✅ Worker 작업 완료 (Notification 표시 및 TTS 시작 요청): ID=$alarmId")
-        return Result.success() // Return success as the task dispatch is done
+        Log.d(TAG, "✅ Worker 작업 완료 (Notification/TTS): ID=$alarmId")
+        return Result.success()
     }
 
-    private fun showNotification(alarmId: Int, busNo: String, stationName: String) {
+    private fun showNotification(alarmId: Int, busNo: String, stationName: String, contentText: String) {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val intent = applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName)?.apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -89,8 +112,6 @@ class AutoAlarmWorker(
         val pendingIntent = intent?.let {
             PendingIntent.getActivity(applicationContext, alarmId, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
-
-        // Full-screen intent
         val fullScreenIntent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("alarmId", alarmId)
@@ -98,10 +119,9 @@ class AutoAlarmWorker(
         val fullScreenPendingIntent = PendingIntent.getActivity(
             applicationContext, alarmId, fullScreenIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
         val notification = NotificationCompat.Builder(applicationContext, ALARM_NOTIFICATION_CHANNEL_ID)
             .setContentTitle("$busNo 버스 알람")
-            .setContentText("$stationName 정류장에 곧 도착합니다")
+            .setContentText(contentText)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -111,14 +131,13 @@ class AutoAlarmWorker(
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .build()
-
         try {
             notificationManager.notify(alarmId, notification)
             Log.d(TAG, "✅ Notification shown with lockscreen support for alarm ID: $alarmId")
         } catch (e: SecurityException) {
             Log.e(TAG, "❌ Notification permission possibly denied: ${e.message}")
         } catch (e: Exception) {
-             Log.e(TAG, "❌ Error showing notification: ${e.message}")
+            Log.e(TAG, "❌ Error showing notification: ${e.message}")
         }
     }
 

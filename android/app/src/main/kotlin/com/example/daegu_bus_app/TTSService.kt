@@ -64,6 +64,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Log.d(TAG, "[TTSService] onStartCommand: action=${intent?.action}, busNo=${intent?.getStringExtra("busNo")}, stationName=${intent?.getStringExtra("stationName")}, routeId=${intent?.getStringExtra("routeId")}, stationId=${intent?.getStringExtra("stationId")}")
         
+        val forceSpeaker = intent?.getBooleanExtra("forceSpeaker", false) ?: false
         when (intent?.action) {
             "START_TTS_TRACKING" -> {
                 busNo = intent.getStringExtra("busNo") ?: ""
@@ -120,6 +121,17 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 stopTracking()
                 stopSelf()
             }
+        }
+        
+        if (forceSpeaker) {
+            // 이어폰 체크 무시, 무조건 스피커로 발화
+            isTracking = true
+            if (!isInitialized) {
+                initializeTTS()
+            } else {
+                speakBusAlert(forceSpeaker = true)
+            }
+            return START_STICKY
         }
         
         return START_STICKY
@@ -238,39 +250,31 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         }
     }
     
-    private fun speakBusAlert() {
+    private fun speakBusAlert(forceSpeaker: Boolean = false) {
         val audioOutputMode = getAudioOutputMode()
         val headsetConnected = isHeadsetConnected()
-        // Log.d(TAG, "[TTSService] speakBusAlert() - audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected")
-        // 이어폰 전용 모드 + 이어폰 미연결 시 무조건 return
-        if (audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET && !headsetConnected) {
+        // forceSpeaker가 true면 이어폰 체크 및 방어 로직 무시
+        if (!forceSpeaker && audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET && !headsetConnected) {
             Log.e(TAG, "🚫 [최종방어] 이어폰 전용 모드($audioOutputMode)이나 이어폰이 연결되어 있지 않아 TTS 실행 안함 (speakBusAlert 마지막)");
             return;
         }
-
         if (!isTracking || !isInitialized) {
-            // Log.w(TAG, "[TTSService] speakBusAlert: isTracking=$isTracking, isInitialized=$isInitialized. 발화 중단.")
             return
         }
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastSpokenTime < SPEAK_INTERVAL) {
-            // Log.d(TAG, "[TTSService] TTS 발화 간격이 너무 짧음. 건너뜀.")
             return
         }
         lastSpokenTime = currentTime
-
-        val useSpeaker = when (audioOutputMode) {
+        val useSpeaker = if (forceSpeaker) true else when (audioOutputMode) {
             OUTPUT_MODE_SPEAKER -> true
             OUTPUT_MODE_HEADSET -> false
             OUTPUT_MODE_AUTO -> !isHeadsetConnected()
             else -> !isHeadsetConnected()
         }
-        // 스피커폰 상태 명확히 세팅
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioManager.isSpeakerphoneOn = useSpeaker
         val streamType = if (useSpeaker) android.media.AudioManager.STREAM_ALARM else android.media.AudioManager.STREAM_MUSIC
-        // Log.d(TAG, "🔊 Preparing TTS: Stream=${if (useSpeaker) "ALARM" else "MUSIC"}, Speaker=$useSpeaker")
-
         val utteranceId = "tts_${System.currentTimeMillis()}"
         val volume = getTtsVolume()
         val params = android.os.Bundle().apply {
@@ -278,20 +282,16 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, streamType)
             putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
         }
-
         val message = if (remainingMinutes > 0) {
             "$busNo 번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
         } else {
             "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
         }
-
-        // 발화 직전에 최종적으로 한 번 더 헤드셋 연결 확인
-        if (audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET && !isHeadsetConnected()) {
+        if (!forceSpeaker && audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET && !isHeadsetConnected()) {
             Log.e(TAG, "🚫 [발화 직전 최종방어] 이어폰 전용 모드($audioOutputMode)이나 이어폰이 연결되어 있지 않아 TTS 발화 취소");
             return;
         }
-
-        Log.i(TAG, "TTS 발화: $message, outputMode=$audioOutputMode, headset=${isHeadsetConnected()}, utteranceId=$utteranceId")
+        Log.i(TAG, "TTS 발화: $message, outputMode=$audioOutputMode, headset=${isHeadsetConnected()}, utteranceId=$utteranceId, forceSpeaker=$forceSpeaker")
         try {
             tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         } catch (e: Exception) {

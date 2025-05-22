@@ -19,6 +19,7 @@ import 'services/settings_service.dart';
 import 'services/backgroud_service.dart';
 import 'services/bus_api_service.dart';
 import 'screens/home_screen.dart';
+import 'screens/settings_screen.dart';
 import 'utils/database_helper.dart';
 import 'utils/dio_client.dart';
 import 'utils/simple_tts_helper.dart';
@@ -521,21 +522,20 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             );
 
             // TTS 안내 시도
-            try {
-              await SimpleTTSHelper.initialize();
-              await SimpleTTSHelper.speakBusAlert(
-                busNo: busNo,
-                stationName: stationName,
-                remainingMinutes: remainingMinutes,
-                currentStation: currentStation,
-                remainingStops: 0,
-              );
-              logMessage('🔊 실시간 버스 정보 TTS 발화 성공');
-            } catch (e) {
-              logMessage('❌ TTS 발화 오류: $e', level: LogLevel.error);
-            }
+            // await TTSService.initialize();
+            // await TTSService.speak(...);
           } else {
             logMessage('⚠️ 버스 정보를 가져오지 못했습니다', level: LogLevel.warning);
+            // fallback 메시지 알림 표시
+            await notificationService.showAutoAlarmNotification(
+              id: alarmId,
+              busNo: busNo,
+              stationName: stationName,
+              remainingMinutes: -1,
+              routeId: routeId,
+              isAutoAlarm: isAutoAlarm,
+              currentStation: '실시간 버스 정보를 불러오지 못했습니다. 네트워크 상태를 확인해주세요.',
+            );
           }
 
           // 버스 모니터링 서비스 시작
@@ -582,19 +582,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         );
 
         // TTS 안내 시도
-        try {
-          await SimpleTTSHelper.initialize();
-          await SimpleTTSHelper.speakBusAlert(
-            busNo: busNo,
-            stationName: stationName,
-            remainingMinutes: remainingMinutes,
-            currentStation: currentStation,
-            remainingStops: 0,
-          );
-          logMessage('🔊 실시간 버스 정보 TTS 발화 성공');
-        } catch (e) {
-          logMessage('❌ TTS 발화 오류: $e', level: LogLevel.error);
-        }
+        // await TTSService.initialize();
+        // await TTSService.speak(...);
 
         // 버스 모니터링 서비스 시작
         if (mounted) {
