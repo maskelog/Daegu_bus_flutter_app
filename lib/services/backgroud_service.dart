@@ -43,7 +43,7 @@ void callbackDispatcher() {
       try {
         // 자동 알람 초기화 작업 처리
         if (task == 'initAutoAlarms') {
-          return await _handleInitAutoAlarms();
+          return await _handleInitAutoAlarms(inputData: inputData);
         }
 
         // 자동 알람 작업 처리
@@ -84,8 +84,15 @@ void callbackDispatcher() {
   });
 }
 
-Future<bool> _handleInitAutoAlarms() async {
-  logMessage("🔄 자동 알람 초기화 시작");
+Future<bool> _handleInitAutoAlarms({Map<String, dynamic>? inputData}) async {
+  // 입력 데이터 로깅
+  final timestamp =
+      inputData?['timestamp'] ?? DateTime.now().millisecondsSinceEpoch;
+  final autoAlarmsCount = inputData?['autoAlarmsCount'] ?? 0;
+  final isRetry = inputData?['isRetry'] ?? false;
+
+  logMessage(
+      "🔄 자동 알람 초기화 시작 - 타임스탬프: $timestamp, 알람 수: $autoAlarmsCount, 재시도: $isRetry");
   const int maxRetries = 3;
   int retryCount = 0;
 
@@ -255,6 +262,16 @@ Future<bool> _handleAutoAlarmTask({
     BusArrivalInfo? busArrivalInfo;
     String? currentStation;
     int actualRemainingMinutes = remainingMinutes;
+
+    // 현재 시간 로깅 (운행 시간 제한 제거)
+    final now = DateTime.now();
+    final hour = now.hour;
+
+    // 운행 시간 외 알람 실행 시 로그만 남기고 계속 진행
+    if (hour < 5 || hour >= 23) {
+      logMessage("⚠️ 현재 버스 운행 시간이 아닙니다 (현재 시간: $hour시). 테스트 목적으로 계속 진행합니다.",
+          level: LogLevel.warning);
+    }
 
     try {
       logMessage("🚌 자동 알람 버스 정보 업데이트 시도: $busNo번, $stationName");
@@ -626,12 +643,31 @@ Future<void> _speakAlarm(
     await SimpleTTSHelper.setVolume(1.0);
     await SimpleTTSHelper.setAudioOutputMode(1); // 스피커 모드
 
-    // TTS 발화
-    await SimpleTTSHelper.speak(message);
-    logMessage("🔊 TTS 발화 완료: $message");
+    // 자동 알람은 이어폰 체크를 무시하고 강제 스피커 모드로 발화
+    await SimpleTTSHelper.speak(message, force: true, earphoneOnly: false);
+    logMessage("🔊 TTS 발화 완료: $message (강제 스피커 모드)");
+
+    // 5초 후 한 번 더 발화 시도 (백업)
+    await Future.delayed(const Duration(seconds: 5));
+    await SimpleTTSHelper.speak(message, force: true, earphoneOnly: false);
+    logMessage("🔊 백업 TTS 발화 완료: $message (5초 후)");
   } catch (e) {
     logMessage("❌ TTS 발화 중 오류: $e", level: LogLevel.error);
-    rethrow; // 호출자가 처리할 수 있도록 예외 다시 던지기
+
+    // 오류 발생 시 네이티브 TTS 직접 호출 시도
+    try {
+      const MethodChannel channel =
+          MethodChannel('com.example.daegu_bus_app/tts');
+      await channel.invokeMethod('speakTTS', {
+        'message': "$busNo번 버스가 $stationName 정류장에 도착 예정입니다.",
+        'isHeadphoneMode': false,
+        'forceSpeaker': true,
+      });
+      logMessage("🔊 네이티브 TTS 발화 시도 (백업)");
+    } catch (e) {
+      logMessage("❌ 네이티브 TTS 발화도 실패: $e", level: LogLevel.error);
+      rethrow;
+    }
   }
 }
 

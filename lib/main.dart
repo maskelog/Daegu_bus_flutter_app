@@ -236,6 +236,10 @@ void _setupAutoAlarms() {
         'init_auto_alarms',
         'initAutoAlarms',
         initialDelay: const Duration(seconds: 5),
+        inputData: {
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'autoAlarmsCount': autoAlarms.length,
+        },
         constraints: Constraints(
           networkType: NetworkType.connected,
           requiresBatteryNotLow: false,
@@ -269,6 +273,11 @@ void _setupAutoAlarms() {
             'init_auto_alarms_retry',
             'initAutoAlarms',
             initialDelay: const Duration(seconds: 5),
+            inputData: {
+              'timestamp': DateTime.now().millisecondsSinceEpoch,
+              'autoAlarmsCount': autoAlarms.length,
+              'isRetry': true,
+            },
             constraints: Constraints(
               networkType: NetworkType.connected,
               requiresBatteryNotLow: false,

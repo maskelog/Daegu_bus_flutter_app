@@ -22,6 +22,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import java.util.*
+import java.util.Calendar
 import kotlin.collections.HashMap
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -34,6 +35,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.os.Bundle
 import org.json.JSONArray
 import org.json.JSONObject
+import com.example.daegu_bus_app.BusInfo
 
 class BusAlertService : Service() {
     companion object {
@@ -575,45 +577,31 @@ class BusAlertService : Service() {
 
     // JSON에서 버스 도착 정보 파싱하는 함수
     private fun parseJsonBusArrivals(jsonString: String, inputRouteId: String): List<BusInfo> {
-        try {
+        return try {
             val jsonArray = JSONArray(jsonString)
             val busInfoList = mutableListOf<BusInfo>()
-            Log.d(TAG, "[파싱] 원본 jsonString: $jsonString")
             for (i in 0 until jsonArray.length()) {
                 val routeObj = jsonArray.getJSONObject(i)
-                val currentRouteNo = routeObj.optString("routeNo", "")
-                // 1차: routeNo로 필터
-                val arrList = routeObj.optJSONArray("arrList")
-                if (arrList == null || arrList.length() == 0) continue
+                val arrList = routeObj.optJSONArray("arrList") ?: continue
                 for (j in 0 until arrList.length()) {
                     val busObj = arrList.getJSONObject(j)
-                    val busRouteId = busObj.optString("routeId", "")
-                    // 2차: routeId로 필터
-                    if (busRouteId != inputRouteId) continue
-                    val busNumber = busObj.optString("routeNo", "")
-                    val estimatedTime = busObj.optString("arrState", "정보 없음")
-                    val currentStation = busObj.optString("bsNm", "정보 없음")
-                    val remainingStops = busObj.optString("bsGap", "0")
-                    val isLowFloor = busObj.optString("busTCd2", "N") == "1"
-                    // BusInfo 객체 생성 및 추가
-                    busInfoList.add(BusInfo(
-                        busNumber = busNumber,
-                        estimatedTime = estimatedTime,
-                        currentStation = currentStation,
-                        remainingStops = remainingStops,
-                        isLowFloor = isLowFloor,
-                        isOutOfService = estimatedTime == "운행종료"
-                    ))
+                    if (busObj.optString("routeId", "") != inputRouteId) continue
+                    busInfoList.add(
+                    com.example.daegu_bus_app.BusInfo(
+                            currentStation = busObj.optString("bsNm", null) ?: "정보 없음",
+                            estimatedTime = busObj.optString("arrState", null) ?: "정보 없음",
+                            remainingStops = busObj.optString("bsGap", null) ?: "0",
+                            busNumber = busObj.optString("routeNo", null) ?: "",
+                            isLowFloor = busObj.optString("busTCd2", "N") == "1",
+                            isOutOfService = busObj.optString("arrState", "") == "운행종료"
+                        )
+                    )
                 }
             }
-            Log.d(TAG, "[파싱] routeId=$inputRouteId, 파싱된 busInfoList: $busInfoList")
-            if (busInfoList.isEmpty()) {
-                Log.w(TAG, "[파싱] routeId=$inputRouteId 에 해당하는 버스 정보 없음! (routeNo, stationId 매칭 실패 가능)")
-            }
-            return busInfoList
+            busInfoList
         } catch (e: Exception) {
-            Log.e(TAG, "버스 도착 정보 파싱 오류: ${e.message}", e)
-            return emptyList()
+            Log.e(TAG, "❌ 버스 도착 정보 파싱 오류: ${e.message}", e)
+            emptyList()
         }
     }
 
@@ -686,17 +674,17 @@ class BusAlertService : Service() {
         }
     }
 
-    private fun startTTSServiceSpeak(busNo: String, stationName: String, routeId: String, stationId: String, remainingMinutes: Int = -1, forceSpeaker: Boolean = false) {
+    private fun startTTSServiceSpeak(busNo: String, stationName: String, routeId: String, stationId: String, remainingMinutes: Int = -1, forceSpeaker: Boolean = false, currentStation: String? = null) {
         val isHeadset = isHeadsetConnected()
         // 이어폰 전용 모드일 때 이어폰이 연결되어 있지 않으면 TTSService 호출하지 않음 (단, forceSpeaker면 무시)
         if (!forceSpeaker && audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadset) {
             Log.w(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTSService 호출 안함 (audioOutputMode=$audioOutputMode, isHeadset=$isHeadset)")
             return
         }
-        
+
         // 이어폰 연결 상태 로깅
         // Log.d(TAG, "🎧 TTSService 호출 전 이어폰 연결 상태: $isHeadset, 모드: $audioOutputMode")
-        
+
         val ttsIntent = Intent(this, TTSService::class.java).apply {
             action = "REPEAT_TTS_ALERT"
             putExtra("busNo", busNo)
@@ -704,6 +692,7 @@ class BusAlertService : Service() {
             putExtra("routeId", routeId)
             putExtra("stationId", stationId)
             putExtra("remainingMinutes", remainingMinutes)
+            putExtra("currentStation", (currentStation ?: "").toString())
             if (forceSpeaker) putExtra("forceSpeaker", true)
         }
         startService(ttsIntent)
@@ -833,6 +822,11 @@ class BusAlertService : Service() {
         stationId: String? = null,
         wincId: String? = null
     ) {
+        // Log current time but don't restrict notifications
+        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        if (currentHour < 5 || currentHour >= 23) {
+            Log.w(TAG, "⚠️ 현재 버스 운행 시간이 아닙니다 (현재 시간: ${currentHour}시). 테스트 목적으로 계속 진행합니다.")
+        }
         val effectiveRouteId = routeId ?: "temp_${busNo}_${stationName.hashCode()}"
         val trackingInfo = activeTrackings[effectiveRouteId] ?: TrackingInfo(
             routeId = effectiveRouteId,
@@ -840,146 +834,146 @@ class BusAlertService : Service() {
             busNo = busNo
         ).also { activeTrackings[effectiveRouteId] = it }
 
-        // ✅ stationId 보정 로직 개선
+        Log.d(TAG, "🔄 showOngoingBusTracking: $busNo, $stationName, $remainingMinutes, currentStation='$currentStation'")
+
+        // stationId 보정
         var effectiveStationId = stationId ?: trackingInfo.stationId
         if (effectiveStationId.isBlank() || effectiveStationId.length < 10 || !effectiveStationId.startsWith("7")) {
             serviceScope.launch {
                 val fixedStationId = resolveStationIdIfNeeded(effectiveRouteId, stationName, effectiveStationId, wincId)
                 if (fixedStationId.isNotBlank()) {
-                    // 보정된 stationId로 다시 호출
                     showOngoingBusTracking(
-                        busNo = busNo,
-                        stationName = stationName,
-                        remainingMinutes = remainingMinutes,
-                        currentStation = currentStation,
-                        isUpdate = isUpdate,
-                        notificationId = notificationId,
-                        allBusesSummary = allBusesSummary,
-                        routeId = routeId,
-                        stationId = fixedStationId,
-                        wincId = wincId
+                        busNo, stationName, remainingMinutes, currentStation, isUpdate, notificationId, allBusesSummary, routeId, fixedStationId, wincId
                     )
                 } else {
-                    Log.e(TAG, "❌ stationId 보정 실패. 알림/TTS 갱신 불가: routeId=${'$'}routeId, busNo=${'$'}busNo, stationName=${'$'}stationName")
+                    Log.e(TAG, "❌ stationId 보정 실패: $routeId, $busNo, $stationName")
                 }
             }
             return
         }
 
-        // ✅ remainingMinutes 방어: Int가 아니거나 placeholder면 정보 없음 처리
-        val safeRemainingMinutes = try {
-            remainingMinutes.toString().toInt()
-        } catch (e: Exception) {
-            -1 // 정보 없음
-        }
-        val estimatedTimeText = when {
-            safeRemainingMinutes < 0 -> "정보 없음"
-            safeRemainingMinutes == 0 -> "곧 도착"
-            safeRemainingMinutes == 1 -> "1분"
-            else -> "${'$'}{safeRemainingMinutes}분"
-        }
+        // BusInfo 생성 (remainingMinutes는 BusInfo에서 파생)
+        // Check if the bus is out of service based on time
+        val isOutOfService = remainingMinutes < 0 ||
+                            (trackingInfo.lastBusInfo?.isOutOfService == true) ||
+                            (currentStation?.contains("운행종료") == true)
 
-        // ✅ currentStation 값 처리 개선
-        val currentStationFinal = when {
-            !currentStation.isNullOrBlank() && currentStation != "정보 없음" -> {
-                Log.d(TAG, "✅ 현재 버스 위치 정보 업데이트: ${'$'}busNo, ${'$'}currentStation")
-                currentStation
-            }
-            trackingInfo.lastBusInfo?.currentStation?.isNotBlank() == true -> {
-                Log.d(TAG, "🔄 기존 버스 위치 정보 사용: ${'$'}busNo, ${'$'}{trackingInfo.lastBusInfo?.currentStation}")
-                trackingInfo.lastBusInfo?.currentStation ?: "정보 없음"
-            }
-            else -> {
-                Log.w(TAG, "⚠️ 버스 위치 정보 없음: ${'$'}busNo")
-                "위치 정보 없음"
-            }
-        }
+        val busInfo = com.example.daegu_bus_app.BusInfo(
+            currentStation = currentStation ?: "정보 없음",
+            estimatedTime = if (isOutOfService) "운행종료" else when {
+                remainingMinutes <= 0 -> "곧 도착"
+                remainingMinutes == 1 -> "1분"
+                else -> "${remainingMinutes}분"
+            },
+            remainingStops = trackingInfo.lastBusInfo?.remainingStops ?: "0",
+            busNumber = busNo,
+            isLowFloor = trackingInfo.lastBusInfo?.isLowFloor ?: false,
+            isOutOfService = isOutOfService
+        )
+        trackingInfo.lastBusInfo = busInfo
+        trackingInfo.lastUpdateTime = System.currentTimeMillis()
+        trackingInfo.stationId = effectiveStationId
 
-        // ✅ lastBusInfo 업데이트 로직 개선
-        if (safeRemainingMinutes >= 0 && currentStationFinal != "정보 없음" && currentStationFinal != "위치 정보 없음") {
-            trackingInfo.lastBusInfo = BusInfo(
-                busNumber = busNo,
-                estimatedTime = estimatedTimeText,
-                currentStation = currentStationFinal,
-                remainingStops = trackingInfo.lastBusInfo?.remainingStops ?: "0"
-            )
-            trackingInfo.lastUpdateTime = System.currentTimeMillis()
-            trackingInfo.stationId = effectiveStationId // stationId 업데이트
-            Log.d(TAG, "✅ lastBusInfo 갱신: ${'$'}busNo, ${'$'}estimatedTimeText, ${'$'}currentStationFinal")
-        } else {
-            Log.w(TAG, "❌ lastBusInfo 갱신 생략: ${'$'}busNo, remainingMinutes=${'$'}remainingMinutes, currentStation=${'$'}currentStationFinal. 기존 lastBusInfo 유지")
+        val minutes = busInfo.getRemainingMinutes()
+        val formattedTime = when (val minutes = busInfo.getRemainingMinutes()) {
+            in Int.MIN_VALUE..0 -> if (busInfo.estimatedTime.isNotEmpty()) busInfo.estimatedTime else "정보 없음"
+            1 -> "1분"
+            else -> "${minutes}분"
         }
+        val currentStationFinal = busInfo.currentStation
 
-        // ✅ TTS 실시간 알림 개선
+        Log.d(TAG, "✅ lastBusInfo 갱신: $busNo, $formattedTime, '$currentStationFinal'")
+
+        // TTS 알림
         try {
             val lastSpokenMinutes = trackingInfo.lastNotifiedMinutes
-            Log.d(TAG, "[TTS] 조건 체크: useTextToSpeech=${'$'}useTextToSpeech, remainingMinutes=${'$'}remainingMinutes, lastNotifiedMinutes=${'$'}lastSpokenMinutes")
-            
-            if (useTextToSpeech && remainingMinutes <= 5 && remainingMinutes >= 0) {
-                // 중복 방지: 같은 시간에 이미 알림했으면 건너뛰기
-                if (lastSpokenMinutes == Int.MAX_VALUE || lastSpokenMinutes > remainingMinutes) {
+            if (useTextToSpeech && minutes in 0..5) {
+                if (lastSpokenMinutes == Int.MAX_VALUE || lastSpokenMinutes > minutes) {
                     val ttsIntent = Intent(this, TTSService::class.java).apply {
                         action = "REPEAT_TTS_ALERT"
                         putExtra("busNo", busNo)
                         putExtra("stationName", stationName)
                         putExtra("routeId", effectiveRouteId)
                         putExtra("stationId", effectiveStationId)
-                        putExtra("remainingMinutes", remainingMinutes)
-                        putExtra("currentStation", currentStationFinal) // ✅ 현재 위치 정보 추가
+                        putExtra("remainingMinutes", minutes as Int)
+                        putExtra("currentStation", (currentStationFinal ?: "").toString())
                     }
                     startService(ttsIntent)
-                    trackingInfo.lastNotifiedMinutes = remainingMinutes
-                    Log.d(TAG, "[TTS] 실시간 TTSService 호출: ${'$'}busNo, ${'$'}stationName, ${'$'}remainingMinutes, stationId=${'$'}effectiveStationId")
-                } else {
-                    Log.d(TAG, "[TTS] 중복 방지로 TTS 미호출: remainingMinutes=${'$'}remainingMinutes, lastNotifiedMinutes=${'$'}lastSpokenMinutes")
+                    trackingInfo.lastNotifiedMinutes = minutes
+                    Log.d(TAG, "[TTS] 실시간 TTSService 호출: $busNo, $stationName, $minutes, stationId=$effectiveStationId")
                 }
-            } else if (remainingMinutes > 5) {
-                // 5분 초과시 lastNotifiedMinutes 초기화
-                if (trackingInfo.lastNotifiedMinutes != Int.MAX_VALUE) {
-                    trackingInfo.lastNotifiedMinutes = Int.MAX_VALUE
-                    Log.d(TAG, "[TTS] 5분 초과로 lastNotifiedMinutes 초기화")
-                }
-            } else {
-                Log.d(TAG, "[TTS] 미호출: 조건 불충족 (useTextToSpeech=${'$'}useTextToSpeech, remainingMinutes=${'$'}remainingMinutes)")
+            } else if (minutes > 5 && trackingInfo.lastNotifiedMinutes != Int.MAX_VALUE) {
+                trackingInfo.lastNotifiedMinutes = Int.MAX_VALUE
             }
         } catch (e: Exception) {
-            Log.e(TAG, "[TTS] 실시간 TTSService 호출 오류: ${'$'}{e.message}", e)
+            Log.e(TAG, "[TTS] 오류: ${e.message}", e)
         }
 
-        // ✅ 알림 갱신 (여러 방법으로 확실히 업데이트)
+        // 알림 갱신
         try {
             val notification = notificationHandler.buildOngoingNotification(activeTrackings)
-            if (!isInForeground) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(ONGOING_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-                } else {
-                    @Suppress("DEPRECATION")
-                    startForeground(ONGOING_NOTIFICATION_ID, notification)
-                }
-                isInForeground = true
-                Log.d(TAG, "✅ Foreground service started.")
-            } else {
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
-                Log.d(TAG, "✅ Foreground notification updated: ${System.currentTimeMillis()}")
-
-                // 현재 시간 추가
-                val currentTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-                Log.d(TAG, "⏰ 현재 시간: $currentTime, 추적 중: ${activeTrackings.size}개 노선")
-
-                // 각 추적 정보 로그
-                activeTrackings.forEach { (routeId, info) ->
-                    val busInfo = info.lastBusInfo
-                    Log.d(TAG, "📊 추적 정보: ${info.busNo}번, ${busInfo?.estimatedTime ?: "정보 없음"}, 현재: ${busInfo?.currentStation ?: "정보 없음"}")
-                }
-            }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "Foreground Service Permission Error: ${e.message}", e)
-            stopTracking()
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
+            Log.d(TAG, "✅ 알림 업데이트: $busNo, $formattedTime, $currentStationFinal")
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    notificationManager.notify(ONGOING_NOTIFICATION_ID, notificationHandler.buildOngoingNotification(activeTrackings))
+                } catch (_: Exception) {}
+            }, 1000)
         } catch (e: Exception) {
-            Log.e(TAG, "🚨 Error updating/starting foreground service: ${e.message}", e)
-            stopTracking()
+            Log.e(TAG, "❌ 알림 업데이트 오류: ${e.message}", e)
+            updateForegroundNotification()
         }
+    }
+
+    fun updateAutoAlarmBusInfo(
+        busNo: String,
+        stationName: String,
+        routeId: String,
+        stationId: String,
+        remainingMinutes: Int,
+        currentStation: String
+    ) {
+        Log.d(TAG, "🔄 updateAutoAlarmBusInfo: $busNo, $stationName, $remainingMinutes, '$currentStation'")
+        val info = activeTrackings[routeId] ?: TrackingInfo(
+            routeId = routeId,
+            stationName = stationName,
+            busNo = busNo,
+            stationId = stationId
+        ).also { activeTrackings[routeId] = it }
+
+        // Check if the bus is out of service based on time
+        val isOutOfService = remainingMinutes < 0 ||
+                            (info.lastBusInfo?.isOutOfService == true) ||
+                            (currentStation.contains("운행종료"))
+
+        val busInfo = com.example.daegu_bus_app.BusInfo(
+            currentStation = currentStation,
+            estimatedTime = if (isOutOfService) "운행종료" else when {
+                remainingMinutes <= 0 -> "곧 도착"
+                remainingMinutes == 1 -> "1분"
+                else -> "${remainingMinutes}분"
+            },
+            remainingStops = info.lastBusInfo?.remainingStops ?: "0",
+            busNumber = busNo,
+            isLowFloor = info.lastBusInfo?.isLowFloor ?: false,
+            isOutOfService = isOutOfService
+        )
+        info.lastBusInfo = busInfo
+        info.lastUpdateTime = System.currentTimeMillis()
+        info.stationId = stationId
+
+        showOngoingBusTracking(
+            busNo = busNo,
+            stationName = stationName,
+            remainingMinutes = busInfo.getRemainingMinutes(),
+            currentStation = busInfo.currentStation,
+            isUpdate = true,
+            notificationId = ONGOING_NOTIFICATION_ID,
+            allBusesSummary = null,
+            routeId = routeId,
+            stationId = stationId
+        )
     }
 
     private fun checkAndStopServiceIfNeeded() {
@@ -1020,7 +1014,7 @@ class BusAlertService : Service() {
             val isWired = audioManager?.isWiredHeadsetOn ?: false
             val isA2dp = audioManager?.isBluetoothA2dpOn ?: false
             val isSco = audioManager?.isBluetoothScoOn ?: false
-            
+
             // 2. Android 6 이상의 경우 AudioDeviceInfo로 더 정확하게 체크 (추가)
             var hasHeadset = false
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -1030,7 +1024,7 @@ class BusAlertService : Service() {
                     for (device in devices) {
                         val type = device.type
                         Log.d(TAG, "[DEBUG] AudioDeviceInfo: type=$type, productName=${device.productName}, id=${device.id}, isSink=${device.isSink}")
-                        if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET || 
+                        if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
                             type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
                             type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
                             type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
@@ -1042,7 +1036,7 @@ class BusAlertService : Service() {
                 }
                 Log.d(TAG, "🎧 Modern headset check: hasHeadset=$hasHeadset")
             }
-            
+
             // 두 방식 중 하나라도 헤드셋 연결을 감지하면 true 반환
             val isConnected = isWired || isA2dp || isSco || hasHeadset
             Log.d(TAG, "🎧 Headset status: Wired=$isWired, A2DP=$isA2dp, SCO=$isSco, Modern=$hasHeadset -> Connected=$isConnected")
@@ -1088,14 +1082,14 @@ class BusAlertService : Service() {
                     Log.w(TAG, "🚫 [발화 직전 최종방어] 이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTS 실행 안함")
                     return@launch
                 }
-                
+
                 val useSpeaker = when (audioOutputMode) {
                     OUTPUT_MODE_SPEAKER -> true
                     OUTPUT_MODE_HEADSET -> false // 이어폰 전용 모드는 절대 스피커 사용 안함
                     OUTPUT_MODE_AUTO -> !latestHeadsetConnected
                     else -> !latestHeadsetConnected
                 }
-                
+
                 // 이어폰 전용 모드에서는 STREAM_MUSIC 사용, 스피커 모드에서는 STREAM_ALARM 사용
                 val streamType = if (audioOutputMode == OUTPUT_MODE_HEADSET) {
                     android.media.AudioManager.STREAM_MUSIC // 이어폰 모드는 무조건 MUSIC
@@ -1104,7 +1098,7 @@ class BusAlertService : Service() {
                 } else {
                     android.media.AudioManager.STREAM_MUSIC // 그 외에는 MUSIC
                 }
-                
+
                 Log.d(TAG, "🔊 Preparing TTS: Stream=${if (streamType == android.media.AudioManager.STREAM_ALARM) "ALARM" else "MUSIC"}, Speaker=$useSpeaker, Mode=$audioOutputMode")
 
                 val utteranceId = "tts_${System.currentTimeMillis()}"
@@ -1113,7 +1107,7 @@ class BusAlertService : Service() {
                     putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_STREAM, streamType)
                     putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, ttsVolume)
                 }
-                
+
                 // 스피커폰 상태 명확히 세팅
                 audioManager?.isSpeakerphoneOn = useSpeaker
 
@@ -1401,6 +1395,18 @@ class BusAlertService : Service() {
     private val hasNotifiedArrival = HashSet<String>()
 
     private fun checkArrivalAndNotify(trackingInfo: TrackingInfo, busInfo: BusInfo) {
+        // Check if the bus is out of service
+        if (busInfo.isOutOfService || busInfo.estimatedTime == "운행종료") {
+            Log.d(TAG, "버스 운행종료 상태입니다. 알림을 표시하지 않습니다: ${trackingInfo.busNo}번")
+            return
+        }
+
+        // Log current time but don't restrict notifications
+        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        if (currentHour < 5 || currentHour >= 23) {
+            Log.w(TAG, "⚠️ 현재 버스 운행 시간이 아닙니다 (현재 시간: ${currentHour}시). 테스트 목적으로 계속 진행합니다.")
+        }
+
         val remainingMinutes = when {
             busInfo.estimatedTime == "곧 도착" -> 0
             busInfo.estimatedTime == "운행종료" -> -1
@@ -1414,22 +1420,23 @@ class BusAlertService : Service() {
             else -> -1 // 기타 예상치 못한 값은 -1(정보 없음)로 처리
         }
 
-        if (remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES) {
+        if (remainingMinutes >= 0 && remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES) {
             if (useTextToSpeech && !hasNotifiedTts.contains(trackingInfo.routeId)) {
                 // TTS 시스템을 통한 발화 시도
                 try {
                     startTTSServiceSpeak(
-                        busNo = trackingInfo.busNo, 
-                        stationName = trackingInfo.stationName, 
-                        routeId = trackingInfo.routeId, 
+                        busNo = trackingInfo.busNo,
+                        stationName = trackingInfo.stationName,
+                        routeId = trackingInfo.routeId,
                         stationId = trackingInfo.stationId,
-                        remainingMinutes = 0 // 곧 도착 상태
+                        remainingMinutes = 0, // 곧 도착 상태
+                        currentStation = busInfo.currentStation
                     )
                     hasNotifiedTts.add(trackingInfo.routeId)
                     Log.d(TAG, "📢 TTS 발화 시도 성공: ${trackingInfo.busNo}번 버스, ${trackingInfo.stationName}")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ TTS 발화 시도 오류: ${e.message}", e)
-                    
+
                     // TTSService 실패 시 백업으로 내부 TTS 시도
                     val message = "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
                     speakTts(message)
@@ -1472,11 +1479,18 @@ class BusAlertService : Service() {
             }
 
             // 2. 버스 정보 업데이트 (항상 최신 currentStation 반영)
-            val busInfo = BusInfo(
-                busNumber = busNo,
-                currentStation = currentStation, // 최신 값으로 무조건 덮어쓰기
+            // Check if the bus is out of service
+            val isOutOfService = remainingMinutes < 0 ||
+                                (info.lastBusInfo?.isOutOfService == true) ||
+                                (currentStation.contains("운행종료"))
+
+            val busInfo = com.example.daegu_bus_app.BusInfo(
+                currentStation = currentStation,
+                estimatedTime = if (isOutOfService) "운행종료" else if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분",
                 remainingStops = info.lastBusInfo?.remainingStops ?: "0",
-                estimatedTime = if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분"
+                busNumber = busNo,
+                isLowFloor = info.lastBusInfo?.isLowFloor ?: false,
+                isOutOfService = isOutOfService
             )
             info.lastBusInfo = busInfo
             info.lastUpdateTime = System.currentTimeMillis()
@@ -1489,13 +1503,13 @@ class BusAlertService : Service() {
                 busNo = busNo,
                 stationName = stationName,
                 remainingMinutes = remainingMinutes,
-                currentStation = currentStation, // 최신 값 전달
+                currentStation = currentStation, // 최신 값으로 무조건 덮어쓰기
                 isUpdate = true,
                 notificationId = ONGOING_NOTIFICATION_ID,
                 allBusesSummary = null,
                 routeId = routeId
             )
-            
+
             // 4. 메인 스레드에서 알림 강제 업데이트 (추가)
             Handler(Looper.getMainLooper()).post {
                 try {
@@ -1574,11 +1588,18 @@ class BusAlertService : Service() {
             }
 
             // 2. 버스 정보 업데이트
-            val busInfo = BusInfo(
-                busNumber = busNo,
+            // Check if the bus is out of service
+            val isOutOfService = remainingMinutes < 0 ||
+                                (info.lastBusInfo?.isOutOfService == true) ||
+                                (currentStation.contains("운행종료"))
+
+            val busInfo = com.example.daegu_bus_app.BusInfo(
                 currentStation = currentStation,
+                estimatedTime = if (isOutOfService) "운행종료" else if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분",
                 remainingStops = info.lastBusInfo?.remainingStops ?: "0",
-                estimatedTime = if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분"
+                busNumber = busNo,
+                isLowFloor = info.lastBusInfo?.isLowFloor ?: false,
+                isOutOfService = isOutOfService
             )
             info.lastBusInfo = busInfo
             info.lastUpdateTime = System.currentTimeMillis()

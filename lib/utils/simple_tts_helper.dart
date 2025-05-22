@@ -127,12 +127,18 @@ class SimpleTTSHelper {
       _isSpeaking = true;
       _addRecentMessage(message);
 
+      // 강제 모드인 경우 이어폰 체크 무시하고 네이티브 TTS 사용
+      if (force) {
+        logMessage('🔊 강제 모드로 네이티브 TTS 사용', level: LogLevel.info);
+        return await _speakNative(message, force: true);
+      }
+
       if (currentMode == 0 || (earphoneOnly && isHeadphoneConnected)) {
         // 이어폰 전용 또는 이어폰 강제 모드
-        return await _speakFlutter(message);
+        return await _speakFlutter(message, force: force);
       } else {
         // 스피커 전용 또는 기타
-        return await _speakNative(message);
+        return await _speakNative(message, force: force);
       }
     } catch (e) {
       logMessage('❌ TTS 발화 오류: $e', level: LogLevel.error);
@@ -141,33 +147,57 @@ class SimpleTTSHelper {
   }
 
   /// 네이티브 TTS 사용 (Android)
-  static Future<bool> _speakNative(String message) async {
+  static Future<bool> _speakNative(String message, {bool force = false}) async {
     try {
-      logMessage('🔊 네이티브 TTS 발화 시도: $message', level: LogLevel.info);
+      logMessage('🔊 네이티브 TTS 발화 시도: $message (force=$force)',
+          level: LogLevel.info);
 
       final isHeadphoneMode =
           await _ttsSwitcher?.isHeadphoneConnected() ?? false;
+
+      // 강제 모드인 경우 추가 파라미터 전달
       final result = await _ttsChannel.invokeMethod('speakTTS', {
         'message': message,
         'isHeadphoneMode': isHeadphoneMode,
+        'forceSpeaker': force, // 강제 스피커 모드 플래그 추가
+        'volume': force ? 1.0 : 0.8, // 강제 모드일 때 최대 볼륨
       });
 
       _isSpeaking = true;
       _addRecentMessage(message);
 
       logMessage('✅ 네이티브 TTS 발화 요청 성공: $result', level: LogLevel.info);
+
+      // 강제 모드인 경우 5초 후 한 번 더 시도
+      if (force) {
+        Future.delayed(const Duration(seconds: 5), () async {
+          try {
+            await _ttsChannel.invokeMethod('speakTTS', {
+              'message': message,
+              'isHeadphoneMode': false,
+              'forceSpeaker': true,
+              'volume': 1.0,
+            });
+            logMessage('✅ 백업 네이티브 TTS 발화 요청 성공 (5초 후)', level: LogLevel.info);
+          } catch (e) {
+            logMessage('❌ 백업 네이티브 TTS 발화 오류: $e', level: LogLevel.error);
+          }
+        });
+      }
+
       return true;
     } catch (e) {
       logMessage('❌ 네이티브 TTS 발화 오류: $e', level: LogLevel.error);
 
       // 네이티브 TTS 실패 시 Flutter TTS로 폴백
       logMessage('🔄 Flutter TTS로 폴백 시도', level: LogLevel.warning);
-      return await _speakFlutter(message);
+      return await _speakFlutter(message, force: force);
     }
   }
 
   /// Flutter TTS 사용
-  static Future<bool> _speakFlutter(String message) async {
+  static Future<bool> _speakFlutter(String message,
+      {bool force = false}) async {
     try {
       if (_flutterTts == null) {
         await initialize();
@@ -176,10 +206,33 @@ class SimpleTTSHelper {
       _isSpeaking = true;
       _addRecentMessage(message);
 
+      // 강제 모드인 경우 볼륨 및 속도 설정
+      if (force) {
+        await _flutterTts?.setVolume(1.0);
+        await _flutterTts?.setSpeechRate(0.5);
+        await _flutterTts?.setPitch(1.0);
+        logMessage('🔊 Flutter TTS 강제 모드 설정 완료', level: LogLevel.info);
+      }
+
       await _flutterTts?.stop();
       await _flutterTts?.speak(message);
 
-      logMessage('✅ Flutter TTS 발화 시작: $message', level: LogLevel.info);
+      logMessage('✅ Flutter TTS 발화 시작: $message (force=$force)',
+          level: LogLevel.info);
+
+      // 강제 모드인 경우 5초 후 한 번 더 시도
+      if (force) {
+        Future.delayed(const Duration(seconds: 5), () async {
+          try {
+            await _flutterTts?.stop();
+            await _flutterTts?.speak(message);
+            logMessage('✅ 백업 Flutter TTS 발화 시작 (5초 후)', level: LogLevel.info);
+          } catch (e) {
+            logMessage('❌ 백업 Flutter TTS 발화 오류: $e', level: LogLevel.error);
+          }
+        });
+      }
+
       return true;
     } catch (e) {
       logMessage('❌ Flutter TTS 발화 오류: $e', level: LogLevel.error);
