@@ -170,3 +170,20 @@ android/app/.cxx
 
 .metadata
 .env
+
+# 추가: 프로젝트 특화 ignore 항목
+*.stackdump
+flutter_*.log
+
+# IDE 관련 추가
+.idea/
+.vscode/
+*.iml
+
+# 잘못 위치한 파일들
+CUserssh953*
+
+# 추가 덤프 및 로그 파일
+*.stackdump
+flutter_*.log
+*.crash

@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.utils
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -17,6 +17,8 @@ import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.example.daegu_bus_app.services.BusAlertService
+import com.example.daegu_bus_app.R
 
 class NotificationHandler(private val context: Context) {
 

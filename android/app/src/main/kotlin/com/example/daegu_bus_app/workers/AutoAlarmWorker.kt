@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.workers
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -14,7 +14,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 
-// ... BackgroundWorker ...
+import com.example.daegu_bus_app.services.BusApiService
+import com.example.daegu_bus_app.services.TTSService
+import com.example.daegu_bus_app.MainActivity
+import com.example.daegu_bus_app.R
 
 // --- Worker for Auto Alarms ---
 class AutoAlarmWorker(

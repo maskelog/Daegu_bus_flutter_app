@@ -1,10 +1,11 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.utils
 
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
+import com.example.daegu_bus_app.services.BusAlertService
 
 /**
  * 알림 관련 헬퍼 클래스

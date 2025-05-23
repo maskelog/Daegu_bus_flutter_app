@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.services
 
 import io.flutter.plugin.common.MethodChannel
 import android.app.NotificationChannel
@@ -35,7 +35,9 @@ import android.speech.tts.UtteranceProgressListener
 import android.os.Bundle
 import org.json.JSONArray
 import org.json.JSONObject
-import com.example.daegu_bus_app.BusInfo
+import com.example.daegu_bus_app.models.BusInfo
+import com.example.daegu_bus_app.utils.NotificationHandler
+import com.example.daegu_bus_app.MainActivity
 
 class BusAlertService : Service() {
     companion object {
@@ -101,7 +103,7 @@ class BusAlertService : Service() {
     private val monitoringJobs = HashMap<String, Job>()
     private val activeTrackings = HashMap<String, TrackingInfo>()
     private val monitoredRoutes = HashMap<String, Triple<String, String, Job?>>()
-    private val cachedBusInfo = HashMap<String, com.example.daegu_bus_app.BusInfo>()
+    private val cachedBusInfo = HashMap<String, BusInfo>()
     private val arrivingSoonNotified = HashSet<String>()
     private var isTtsTrackingActive = false
 
@@ -587,7 +589,7 @@ class BusAlertService : Service() {
                     val busObj = arrList.getJSONObject(j)
                     if (busObj.optString("routeId", "") != inputRouteId) continue
                     busInfoList.add(
-                    com.example.daegu_bus_app.BusInfo(
+                        BusInfo(
                             currentStation = busObj.optString("bsNm", null) ?: "정보 없음",
                             estimatedTime = busObj.optString("arrState", null) ?: "정보 없음",
                             remainingStops = busObj.optString("bsGap", null) ?: "0",
@@ -858,7 +860,7 @@ class BusAlertService : Service() {
                             (trackingInfo.lastBusInfo?.isOutOfService == true) ||
                             (currentStation?.contains("운행종료") == true)
 
-        val busInfo = com.example.daegu_bus_app.BusInfo(
+        val busInfo = BusInfo(
             currentStation = currentStation ?: "정보 없음",
             estimatedTime = if (isOutOfService) "운행종료" else when {
                 remainingMinutes <= 0 -> "곧 도착"
@@ -947,7 +949,7 @@ class BusAlertService : Service() {
                             (info.lastBusInfo?.isOutOfService == true) ||
                             (currentStation.contains("운행종료"))
 
-        val busInfo = com.example.daegu_bus_app.BusInfo(
+        val busInfo = BusInfo(
             currentStation = currentStation,
             estimatedTime = if (isOutOfService) "운행종료" else when {
                 remainingMinutes <= 0 -> "곧 도착"
@@ -1484,7 +1486,7 @@ class BusAlertService : Service() {
                                 (info.lastBusInfo?.isOutOfService == true) ||
                                 (currentStation.contains("운행종료"))
 
-            val busInfo = com.example.daegu_bus_app.BusInfo(
+            val busInfo = BusInfo(
                 currentStation = currentStation,
                 estimatedTime = if (isOutOfService) "운행종료" else if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분",
                 remainingStops = info.lastBusInfo?.remainingStops ?: "0",
@@ -1593,7 +1595,7 @@ class BusAlertService : Service() {
                                 (info.lastBusInfo?.isOutOfService == true) ||
                                 (currentStation.contains("운행종료"))
 
-            val busInfo = com.example.daegu_bus_app.BusInfo(
+            val busInfo = BusInfo(
                 currentStation = currentStation,
                 estimatedTime = if (isOutOfService) "운행종료" else if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분",
                 remainingStops = info.lastBusInfo?.remainingStops ?: "0",
@@ -1819,7 +1821,7 @@ fun RouteStation.toMap(): Map<String, Any?> {
     )
 }
 
-fun com.example.daegu_bus_app.BusInfo.toMap(): Map<String, Any?> {
+fun BusInfo.toMap(): Map<String, Any?> {
     val isLowFloor = false
     val isOutOfService = estimatedTime == "운행종료"
     val remainingMinutes = when {

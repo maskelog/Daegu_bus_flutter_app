@@ -1,11 +1,14 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.utils
 
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.*
-import com.example.daegu_bus_app.BusInfo
+import com.example.daegu_bus_app.models.BusInfo
+import com.example.daegu_bus_app.services.BusApiService
+import com.example.daegu_bus_app.services.BusAlertService
+import com.example.daegu_bus_app.services.TTSService
 
 class RouteTracker(
     private val context: Context,

@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.models
 
 /**
  * 버스 정보에서 남은 분을 추출하는 확장 함수

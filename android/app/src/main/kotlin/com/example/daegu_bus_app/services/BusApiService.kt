@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.services
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -24,6 +24,7 @@ import retrofit2.http.Url
 import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.Charset
+import com.example.daegu_bus_app.models.WebStationSearchResult
 import java.util.concurrent.TimeUnit
 
 // Retrofit API 인터페이스

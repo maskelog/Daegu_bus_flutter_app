@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.utils
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.example.daegu_bus_app.models.LocalStationSearchResult
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException

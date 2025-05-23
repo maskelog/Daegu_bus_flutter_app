@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.services
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -18,6 +18,8 @@ import org.json.JSONObject
 import java.util.Timer
 import java.util.TimerTask
 import kotlin.math.min
+import com.example.daegu_bus_app.MainActivity
+import com.example.daegu_bus_app.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

@@ -56,6 +56,12 @@ import io.flutter.plugins.GeneratedPluginRegistrant
 import java.util.Calendar
 import android.app.Notification
 import android.database.sqlite.SQLiteException
+import com.example.daegu_bus_app.services.BusApiService
+import com.example.daegu_bus_app.services.BusAlertService
+import com.example.daegu_bus_app.services.TTSService
+import com.example.daegu_bus_app.services.StationTrackingService
+import com.example.daegu_bus_app.utils.DatabaseHelper
+import com.example.daegu_bus_app.utils.NotificationHelper
 import kotlinx.coroutines.runBlocking
 
 class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
@@ -389,16 +395,16 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                     val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
                                     val stations = databaseHelper.searchStations(searchText)
                                     Log.d(TAG, "로컬 정류장 검색 결과: ${stations.size}개")
-                                    val jsonArray = JSONArray()
+                                    val jsonArray = org.json.JSONArray()
                                     stations.forEach { station ->
-                                        val jsonObj = JSONObject().apply {
+                                        val jsonObj = org.json.JSONObject().apply {
                                             put("id", station.bsId)
                                             put("name", station.bsNm)
                                             put("isFavorite", false)
                                             put("wincId", station.bsId)
                                             put("ngisXPos", station.longitude)
                                             put("ngisYPos", station.latitude)
-                                            put("routeList", JSONArray())
+                                            put("routeList", org.json.JSONArray())
                                         }
                                         jsonArray.put(jsonObj)
                                     }
@@ -406,17 +412,17 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 } else {
                                     val stations = busApiService.searchStations(searchText)
                                     Log.d(TAG, "웹 정류장 검색 결과: ${stations.size}개")
-                                    val jsonArray = JSONArray()
+                                    val jsonArray = org.json.JSONArray()
                                     stations.forEach { station ->
                                         Log.d(TAG, "Station - ID: ${station.bsId}, Name: ${station.bsNm}")
-                                        val jsonObj = JSONObject().apply {
+                                        val jsonObj = org.json.JSONObject().apply {
                                             put("id", station.bsId)
                                             put("name", station.bsNm)
                                             put("isFavorite", false)
                                             put("wincId", station.bsId)
                                             put("ngisXPos", 0.0)
                                             put("ngisYPos", 0.0)
-                                            put("routeList", JSONArray())
+                                            put("routeList", org.json.JSONArray())
                                         }
                                         jsonArray.put(jsonObj)
                                     }

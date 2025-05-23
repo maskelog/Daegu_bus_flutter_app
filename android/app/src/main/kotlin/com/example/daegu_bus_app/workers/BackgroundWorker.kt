@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.workers
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -8,8 +8,9 @@ import android.os.Build
 import android.util.Log
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import com.example.daegu_bus_app.BusAlertService
-import com.example.daegu_bus_app.TTSService
+import com.example.daegu_bus_app.services.BusAlertService
+import com.example.daegu_bus_app.services.TTSService
+import com.example.daegu_bus_app.receivers.AlarmReceiver
 import org.json.JSONObject
 import java.util.Calendar
 

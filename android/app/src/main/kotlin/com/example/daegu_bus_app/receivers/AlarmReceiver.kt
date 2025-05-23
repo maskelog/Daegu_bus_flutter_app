@@ -1,12 +1,13 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.receivers
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import com.example.daegu_bus_app.BusAlertService
-import com.example.daegu_bus_app.TTSService
+import com.example.daegu_bus_app.services.BusAlertService
+import com.example.daegu_bus_app.services.TTSService
+import com.example.daegu_bus_app.workers.BackgroundWorker
 
 class AlarmReceiver : BroadcastReceiver() {
     private val TAG = "AlarmReceiver"

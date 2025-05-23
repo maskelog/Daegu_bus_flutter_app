@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.example.daegu_bus_app.services
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -17,6 +17,8 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.example.daegu_bus_app.MainActivity
+import com.example.daegu_bus_app.R
 import java.util.Locale
 import java.util.UUID
 
