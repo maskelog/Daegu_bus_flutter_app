@@ -168,6 +168,7 @@ class AlarmService extends ChangeNotifier {
       _alarmCheckTimer?.cancel();
       _alarmCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
         refreshAlarms();
+        _checkAutoAlarms(); // 자동 알람 체크 추가
       });
 
       _initialized = true;
@@ -622,6 +623,53 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
+  // 자동 알람 체크 메서드 추가
+  Future<void> _checkAutoAlarms() async {
+    try {
+      final now = DateTime.now();
+      
+      for (var alarm in _autoAlarms) {
+        // 알람 시간이 지났거나 임박한 자동 알람 확인 (2분 이내)
+        final timeUntilAlarm = alarm.scheduledTime.difference(now);
+        
+        if (timeUntilAlarm.inMinutes <= 2 && timeUntilAlarm.inMinutes >= -1) {
+          logMessage(
+            '⚡ 자동 알람 시간 임박: ${alarm.busNo}번, ${timeUntilAlarm.inMinutes}분 남음',
+            level: LogLevel.info
+          );
+          
+          // AutoAlarm 객체로 변환
+          final autoAlarm = AutoAlarm(
+            id: alarm.getAlarmId().toString(),
+            routeNo: alarm.busNo,
+            stationName: alarm.stationName,
+            stationId: alarm.routeId, // 임시 대안
+            routeId: alarm.routeId,
+            hour: alarm.scheduledTime.hour,
+            minute: alarm.scheduledTime.minute,
+            repeatDays: [now.weekday], // 오늘 요일
+            useTTS: alarm.useTTS,
+            isActive: true,
+          );
+          
+          // 즉시 실행
+          await _executeAutoAlarmImmediately(autoAlarm);
+          
+          // 알람 목록에서 제거 (이미 실행됨)
+          _autoAlarms.remove(alarm);
+          await _saveAutoAlarms();
+          
+          logMessage(
+            '✅ 자동 알람 실행 완료: ${alarm.busNo}번',
+            level: LogLevel.info
+          );
+        }
+      }
+    } catch (e) {
+      logMessage('❌ 자동 알람 체크 오류: $e', level: LogLevel.error);
+    }
+  }
+
   Future<List<DateTime>> getHolidays(int year, int month) async {
     return _fetchHolidays(year, month);
   }
@@ -644,6 +692,9 @@ class AlarmService extends ChangeNotifier {
       final actualDelay =
           initialDelay.inDays > 3 ? const Duration(days: 3) : initialDelay;
 
+      // 음수 딜레이는 즉시 실행
+      final executionDelay = actualDelay.isNegative ? Duration.zero : actualDelay;
+
       // 기존 작업 취소 확인
       try {
         await Workmanager().cancelByUniqueName('autoAlarm_$id');
@@ -655,32 +706,70 @@ class AlarmService extends ChangeNotifier {
       // 백업 ID 사용 - 충돌 방지
       final uniqueId = 'autoAlarm_${id}_${now.millisecondsSinceEpoch}';
 
-      // 작업 등록 시도
-      await Workmanager().registerOneOffTask(
-        uniqueId,
-        'autoAlarmTask',
-        initialDelay: actualDelay,
-        inputData: {
-          'alarmId': id,
-          'busNo': alarm.routeNo,
-          'stationName': alarm.stationName,
-          'remainingMinutes': 0,
-          'routeId': alarm.routeId,
-          'useTTS': alarm.useTTS,
-          'stationId': alarm.stationId,
-          'registeredAt': now.millisecondsSinceEpoch,
-          'scheduledFor': scheduledTime.millisecondsSinceEpoch,
-        },
-        constraints: Constraints(
-          networkType: NetworkType.connected,
-          requiresBatteryNotLow: false, // 배터리 제한 완화
-          requiresCharging: false,
-          requiresDeviceIdle: false,
-          requiresStorageNotLow: false,
-        ),
-        backoffPolicy: BackoffPolicy.linear,
-        existingWorkPolicy: ExistingWorkPolicy.replace,
-      );
+      // 즉시 실행해야 하는 경우 (5분 이내)
+      if (executionDelay.inMinutes <= 5) {
+        logMessage(
+            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inMinutes}분',
+            level: LogLevel.info);
+
+        // 즉시 알람 실행
+        await _executeAutoAlarmImmediately(alarm);
+
+        // 그래도 WorkManager 작업도 등록 (백업용)
+        await Workmanager().registerOneOffTask(
+          uniqueId,
+          'autoAlarmTask',
+          initialDelay: executionDelay,
+          inputData: {
+            'alarmId': id,
+            'busNo': alarm.routeNo,
+            'stationName': alarm.stationName,
+            'remainingMinutes': 0,
+            'routeId': alarm.routeId,
+            'useTTS': alarm.useTTS,
+            'stationId': alarm.stationId,
+            'registeredAt': now.millisecondsSinceEpoch,
+            'scheduledFor': scheduledTime.millisecondsSinceEpoch,
+            'isImmediate': true,
+          },
+          constraints: Constraints(
+            networkType: NetworkType.connected,
+            requiresBatteryNotLow: false,
+            requiresCharging: false,
+            requiresDeviceIdle: false,
+            requiresStorageNotLow: false,
+          ),
+          backoffPolicy: BackoffPolicy.linear,
+          existingWorkPolicy: ExistingWorkPolicy.replace,
+        );
+      } else {
+        // 일반적인 지연 실행
+        await Workmanager().registerOneOffTask(
+          uniqueId,
+          'autoAlarmTask',
+          initialDelay: executionDelay,
+          inputData: {
+            'alarmId': id,
+            'busNo': alarm.routeNo,
+            'stationName': alarm.stationName,
+            'remainingMinutes': 0,
+            'routeId': alarm.routeId,
+            'useTTS': alarm.useTTS,
+            'stationId': alarm.stationId,
+            'registeredAt': now.millisecondsSinceEpoch,
+            'scheduledFor': scheduledTime.millisecondsSinceEpoch,
+          },
+          constraints: Constraints(
+            networkType: NetworkType.connected,
+            requiresBatteryNotLow: false,
+            requiresCharging: false,
+            requiresDeviceIdle: false,
+            requiresStorageNotLow: false,
+          ),
+          backoffPolicy: BackoffPolicy.linear,
+          existingWorkPolicy: ExistingWorkPolicy.replace,
+        );
+      }
 
       // SharedPreferences에 작업 등록 정보 저장 (검증용)
       final prefs = await SharedPreferences.getInstance();
@@ -695,16 +784,78 @@ class AlarmService extends ChangeNotifier {
           }));
 
       logMessage(
-          '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${actualDelay.inMinutes}분 후), 작업 ID: $uniqueId');
+          '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: $uniqueId');
 
       // 5분 후 백업 알람 등록
-      if (actualDelay.inMinutes > 5) {
+      if (executionDelay.inMinutes > 5) {
         _scheduleBackupAlarm(alarm, id, scheduledTime);
       }
     } catch (e) {
       logMessage('❌ 자동 알람 예약 오류: $e', level: LogLevel.error);
       // 오류 발생 시 앱 내 로컬 알림으로 예약 시도
       _scheduleLocalBackupAlarm(alarm, scheduledTime);
+    }
+  }
+
+  // 즉시 실행 자동 알람 메서드 추가
+  Future<void> _executeAutoAlarmImmediately(AutoAlarm alarm) async {
+    try {
+      logMessage(
+          '⚡ 즉시 자동 알람 실행: ${alarm.routeNo}번, ${alarm.stationName}',
+          level: LogLevel.info);
+
+      // 실시간 버스 정보 가져오기
+      await refreshAutoAlarmBusInfo(alarm);
+
+      // 캐시된 정보 가져오기
+      final cacheKey = "${alarm.routeNo}_${alarm.routeId}";
+      final cachedInfo = _cachedBusInfo[cacheKey];
+      
+      final remainingMinutes = cachedInfo?.remainingMinutes ?? 0;
+      final currentStation = cachedInfo?.currentStation ?? '정보 업데이트 중';
+
+      // 알림 표시
+      final alarmId = getAlarmId(alarm.routeNo, alarm.stationName, routeId: alarm.routeId);
+      await _notificationService.showNotification(
+        id: alarmId,
+        busNo: alarm.routeNo,
+        stationName: alarm.stationName,
+        remainingMinutes: remainingMinutes,
+        currentStation: currentStation,
+        routeId: alarm.routeId,
+        isAutoAlarm: true,
+        isOngoing: false, // 일회성 알림
+      );
+
+      // TTS 발화 (강제 스피커 모드)
+      if (alarm.useTTS) {
+        try {
+          await SimpleTTSHelper.initialize();
+          
+          // 자동 알람용 TTS 발화
+          await SimpleTTSHelper.speakBusAlert(
+            busNo: alarm.routeNo,
+            stationName: alarm.stationName,
+            remainingMinutes: remainingMinutes,
+            currentStation: currentStation,
+            isAutoAlarm: true, // 자동 알람 플래그 설정
+          );
+          
+          logMessage(
+              '🔊 자동 알람 TTS 발화 완료 (강제 스피커 모드)',
+              level: LogLevel.info);
+        } catch (e) {
+          logMessage('❌ 자동 알람 TTS 발화 오류: $e', level: LogLevel.error);
+        }
+      }
+
+      logMessage(
+          '✅ 즉시 자동 알람 실행 완료: ${alarm.routeNo}번',
+          level: LogLevel.info);
+    } catch (e) {
+      logMessage(
+          '❌ 즉시 자동 알람 실행 오류: $e',
+          level: LogLevel.error);
     }
   }
 
@@ -882,8 +1033,11 @@ class AlarmService extends ChangeNotifier {
         final timeUntilAlarm = scheduledTime.difference(now);
         logMessage('  ⏰ 다음 알람까지 ${timeUntilAlarm.inMinutes}분 남음');
 
-        // 알람 시간이 10분 이내면 버스 모니터링 시작
-        if (timeUntilAlarm.inMinutes <= 10) {
+        // 알람 시간이 이미 지났거나 1분 이내면 즉시 실행
+        if (timeUntilAlarm.inMinutes <= 1) {
+          logMessage('  ⚡ 알람 시간이 지났거나 임박함 - 즉시 실행');
+          await _executeAutoAlarmImmediately(alarm);
+        } else if (timeUntilAlarm.inMinutes <= 10) {
           logMessage('  🚌 10분 이내 알람 - 버스 모니터링 시작');
           await startBusMonitoringService(
             routeId: alarm.routeId,

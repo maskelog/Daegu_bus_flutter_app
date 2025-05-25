@@ -3,6 +3,7 @@ import 'package:daegu_bus_app/main.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -70,10 +71,113 @@ class PermissionService {
     }
   }
 
+  /// 정확한 알람 권한 요청 (Android 12+)
+  static Future<void> requestExactAlarmPermission() async {
+    if (!Platform.isAndroid) return;
+
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      final sdkVersion = androidInfo.version.sdkInt;
+
+      if (sdkVersion >= 31) {
+        // Android 12+
+        final status = await Permission.scheduleExactAlarm.request();
+
+        if (status.isGranted) {
+          log('⏰ 정확한 알람 권한 승인됨', level: LogLevel.info);
+        } else if (status.isPermanentlyDenied) {
+          log('⚠️ 정확한 알람 권한 영구 거부 → 설정 페이지 유도', level: LogLevel.warning);
+          openAppSettings();
+        } else {
+          log('❌ 정확한 알람 권한 거부됨', level: LogLevel.warning);
+        }
+      } else {
+        log('ℹ️ Android 11 이하 → 정확한 알람 권한 요청 생략됨', level: LogLevel.debug);
+      }
+    } catch (e) {
+      log('❌ 정확한 알람 권한 요청 오류: $e', level: LogLevel.error);
+    }
+  }
+
+  /// 배터리 최적화 제외 요청
+  static Future<void> requestIgnoreBatteryOptimizations() async {
+    if (!Platform.isAndroid) return;
+
+    try {
+      const methodChannel =
+          MethodChannel('com.example.daegu_bus_app/permission');
+
+      // 먼저 현재 상태 확인
+      final bool isIgnored =
+          await methodChannel.invokeMethod('isIgnoringBatteryOptimizations');
+
+      if (isIgnored) {
+        log('🔋 이미 배터리 최적화에서 제외됨', level: LogLevel.info);
+        return;
+      }
+
+      // 배터리 최적화 제외 요청
+      final bool result =
+          await methodChannel.invokeMethod('requestIgnoreBatteryOptimizations');
+
+      if (result) {
+        log('🔋 배터리 최적화 제외 요청 성공', level: LogLevel.info);
+      } else {
+        log('⚠️ 배터리 최적화 제외 요청 실패', level: LogLevel.warning);
+      }
+    } catch (e) {
+      log('❌ 배터리 최적화 요청 오류: $e', level: LogLevel.error);
+
+      // 폴백: permission_handler 사용
+      try {
+        final status = await Permission.ignoreBatteryOptimizations.request();
+        if (status.isGranted) {
+          log('🔋 배터리 최적화 제외 승인됨 (폴백)', level: LogLevel.info);
+        } else {
+          log('⚠️ 배터리 최적화 제외 거부됨 (폴백)', level: LogLevel.warning);
+        }
+      } catch (e2) {
+        log('❌ 배터리 최적화 폴백 요청 오류: $e2', level: LogLevel.error);
+      }
+    }
+  }
+
+  /// 자동 시작 권한 확인 및 안내
+  static Future<void> checkAutoStartPermission() async {
+    if (!Platform.isAndroid) return;
+
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      final manufacturer = androidInfo.manufacturer.toLowerCase();
+
+      // 제조사별 자동 시작 설정 안내
+      if (manufacturer.contains('xiaomi') || manufacturer.contains('redmi')) {
+        log('📱 Xiaomi/Redmi 기기: 자동 시작 허용을 수동으로 설정해주세요', level: LogLevel.info);
+      } else if (manufacturer.contains('huawei') ||
+          manufacturer.contains('honor')) {
+        log('📱 Huawei/Honor 기기: 앱 시작 관리에서 수동 관리로 설정해주세요',
+            level: LogLevel.info);
+      } else if (manufacturer.contains('oppo')) {
+        log('📱 Oppo 기기: 개인정보 보호 권한에서 자동 시작 허용해주세요', level: LogLevel.info);
+      } else if (manufacturer.contains('vivo')) {
+        log('📱 Vivo 기기: 백그라운드 앱 새로고침을 허용해주세요', level: LogLevel.info);
+      } else if (manufacturer.contains('samsung')) {
+        log('📱 Samsung 기기: 배터리 설정에서 앱을 최적화하지 않음으로 설정해주세요',
+            level: LogLevel.info);
+      }
+    } catch (e) {
+      log('❌ 자동 시작 권한 확인 오류: $e', level: LogLevel.error);
+    }
+  }
+
   /// 필요한 모든 권한 요청 일괄 실행 (초기 실행 시 사용)
   static Future<void> requestAllPermissions() async {
+    log('필요한 모든 권한 요청 시작', level: LogLevel.info);
     await requestNotificationPermission();
     await requestLocationPermission();
     // await requestBackgroundLocationPermission(); // 필요시 활성화
+    await requestExactAlarmPermission();
+    await requestIgnoreBatteryOptimizations();
+    await checkAutoStartPermission();
   }
 }

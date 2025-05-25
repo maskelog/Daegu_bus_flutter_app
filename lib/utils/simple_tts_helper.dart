@@ -356,11 +356,12 @@ class SimpleTTSHelper {
     String? currentStation,
     int? remainingStops,
     bool earphoneOnly = true,
+    bool isAutoAlarm = false, // 자동 알람 여부 추가
   }) async {
     String message;
 
     if (remainingMinutes <= 0) {
-      message = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.";
+      message = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다.";
     } else if (remainingStops == 1) {
       message = "$busNo번 버스가 $stationName 정류장 앞 정류장에 도착했습니다. 곧 도착합니다.";
     } else {
@@ -371,6 +372,12 @@ class SimpleTTSHelper {
           : "";
       message =
           "$busNo번 버스가$locationInfo $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.";
+    }
+
+    // 자동 알람인 경우 강제 스피커 모드로 발화
+    if (isAutoAlarm) {
+      logMessage('🔊 자동 알람 TTS 발화 (강제 스피커 모드): $message', level: LogLevel.info);
+      return await speak(message, force: true, earphoneOnly: false);
     }
 
     return await speak(message, earphoneOnly: earphoneOnly);

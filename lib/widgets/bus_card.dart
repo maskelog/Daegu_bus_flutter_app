@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:daegu_bus_app/models/bus_arrival.dart';
 import 'package:daegu_bus_app/models/bus_info.dart';
@@ -12,7 +11,7 @@ import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 import 'package:daegu_bus_app/services/settings_service.dart';
 
 // 정류장 추적 메서드 채널 상수 추가
-const String STATION_TRACKING_CHANNEL =
+const String stationTrackingChannel =
     'com.example.daegu_bus_app/station_tracking';
 
 class BusCard extends StatefulWidget {
@@ -286,10 +285,11 @@ class _BusCardState extends State<BusCard> {
     if (widget.stationName == null || widget.stationName!.isEmpty) {
       logMessage('🚌 정류장 정보가 없습니다. 알람을 설정할 수 없습니다.');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('정류장 정보가 없습니다. 알람을 설정할 수 없습니다.')),
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('정류장 정보가 없습니다. 알람을 설정할 수 없습니다.')),
         );
-      }
+        }
       return;
     }
 
@@ -370,12 +370,14 @@ class _BusCardState extends State<BusCard> {
 
       // 승차 알람이 설정되었음을 알림
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.showSnackBar(
           const SnackBar(content: Text('승차 알람이 시작되었습니다')),
         );
       }
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
         const SnackBar(content: Text('승차 알람 설정에 실패했습니다')),
       );
     }
@@ -395,7 +397,8 @@ class _BusCardState extends State<BusCard> {
     if (stationId.isEmpty) {
       logMessage('❌ 정류장 ID를 추출할 수 없습니다.', level: LogLevel.error);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.showSnackBar(
           const SnackBar(content: Text('정류장 정보가 완전하지 않습니다. 알람을 설정할 수 없습니다.')),
         );
       }
@@ -438,13 +441,15 @@ class _BusCardState extends State<BusCard> {
           setState(() {});
 
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            final messenger = ScaffoldMessenger.of(context);
+            messenger.showSnackBar(
               const SnackBar(content: Text('승차 알람이 취소되었습니다')),
             );
             logMessage('🔔 승차 알람 취소 완료', level: LogLevel.info);
           }
         } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          final messenger = ScaffoldMessenger.of(context);
+          messenger.showSnackBar(
             const SnackBar(content: Text('승차 알람 취소 실패')),
           );
           logMessage('🔔 승차 알람 취소 실패', level: LogLevel.error);
@@ -452,7 +457,8 @@ class _BusCardState extends State<BusCard> {
       } catch (e) {
         logMessage('🚨 알람 취소 중 오류 발생: $e', level: LogLevel.error);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          final messenger = ScaffoldMessenger.of(context);
+          messenger.showSnackBar(
             SnackBar(content: Text('알람 취소 중 오류가 발생했습니다: $e')),
           );
         }
@@ -611,7 +617,8 @@ class _BusCardState extends State<BusCard> {
           });
 
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            final messenger = ScaffoldMessenger.of(context);
+            messenger.showSnackBar(
               const SnackBar(content: Text('승차 알람이 설정되었습니다')),
             );
           }
@@ -619,14 +626,16 @@ class _BusCardState extends State<BusCard> {
           logMessage('🚌 알람 설정 완료: ${widget.busArrival.routeNo}번 버스',
               level: LogLevel.debug);
         } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          final messenger = ScaffoldMessenger.of(context);
+          messenger.showSnackBar(
             const SnackBar(content: Text('승차 알람 설정에 실패했습니다')),
           );
         }
       } catch (e) {
         logMessage('🚨 알람 설정 중 오류 발생: $e', level: LogLevel.error);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          final messenger = ScaffoldMessenger.of(context);
+          messenger.showSnackBar(
             SnackBar(content: Text('알람 설정 중 오류가 발생했습니다: $e')),
           );
         }
@@ -669,7 +678,8 @@ class _BusCardState extends State<BusCard> {
             setState(() {});
 
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              final messenger = ScaffoldMessenger.of(context);
+              messenger.showSnackBar(
                 const SnackBar(content: Text('승차 완료 처리되었습니다')),
               );
             }
@@ -677,7 +687,8 @@ class _BusCardState extends State<BusCard> {
         } catch (e) {
           logMessage('승차 완료 처리 중 오류 발생: $e', level: LogLevel.error);
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            final messenger = ScaffoldMessenger.of(context);
+            messenger.showSnackBar(
               SnackBar(content: Text('승차 완료 처리 중 오류가 발생했습니다: $e')),
             );
           }
