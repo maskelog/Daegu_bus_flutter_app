@@ -100,18 +100,27 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 stationId = intent.getStringExtra("stationId") ?: ""
                 remainingMinutes = intent.getIntExtra("remainingMinutes", remainingMinutes)
                 val isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
+                val customMessage = intent.getStringExtra("ttsMessage")
+                val isBackup = intent.getBooleanExtra("isBackup", false)
+                val backupNumber = intent.getIntExtra("backupNumber", 0)
+
+                if (isBackup) {
+                    Log.d(TAG, "🔊 백업 TTS 요청 ($backupNumber 번째): $busNo 번, $stationName")
+                } else {
+                    Log.d(TAG, "🔊 TTS 요청: $busNo 번, $stationName (자동알람: $isAutoAlarm)")
+                }
 
                 // 자동 알람인 경우 이어폰 체크 무시하고 강제 스피커 모드 사용
                 if (isAutoAlarm) {
                     Log.d(TAG, "🔊 자동 알람 TTS 요청 - 강제 스피커 모드 사용")
                     if (isInitialized) {
-                        speakBusAlert(forceSpeaker = true)
+                        speakBusAlert(forceSpeaker = true, customMessage = customMessage)
                     } else {
                         initializeTTS()
                         // 초기화 후 발화 시도
                         Handler(Looper.getMainLooper()).postDelayed({
                             if (isInitialized) {
-                                speakBusAlert(forceSpeaker = true)
+                                speakBusAlert(forceSpeaker = true, customMessage = customMessage)
                             }
                         }, 1000)
                     }
@@ -128,7 +137,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 }
 
                 if (isInitialized) {
-                    speakBusAlert()
+                    speakBusAlert(customMessage = customMessage)
                 }
             }
             "STOP_TTS_TRACKING" -> {
@@ -141,16 +150,16 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             }
         }
 
-        if (forceSpeaker) {
-            // 이어폰 체크 무시, 무조건 스피커로 발화
-            isTracking = true
-            if (!isInitialized) {
-                initializeTTS()
-            } else {
-                speakBusAlert(forceSpeaker = true)
+            if (forceSpeaker) {
+                // 이어폰 체크 무시, 무조건 스피커로 발화
+                isTracking = true
+                if (!isInitialized) {
+                    initializeTTS()
+                } else {
+                    speakBusAlert(forceSpeaker = true)
+                }
+                return START_STICKY
             }
-            return START_STICKY
-        }
 
         return START_STICKY
     }
@@ -268,7 +277,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun speakBusAlert(forceSpeaker: Boolean = false) {
+    private fun speakBusAlert(forceSpeaker: Boolean = false, customMessage: String? = null) {
         // 초기화 확인
         if (!isInitialized) {
             Log.e(TAG, "❌ TTS가 초기화되지 않았습니다. 초기화 시도...")
@@ -312,9 +321,10 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                 audioManager.setStreamVolume(
                     AudioManager.STREAM_MUSIC,
-                    (maxVolume * 0.8).toInt(), // 최대 볼륨의 80%
+                    (maxVolume * 0.9).toInt(), // 최대 볼륨의 90%
                     0
                 )
+                Log.d(TAG, "🔊 자동 알람 볼륨 설정: ${(maxVolume * 0.9).toInt()}/${maxVolume}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ 오디오 설정 오류: ${e.message}")
@@ -331,8 +341,10 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
         }
 
-        // 메시지 생성
-        val message = if (remainingMinutes > 0) {
+        // 메시지 생성 (커스텀 메시지가 있으면 사용, 없으면 기본 메시지)
+        val message = if (!customMessage.isNullOrEmpty()) {
+            customMessage
+        } else if (remainingMinutes > 0) {
             "$busNo 번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
         } else {
             "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
