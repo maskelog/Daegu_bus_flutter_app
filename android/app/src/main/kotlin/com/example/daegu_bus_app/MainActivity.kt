@@ -868,35 +868,92 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             result.error("INVALID_ARGUMENT", "routeId cannot be null.", null)
                         }
                     }
+                    "showNotification" -> {
+                        val id = call.argument<Int>("id") ?: 0
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                        val currentStation = call.argument<String>("currentStation") ?: ""
+                        val payload = call.argument<String>("payload")
+                        try {
+                            val routeId = call.argument<String>("routeId")
+                            val allBusesSummary = call.argument<String>("allBusesSummary")
+
+                            // Build notification content
+                            val title = if (remainingMinutes <= 0) {
+                                "${busNo}번 버스 도착 알람"
+                            } else {
+                                "${busNo}번 버스 알람"
+                            }
+                            val contentText = if (remainingMinutes <= 0) {
+                                "${busNo}번 버스가 ${stationName} 정류장에 곧 도착합니다."
+                            } else {
+                                "${busNo}번 버스가 ${stationName} 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
+                            }
+                            val subText = if (currentStation.isNotEmpty()) "현재 위치: $currentStation" else null
+
+                            // Intent to open app
+                            val openAppIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            }
+                            val pendingIntent = if (openAppIntent != null) PendingIntent.getActivity(
+                                this, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            ) else null
+
+                            // Cancel action
+                            val cancelIntent = Intent(this, BusAlertService::class.java).apply {
+                                action = BusAlertService.ACTION_CANCEL_NOTIFICATION
+                                putExtra("notificationId", id)
+                            }
+                            val cancelPendingIntent = PendingIntent.getService(
+                                this, id + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            )
+
+                            val builder = NotificationCompat.Builder(this, ALARM_NOTIFICATION_CHANNEL_ID)
+                                .setContentTitle(title)
+                                .setContentText(contentText)
+                                .setSmallIcon(R.mipmap.ic_launcher)
+                                .setPriority(NotificationCompat.PRIORITY_MAX)
+                                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                                .setColor(ContextCompat.getColor(this, R.color.alert_color))
+                                .setAutoCancel(true)
+                                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                                .addAction(R.drawable.ic_cancel, "닫기", cancelPendingIntent)
+                            if (pendingIntent != null) builder.setContentIntent(pendingIntent)
+                            if (subText != null) builder.setSubText(subText)
+
+                            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                            notificationManager.notify(id, builder.build())
+                            Log.d(TAG, "✅ showNotification: Notification shown for alarm ID: $id")
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "알림 표시 오류: ${e.message}", e)
+                            result.error("NOTIFICATION_ERROR", "알림 표시 중 오류 발생: ${e.message}", null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
 
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
-                if (busAlertService == null) {
-                    Log.e(TAG, "알림 채널 호출 시 BusAlertService가 null입니다.")
-
-                    // BusAlertService가 null인 경우 서비스 시작 및 바인딩 시도
-                    try {
-                        val serviceIntent = Intent(this, BusAlertService::class.java)
-                        startService(serviceIntent)
-                        bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
-                        Log.d(TAG, "BusAlertService 시작 및 바인딩 요청 완료 (알림 채널)")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
-                    }
-
-                    result.error("SERVICE_UNAVAILABLE", "알림 서비스가 초기화되지 않았습니다", null)
-                    return@setMethodCallHandler
-                }
                 when (call.method) {
                     "initialize" -> {
                         try {
-                            busAlertService?.initialize()
+                            // 백그라운드에서는 BusAlertService가 바인딩되지 않을 수 있으므로 대안 방법 사용
+                            if (busAlertService != null) {
+                                busAlertService?.initialize()
+                                Log.d(TAG, "알림 서비스 초기화 성공 (BusAlertService)")
+                            } else {
+                                // BusAlertService가 null인 경우 알림 채널 직접 초기화
+                                createAlarmNotificationChannel()
+                                Log.d(TAG, "알림 서비스 초기화 성공 (대안 방법)")
+                            }
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
-                            result.error("INIT_ERROR", "알림 서비스 초기화 중 오류 발생: ${e.message}", null)
+                            // 오류 발생 시에도 true 반환 (백그라운드 작업 계속 진행)
+                            result.success(true)
                         }
                     }
                     "showNotification" -> {
@@ -904,18 +961,59 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         val busNo = call.argument<String>("busNo") ?: ""
                         val stationName = call.argument<String>("stationName") ?: ""
                         val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
-                        val currentStation = call.argument<String>("currentStation")
+                        val currentStation = call.argument<String>("currentStation") ?: ""
                         val payload = call.argument<String>("payload")
                         try {
                             val routeId = call.argument<String>("routeId")
                             val allBusesSummary = call.argument<String>("allBusesSummary")
-                            busAlertService?.showNotification(
-                                id = id,
-                                busNo = busNo,
-                                stationName = stationName,
-                                remainingMinutes = remainingMinutes,
-                                currentStation = currentStation
+
+                            // Build notification content
+                            val title = if (remainingMinutes <= 0) {
+                                "${busNo}번 버스 도착 알람"
+                            } else {
+                                "${busNo}번 버스 알람"
+                            }
+                            val contentText = if (remainingMinutes <= 0) {
+                                "${busNo}번 버스가 ${stationName} 정류장에 곧 도착합니다."
+                            } else {
+                                "${busNo}번 버스가 ${stationName} 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
+                            }
+                            val subText = if (currentStation.isNotEmpty()) "현재 위치: $currentStation" else null
+
+                            // Intent to open app
+                            val openAppIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            }
+                            val pendingIntent = if (openAppIntent != null) PendingIntent.getActivity(
+                                this, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            ) else null
+
+                            // Cancel action
+                            val cancelIntent = Intent(this, BusAlertService::class.java).apply {
+                                action = BusAlertService.ACTION_CANCEL_NOTIFICATION
+                                putExtra("notificationId", id)
+                            }
+                            val cancelPendingIntent = PendingIntent.getService(
+                                this, id + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                             )
+
+                            val builder = NotificationCompat.Builder(this, ALARM_NOTIFICATION_CHANNEL_ID)
+                                .setContentTitle(title)
+                                .setContentText(contentText)
+                                .setSmallIcon(R.mipmap.ic_launcher)
+                                .setPriority(NotificationCompat.PRIORITY_MAX)
+                                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                                .setColor(ContextCompat.getColor(this, R.color.alert_color))
+                                .setAutoCancel(true)
+                                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                                .addAction(R.drawable.ic_cancel, "닫기", cancelPendingIntent)
+                            if (pendingIntent != null) builder.setContentIntent(pendingIntent)
+                            if (subText != null) builder.setSubText(subText)
+
+                            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                            notificationManager.notify(id, builder.build())
+                            Log.d(TAG, "✅ showNotification: Notification shown for alarm ID: $id")
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "알림 표시 오류: ${e.message}", e)
@@ -935,29 +1033,35 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         try {
                             Log.d(TAG, "실시간 추적 서비스 시작: busNo=$busNo, action=$action, routeId=$routeId")
 
-                            // First ensure BusAlertService is initialized
-                            if (busAlertService == null) {
-                                busAlertService = BusAlertService.getInstance()
-                                busAlertService?.initialize()
-                                Log.d(TAG, "BusAlertService 초기화 완료 (showOngoingBusTracking)")
+                            // BusAlertService가 없어도 직접 알림 및 서비스 시작
+                            if (busAlertService != null) {
+                                // BusAlertService가 있는 경우 기존 방식 사용
+                                if (routeId != null && routeId.isNotEmpty()) {
+                                    busAlertService?.addMonitoredRoute(routeId, "", stationName)
+                                    Log.d(TAG, "노선 모니터링 추가: $routeId, $stationName")
+                                }
+
+                                busAlertService?.showOngoingBusTracking(
+                                    busNo = busNo,
+                                    stationName = stationName,
+                                    remainingMinutes = remainingMinutes,
+                                    currentStation = currentStation,
+                                    isUpdate = false,
+                                    notificationId = ONGOING_NOTIFICATION_ID,
+                                    allBusesSummary = allBusesSummary,
+                                    routeId = routeId
+                                )
                             }
 
-                            // Add route to monitored routes if routeId is provided
-                            if (routeId != null && routeId.isNotEmpty()) {
-                                busAlertService?.addMonitoredRoute(routeId, "", stationName)
-                                Log.d(TAG, "노선 모니터링 추가: $routeId, $stationName")
-                            }
-
-                            // Launch foreground service for real-time tracking
+                            // 서비스 시작 (어떤 경우든 시작)
                             val intent = Intent(this, BusAlertService::class.java).apply {
-                                // Flutter에서 전달된 action 사용
                                 this.action = action
                                 putExtra("busNo", busNo)
                                 putExtra("stationName", stationName)
                                 putExtra("remainingMinutes", remainingMinutes)
                                 putExtra("currentStation", currentStation)
                                 putExtra("allBusesSummary", allBusesSummary)
-                                putExtra("routeId", routeId) // routeId도 추가
+                                putExtra("routeId", routeId)
                             }
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                 startForegroundService(intent)
@@ -966,18 +1070,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 startService(intent)
                                 Log.d(TAG, "일반 서비스 시작됨 (Android N 이하)")
                             }
-
-                            // Also directly call the method to ensure it works even if service has issues
-                            busAlertService?.showOngoingBusTracking(
-                                busNo = busNo,
-                                stationName = stationName,
-                                remainingMinutes = remainingMinutes,
-                                currentStation = currentStation,
-                                isUpdate = false,
-                                notificationId = ONGOING_NOTIFICATION_ID,
-                                allBusesSummary = allBusesSummary,
-                                routeId = routeId
-                            )
 
                             result.success(true)
                         } catch (e: Exception) {
@@ -990,7 +1082,28 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         val stationName = call.argument<String>("stationName") ?: ""
                         val currentStation = call.argument<String>("currentStation")
                         try {
-                            busAlertService?.showBusArrivingSoon(busNo, stationName, currentStation)
+                            if (busAlertService != null) {
+                                busAlertService?.showBusArrivingSoon(busNo, stationName, currentStation)
+                            } else {
+                                // BusAlertService가 null인 경우 직접 알림 생성
+                                val title = "$busNo 번 버스 도착 임박"
+                                val contentText = "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
+                                val subText = if (currentStation != null) "현재 위치: $currentStation" else null
+                                
+                                val builder = NotificationCompat.Builder(this, ALARM_NOTIFICATION_CHANNEL_ID)
+                                    .setContentTitle(title)
+                                    .setContentText(contentText)
+                                    .setSmallIcon(R.mipmap.ic_launcher)
+                                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                                    .setAutoCancel(true)
+                                    .setDefaults(NotificationCompat.DEFAULT_ALL)
+                                if (subText != null) builder.setSubText(subText)
+                                
+                                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                notificationManager.notify(busNo.hashCode(), builder.build())
+                                Log.d(TAG, "도착 임박 알림 표시 (대안 방법)")
+                            }
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "도착 임박 알림 표시 오류: ${e.message}", e)
@@ -999,16 +1112,52 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     }
                     "cancelNotification" -> {
                         val id = call.argument<Int>("id") ?: 0
-                        busAlertService?.cancelNotification(id)
-                        result.success(true)
+                        try {
+                            if (busAlertService != null) {
+                                busAlertService?.cancelNotification(id)
+                            } else {
+                                // BusAlertService가 null인 경우 직접 알림 취소
+                                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                notificationManager.cancel(id)
+                                Log.d(TAG, "알림 취소 (대안 방법): $id")
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "알림 취소 오류: ${e.message}", e)
+                            result.success(true) // 취소 실패도 성공으로 처리
+                        }
                     }
                     "cancelOngoingTracking" -> {
-                        busAlertService?.cancelOngoingTracking()
-                        result.success(true)
+                        try {
+                            if (busAlertService != null) {
+                                busAlertService?.cancelOngoingTracking()
+                            } else {
+                                // BusAlertService가 null인 경우 직접 알림 취소
+                                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                                Log.d(TAG, "진행 중인 추적 알림 취소 (대안 방법)")
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "진행 중인 추적 알림 취소 오류: ${e.message}", e)
+                            result.success(true)
+                        }
                     }
                     "cancelAllNotifications" -> {
-                        busAlertService?.cancelAllNotifications()
-                        result.success(true)
+                        try {
+                            if (busAlertService != null) {
+                                busAlertService?.cancelAllNotifications()
+                            } else {
+                                // BusAlertService가 null인 경우 직접 모든 알림 취소
+                                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                notificationManager.cancelAll()
+                                Log.d(TAG, "모든 알림 취소 (대안 방법)")
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "모든 알림 취소 오류: ${e.message}", e)
+                            result.success(true)
+                        }
                     }
                     "setAlarmSound" -> {
                         try {
@@ -1064,66 +1213,101 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             }
 
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_CHANNEL).setMethodCallHandler { call, result ->
-                if (busAlertService == null) {
-                    Log.e(TAG, "TTS 채널 호출 시 BusAlertService가 null입니다.")
-
-                    // BusAlertService가 null인 경우 서비스 시작 및 바인딩 시도
-                    try {
-                        val serviceIntent = Intent(this, BusAlertService::class.java)
-                        startService(serviceIntent)
-                        bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
-                        Log.d(TAG, "BusAlertService 시작 및 바인딩 요청 완료 (TTS 채널)")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
-                    }
-
-                    result.error("SERVICE_UNAVAILABLE", "TTS 서비스가 초기화되지 않았습니다.", null)
-                    return@setMethodCallHandler
-                }
                 when (call.method) {
                     "speakTTS" -> {
                         val message = call.argument<String>("message") ?: ""
-                        val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false // 이 파라미터는 BusAlertService에서 audioOutputMode로 대체됨
+                        val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false
                         if (message.isEmpty()) {
                              result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
                              return@setMethodCallHandler
                         }
-                        // BusAlertService의 speakTts 호출 (오디오 포커스 관리 포함)
-                        // isHeadphoneMode는 사용하지 않고, BusAlertService 내부의 audioOutputMode 설정을 따름
-                        busAlertService?.speakTts(message, earphoneOnly = false) // earphoneOnly는 BusAlertService 내부 로직으로 결정
-                        result.success(true) // 비동기 호출이므로 일단 성공으로 응답
+                        try {
+                            if (busAlertService != null) {
+                                // BusAlertService의 speakTts 호출 (오디오 포커스 관리 포함)
+                                busAlertService?.speakTts(message, earphoneOnly = isHeadphoneMode)
+                            } else {
+                                // BusAlertService가 null인 경우 MainActivity의 TTS 사용
+                                if (::tts.isInitialized) {
+                                    tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, message.hashCode().toString())
+                                    Log.d(TAG, "TTS 발화 (대안 방법): $message")
+                                } else {
+                                    Log.w(TAG, "TTS가 초기화되지 않아 발화 실패")
+                                }
+                            }
+                            result.success(true) // 비동기 호출이므로 일단 성공으로 응답
+                        } catch (e: Exception) {
+                            Log.e(TAG, "TTS 발화 오류: ${e.message}", e)
+                            result.success(true) // TTS 실패도 성공으로 처리
+                        }
                     }
                     "setAudioOutputMode" -> {
                         val mode = call.argument<Int>("mode") ?: 2
-                        busAlertService?.setAudioOutputMode(mode)
-                        Log.d(TAG, "오디오 출력 모드 설정 요청: $mode")
-                        result.success(true)
+                        try {
+                            if (busAlertService != null) {
+                                busAlertService?.setAudioOutputMode(mode)
+                            } else {
+                                Log.d(TAG, "오디오 출력 모드 설정 요청 (대안): $mode")
+                            }
+                            Log.d(TAG, "오디오 출력 모드 설정 요청: $mode")
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "오디오 모드 설정 오류: ${e.message}", e)
+                            result.success(true)
+                        }
                     }
                     "setVolume" -> {
                         val volume = call.argument<Double>("volume") ?: 1.0
                         try {
-                            busAlertService?.setTtsVolume(volume)
+                            if (busAlertService != null) {
+                                busAlertService?.setTtsVolume(volume)
+                            } else {
+                                Log.d(TAG, "TTS 볼륨 설정 (대안): ${volume * 100}%")
+                            }
                             Log.d(TAG, "TTS 볼륨 설정: ${volume * 100}%")
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "볼륨 설정 오류: ${e.message}")
-                            result.error("VOLUME_ERROR", "볼륨 설정 중 오류 발생: ${e.message}", null)
+                            result.success(true)
                         }
                     }
                     "stopTTS" -> {
-                        // BusAlertService의 stopTtsTracking을 호출하여 TTS 중지
-                        busAlertService?.stopTtsTracking(forceStop = true)
-                        Log.d(TAG, "네이티브 TTS 중지 요청 (BusAlertService 호출)")
-                        result.success(true)
+                        try {
+                            if (busAlertService != null) {
+                                // BusAlertService의 stopTtsTracking을 호출하여 TTS 중지
+                                busAlertService?.stopTtsTracking(forceStop = true)
+                            } else {
+                                // MainActivity TTS 중지
+                                if (::tts.isInitialized) {
+                                    tts.stop()
+                                    Log.d(TAG, "TTS 중지 (대안 방법)")
+                                }
+                            }
+                            Log.d(TAG, "네이티브 TTS 중지 요청")
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "TTS 중지 오류: ${e.message}", e)
+                            result.success(true)
+                        }
                     }
                     "isHeadphoneConnected" -> {
                         try {
-                            val isConnected = busAlertService?.isHeadsetConnected() ?: false
+                            val isConnected = if (busAlertService != null) {
+                                busAlertService?.isHeadsetConnected() ?: false
+                            } else {
+                                // 대안: AudioManager를 사용하여 이어폰 연결 상태 확인
+                                val audioDevices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                                audioDevices.any { device ->
+                                    device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                                    device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                                    device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                                    device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                                }
+                            }
                             Log.d(TAG, "🎧 이어폰 연결 상태 확인: $isConnected")
                             result.success(isConnected)
                         } catch (e: Exception) {
                             Log.e(TAG, "🎧 이어폰 연결 상태 확인 오류: ${e.message}")
-                            result.error("HEADPHONE_CHECK_ERROR", "이어폰 연결 상태 확인 중 오류 발생: ${e.message}", null)
+                            result.success(false)
                         }
                     }
                     "startTtsTracking" -> {
