@@ -293,7 +293,7 @@ class NotificationHandler(private val context: Context) {
              .setColor(ContextCompat.getColor(context, R.color.alert_color)) // Use context
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
-            .addAction(R.drawable.ic_cancel, "닫기", cancelPendingIntent)
+            .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
 
         val notificationManager = NotificationManagerCompat.from(context)
@@ -469,7 +469,7 @@ class NotificationHandler(private val context: Context) {
              .setColor(ContextCompat.getColor(context, R.color.alert_color))
              .setContentIntent(pendingIntent)
              .setAutoCancel(true)
-             .addAction(R.drawable.ic_cancel, "Cancel", cancelPendingIntent)
+             .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
              .setDefaults(NotificationCompat.DEFAULT_ALL)
 
          return builder.build()
@@ -514,7 +514,7 @@ class NotificationHandler(private val context: Context) {
              .setColor(ContextCompat.getColor(context, R.color.alert_color))
              .setContentIntent(pendingIntent)
              .setAutoCancel(true)
-             .addAction(R.drawable.ic_cancel, "Close", cancelPendingIntent)
+             .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
              .setDefaults(NotificationCompat.DEFAULT_ALL)
 
          return builder.build()

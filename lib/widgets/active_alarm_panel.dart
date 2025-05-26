@@ -154,8 +154,11 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
 
   // 알람 목록 아이템 위젯 생성 메서드
   Widget _buildAlarmListItem(AlarmData alarm, AlarmService alarmService) {
-    // 자동 알람인지 확인
-    final isAutoAlarm = alarmService.autoAlarms.contains(alarm);
+    // 자동 알람인지 확인 - 객체 비교 대신 필드 비교
+    final isAutoAlarm = alarmService.autoAlarms.any((autoAlarm) =>
+        autoAlarm.busNo == alarm.busNo &&
+        autoAlarm.stationName == alarm.stationName &&
+        autoAlarm.routeId == alarm.routeId);
 
     // 캐시된 정보를 가져와서 최신화
     final cachedBusInfo = alarmService.getCachedBusInfo(
@@ -298,6 +301,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
             onPressed: () {
               logMessage("알람 목록 새로고침 요청", level: LogLevel.debug);
               alarmService.loadAlarms();
+              alarmService.loadAutoAlarms(); // 자동 알람도 새로고침
             },
             tooltip: '알람 목록 새로고침',
           ),
@@ -312,12 +316,13 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
     // 자동 알람인지 확인
     final isAutoAlarm = alarmService.autoAlarms.contains(alarm);
     final alarmType = isAutoAlarm ? '자동 알람' : '승차 알람';
+    final actionText = isAutoAlarm ? '해제' : '취소';
 
     bool? confirmDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('$alarmType 취소'),
-        content: Text('${alarm.busNo}번 버스 $alarmType을 취소하시겠습니까?'),
+        title: Text('$alarmType $actionText'),
+        content: Text('${alarm.busNo}번 버스 $alarmType을 $actionText하시겠습니까?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -333,54 +338,75 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
 
     if (confirmDelete == true && context.mounted) {
       try {
-        logMessage('${alarm.busNo}번 버스 $alarmType 취소 시작', level: LogLevel.info);
+        logMessage('${alarm.busNo}번 버스 $alarmType $actionText 시작',
+            level: LogLevel.info);
 
         // 필요한 정보 미리 저장
         final busNo = alarm.busNo;
         final stationName = alarm.stationName;
         final routeId = alarm.routeId;
 
-        // 모든 취소 작업을 순차적으로 실행
-        final success = await alarmService.cancelAlarmByRoute(
-          busNo,
-          stationName,
-          routeId,
-        );
+        bool success = false;
 
-        if (success) {
-          // 명시적으로 포그라운드 알림 취소
-          final notificationService = NotificationService();
-          await notificationService.cancelOngoingTracking();
+        if (isAutoAlarm) {
+          // 자동 알람 해제
+          logMessage('🗓️ 자동 알람 해제 시작: $busNo번', level: LogLevel.info);
+          success =
+              await alarmService.stopAutoAlarm(busNo, stationName, routeId);
 
-          // TTS 추적 중단
-          await TtsSwitcher.stopTtsTracking(busNo);
-
-          // 버스 모니터링 서비스 중지
-          await alarmService.stopBusMonitoringService();
-
-          // 알람 상태 갱신
-          await alarmService.loadAlarms();
-          await alarmService.refreshAlarms();
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('${alarm.busNo}번 버스 $alarmType이 취소되었습니다')),
-            );
-            logMessage('${alarm.busNo}번 버스 $alarmType 취소 성공',
-                level: LogLevel.info);
+          if (success) {
+            logMessage('✅ 자동 알람 해제 성공: $busNo번', level: LogLevel.info);
+          } else {
+            logMessage('❌ 자동 알람 해제 실패: $busNo번', level: LogLevel.error);
           }
-        } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${alarm.busNo}번 버스 $alarmType 취소에 실패했습니다')),
-          );
-          logMessage('${alarm.busNo}번 버스 $alarmType 취소 실패',
-              level: LogLevel.error);
+        } else {
+          // 일반 알람 취소
+          logMessage('🚌 일반 알람 취소 시작: $busNo번', level: LogLevel.info);
+          success = await alarmService.cancelAlarmByRoute(
+              busNo, stationName, routeId);
+
+          if (success) {
+            // 명시적으로 포그라운드 알림 취소
+            final notificationService = NotificationService();
+            await notificationService.cancelOngoingTracking();
+
+            // TTS 추적 중단
+            await TtsSwitcher.stopTtsTracking(busNo);
+
+            // 버스 모니터링 서비스 중지
+            await alarmService.stopBusMonitoringService();
+
+            logMessage('✅ 일반 알람 취소 성공: $busNo번', level: LogLevel.info);
+          } else {
+            logMessage('❌ 일반 알람 취소 실패: $busNo번', level: LogLevel.error);
+          }
+        }
+
+        // 알람 상태 갱신
+        await alarmService.loadAlarms();
+        await alarmService.loadAutoAlarms();
+        await alarmService.refreshAlarms();
+
+        if (mounted) {
+          if (success) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content:
+                      Text('${alarm.busNo}번 버스 $alarmType이 $actionText되었습니다')),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(
+                      '${alarm.busNo}번 버스 $alarmType $actionText에 실패했습니다')),
+            );
+          }
         }
       } catch (e) {
         logMessage('알람 취소 중 오류 발생: $e', level: LogLevel.error);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('알람 취소 중 오류가 발생했습니다: $e')),
+            SnackBar(content: Text('알람 $actionText 중 오류가 발생했습니다: $e')),
           );
         }
       }
@@ -396,25 +422,21 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel> {
   Widget build(BuildContext context) {
     return Consumer<AlarmService>(
       builder: (context, alarmService, child) {
-        // 일반 알람만 표시하고 자동 알람은 제외
-        final activeAlarms = alarmService.activeAlarms
-            .where((alarm) => !alarmService.autoAlarms.any((autoAlarm) =>
-                autoAlarm.busNo == alarm.busNo &&
-                autoAlarm.stationName == alarm.stationName &&
-                autoAlarm.routeId == alarm.routeId))
-            .toList();
+        // 일반 알람과 자동 알람 모두 표시
+        final activeAlarms = alarmService.activeAlarms;
+        final autoAlarms = alarmService.autoAlarms;
 
-        // 자동 알람 정보 로깅
-        logMessage('자동 알람 정보: 총 ${alarmService.autoAlarms.length}개, 표시되지 않음',
-            level: LogLevel.debug);
+        // 전체 알람 목록 합치기 (정렬: 시간순)
+        final allAlarms = <AlarmData>[
+          ...activeAlarms,
+          ...autoAlarms,
+        ]..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
 
-        // 일반 알람만 표시
-        final allAlarms = [...activeAlarms]
-          ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
-
-        logMessage(
-            'ActiveAlarmPanel 빌드: 일반=${activeAlarms.length}개, 총=${allAlarms.length}개',
-            level: LogLevel.info);
+        // 알람 정보 로깅
+        logMessage('📊 알람 현황:', level: LogLevel.debug);
+        logMessage('  - 일반 알람: ${activeAlarms.length}개', level: LogLevel.debug);
+        logMessage('  - 자동 알람: ${autoAlarms.length}개', level: LogLevel.debug);
+        logMessage('  - 전체 알람: ${allAlarms.length}개', level: LogLevel.debug);
 
         // 알람이 없는 경우
         if (allAlarms.isEmpty) {

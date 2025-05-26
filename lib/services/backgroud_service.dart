@@ -372,7 +372,7 @@ Future<bool> _handleAutoAlarmTask({
         try {
           await SimpleTTSHelper.initialize();
           await SimpleTTSHelper.speak(
-              "$busNo번 버스가 $stationName 정류장에 $actualRemainingMinutes분 후 도착 예정입니다.");
+              "$busNo번 버스가 약 $actualRemainingMinutes분 후 도착 예정입니다.");
           logMessage("🔊 백업 TTS 발화 성공");
         } catch (fallbackError) {
           logMessage("🔊 백업 TTS 발화도 실패: $fallbackError", level: LogLevel.error);
@@ -635,8 +635,7 @@ Future<void> _speakAlarm(
     if (remainingMinutes <= 0) {
       message = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.";
     } else {
-      message =
-          "$busNo번 버스가 $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.";
+      message = "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.";
     }
 
     // 볼륨 최대화 및 스피커 모드 설정

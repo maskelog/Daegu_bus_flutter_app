@@ -109,7 +109,7 @@ Future<bool> _handleAutoAlarmTask(Map<String, dynamic>? inputData) async {
       // 네이티브 채널을 통한 알림 표시
       const MethodChannel notificationChannel =
           MethodChannel('com.example.daegu_bus_app/notification');
-      
+
       // 알림 초기화 시도
       try {
         await notificationChannel.invokeMethod('initialize');
@@ -126,12 +126,13 @@ Future<bool> _handleAutoAlarmTask(Map<String, dynamic>? inputData) async {
       if (stationId.isNotEmpty && routeId.isNotEmpty) {
         try {
           print('🔍 [AutoAlarm] 실시간 버스 정보 조회 시작: $stationId, $routeId');
-          
+
           // 네이티브 버스 API 호출
           const MethodChannel busApiChannel =
               MethodChannel('com.example.daegu_bus_app/bus_api');
-          
-          final result = await busApiChannel.invokeMethod('getBusArrivalByRouteId', {
+
+          final result =
+              await busApiChannel.invokeMethod('getBusArrivalByRouteId', {
             'stationId': stationId,
             'routeId': routeId,
           });
@@ -149,29 +150,37 @@ Future<bool> _handleAutoAlarmTask(Map<String, dynamic>? inputData) async {
               List<dynamic> arrivals = [];
               if (parsedData is List) {
                 arrivals = parsedData;
-              } else if (parsedData is Map && parsedData.containsKey('arrList')) {
+              } else if (parsedData is Map &&
+                  parsedData.containsKey('arrList')) {
                 arrivals = parsedData['arrList'] as List? ?? [];
               }
 
               if (arrivals.isNotEmpty) {
                 final busInfo = arrivals.first;
                 if (busInfo is Map) {
-                  final estimatedTime = busInfo['arrState'] ?? busInfo['estimatedTime'] ?? "정보 없음";
-                  currentStation = busInfo['bsNm'] ?? busInfo['currentStation'] ?? '정보 없음';
-                  
+                  final estimatedTime = busInfo['arrState'] ??
+                      busInfo['estimatedTime'] ??
+                      "정보 없음";
+                  currentStation =
+                      busInfo['bsNm'] ?? busInfo['currentStation'] ?? '정보 없음';
+
                   // 남은 시간 파싱
                   if (estimatedTime == '곧 도착') {
                     actualRemainingMinutes = 0;
                   } else if (estimatedTime.toString().contains('분')) {
-                    final numericValue = estimatedTime.toString().replaceAll(RegExp(r'[^0-9]'), '');
+                    final numericValue = estimatedTime
+                        .toString()
+                        .replaceAll(RegExp(r'[^0-9]'), '');
                     if (numericValue.isNotEmpty) {
-                      actualRemainingMinutes = int.tryParse(numericValue) ?? remainingMinutes;
+                      actualRemainingMinutes =
+                          int.tryParse(numericValue) ?? remainingMinutes;
                     }
                   }
                 }
               }
 
-              print('✅ [AutoAlarm] 실시간 정보 조회 성공: $actualRemainingMinutes분, 위치: $currentStation');
+              print(
+                  '✅ [AutoAlarm] 실시간 정보 조회 성공: $actualRemainingMinutes분, 위치: $currentStation');
             } catch (e) {
               print('⚠️ [AutoAlarm] 버스 정보 파싱 오류: $e');
               currentStation = '정보 파싱 실패';
@@ -189,7 +198,8 @@ Future<bool> _handleAutoAlarmTask(Map<String, dynamic>? inputData) async {
       // 자동 알람 알림 표시 시도
       bool success = false;
       try {
-        final result = await notificationChannel.invokeMethod('showNotification', {
+        final result =
+            await notificationChannel.invokeMethod('showNotification', {
           'id': alarmId,
           'busNo': busNo,
           'stationName': stationName,
@@ -203,7 +213,7 @@ Future<bool> _handleAutoAlarmTask(Map<String, dynamic>? inputData) async {
         print('✅ [AutoAlarm] 네이티브 알림 표시 성공: $success');
       } catch (e) {
         print('❌ [AutoAlarm] 네이티브 알림 표시 오류: $e');
-        
+
         // 대안: 안드로이드 로컬 알림 생성 시도
         try {
           const MethodChannel mainChannel =
@@ -229,18 +239,19 @@ Future<bool> _handleAutoAlarmTask(Map<String, dynamic>? inputData) async {
         try {
           const MethodChannel ttsChannel =
               MethodChannel('com.example.daegu_bus_app/tts');
-          
+
           // 이어폰 연결 상태 확인
-          final isHeadphoneConnected = await ttsChannel.invokeMethod('isHeadphoneConnected');
-          
+          final isHeadphoneConnected =
+              await ttsChannel.invokeMethod('isHeadphoneConnected');
+
           if (isHeadphoneConnected == true) {
             String ttsMessage;
             if (actualRemainingMinutes <= 0) {
               ttsMessage = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다.";
             } else {
-              ttsMessage = "$busNo번 버스가 $stationName 정류장에 약 $actualRemainingMinutes분 후 도착 예정입니다.";
+              ttsMessage = "$busNo번 버스가 약 $actualRemainingMinutes분 후 도착 예정입니다.";
             }
-            
+
             await ttsChannel.invokeMethod('speakTTS', {
               'message': ttsMessage,
               'isHeadphoneMode': true,
@@ -692,188 +703,34 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       final prefs = await SharedPreferences.getInstance();
       final hasNewAlarm = prefs.getBool('has_new_auto_alarm') ?? false;
 
-      if (!hasNewAlarm) {
-        // 자동 알람 상태 확인
-        if (mounted) {
-          final alarmService =
-              Provider.of<AlarmService>(context, listen: false);
-          await alarmService.loadAutoAlarms();
-          logMessage('✅ 자동 알람 상태 확인 완료: ${alarmService.autoAlarms.length}개',
-              level: LogLevel.info);
-        } else {
-          // context가 유효하지 않은 경우 직접 알람 서비스 생성
-          final alarmService = AlarmService();
-          await alarmService.initialize();
-          await alarmService.loadAutoAlarms();
-          logMessage(
-              '✅ 자동 알람 상태 확인 완료 (직접 생성): ${alarmService.autoAlarms.length}개',
-              level: LogLevel.info);
-        }
-        return; // 새 알람이 없으면 종료
+      // 자동 알람 상태만 확인하고 자동 복원은 하지 않음
+      if (mounted) {
+        final alarmService =
+            Provider.of<AlarmService>(context, listen: false);
+        await alarmService.loadAutoAlarms();
+        logMessage('✅ 자동 알람 상태 확인 완료: ${alarmService.autoAlarms.length}개',
+            level: LogLevel.info);
+      } else {
+        // context가 유효하지 않은 경우 직접 알람 서비스 생성
+        final alarmService = AlarmService();
+        await alarmService.initialize();
+        await alarmService.loadAutoAlarms();
+        logMessage(
+            '✅ 자동 알람 상태 확인 완료 (직접 생성): ${alarmService.autoAlarms.length}개',
+            level: LogLevel.info);
       }
 
-      final alarmDataJson = prefs.getString('last_auto_alarm_data');
-      if (alarmDataJson == null || alarmDataJson.isEmpty) {
+      // 새로운 자동 알람이 없으면 종료
+      if (!hasNewAlarm) {
+        logMessage('ℹ️ 새로운 자동 알람 없음 - 자동 복원 건너뜀', level: LogLevel.info);
         return;
       }
 
-      logMessage('🔔 저장된 자동 알람 정보 발견, 알림 표시 시도', level: LogLevel.info);
-
-      // 알람 데이터 파싱
-      final alarmData = jsonDecode(alarmDataJson);
-      final int alarmId = alarmData['alarmId'] ?? 0;
-      final String busNo = alarmData['busNo'] ?? '';
-      final String stationName = alarmData['stationName'] ?? '';
-      int remainingMinutes = alarmData['remainingMinutes'] ?? 3;
-      final String routeId = alarmData['routeId'] ?? '';
-      final String stationId = alarmData['stationId'] ?? '';
-      String? currentStation = alarmData['currentStation'];
-      final bool isAutoAlarm = alarmData['isAutoAlarm'] ?? true;
-      final bool hasError = alarmData['hasError'] ?? false;
-
-      // 알림 서비스를 통해 알림 표시 (초기 알림)
-      final notificationService = NotificationService();
-      await notificationService.initialize();
-
-      // 알림 표시 - 자동 알람 플래그와 현재 위치 정보 포함
-      await notificationService.showAutoAlarmNotification(
-        id: alarmId,
-        busNo: busNo,
-        stationName: stationName,
-        remainingMinutes: remainingMinutes,
-        routeId: routeId,
-        isAutoAlarm: isAutoAlarm,
-        currentStation: '실시간 정보 로드 중...', // 임시 메시지
-      );
-
-      logMessage('✅ 저장된 자동 알람으로 초기 알림 표시 완료: $busNo, $stationName',
-          level: LogLevel.info);
-
-      // 이미 실시간 정보가 있는지 확인
-      final bool hasRealTimeInfo = alarmData['hasRealTimeInfo'] ?? false;
-      final bool needsRealTimeInfo = !hasRealTimeInfo && currentStation == null;
-
-      // 실시간 버스 정보 가져오기 시도
-      if (!hasError &&
-          stationId.isNotEmpty &&
-          routeId.isNotEmpty &&
-          mounted &&
-          needsRealTimeInfo) {
-        try {
-          logMessage(
-              '🐛 [DEBUG] 앱 활성화 후 실시간 버스 정보 가져오기 시도: $busNo, $stationId, $routeId');
-
-          // 버스 정보 가져오기 - BusApiService 직접 사용
-          final busArrivalInfo =
-              await BusApiService().getBusArrivalByRouteId(stationId, routeId);
-
-          if (busArrivalInfo != null && busArrivalInfo.bus.isNotEmpty) {
-            // 버스 정보 갱신
-            final busData = busArrivalInfo.bus.first;
-            final busInfo = BusInfo.fromBusInfoData(busData);
-            currentStation = busInfo.currentStation;
-
-            // 남은 시간 추출
-            final estimatedTimeStr =
-                busInfo.estimatedTime.replaceAll(RegExp(r'[^0-9]'), '');
-            if (estimatedTimeStr.isNotEmpty) {
-              remainingMinutes = int.parse(estimatedTimeStr);
-            }
-
-            logMessage(
-                '🐛 [DEBUG] 실시간 버스 정보 가져오기 성공: $busNo, 남은 시간: $remainingMinutes분, 위치: $currentStation');
-
-            // 업데이트된 정보로 알림 다시 표시
-            await notificationService.showAutoAlarmNotification(
-              id: alarmId,
-              busNo: busNo,
-              stationName: stationName,
-              remainingMinutes: remainingMinutes,
-              routeId: routeId,
-              isAutoAlarm: isAutoAlarm,
-              currentStation: currentStation,
-            );
-
-            // TTS 안내 시도
-            // await TTSService.initialize();
-            // await TTSService.speak(...);
-          } else {
-            logMessage('⚠️ 버스 정보를 가져오지 못했습니다', level: LogLevel.warning);
-            // fallback 메시지 알림 표시
-            await notificationService.showAutoAlarmNotification(
-              id: alarmId,
-              busNo: busNo,
-              stationName: stationName,
-              remainingMinutes: -1,
-              routeId: routeId,
-              isAutoAlarm: isAutoAlarm,
-              currentStation: '실시간 버스 정보를 불러오지 못했습니다. 네트워크 상태를 확인해주세요.',
-            );
-          }
-
-          // 버스 모니터링 서비스 시작
-          if (mounted) {
-            final alarmService =
-                Provider.of<AlarmService>(context, listen: false);
-            await alarmService.startBusMonitoringService(
-              stationId: stationId,
-              stationName: stationName,
-              routeId: routeId,
-              busNo: busNo,
-            );
-            logMessage('✅ 자동 알람으로 버스 모니터링 시작: $busNo', level: LogLevel.info);
-          }
-        } catch (e) {
-          logMessage('❌ 실시간 버스 정보 가져오기 오류: $e', level: LogLevel.error);
-
-          // 오류 발생 시 기본 알림만 표시
-          if (mounted) {
-            final alarmService =
-                Provider.of<AlarmService>(context, listen: false);
-            await alarmService.startBusMonitoringService(
-              stationId: stationId,
-              stationName: stationName,
-              routeId: routeId,
-              busNo: busNo,
-            );
-          }
-        }
-      } else if (hasRealTimeInfo && currentStation != null) {
-        // 이미 실시간 정보가 있는 경우
-        logMessage(
-            '🐛 [DEBUG] 이미 실시간 버스 정보가 있음: $busNo, 남은 시간: $remainingMinutes분, 위치: $currentStation');
-
-        // 업데이트된 정보로 알림 다시 표시
-        await notificationService.showAutoAlarmNotification(
-          id: alarmId,
-          busNo: busNo,
-          stationName: stationName,
-          remainingMinutes: remainingMinutes,
-          routeId: routeId,
-          isAutoAlarm: isAutoAlarm,
-          currentStation: currentStation,
-        );
-
-        // TTS 안내 시도
-        // await TTSService.initialize();
-        // await TTSService.speak(...);
-
-        // 버스 모니터링 서비스 시작
-        if (mounted) {
-          final alarmService =
-              Provider.of<AlarmService>(context, listen: false);
-          await alarmService.startBusMonitoringService(
-            stationId: stationId,
-            stationName: stationName,
-            routeId: routeId,
-            busNo: busNo,
-          );
-          logMessage('✅ 자동 알람으로 버스 모니터링 시작: $busNo', level: LogLevel.info);
-        }
-      }
-
-      // 처리 완료 후 플래그 초기화
+      // 저장된 자동 알람 데이터 정리 (자동 복원하지 않음)
+      await prefs.remove('last_auto_alarm_data');
       await prefs.setBool('has_new_auto_alarm', false);
+      logMessage('🧹 저장된 자동 알람 데이터 정리 완료', level: LogLevel.info);
+
     } catch (e) {
       logMessage('❌ 자동 알람 정보 처리 중 오류: $e', level: LogLevel.error);
     }

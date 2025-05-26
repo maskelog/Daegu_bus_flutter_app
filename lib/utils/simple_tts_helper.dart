@@ -363,7 +363,7 @@ class SimpleTTSHelper {
     if (remainingMinutes <= 0) {
       message = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다.";
     } else if (remainingStops == 1) {
-      message = "$busNo번 버스가 $stationName 정류장 앞 정류장에 도착했습니다. 곧 도착합니다.";
+      message = "$busNo번 버스가 앞 정류장에 도착했습니다. 곧 도착합니다.";
     } else {
       final locationInfo = currentStation != null &&
               currentStation.isNotEmpty &&

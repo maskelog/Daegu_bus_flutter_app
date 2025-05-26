@@ -167,7 +167,7 @@ class NotificationService {
                   "$busNo번 버스가 $stationName 정류장에 곧 도착합니다.");
             } else {
               await SimpleTTSHelper.speak(
-                  "$busNo번 버스가 $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.");
+                  "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.");
             }
           } catch (e) {
             debugPrint('🔊 자동 알람 TTS 실행 오류: $e');

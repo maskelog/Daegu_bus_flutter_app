@@ -74,7 +74,7 @@ class AutoAlarmWorker(
 
         // 알림 메시지 결정
         val contentText = if (fetchSuccess && fetchedMinutes != null && fetchedStation != null) {
-            "$busNo 번 버스가 $stationName 정류장에 약 ${fetchedMinutes}분 후 도착 예정입니다. (현재: $fetchedStation)"
+            "$busNo 번 버스가 약 ${fetchedMinutes}분 후 도착 예정입니다. (현재: $fetchedStation)"
         } else {
             "$busNo 번 버스의 실시간 정보를 불러오지 못했습니다. 네트워크 상태를 확인해주세요."
         }
@@ -87,7 +87,7 @@ class AutoAlarmWorker(
                 
                 // TTS 메시지 생성
                 val ttsMessage = if (fetchSuccess && fetchedMinutes != null && fetchedMinutes > 0) {
-                    "$busNo 번 버스가 $stationName 정류장에 약 ${fetchedMinutes}분 후 도착 예정입니다."
+                    "$busNo 번 버스가 약 ${fetchedMinutes}분 후 도착 예정입니다."
                 } else {
                     "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
                 }

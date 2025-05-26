@@ -888,7 +888,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             val contentText = if (remainingMinutes <= 0) {
                                 "${busNo}번 버스가 ${stationName} 정류장에 곧 도착합니다."
                             } else {
-                                "${busNo}번 버스가 ${stationName} 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
+                                "${busNo}번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
                             }
                             val subText = if (currentStation.isNotEmpty()) "현재 위치: $currentStation" else null
 
@@ -902,7 +902,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
                             // Cancel action
                             val cancelIntent = Intent(this, BusAlertService::class.java).apply {
-                                action = BusAlertService.ACTION_CANCEL_NOTIFICATION
+                                action = BusAlertService.ACTION_STOP_TRACKING
                                 putExtra("notificationId", id)
                             }
                             val cancelPendingIntent = PendingIntent.getService(
@@ -919,7 +919,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 .setColor(ContextCompat.getColor(this, R.color.alert_color))
                                 .setAutoCancel(true)
                                 .setDefaults(NotificationCompat.DEFAULT_ALL)
-                                .addAction(R.drawable.ic_cancel, "닫기", cancelPendingIntent)
+                                .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
                             if (pendingIntent != null) builder.setContentIntent(pendingIntent)
                             if (subText != null) builder.setSubText(subText)
 
@@ -976,7 +976,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             val contentText = if (remainingMinutes <= 0) {
                                 "${busNo}번 버스가 ${stationName} 정류장에 곧 도착합니다."
                             } else {
-                                "${busNo}번 버스가 ${stationName} 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
+                                "${busNo}번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
                             }
                             val subText = if (currentStation.isNotEmpty()) "현재 위치: $currentStation" else null
 
@@ -990,7 +990,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
                             // Cancel action
                             val cancelIntent = Intent(this, BusAlertService::class.java).apply {
-                                action = BusAlertService.ACTION_CANCEL_NOTIFICATION
+                                action = BusAlertService.ACTION_STOP_TRACKING
                                 putExtra("notificationId", id)
                             }
                             val cancelPendingIntent = PendingIntent.getService(
@@ -1007,7 +1007,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 .setColor(ContextCompat.getColor(this, R.color.alert_color))
                                 .setAutoCancel(true)
                                 .setDefaults(NotificationCompat.DEFAULT_ALL)
-                                .addAction(R.drawable.ic_cancel, "닫기", cancelPendingIntent)
+                                .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
                             if (pendingIntent != null) builder.setContentIntent(pendingIntent)
                             if (subText != null) builder.setSubText(subText)
 
