@@ -623,21 +623,23 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  // 자동 알람 체크 메서드 추가
+  // 자동 알람 체크 메서드 수정 (Concurrent modification 오류 해결)
   Future<void> _checkAutoAlarms() async {
     try {
       final now = DateTime.now();
-      
-      for (var alarm in _autoAlarms) {
+
+      // 리스트를 복사해서 순회하여 Concurrent modification 방지
+      final alarmsCopy = List<alarm_model.AlarmData>.from(_autoAlarms);
+
+      for (var alarm in alarmsCopy) {
         // 알람 시간이 지났거나 임박한 자동 알람 확인 (2분 이내)
         final timeUntilAlarm = alarm.scheduledTime.difference(now);
-        
+
         if (timeUntilAlarm.inMinutes <= 2 && timeUntilAlarm.inMinutes >= -1) {
           logMessage(
-            '⚡ 자동 알람 시간 임박: ${alarm.busNo}번, ${timeUntilAlarm.inMinutes}분 남음',
-            level: LogLevel.info
-          );
-          
+              '⚡ 자동 알람 시간 임박: ${alarm.busNo}번, ${timeUntilAlarm.inMinutes}분 남음',
+              level: LogLevel.info);
+
           // AutoAlarm 객체로 변환
           final autoAlarm = AutoAlarm(
             id: alarm.getAlarmId().toString(),
@@ -651,22 +653,127 @@ class AlarmService extends ChangeNotifier {
             useTTS: alarm.useTTS,
             isActive: true,
           );
-          
-          // 즉시 실행
-          await _executeAutoAlarmImmediately(autoAlarm);
-          
+
+          // 즉시 실행하고 지속적인 모니터링 시작
+          await _startContinuousAutoAlarm(autoAlarm);
+
           // 알람 목록에서 제거 (이미 실행됨)
-          _autoAlarms.remove(alarm);
+          _autoAlarms.removeWhere((a) => a.getAlarmId() == alarm.getAlarmId());
           await _saveAutoAlarms();
-          
-          logMessage(
-            '✅ 자동 알람 실행 완료: ${alarm.busNo}번',
-            level: LogLevel.info
-          );
+
+          logMessage('✅ 자동 알람 실행 완료: ${alarm.busNo}번', level: LogLevel.info);
         }
       }
     } catch (e) {
       logMessage('❌ 자동 알람 체크 오류: $e', level: LogLevel.error);
+    }
+  }
+
+  // 지속적인 자동 알람 시작 메서드 추가
+  Future<void> _startContinuousAutoAlarm(AutoAlarm alarm) async {
+    try {
+      logMessage('⚡ 지속적인 자동 알람 시작: ${alarm.routeNo}번, ${alarm.stationName}',
+          level: LogLevel.info);
+
+      // 버스 모니터링 서비스 시작
+      await startBusMonitoringService(
+        routeId: alarm.routeId,
+        stationId: alarm.stationId,
+        busNo: alarm.routeNo,
+        stationName: alarm.stationName,
+      );
+
+      // 정기적인 업데이트 타이머 시작 (30초마다)
+      _refreshTimer?.cancel();
+      _refreshTimer =
+          Timer.periodic(const Duration(seconds: 30), (timer) async {
+        if (!_isInTrackingMode) {
+          timer.cancel();
+          return;
+        }
+
+        try {
+          // 실시간 버스 정보 업데이트
+          await refreshAutoAlarmBusInfo(alarm);
+
+          // 캐시된 정보 가져오기
+          final cacheKey = "${alarm.routeNo}_${alarm.routeId}";
+          final cachedInfo = _cachedBusInfo[cacheKey];
+
+          final remainingMinutes = cachedInfo?.remainingMinutes ?? 0;
+          final currentStation = cachedInfo?.currentStation ?? '정보 업데이트 중';
+
+          // 알림 업데이트
+          final alarmId = getAlarmId(alarm.routeNo, alarm.stationName,
+              routeId: alarm.routeId);
+          await _notificationService.showNotification(
+            id: alarmId,
+            busNo: alarm.routeNo,
+            stationName: alarm.stationName,
+            remainingMinutes: remainingMinutes,
+            currentStation: currentStation,
+            routeId: alarm.routeId,
+            isAutoAlarm: true,
+            isOngoing: true, // 지속적인 알림
+          );
+
+          logMessage(
+              '🔄 자동 알람 업데이트: ${alarm.routeNo}번, $remainingMinutes분 후, 현재: $currentStation',
+              level: LogLevel.info);
+
+          // TTS 발화 (1분마다)
+          if (timer.tick % 2 == 0) {
+            // 1분마다 (30초 * 2)
+            if (alarm.useTTS) {
+              try {
+                await SimpleTTSHelper.speakBusAlert(
+                  busNo: alarm.routeNo,
+                  stationName: alarm.stationName,
+                  remainingMinutes: remainingMinutes,
+                  currentStation: currentStation,
+                  isAutoAlarm: true,
+                );
+
+                logMessage(
+                    '🔊 자동 알람 TTS 반복 발화: ${alarm.routeNo}번, $remainingMinutes분 후',
+                    level: LogLevel.info);
+              } catch (e) {
+                logMessage('❌ 자동 알람 TTS 반복 발화 오류: $e', level: LogLevel.error);
+              }
+            }
+          }
+
+          // 버스가 도착했거나 사라진 경우 알람 종료
+          if (remainingMinutes <= 0) {
+            logMessage('✅ 버스 도착으로 인한 자동 알람 종료: ${alarm.routeNo}번',
+                level: LogLevel.info);
+
+            // 마지막 TTS 발화
+            if (alarm.useTTS) {
+              await SimpleTTSHelper.speakBusAlert(
+                busNo: alarm.routeNo,
+                stationName: alarm.stationName,
+                remainingMinutes: 0,
+                currentStation: currentStation,
+                isAutoAlarm: true,
+              );
+            }
+
+            timer.cancel();
+            await stopBusMonitoringService();
+            await _notificationService.cancelOngoingTracking();
+          }
+        } catch (e) {
+          logMessage('❌ 자동 알람 업데이트 오류: $e', level: LogLevel.error);
+        }
+      });
+
+      // 초기 실행
+      await _executeAutoAlarmImmediately(alarm);
+
+      logMessage('✅ 지속적인 자동 알람 시작 완료: ${alarm.routeNo}번', level: LogLevel.info);
+    } catch (e) {
+      logMessage('❌ 지속적인 자동 알람 시작 오류: $e', level: LogLevel.error);
     }
   }
 
@@ -693,7 +800,8 @@ class AlarmService extends ChangeNotifier {
           initialDelay.inDays > 3 ? const Duration(days: 3) : initialDelay;
 
       // 음수 딜레이는 즉시 실행
-      final executionDelay = actualDelay.isNegative ? Duration.zero : actualDelay;
+      final executionDelay =
+          actualDelay.isNegative ? Duration.zero : actualDelay;
 
       // 기존 작업 취소 확인
       try {
@@ -800,8 +908,7 @@ class AlarmService extends ChangeNotifier {
   // 즉시 실행 자동 알람 메서드 추가
   Future<void> _executeAutoAlarmImmediately(AutoAlarm alarm) async {
     try {
-      logMessage(
-          '⚡ 즉시 자동 알람 실행: ${alarm.routeNo}번, ${alarm.stationName}',
+      logMessage('⚡ 즉시 자동 알람 실행: ${alarm.routeNo}번, ${alarm.stationName}',
           level: LogLevel.info);
 
       // 실시간 버스 정보 가져오기
@@ -810,12 +917,13 @@ class AlarmService extends ChangeNotifier {
       // 캐시된 정보 가져오기
       final cacheKey = "${alarm.routeNo}_${alarm.routeId}";
       final cachedInfo = _cachedBusInfo[cacheKey];
-      
+
       final remainingMinutes = cachedInfo?.remainingMinutes ?? 0;
       final currentStation = cachedInfo?.currentStation ?? '정보 업데이트 중';
 
       // 알림 표시
-      final alarmId = getAlarmId(alarm.routeNo, alarm.stationName, routeId: alarm.routeId);
+      final alarmId =
+          getAlarmId(alarm.routeNo, alarm.stationName, routeId: alarm.routeId);
       await _notificationService.showNotification(
         id: alarmId,
         busNo: alarm.routeNo,
@@ -831,7 +939,7 @@ class AlarmService extends ChangeNotifier {
       if (alarm.useTTS) {
         try {
           await SimpleTTSHelper.initialize();
-          
+
           // 자동 알람용 TTS 발화
           await SimpleTTSHelper.speakBusAlert(
             busNo: alarm.routeNo,
@@ -840,22 +948,16 @@ class AlarmService extends ChangeNotifier {
             currentStation: currentStation,
             isAutoAlarm: true, // 자동 알람 플래그 설정
           );
-          
-          logMessage(
-              '🔊 자동 알람 TTS 발화 완료 (강제 스피커 모드)',
-              level: LogLevel.info);
+
+          logMessage('🔊 자동 알람 TTS 발화 완료 (강제 스피커 모드)', level: LogLevel.info);
         } catch (e) {
           logMessage('❌ 자동 알람 TTS 발화 오류: $e', level: LogLevel.error);
         }
       }
 
-      logMessage(
-          '✅ 즉시 자동 알람 실행 완료: ${alarm.routeNo}번',
-          level: LogLevel.info);
+      logMessage('✅ 즉시 자동 알람 실행 완료: ${alarm.routeNo}번', level: LogLevel.info);
     } catch (e) {
-      logMessage(
-          '❌ 즉시 자동 알람 실행 오류: $e',
-          level: LogLevel.error);
+      logMessage('❌ 즉시 자동 알람 실행 오류: $e', level: LogLevel.error);
     }
   }
 
@@ -1193,6 +1295,50 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
+  /// 자동 알람 중지 메서드 추가
+  Future<bool> stopAutoAlarm(
+      String busNo, String stationName, String routeId) async {
+    try {
+      logMessage('📋 자동 알람 중지 요청: $busNo번, $stationName', level: LogLevel.info);
+
+      // 새로고침 타이머 중지
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+
+      // 버스 모니터링 서비스 중지
+      await stopBusMonitoringService();
+
+      // 알림 취소
+      await _notificationService.cancelOngoingTracking();
+
+      // 자동 알람 목록에서 제거
+      _autoAlarms.removeWhere((alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId);
+      await _saveAutoAlarms();
+
+      // TTS 중지 알림
+      try {
+        await SimpleTTSHelper.speak(
+          "$busNo번 버스 자동 알람이 중지되었습니다.",
+          force: true,
+          earphoneOnly: false,
+        );
+      } catch (e) {
+        logMessage('❌ TTS 중지 알림 오류: $e', level: LogLevel.error);
+      }
+
+      logMessage('✅ 자동 알람 중지 완료: $busNo번', level: LogLevel.info);
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      logMessage('❌ 자동 알람 중지 오류: $e', level: LogLevel.error);
+      return false;
+    }
+  }
+
   /// 알람 해제
   Future<void> stopAlarm(String busNo, String stationName,
       {bool isAutoAlarm = false}) async {
@@ -1318,19 +1464,21 @@ class AlarmService extends ChangeNotifier {
       await settingsService.initialize();
       final volume = settingsService.autoAlarmVolume;
 
-      // TTS 알림 시작 (설정된 경우 - 일반 알람 -> 이어폰 우선)
+      // TTS 알림 시작 (설정된 경우 - 일반 알람 -> 이어폰 전용)
       if (useTTS) {
         try {
           await SimpleTTSHelper.initialize();
-          await SimpleTTSHelper.setAudioOutputMode(0); // 이어폰 모드 설정
           await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
+          
+          // 이어폰 전용 모드로 TTS 발화
           await SimpleTTSHelper.speak(
-              "$busNo번 버스가 $stationName 정류장에 $remainingMinutes분 후 도착 예정입니다.");
-          await SimpleTTSHelper.setAudioOutputMode(2); // 자동 모드로 복원 (선택 사항)
-          logMessage('🔊 TTS 발화 성공 (이어폰 모드, 볼륨: ${volume * 100}%)');
+            "$busNo번 버스가 $remainingMinutes분 후 도착 예정입니다.",
+            earphoneOnly: true, // 이어폰 전용 모드 명시
+          );
+          
+          logMessage('🔊 일반 알람 TTS 발화 완료 (이어폰 전용 모드, 볼륨: ${volume * 100}%)');
         } catch (e) {
-          logMessage('🔊 TTS 발화 오류: $e', level: LogLevel.error);
-          await SimpleTTSHelper.setAudioOutputMode(2); // 오류 시 자동 모드로 복원
+          logMessage('🔊 일반 알람 TTS 발화 오료: $e', level: LogLevel.error);
         }
       }
 
