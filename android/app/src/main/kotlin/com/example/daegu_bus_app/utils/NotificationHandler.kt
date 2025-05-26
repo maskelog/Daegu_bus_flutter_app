@@ -39,7 +39,7 @@ class NotificationHandler(private val context: Context) {
         const val ARRIVING_SOON_NOTIFICATION_ID = 2 // For arriving soon notifications
 
         // Intent Actions (referenced by notifications)
-        private const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_TRACKING"
+        // private const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_TRACKING"
         private const val ACTION_CANCEL_NOTIFICATION = "com.example.daegu_bus_app.action.CANCEL_NOTIFICATION"
     }
 
@@ -255,7 +255,7 @@ class NotificationHandler(private val context: Context) {
 
     private fun createStopPendingIntent(): PendingIntent {
         val stopAllIntent = Intent(context, BusAlertService::class.java).apply {
-            action = ACTION_STOP_TRACKING
+            action = BusAlertService.ACTION_STOP_TRACKING
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
         return PendingIntent.getService(
@@ -275,11 +275,15 @@ class NotificationHandler(private val context: Context) {
             context, notificationId, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         ) else null
 
-        val cancelIntent = Intent(context, BusAlertService::class.java).apply { // Target BusAlertService
-             action = ACTION_CANCEL_NOTIFICATION
+        // 수정: ACTION_STOP_SPECIFIC_ROUTE_TRACKING 사용하여 특정 알람만 해제
+        val cancelIntent = Intent(context, BusAlertService::class.java).apply {
+             action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+             putExtra("routeId", routeId)
+             putExtra("busNo", busNo)
+             putExtra("stationName", stationName)
              putExtra("notificationId", notificationId)
          }
-         val cancelPendingIntent = PendingIntent.getService( // Use getService
+         val cancelPendingIntent = PendingIntent.getService(
              context, notificationId + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
          )
 
@@ -430,19 +434,22 @@ class NotificationHandler(private val context: Context) {
          busNo: String,
          stationName: String,
          remainingMinutes: Int,
-         currentStation: String?
+         currentStation: String?,
+         routeId: String?
      ): Notification {
-         val title = "$busNo Bus Alert"
-         val contentText = if (remainingMinutes <= 0) {
-             "Bus $busNo arriving soon at $stationName station."
+         val title = if (remainingMinutes <= 0) {
+             "${busNo}번 버스 도착" // 더 간결하게
          } else {
-             "Bus $busNo will arrive at $stationName station in about ${remainingMinutes} minutes."
+             "${busNo}번 버스 알람"
          }
+         val contentText = if (remainingMinutes <= 0) {
+             "${busNo}번 버스가 ${stationName}에 곧 도착합니다."
+         } else {
+             "${busNo}번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
+         }
+         val subText = if (currentStation != null && currentStation.isNotEmpty()) "현재 위치: $currentStation" else null
 
-         val subText = currentStation?.let { "Current location: $it" } ?: ""
-
-         Log.d(TAG, "Building notification: $contentText (ID: $id)")
-
+         // 앱 실행 Intent
          val openAppIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
              flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
          }
@@ -450,28 +457,38 @@ class NotificationHandler(private val context: Context) {
              context, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
          ) else null
 
+         // "종료" 버튼 Intent (특정 알람 해제)
          val cancelIntent = Intent(context, BusAlertService::class.java).apply {
-             action = ACTION_CANCEL_NOTIFICATION
-             putExtra("notificationId", id)
+             action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+             putExtra("routeId", routeId) // 이 알림의 routeId
+             putExtra("notificationId", id)     // 이 알림의 ID
+             putExtra("busNo", busNo)           // UI 업데이트를 위해 추가
+             putExtra("stationName", stationName) // UI 업데이트를 위해 추가
          }
          val cancelPendingIntent = PendingIntent.getService(
-             context, id + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+             context, id + 1000, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE // requestCode 충돌 방지
          )
 
-         val builder = NotificationCompat.Builder(context, CHANNEL_ID_ALERT)
+         val builder = NotificationCompat.Builder(context, CHANNEL_ID_ALERT) // 도착 알림 채널 사용
              .setContentTitle(title)
              .setContentText(contentText)
-             .setSubText(subText)
-             .setSmallIcon(R.drawable.ic_bus_notification)
+             .setSmallIcon(R.mipmap.ic_launcher) // 앱 아이콘 사용
              .setPriority(NotificationCompat.PRIORITY_HIGH)
              .setCategory(NotificationCompat.CATEGORY_ALARM)
              .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
              .setColor(ContextCompat.getColor(context, R.color.alert_color))
-             .setContentIntent(pendingIntent)
              .setAutoCancel(true)
+             .setDefaults(NotificationCompat.DEFAULT_ALL) // 소리, 진동 등 기본 설정
              .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
-             .setDefaults(NotificationCompat.DEFAULT_ALL)
+         
+         if (subText != null) {
+             builder.setSubText(subText)
+         }
+         if (pendingIntent != null) {
+             builder.setContentIntent(pendingIntent)
+         }
 
+         Log.d(TAG, "✅ 개별 알림 생성: ID=$id, Bus=$busNo, Station=$stationName, Route=$routeId")
          return builder.build()
      }
 

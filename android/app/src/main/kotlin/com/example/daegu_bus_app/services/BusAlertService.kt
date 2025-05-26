@@ -188,9 +188,10 @@ class BusAlertService : Service() {
             }
             ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> {
                 val routeId = intent.getStringExtra("routeId")
+                val notificationId = intent.getIntExtra("notificationId", -1)
                 if (routeId != null) {
-                    Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId")
-                    stopTrackingForRoute(routeId, cancelNotification = true)
+                    Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, notificationId=$notificationId")
+                    stopTrackingForRoute(routeId, cancelNotification = true, notificationId = if (notificationId != -1) notificationId else null)
                 } else {
                     Log.e(TAG, "Missing routeId for ACTION_STOP_SPECIFIC_ROUTE_TRACKING")
                     stopTrackingIfIdle()
@@ -817,12 +818,13 @@ class BusAlertService : Service() {
         stationName: String,
         remainingMinutes: Int,
         currentStation: String?,
-        isUpdate: Boolean,
-        notificationId: Int,
+        isUpdate: Boolean, // 이 플래그는 이제 알림을 새로 생성할지, 기존 알림을 업데이트할지를 결정합니다.
+        notificationId: Int, // ONGOING_NOTIFICATION_ID 또는 개별 알림 ID
         allBusesSummary: String?,
         routeId: String?,
         stationId: String? = null,
-        wincId: String? = null
+        wincId: String? = null,
+        isIndividualAlarm: Boolean = false // 이 알림이 개별 도착 알람인지 여부
     ) {
         // Log current time but don't restrict notifications
         val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
@@ -836,7 +838,7 @@ class BusAlertService : Service() {
             busNo = busNo
         ).also { activeTrackings[effectiveRouteId] = it }
 
-        Log.d(TAG, "🔄 showOngoingBusTracking: $busNo, $stationName, $remainingMinutes, currentStation='$currentStation'")
+        Log.d(TAG, "🔄 showOngoingBusTracking: $busNo, $stationName, $remainingMinutes, currentStation='$currentStation', isIndividualAlarm=$isIndividualAlarm, notificationId=$notificationId")
 
         // stationId 보정
         var effectiveStationId = stationId ?: trackingInfo.stationId
@@ -845,7 +847,7 @@ class BusAlertService : Service() {
                 val fixedStationId = resolveStationIdIfNeeded(effectiveRouteId, stationName, effectiveStationId, wincId)
                 if (fixedStationId.isNotBlank()) {
                     showOngoingBusTracking(
-                        busNo, stationName, remainingMinutes, currentStation, isUpdate, notificationId, allBusesSummary, routeId, fixedStationId, wincId
+                        busNo, stationName, remainingMinutes, currentStation, isUpdate, notificationId, allBusesSummary, routeId, fixedStationId, wincId, isIndividualAlarm
                     )
                 } else {
                     Log.e(TAG, "❌ stationId 보정 실패: $routeId, $busNo, $stationName")
@@ -877,54 +879,75 @@ class BusAlertService : Service() {
         trackingInfo.stationId = effectiveStationId
 
         val minutes = busInfo.getRemainingMinutes()
-        val formattedTime = when (val minutes = busInfo.getRemainingMinutes()) {
+        val formattedTime = when (val busMinutes = busInfo.getRemainingMinutes()) { // 변수명 변경
             in Int.MIN_VALUE..0 -> if (busInfo.estimatedTime.isNotEmpty()) busInfo.estimatedTime else "정보 없음"
             1 -> "1분"
-            else -> "${minutes}분"
+            else -> "${busMinutes}분"
         }
         val currentStationFinal = busInfo.currentStation
 
         Log.d(TAG, "✅ lastBusInfo 갱신: $busNo, $formattedTime, '$currentStationFinal'")
 
-        // TTS 알림
-        try {
-            val lastSpokenMinutes = trackingInfo.lastNotifiedMinutes
-            if (useTextToSpeech && minutes in 0..5) {
-                if (lastSpokenMinutes == Int.MAX_VALUE || lastSpokenMinutes > minutes) {
-                    val ttsIntent = Intent(this, TTSService::class.java).apply {
-                        action = "REPEAT_TTS_ALERT"
-                        putExtra("busNo", busNo)
-                        putExtra("stationName", stationName)
-                        putExtra("routeId", effectiveRouteId)
-                        putExtra("stationId", effectiveStationId)
-                        putExtra("remainingMinutes", minutes as Int)
-                        putExtra("currentStation", (currentStationFinal ?: "").toString())
+        // TTS 알림 (개별 알람이 아니고, 추적 중일 때만 TTS)
+        if (!isIndividualAlarm) {
+            try {
+                val lastSpokenMinutes = trackingInfo.lastNotifiedMinutes
+                if (useTextToSpeech && minutes in 0..5) {
+                    if (lastSpokenMinutes == Int.MAX_VALUE || lastSpokenMinutes > minutes) {
+                        val ttsIntent = Intent(this, TTSService::class.java).apply {
+                            action = "REPEAT_TTS_ALERT"
+                            putExtra("busNo", busNo)
+                            putExtra("stationName", stationName)
+                            putExtra("routeId", effectiveRouteId)
+                            putExtra("stationId", effectiveStationId)
+                            putExtra("remainingMinutes", minutes as Int)
+                            putExtra("currentStation", (currentStationFinal ?: "").toString())
+                        }
+                        startService(ttsIntent)
+                        trackingInfo.lastNotifiedMinutes = minutes
+                        Log.d(TAG, "[TTS] 실시간 TTSService 호출: $busNo, $stationName, $minutes, stationId=$effectiveStationId")
                     }
-                    startService(ttsIntent)
-                    trackingInfo.lastNotifiedMinutes = minutes
-                    Log.d(TAG, "[TTS] 실시간 TTSService 호출: $busNo, $stationName, $minutes, stationId=$effectiveStationId")
+                } else if (minutes > 5 && trackingInfo.lastNotifiedMinutes != Int.MAX_VALUE) {
+                    trackingInfo.lastNotifiedMinutes = Int.MAX_VALUE
                 }
-            } else if (minutes > 5 && trackingInfo.lastNotifiedMinutes != Int.MAX_VALUE) {
-                trackingInfo.lastNotifiedMinutes = Int.MAX_VALUE
+            } catch (e: Exception) {
+                Log.e(TAG, "[TTS] 오류: ${e.message}", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "[TTS] 오류: ${e.message}", e)
         }
 
         // 알림 갱신
         try {
-            val notification = notificationHandler.buildOngoingNotification(activeTrackings)
+            val notification = if (isIndividualAlarm) {
+                // 개별 알람 생성
+                notificationHandler.buildNotification(
+                    id = notificationId, // 전달받은 notificationId 사용
+                    busNo = busNo,
+                    stationName = stationName,
+                    remainingMinutes = minutes,
+                    currentStation = currentStationFinal,
+                    routeId = effectiveRouteId
+                )
+            } else {
+                // 통합 추적 알림 생성
+                notificationHandler.buildOngoingNotification(activeTrackings)
+            }
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
-            Log.d(TAG, "✅ 알림 업데이트: $busNo, $formattedTime, $currentStationFinal")
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    notificationManager.notify(ONGOING_NOTIFICATION_ID, notificationHandler.buildOngoingNotification(activeTrackings))
-                } catch (_: Exception) {}
-            }, 1000)
+            notificationManager.notify(notificationId, notification) // 개별 알람 ID 또는 ONGOING_NOTIFICATION_ID
+            Log.d(TAG, "✅ 알림 ${if(isIndividualAlarm) "개별 생성" else "업데이트"}: $busNo, $formattedTime, $currentStationFinal, notifId=$notificationId")
+            
+            // 백업 업데이트 (개별 알람이 아닐 때만)
+            if (!isIndividualAlarm) {
+                 Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        notificationManager.notify(ONGOING_NOTIFICATION_ID, notificationHandler.buildOngoingNotification(activeTrackings))
+                    } catch (_: Exception) {}
+                }, 1000)
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ 알림 업데이트 오류: ${e.message}", e)
-            updateForegroundNotification()
+            Log.e(TAG, "❌ 알림 ${if(isIndividualAlarm) "생성" else "업데이트"} 오류: ${e.message}", e)
+            if (!isIndividualAlarm) { // 개별 알람이 아닐 때만 포그라운드 알림 업데이트 시도
+                updateForegroundNotification()
+            }
         }
     }
 
@@ -1685,9 +1708,9 @@ class BusAlertService : Service() {
     }
 
     // [ADD] Stop tracking for a specific route (optionally cancel notification)
-    fun stopTrackingForRoute(routeId: String, stationId: String? = null, busNo: String? = null, cancelNotification: Boolean = false) {
+    fun stopTrackingForRoute(routeId: String, stationId: String? = null, busNo: String? = null, cancelNotification: Boolean = false, notificationId: Int? = null) {
         serviceScope.launch {
-            Log.i(TAG, "--- stopTrackingForRoute called: routeId=$routeId, stationId=$stationId, busNo=$busNo, cancelNotification=$cancelNotification ---")
+            Log.i(TAG, "--- stopTrackingForRoute called: routeId=$routeId, stationId=$stationId, busNo=$busNo, cancelNotification=$cancelNotification, notificationId=$notificationId ---")
             try {
                 monitoringJobs[routeId]?.cancel()
                 monitoringJobs.remove(routeId)
@@ -1695,8 +1718,13 @@ class BusAlertService : Service() {
                 monitoredRoutes.remove(routeId)
                 if (cancelNotification) {
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                    Log.d(TAG, "Notification cancelled for route $routeId");
+                    if (notificationId != null) {
+                        notificationManager.cancel(notificationId)
+                        Log.d(TAG, "Notification cancelled for route $routeId, notificationId=$notificationId");
+                    } else {
+                        notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                        Log.d(TAG, "Notification cancelled for route $routeId (ONGOING_NOTIFICATION_ID)");
+                    }
                 }
                 if (activeTrackings.isEmpty()) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1769,22 +1797,21 @@ class BusAlertService : Service() {
         busNo: String,
         stationName: String,
         remainingMinutes: Int,
-        currentStation: String?
+        currentStation: String?,
+        routeId: String? = null
     ) {
-        try {
-            val notification = notificationHandler.buildNotification(
-                id = id,
-                busNo = busNo,
-                stationName = stationName,
-                remainingMinutes = remainingMinutes,
-                currentStation = currentStation
-            )
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(id, notification)
-            Log.d(TAG, "Ongoing notification shown (showNotification overload): $busNo, $stationName, $remainingMinutes, $currentStation")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error showing ongoing notification (overload): ${e.message}", e)
-        }
+        // 이제 이 메서드는 showOngoingBusTracking을 호출하여 개별 알림을 표시합니다.
+        showOngoingBusTracking(
+            busNo = busNo,
+            stationName = stationName,
+            remainingMinutes = remainingMinutes,
+            currentStation = currentStation,
+            isUpdate = false, // 새 알림이므로 isUpdate는 false
+            notificationId = id, // 전달받은 id 사용
+            allBusesSummary = null, // 개별 알람에는 전체 요약 불필요
+            routeId = routeId,
+            isIndividualAlarm = true // 이 알림이 개별 알람임을 명시
+        )
     }
 }
 

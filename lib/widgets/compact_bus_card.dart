@@ -101,23 +101,24 @@ class _CompactBusCardState extends State<CompactBusCard> {
                 '[CompactBusCard] updateBusTrackingNotification 호출: busNo=${widget.busArrival.routeNo}, stationName=${widget.stationName}, remainingMinutes=[1m$remainingMinutes\u001b[0m, currentStation=${firstBus.currentStation}, routeId=${widget.busArrival.routeId}',
                 level: LogLevel.info,
               );
-              NotificationService().updateBusTrackingNotification(
-                busNo: widget.busArrival.routeNo,
-                stationName: widget.stationName!,
-                remainingMinutes: remainingMinutes,
-                currentStation: firstBus.currentStation,
-                routeId: widget.busArrival.routeId,
-                stationId: widget.stationId,
+              final alarmService = context.read<AlarmService>();
+              final bool hasActiveTracking = alarmService.hasAlarm(
+                widget.busArrival.routeNo,
+                widget.stationName!,
+                widget.busArrival.routeId,
               );
-              // [핵심 추가] 네이티브 알림이 항상 표시되도록 showOngoingBusTracking 호출
-              NotificationService().showOngoingBusTracking(
-                busNo: widget.busArrival.routeNo,
-                stationName: widget.stationName!,
-                remainingMinutes: remainingMinutes,
-                currentStation: firstBus.currentStation,
-                routeId: widget.busArrival.routeId,
-                stationId: widget.stationId,
-              );
+
+              if (hasActiveTracking) {
+                // 이미 추적 중인 경우만 알림 업데이트 (중복 방지)
+                NotificationService().updateBusTrackingNotification(
+                  busNo: widget.busArrival.routeNo,
+                  stationName: widget.stationName!,
+                  remainingMinutes: remainingMinutes,
+                  currentStation: firstBus.currentStation,
+                  routeId: widget.busArrival.routeId,
+                  stationId: widget.stationId,
+                );
+              }
             }
           }
         });
@@ -490,16 +491,8 @@ class _CompactBusCardState extends State<CompactBusCard> {
             );
 
             // 네이티브 알림 표시 및 실시간 업데이트 시작
-            await notificationService.showOngoingBusTracking(
-              busNo: widget.busArrival.routeNo,
-              stationName: widget.stationName!,
-              remainingMinutes: remainingMinutes,
-              currentStation: busInfo.currentStation,
-              routeId: routeId,
-              stationId: stationId,
-            );
-
-            // 실시간 버스 정보 업데이트를 위한 타이머 시작
+            // startBusMonitoringService에서 이미 추적을 시작하므로 중복 호출 제거
+            // 대신 실시간 버스 정보 업데이트를 위한 타이머만 시작
             notificationService.startRealTimeBusUpdates(
               busNo: widget.busArrival.routeNo,
               stationName: widget.stationName!,

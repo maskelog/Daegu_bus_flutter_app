@@ -388,8 +388,9 @@ class NotificationService {
         '🔔 [Flutter] showOngoingBusTracking 호출: $busNo, $stationName, $remainingMinutes, $currentStation, $routeId',
         level: LogLevel.info);
     try {
-      // 알림 ID 생성 (버스 번호와 정류장 이름으로)
-      final int notificationId = _generateNotificationId(busNo, stationName);
+      // 통합 추적 알림용 고정 ID 사용 (ONGOING_NOTIFICATION_ID = 1)
+      const int notificationId =
+          1; // BusAlertService.ONGOING_NOTIFICATION_ID와 동일
 
       // 실시간 버스 정보 업데이트를 위한 타이머 시작 (더 짧은 간격으로 변경)
       _startRealTimeBusUpdates(
@@ -399,7 +400,7 @@ class NotificationService {
         stationId: stationId,
       );
 
-      // 1. 메인 채널을 통해 Foreground 서비스 시작
+      // 1. 메인 채널을 통해 Foreground 서비스 시작 - 통합 추적 알림으로 설정
       final bool result =
           await _channel.invokeMethod('showOngoingBusTracking', {
         'busNo': busNo,
@@ -407,9 +408,10 @@ class NotificationService {
         'remainingMinutes': remainingMinutes,
         'currentStation': currentStation,
         'routeId': routeId,
-        'stationId': _currentStationId,
-        'id': notificationId,
-        'isUpdate': false,
+        'stationId': stationId,
+        'notificationId': notificationId, // 통합 알림 ID
+        'isUpdate': false, // 새로운 추적 시작
+        'isIndividualAlarm': false, // 개별 알람이 아님 (통합 추적 알림)
         'action': 'com.example.daegu_bus_app.action.START_TRACKING_FOREGROUND',
       });
 
@@ -501,10 +503,10 @@ class NotificationService {
       logMessage('[DEBUG] _updateBusInfo: $remainingMinutes분, $currentStation',
           level: LogLevel.debug);
 
-      // 모든 업데이트 방법을 병렬로 시도하여 최대한 확실하게 업데이트
+      // 주요 업데이트 방법만 사용 (중복 제거)
       List<Future> updateMethods = [];
 
-      // 1. bus_tracking 채널 호출
+      // 1. bus_tracking 채널을 통한 알림 업데이트 (가장 직접적인 방법)
       updateMethods.add(
           const MethodChannel('com.example.daegu_bus_app/bus_tracking')
               .invokeMethod(
@@ -522,7 +524,7 @@ class NotificationService {
         logMessage('⚠️ bus_tracking 채널 호출 오류: $e', level: LogLevel.error);
       }));
 
-      // 2. 직접 서비스 시작 인텐트 전송 (ACTION_UPDATE_TRACKING)
+      // 2. 직접 서비스 시작 인텐트 전송 (ACTION_UPDATE_TRACKING) - 백업 방법
       updateMethods.add(_channel.invokeMethod('startBusTrackingService', {
         'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
         'busNo': _currentBusNo!,
@@ -534,22 +536,6 @@ class NotificationService {
         logMessage('✅ ACTION_UPDATE_TRACKING 인텐트 전송 완료', level: LogLevel.debug);
       }).catchError((e) {
         logMessage('⚠️ ACTION_UPDATE_TRACKING 인텐트 전송 오류: $e',
-            level: LogLevel.error);
-      }));
-
-      // 3. 메인 채널을 통해 showOngoingBusTracking 호출 (실시간 업데이트)
-      updateMethods.add(_channel.invokeMethod('showOngoingBusTracking', {
-        'busNo': _currentBusNo!,
-        'stationName': _currentStationName!,
-        'remainingMinutes': remainingMinutes,
-        'currentStation': currentStation,
-        'routeId': _currentRouteId!,
-        'isUpdate': true,
-        'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
-      }).then((_) {
-        logMessage('✅ showOngoingBusTracking 호출 완료', level: LogLevel.debug);
-      }).catchError((e) {
-        logMessage('⚠️ showOngoingBusTracking 호출 오류: $e',
             level: LogLevel.error);
       }));
 
@@ -604,10 +590,10 @@ class NotificationService {
           '🚌 버스 추적 알림 업데이트 요청: $busNo, $remainingMinutes분, 현재 위치: $currentStation',
           level: LogLevel.debug);
 
-      // 모든 방법을 병렬로 시도하여 최대한 확실하게 업데이트
+      // 주요 업데이트 방법만 사용 (중복 제거)
       List<Future> updateMethods = [];
 
-      // 1. 기존 bus_tracking 채널 호출 (이전 버전 호환성)
+      // 1. bus_tracking 채널을 통한 알림 업데이트 (가장 직접적인 방법)
       updateMethods.add(
           const MethodChannel('com.example.daegu_bus_app/bus_tracking')
               .invokeMethod(
@@ -625,7 +611,7 @@ class NotificationService {
         logMessage('⚠️ bus_tracking 채널 호출 오류: $e', level: LogLevel.error);
       }));
 
-      // 2. 직접 서비스 시작 인텐트 전송 (ACTION_UPDATE_TRACKING)
+      // 2. 직접 서비스 시작 인텐트 전송 (ACTION_UPDATE_TRACKING) - 백업 방법
       updateMethods.add(_channel.invokeMethod('startBusTrackingService', {
         'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
         'busNo': busNo,
@@ -640,47 +626,18 @@ class NotificationService {
             level: LogLevel.error);
       }));
 
-      // 3. 메인 채널을 통해 showOngoingBusTracking 호출 (실시간 업데이트)
-      updateMethods.add(_channel.invokeMethod('showOngoingBusTracking', {
-        'busNo': busNo,
-        'stationName': stationName,
-        'remainingMinutes': remainingMinutes,
-        'currentStation': currentStation,
-        'routeId': routeId,
-        'isUpdate': true,
-        'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
-      }).then((_) {
-        logMessage('✅ showOngoingBusTracking 호출 완료', level: LogLevel.debug);
-      }).catchError((e) {
-        logMessage('⚠️ showOngoingBusTracking 호출 오류: $e',
-            level: LogLevel.error);
-      }));
-
-      // 4. 알림 직접 업데이트 (updateNotification)
-      updateMethods.add(_channel.invokeMethod('updateNotification', {
-        'id': _generateNotificationId(busNo, stationName),
-        'busNo': busNo,
-        'stationName': stationName,
-        'remainingMinutes': remainingMinutes,
-        'currentStation': currentStation,
-        'routeId': routeId,
-        'isUpdate': true,
-      }).then((_) {
-        logMessage('✅ updateNotification 호출 완료', level: LogLevel.debug);
-      }).catchError((e) {
-        logMessage('⚠️ updateNotification 호출 오류: $e', level: LogLevel.error);
-      }));
+      // showOngoingBusTracking 및 updateNotification 호출 제거 - 중복 알림 방지
 
       // 모든 방법 병렬 실행
       await Future.wait(updateMethods);
 
-      // 5. 현재 정보 저장 (다음 업데이트를 위해)
+      // 현재 정보 저장 (다음 업데이트를 위해)
       _currentBusNo = busNo;
       _currentStationName = stationName;
       _currentRouteId = routeId;
       _currentStationId = stationId;
 
-      // 6. 추가: 1초 후 다시 한번 업데이트 시도 (백업)
+      // 추가: 1초 후 다시 한번 업데이트 시도 (백업) - 간소화
       Future.delayed(const Duration(seconds: 1), () {
         try {
           _channel.invokeMethod('startBusTrackingService', {

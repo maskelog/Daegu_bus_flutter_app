@@ -55,7 +55,10 @@
         </activity>
 
         <!-- 버스 알림 포그라운드 서비스 -->
-        <service android:name=".BusAlertService" android:foregroundServiceType="dataSync" android:exported="false" />
+        <service
+            android:name=".services.BusAlertService"
+            android:foregroundServiceType="dataSync"
+            android:exported="true" />
 
         <!-- TTS 서비스 -->
         <service android:name=".TTSService" android:foregroundServiceType="dataSync" android:exported="false" />

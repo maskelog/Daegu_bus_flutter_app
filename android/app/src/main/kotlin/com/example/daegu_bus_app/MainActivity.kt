@@ -900,9 +900,16 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 this, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                             ) else null
 
-                            // Cancel action
+                            // Cancel action - 수정: 특정 알람만 해제하도록 변경
                             val cancelIntent = Intent(this, BusAlertService::class.java).apply {
-                                action = BusAlertService.ACTION_STOP_TRACKING
+                                if (routeId != null) {
+                                    action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+                                    putExtra("routeId", routeId)
+                                    putExtra("busNo", busNo)
+                                    putExtra("stationName", stationName)
+                                } else {
+                                    action = BusAlertService.ACTION_STOP_TRACKING
+                                }
                                 putExtra("notificationId", id)
                             }
                             val cancelPendingIntent = PendingIntent.getService(
@@ -954,70 +961,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
                             // 오류 발생 시에도 true 반환 (백그라운드 작업 계속 진행)
                             result.success(true)
-                        }
-                    }
-                    "showNotification" -> {
-                        val id = call.argument<Int>("id") ?: 0
-                        val busNo = call.argument<String>("busNo") ?: ""
-                        val stationName = call.argument<String>("stationName") ?: ""
-                        val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
-                        val currentStation = call.argument<String>("currentStation") ?: ""
-                        val payload = call.argument<String>("payload")
-                        try {
-                            val routeId = call.argument<String>("routeId")
-                            val allBusesSummary = call.argument<String>("allBusesSummary")
-
-                            // Build notification content
-                            val title = if (remainingMinutes <= 0) {
-                                "${busNo}번 버스 도착 알람"
-                            } else {
-                                "${busNo}번 버스 알람"
-                            }
-                            val contentText = if (remainingMinutes <= 0) {
-                                "${busNo}번 버스가 ${stationName} 정류장에 곧 도착합니다."
-                            } else {
-                                "${busNo}번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
-                            }
-                            val subText = if (currentStation.isNotEmpty()) "현재 위치: $currentStation" else null
-
-                            // Intent to open app
-                            val openAppIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                            }
-                            val pendingIntent = if (openAppIntent != null) PendingIntent.getActivity(
-                                this, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                            ) else null
-
-                            // Cancel action
-                            val cancelIntent = Intent(this, BusAlertService::class.java).apply {
-                                action = BusAlertService.ACTION_STOP_TRACKING
-                                putExtra("notificationId", id)
-                            }
-                            val cancelPendingIntent = PendingIntent.getService(
-                                this, id + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                            )
-
-                            val builder = NotificationCompat.Builder(this, ALARM_NOTIFICATION_CHANNEL_ID)
-                                .setContentTitle(title)
-                                .setContentText(contentText)
-                                .setSmallIcon(R.mipmap.ic_launcher)
-                                .setPriority(NotificationCompat.PRIORITY_MAX)
-                                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                                .setColor(ContextCompat.getColor(this, R.color.alert_color))
-                                .setAutoCancel(true)
-                                .setDefaults(NotificationCompat.DEFAULT_ALL)
-                                .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
-                            if (pendingIntent != null) builder.setContentIntent(pendingIntent)
-                            if (subText != null) builder.setSubText(subText)
-
-                            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                            notificationManager.notify(id, builder.build())
-                            Log.d(TAG, "✅ showNotification: Notification shown for alarm ID: $id")
-                            result.success(true)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "알림 표시 오류: ${e.message}", e)
-                            result.error("NOTIFICATION_ERROR", "알림 표시 중 오류 발생: ${e.message}", null)
                         }
                     }
                     "showOngoingBusTracking" -> {
@@ -1690,7 +1633,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             }
 
             // 브로드캠스트 리시버 해제
-            // unregisterAlarmCancelReceiver()
+            unregisterAlarmCancelReceiver()
 
             super.onDestroy()
         } catch (e: Exception) {
@@ -1779,6 +1722,18 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             Log.d(TAG, "✅ 승차 완료 처리됨")
         } catch (e: Exception) {
             Log.e(TAG, "❌ 승차 완료 처리 중 오류: ${e.message}")
+        }
+    }
+
+    private fun unregisterAlarmCancelReceiver() {
+        try {
+            alarmCancelReceiver?.let {
+                unregisterReceiver(it)
+                alarmCancelReceiver = null
+                Log.d(TAG, "알림 취소 브로드캐스트 리시버 해제 완료")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "알림 취소 리시버 해제 오류: ${e.message}", e)
         }
     }
 
