@@ -814,10 +814,11 @@ class AlarmService extends ChangeNotifier {
       // 백업 ID 사용 - 충돌 방지
       final uniqueId = 'autoAlarm_${id}_${now.millisecondsSinceEpoch}';
 
-      // 즉시 실행해야 하는 경우 (1분 이내만)
-      if (executionDelay.inMinutes <= 1) {
+      // 예약 시간에 정확히 실행되도록 수정 (즉시 실행 제거)
+      // 음수 딜레이는 즉시 실행하지만, 양수 딜레이는 모두 예약 실행
+      if (executionDelay.isNegative || executionDelay.inSeconds <= 30) {
         logMessage(
-            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inMinutes}분 (1분 이내)',
+            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inSeconds}초 (이미 지났거나 30초 이내)',
             level: LogLevel.info);
 
         // 즉시 알람 실행
@@ -827,7 +828,7 @@ class AlarmService extends ChangeNotifier {
         await Workmanager().registerOneOffTask(
           uniqueId,
           'autoAlarmTask',
-          initialDelay: executionDelay,
+          initialDelay: executionDelay.isNegative ? Duration.zero : executionDelay,
           inputData: {
             'alarmId': id,
             'busNo': alarm.routeNo,
@@ -938,6 +939,24 @@ class AlarmService extends ChangeNotifier {
         isOngoing: false, // 일회성 알림
       );
 
+      // 자동 알람 실행 시 activeAlarms에도 추가하여 UI에 표시
+      final alarmData = alarm_model.AlarmData(
+        busNo: alarm.routeNo,
+        stationName: alarm.stationName,
+        remainingMinutes: remainingMinutes,
+        routeId: alarm.routeId,
+        scheduledTime: DateTime.now().add(Duration(minutes: remainingMinutes.clamp(0, 60))),
+        currentStation: currentStation,
+        useTTS: alarm.useTTS,
+      );
+      
+      // activeAlarms에 추가하여 ActiveAlarmPanel에서 표시되도록 함
+      final alarmKey = "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}";
+      _activeAlarms[alarmKey] = alarmData;
+      await _saveAlarms();
+      
+      logMessage('✅ 자동 알람을 activeAlarms에 추가: ${alarm.routeNo}번 ($remainingMinutes분 후)', level: LogLevel.info);
+
       // TTS 발화 (강제 스피커 모드)
       if (alarm.useTTS) {
         try {
@@ -959,6 +978,9 @@ class AlarmService extends ChangeNotifier {
       }
 
       logMessage('✅ 즉시 자동 알람 실행 완료: ${alarm.routeNo}번', level: LogLevel.info);
+      
+      // UI 업데이트
+      notifyListeners();
     } catch (e) {
       logMessage('❌ 즉시 자동 알람 실행 오류: $e', level: LogLevel.error);
     }
