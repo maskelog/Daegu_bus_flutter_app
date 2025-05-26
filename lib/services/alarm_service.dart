@@ -632,10 +632,10 @@ class AlarmService extends ChangeNotifier {
       final alarmsCopy = List<alarm_model.AlarmData>.from(_autoAlarms);
 
       for (var alarm in alarmsCopy) {
-        // 알람 시간이 지났거나 임박한 자동 알람 확인 (2분 이내)
+        // 알람 시간이 지났거나 지난 자동 알람 확인 (음수값만)
         final timeUntilAlarm = alarm.scheduledTime.difference(now);
 
-        if (timeUntilAlarm.inMinutes <= 2 && timeUntilAlarm.inMinutes >= -1) {
+        if (timeUntilAlarm.inMinutes <= 0 && timeUntilAlarm.inMinutes >= -5) {
           logMessage(
               '⚡ 자동 알람 시간 임박: ${alarm.busNo}번, ${timeUntilAlarm.inMinutes}분 남음',
               level: LogLevel.info);
@@ -814,10 +814,10 @@ class AlarmService extends ChangeNotifier {
       // 백업 ID 사용 - 충돌 방지
       final uniqueId = 'autoAlarm_${id}_${now.millisecondsSinceEpoch}';
 
-      // 즉시 실행해야 하는 경우 (5분 이내)
-      if (executionDelay.inMinutes <= 5) {
+      // 즉시 실행해야 하는 경우 (1분 이내만)
+      if (executionDelay.inMinutes <= 1) {
         logMessage(
-            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inMinutes}분',
+            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inMinutes}분 (1분 이내)',
             level: LogLevel.info);
 
         // 즉시 알람 실행
@@ -850,6 +850,8 @@ class AlarmService extends ChangeNotifier {
           backoffPolicy: BackoffPolicy.linear,
           existingWorkPolicy: ExistingWorkPolicy.replace,
         );
+        
+        logMessage('✅ 자동 알람 즉시 실행 및 백업 작업 등록 완료: ${alarm.routeNo}번', level: LogLevel.info);
       } else {
         // 일반적인 지연 실행
         await Workmanager().registerOneOffTask(
@@ -894,9 +896,10 @@ class AlarmService extends ChangeNotifier {
       logMessage(
           '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: $uniqueId');
 
-      // 5분 후 백업 알람 등록
-      if (executionDelay.inMinutes > 5) {
+      // 2분 후 백업 알람 등록 (즉시 실행되지 않은 경우만)
+      if (executionDelay.inMinutes > 2) {
         _scheduleBackupAlarm(alarm, id, scheduledTime);
+        logMessage('✅ 백업 알람 등록: ${alarm.routeNo}번, ${executionDelay.inMinutes}분 후 실행', level: LogLevel.info);
       }
     } catch (e) {
       logMessage('❌ 자동 알람 예약 오류: $e', level: LogLevel.error);
@@ -1135,18 +1138,15 @@ class AlarmService extends ChangeNotifier {
         final timeUntilAlarm = scheduledTime.difference(now);
         logMessage('  ⏰ 다음 알람까지 ${timeUntilAlarm.inMinutes}분 남음');
 
-        // 알람 시간이 이미 지났거나 1분 이내면 즉시 실행
-        if (timeUntilAlarm.inMinutes <= 1) {
-          logMessage('  ⚡ 알람 시간이 지났거나 임박함 - 즉시 실행');
+        // 알람 시간이 이미 지났거나 지난 경우만 즉시 실행 (음수 또는 0분)
+        if (timeUntilAlarm.inMinutes <= 0) {
+          logMessage('  ⚡ 알람 시간이 지났음 - 즉시 실행 (${timeUntilAlarm.inMinutes}분)');
           await _executeAutoAlarmImmediately(alarm);
         } else if (timeUntilAlarm.inMinutes <= 10) {
-          logMessage('  🚌 10분 이내 알람 - 버스 모니터링 시작');
-          await startBusMonitoringService(
-            routeId: alarm.routeId,
-            stationId: alarm.stationId,
-            busNo: alarm.routeNo,
-            stationName: alarm.stationName,
-          );
+          logMessage('  ⏰ 10분 이내 알람 - 예약만 등록, 정확한 시간에 실행됨 (${timeUntilAlarm.inMinutes}분 남음)');
+          // 예약만 하고 즉시 실행하지 않음 - 정확한 시간에 WorkManager가 실행
+        } else {
+          logMessage('  ⏰ 알람 예약: ${timeUntilAlarm.inMinutes}분 후 실행');
         }
 
         // 알람 데이터 생성
@@ -1463,6 +1463,23 @@ class AlarmService extends ChangeNotifier {
       final settingsService = SettingsService();
       await settingsService.initialize();
       final volume = settingsService.autoAlarmVolume;
+
+      // 알림 표시 (일반 알람 전용)
+      try {
+        await _notificationService.showNotification(
+          id: alarmId,
+          busNo: busNo,
+          stationName: stationName,
+          remainingMinutes: remainingMinutes,
+          currentStation: currentStation ?? '정보 없음',
+          routeId: routeId,
+          isAutoAlarm: false, // 일반 알람
+          isOngoing: true, // 지속적인 알림
+        );
+        logMessage('✅ 일반 알람 알림 표시 완료: $busNo번', level: LogLevel.info);
+      } catch (e) {
+        logMessage('❌ 일반 알람 알림 표시 오류: $e', level: LogLevel.error);
+      }
 
       // TTS 알림 시작 (설정된 경우 - 일반 알람 -> 이어폰 전용)
       if (useTTS) {
