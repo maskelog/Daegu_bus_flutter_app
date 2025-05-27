@@ -1727,8 +1727,16 @@ class BusAlertService : Service() {
                     }
                 }
                 if (activeTrackings.isEmpty()) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    isInForeground = false
+                    // 추적이 모두 해제되면 포그라운드 알림과 노티피케이션을 명확히 취소
+                    try {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        isInForeground = false
+                        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                        Log.d(TAG, "ONGOING_NOTIFICATION_ID 알림 취소 및 포그라운드 서비스 중지 완료")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "알림/포그라운드 중지 중 오류: ${e.message}", e)
+                    }
                     stopSelf()
                 }
             } catch (e: Exception) {
