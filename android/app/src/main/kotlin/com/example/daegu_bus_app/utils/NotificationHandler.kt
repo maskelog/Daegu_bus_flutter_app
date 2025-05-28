@@ -18,6 +18,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.example.daegu_bus_app.services.BusAlertService
+import com.example.daegu_bus_app.MainActivity
 import com.example.daegu_bus_app.R
 
 class NotificationHandler(private val context: Context) {
@@ -105,13 +106,13 @@ class NotificationHandler(private val context: Context) {
         val startTime = System.currentTimeMillis()
         val currentTimeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         Log.d(TAG, "🔔 알림 생성 시작 - $currentTimeStr")
-        
+
         // 각 활성 추적의 버스 정보를 로그로 출력
         activeTrackings.forEach { (routeId, info) ->
             val busInfo = info.lastBusInfo
             Log.d(TAG, "🔍 추적 상태: ${info.busNo}번 버스, 시간=${busInfo?.estimatedTime ?: "정보 없음"}, 위치=${busInfo?.currentStation ?: "위치 정보 없음"}")
         }
-        
+
         val currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()) // 현재 시간을 초 단위까지 표시
         val title = "버스 알람 추적 중 ($currentTime)"
         var contentText = "추적 중인 버스: ${activeTrackings.size}개"
@@ -129,7 +130,7 @@ class NotificationHandler(private val context: Context) {
                 val busInfo = trackingInfo.lastBusInfo
                 val busNo = trackingInfo.busNo
                 val stationNameShort = trackingInfo.stationName.take(10) + if (trackingInfo.stationName.length > 10) "..." else ""
-                
+
                 // 시간 정보 처리 개선
                 val timeStr = when {
                     busInfo == null -> "정보 없음"
@@ -219,16 +220,16 @@ class NotificationHandler(private val context: Context) {
 
         val endTime = System.currentTimeMillis()
         Log.d(TAG, "✅ 알림 생성 완료 - 소요시간: ${endTime - startTime}ms, 현재 시간: $currentTime")
-        
+
         Log.d(TAG, "buildOngoingNotification: ${activeTrackings.mapValues { it.value.lastBusInfo }}")
-        
+
         // 디버깅: 생성된 알림 내용 로깅
         try {
             val extras = notification.extras
             Log.d(TAG, "📝 생성된 알림 내용 확인:")
             Log.d(TAG, "  제목: ${extras.getString(Notification.EXTRA_TITLE)}")
             Log.d(TAG, "  내용: ${extras.getString(Notification.EXTRA_TEXT)}")
-            
+
             // InboxStyle 내용 로깅
             val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
             if (lines != null) {
@@ -238,7 +239,7 @@ class NotificationHandler(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "알림 내용 로깅 중 오류: ${e.message}")
         }
-        
+
         return notification
     }
 
@@ -343,7 +344,17 @@ class NotificationHandler(private val context: Context) {
 
              // 진행 중인 추적 알림인 경우 BusAlertService에도 알림
              if (id == ONGOING_NOTIFICATION_ID) {
-                 // 1. 서비스에 중지 요청 전송
+                 // 1. 즉시 노티피케이션 취소
+                 try {
+                     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                     notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                     notificationManager.cancelAll()
+                     Log.d(TAG, "즉시 노티피케이션 취소 완료")
+                 } catch (e: Exception) {
+                     Log.e(TAG, "즉시 노티피케이션 취소 오류: ${e.message}")
+                 }
+
+                 // 2. 서비스에 중지 요청 전송
                  val stopIntent = Intent(context, BusAlertService::class.java).apply {
                      action = BusAlertService.ACTION_STOP_TRACKING
                      flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -355,10 +366,32 @@ class NotificationHandler(private val context: Context) {
                  }
                  Log.d(TAG, "Sent stop tracking request to BusAlertService")
 
-                 // 2. 전체 취소 이벤트 브로드캐스트
+                 // 3. 전체 취소 이벤트 브로드캐스트
                  val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
                  context.sendBroadcast(allCancelIntent)
                  Log.d(TAG, "Sent ALL_TRACKING_CANCELLED broadcast")
+
+                 // 4. Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+                 try {
+                     if (context is MainActivity) {
+                         context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                         Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료 (NotificationHandler)")
+                     }
+                 } catch (e: Exception) {
+                     Log.e(TAG, "Flutter 메서드 채널 전송 오류 (NotificationHandler): ${e.message}")
+                 }
+
+                 // 5. 지연된 추가 노티피케이션 취소 (백업)
+                 Handler(Looper.getMainLooper()).postDelayed({
+                     try {
+                         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                         notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                         notificationManager.cancelAll()
+                         Log.d(TAG, "지연된 노티피케이션 취소 완료")
+                     } catch (e: Exception) {
+                         Log.e(TAG, "지연된 노티피케이션 취소 오류: ${e.message}")
+                     }
+                 }, 500)
              }
          } catch (e: Exception) {
              Log.e(TAG, "Error cancelling notification ID $id: ${e.message}", e)
@@ -368,11 +401,27 @@ class NotificationHandler(private val context: Context) {
      fun cancelOngoingTrackingNotification() {
          Log.d(TAG, "Canceling ongoing tracking notification ID: $ONGOING_NOTIFICATION_ID")
          try {
-             // 1. 알림 직접 취소
-             val notificationManager = NotificationManagerCompat.from(context)
-             notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+             // 1. 즉시 노티피케이션 취소 (최우선)
+             try {
+                 val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                 systemNotificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                 systemNotificationManager.cancelAll()
+                 Log.d(TAG, "즉시 노티피케이션 취소 완료 (cancelOngoingTrackingNotification)")
+             } catch (e: Exception) {
+                 Log.e(TAG, "즉시 노티피케이션 취소 오류: ${e.message}")
+             }
 
-             // 2. BusAlertService에 중지 요청
+             // 2. NotificationManagerCompat으로도 취소
+             try {
+                 val notificationManager = NotificationManagerCompat.from(context)
+                 notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                 notificationManager.cancelAll()
+                 Log.d(TAG, "NotificationManagerCompat으로 노티피케이션 취소 완료")
+             } catch (e: Exception) {
+                 Log.e(TAG, "NotificationManagerCompat 취소 오류: ${e.message}")
+             }
+
+             // 3. BusAlertService에 중지 요청
              val stopIntent = Intent(context, BusAlertService::class.java).apply {
                  action = BusAlertService.ACTION_STOP_TRACKING
                  flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -384,13 +433,33 @@ class NotificationHandler(private val context: Context) {
              }
              Log.d(TAG, "Sent stop tracking request to BusAlertService")
 
-             // 3. 전체 취소 이벤트 브로드캐스트 (즉시)
+             // 4. 전체 취소 이벤트 브로드캐스트 (즉시)
              val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
              context.sendBroadcast(allCancelIntent)
              Log.d(TAG, "Sent ALL_TRACKING_CANCELLED broadcast")
 
-             // 4. 지연된 두 번째 브로드캐스트 (서비스 정리 후)
+             // 5. Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+             try {
+                 if (context is MainActivity) {
+                     context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                     Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료 (cancelOngoingTrackingNotification)")
+                 }
+             } catch (e: Exception) {
+                 Log.e(TAG, "Flutter 메서드 채널 전송 오류 (cancelOngoingTrackingNotification): ${e.message}")
+             }
+
+             // 6. 지연된 추가 노티피케이션 취소 (백업)
              Handler(Looper.getMainLooper()).postDelayed({
+                 try {
+                     val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                     systemNotificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                     systemNotificationManager.cancelAll()
+                     Log.d(TAG, "지연된 노티피케이션 취소 완료 (cancelOngoingTrackingNotification)")
+                 } catch (e: Exception) {
+                     Log.e(TAG, "지연된 노티피케이션 취소 오류: ${e.message}")
+                 }
+
+                 // 지연된 브로드캐스트도 전송
                  context.sendBroadcast(allCancelIntent)
                  Log.d(TAG, "Sent delayed ALL_TRACKING_CANCELLED broadcast")
              }, 500)
@@ -402,11 +471,25 @@ class NotificationHandler(private val context: Context) {
      fun cancelAllNotifications() {
          Log.d(TAG, "Request to cancel ALL notifications")
          try {
-             // 1. 모든 알림 직접 취소
-             val notificationManager = NotificationManagerCompat.from(context)
-             notificationManager.cancelAll()
+             // 1. 즉시 모든 노티피케이션 취소 (최우선)
+             try {
+                 val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                 systemNotificationManager.cancelAll()
+                 Log.d(TAG, "즉시 모든 노티피케이션 취소 완료 (cancelAllNotifications)")
+             } catch (e: Exception) {
+                 Log.e(TAG, "즉시 모든 노티피케이션 취소 오류: ${e.message}")
+             }
 
-             // 2. BusAlertService에 중지 요청
+             // 2. NotificationManagerCompat으로도 취소
+             try {
+                 val notificationManager = NotificationManagerCompat.from(context)
+                 notificationManager.cancelAll()
+                 Log.d(TAG, "NotificationManagerCompat으로 모든 노티피케이션 취소 완료")
+             } catch (e: Exception) {
+                 Log.e(TAG, "NotificationManagerCompat 모든 취소 오류: ${e.message}")
+             }
+
+             // 3. BusAlertService에 중지 요청
              val stopIntent = Intent(context, BusAlertService::class.java).apply {
                  action = BusAlertService.ACTION_STOP_TRACKING
              }
@@ -417,10 +500,31 @@ class NotificationHandler(private val context: Context) {
              }
              Log.d(TAG, "Sent stop tracking request to BusAlertService")
 
-             // 3. 전체 취소 이벤트 브로드캐스트
+             // 4. 전체 취소 이벤트 브로드캐스트
              val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
              context.sendBroadcast(allCancelIntent)
              Log.d(TAG, "Sent ALL_TRACKING_CANCELLED broadcast")
+
+             // 5. Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+             try {
+                 if (context is MainActivity) {
+                     context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                     Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료 (cancelAllNotifications)")
+                 }
+             } catch (e: Exception) {
+                 Log.e(TAG, "Flutter 메서드 채널 전송 오류 (cancelAllNotifications): ${e.message}")
+             }
+
+             // 6. 지연된 추가 노티피케이션 취소 (백업)
+             Handler(Looper.getMainLooper()).postDelayed({
+                 try {
+                     val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                     systemNotificationManager.cancelAll()
+                     Log.d(TAG, "지연된 모든 노티피케이션 취소 완료 (cancelAllNotifications)")
+                 } catch (e: Exception) {
+                     Log.e(TAG, "지연된 모든 노티피케이션 취소 오류: ${e.message}")
+                 }
+             }, 500)
 
          } catch (e: Exception) {
              Log.e(TAG, "Error cancelling all notifications: ${e.message}", e)
@@ -480,7 +584,7 @@ class NotificationHandler(private val context: Context) {
              .setAutoCancel(true)
              .setDefaults(NotificationCompat.DEFAULT_ALL) // 소리, 진동 등 기본 설정
              .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
-         
+
          if (subText != null) {
              builder.setSubText(subText)
          }

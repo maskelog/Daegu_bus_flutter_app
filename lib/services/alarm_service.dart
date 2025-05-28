@@ -98,32 +98,43 @@ class AlarmService extends ChangeNotifier {
           final String routeId = args['routeId'] ?? '';
           final String stationName = args['stationName'] ?? '';
 
-          logMessage('ℹ️ 네이티브에서 알람 취소 이벤트 수신: $busNo, $stationName, $routeId',
+          logMessage('🐛 [DEBUG] 네이티브에서 특정 알람 취소 이벤트 수신: $busNo, $stationName, $routeId',
               level: LogLevel.info);
 
-          // 알람이 존재하는지 확인
+          // 즉시 Flutter 측 상태 동기화 (낙관적 업데이트)
           final String alarmKey = "${busNo}_${stationName}_$routeId";
-          if (_activeAlarms.containsKey(alarmKey)) {
-            // 알람이 존재하면 Flutter 측에서도 취소 처리
-            logMessage('🚌 네이티브 알림 취소 이벤트에 따라 Flutter 알람 취소 처리 시작: $alarmKey',
-                level: LogLevel.info);
-
-            // cancelAlarmByRoute 호출하여 Flutter 측 상태 업데이트
-            await cancelAlarmByRoute(busNo, stationName, routeId);
-
-            logMessage('✅ 네이티브 알림 취소 이벤트에 따른 Flutter 알람 취소 완료',
+          final removedAlarm = _activeAlarms.remove(alarmKey);
+          
+          if (removedAlarm != null) {
+            // 캐시 정리
+            final cacheKey = "${busNo}_$routeId";
+            _cachedBusInfo.remove(cacheKey);
+            
+            // 추적 상태 업데이트
+            if (_trackedRouteId == routeId) {
+              _trackedRouteId = null;
+              if (_activeAlarms.isEmpty) {
+                _isInTrackingMode = false;
+              }
+            } else if (_activeAlarms.isEmpty) {
+              _isInTrackingMode = false;
+              _trackedRouteId = null;
+            }
+            
+            // 상태 저장 및 UI 업데이트
+            await _saveAlarms();
+            notifyListeners();
+            
+            logMessage('🐛 [DEBUG] ✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료: $alarmKey',
                 level: LogLevel.info);
           } else {
-            // 이미 취소된 알람이거나 존재하지 않는 알람
-            logMessage(
-                '⚠️ 네이티브 알림 취소 이벤트 수신했으나 해당 알람($alarmKey)이 Flutter 활성 알람 목록에 없음',
+            logMessage('🐛 [DEBUG] ⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리만 수행',
                 level: LogLevel.warning);
-
-            // 상태 확인 및 정리
+            
+            // 상태 정리
             if (_activeAlarms.isEmpty && _isInTrackingMode) {
               _isInTrackingMode = false;
               _trackedRouteId = null;
-              logMessage("네이티브 이벤트 수신 후 추적 모드 강제 비활성화", level: LogLevel.debug);
               notifyListeners();
             }
           }
@@ -1540,6 +1551,72 @@ class AlarmService extends ChangeNotifier {
       logMessage('✅ 알람 저장 완료: ${alarms.length}개');
     } catch (e) {
       logMessage('❌ 알람 저장 오류: $e', level: LogLevel.error);
+    }
+  }
+
+  // 특정 추적 중지 메서드 추가
+  Future<bool> stopSpecificTracking({
+    required String busNo,
+    required String stationName,
+    required String routeId,
+  }) async {
+    try {
+      logMessage('🐛 [DEBUG] 특정 추적 중지 요청: $busNo번 버스, $stationName, $routeId');
+      
+      // 1. 네이티브 서비스에 특정 추적 중지 요청
+      await _methodChannel?.invokeMethod('stopSpecificTracking', {
+        'busNo': busNo,
+        'routeId': routeId,
+        'stationName': stationName,
+      });
+      
+      // 2. Flutter 측 상태 업데이트
+      await cancelAlarmByRoute(busNo, stationName, routeId);
+      
+      logMessage('🐛 [DEBUG] ✅ 특정 추적 중지 완료: $busNo번 버스');
+      return true;
+      
+    } catch (e) {
+      logMessage('❌ [ERROR] 특정 추적 중지 실패: $e', level: LogLevel.error);
+      return false;
+    }
+  }
+
+  // 모든 추적 중지 메서드 개선
+  Future<bool> stopAllTracking() async {
+    try {
+      logMessage('🐛 [DEBUG] 모든 추적 중지 요청: ${_activeAlarms.length}개');
+      
+      // 1. 네이티브 서비스 완전 중지
+      await _methodChannel?.invokeMethod('stopBusTrackingService');
+      
+      // 2. TTS 추적 중지
+      await _methodChannel?.invokeMethod('stopTtsTracking');
+      
+      // 3. 모든 알림 취소
+      await _notificationService.cancelAllNotifications();
+      
+      // 4. Flutter 측 상태 완전 정리
+      _activeAlarms.clear();
+      _cachedBusInfo.clear();
+      _isInTrackingMode = false;
+      _trackedRouteId = null;
+      _processedNotifications.clear();
+      
+      // 5. 타이머 정리
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+      
+      // 6. 상태 저장 및 UI 업데이트
+      await _saveAlarms();
+      notifyListeners();
+      
+      logMessage('🐛 [DEBUG] ✅ 모든 추적 중지 완료');
+      return true;
+      
+    } catch (e) {
+      logMessage('❌ [ERROR] 모든 추적 중지 실패: $e', level: LogLevel.error);
+      return false;
     }
   }
 

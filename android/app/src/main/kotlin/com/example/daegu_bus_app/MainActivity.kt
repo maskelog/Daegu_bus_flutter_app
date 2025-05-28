@@ -273,6 +273,52 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
     private fun setupMethodChannels(flutterEngine: FlutterEngine) {
         try {
+            // 노티피케이션 채널 설정
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "startBusTrackingService" -> {
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        
+                        Log.d(TAG, "Flutter에서 버스 추적 서비스 시작 요청: $busNo, $stationName, $routeId")
+                        
+                        val intent = Intent(this, BusAlertService::class.java).apply {
+                            action = "com.example.daegu_bus_app.action.START_TRACKING"
+                            putExtra("busNo", busNo)
+                            putExtra("stationName", stationName)
+                            putExtra("routeId", routeId)
+                        }
+                        
+                        try {
+                            startForegroundService(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "서비스 시작 실패", e)
+                            result.error("SERVICE_ERROR", "서비스 시작 실패: ${e.message}", null)
+                        }
+                    }
+                    
+                    "stopBusTrackingService" -> {
+                        Log.d(TAG, "Flutter에서 버스 추적 서비스 중지 요청")
+                        stopBusTrackingService()
+                        result.success(true)
+                    }
+                    
+                    "stopSpecificTracking" -> {
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        
+                        Log.d(TAG, "특정 버스 추적 중지 요청: $busNo, $routeId, $stationName")
+                        stopSpecificTracking(busNo, routeId, stationName)
+                        result.success(true)
+                    }
+                    
+                    else -> result.notImplemented()
+                }
+            }
+            
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL).setMethodCallHandler { call, result ->
                 when (call.method) {
                     "cancelAlarmNotification" -> {
@@ -283,31 +329,21 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         try {
                             Log.i(TAG, "Flutter에서 알람/추적 중지 요청: Bus=$busNo, Route=$routeId, Station=$stationName")
 
-                            // 1. 모든 알림 직접 취소 (가장 확실한 방법)
-                            try {
-                                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                                notificationManager.cancelAll()
-                                Log.i(TAG, "모든 알림 직접 취소 완료")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "모든 알림 직접 취소 오류: ${e.message}", e)
-                            }
-
-                            // 2. 포그라운드 알림 취소 (직접 호출)
                             if (busAlertService != null) {
-                                busAlertService?.cancelOngoingTracking()
-                                Log.i(TAG, "포그라운드 알림 직접 취소 완료")
-
-                                // 3. 특정 노선 추적 중지
+                                // Call stopTrackingForRoute, which handles notification update/cancellation internally.
+                                // The 'true' for cancelNotification ensures it tries to affect notifications.
                                 busAlertService?.stopTrackingForRoute(routeId, stationName, busNo, true)
-                                Log.i(TAG, "특정 노선 추적 중지 완료: $routeId")
+                                Log.i(TAG, "BusAlertService.stopTrackingForRoute 호출 완료: $routeId")
                             } else {
-                                // BusAlertService가 null인 경우 서비스 시작 및 바인딩
+                                // BusAlertService가 null인 경우, 서비스에 인텐트를 보내 중지 시도
                                 try {
-                                    // 서비스 시작 및 바인딩
                                     val serviceIntent = Intent(this, BusAlertService::class.java)
+                                    serviceIntent.action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+                                    serviceIntent.putExtra("routeId", routeId)
+                                    serviceIntent.putExtra("busNo", busNo)
+                                    serviceIntent.putExtra("stationName", stationName)
                                     startService(serviceIntent)
-                                    bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
-                                    Log.d(TAG, "BusAlertService 시작 및 바인딩 요청 완료")
+                                    Log.i(TAG, "BusAlertService로 특정 노선 추적 중지 인텐트 전송 (서비스 null)")
                                 } catch (e: Exception) {
                                     Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
                                 }
@@ -315,19 +351,10 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 // 직접 서비스 인텐트를 보내서 중지 시도
                                 val stopIntent = Intent(this, BusAlertService::class.java).apply {
                                     action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
-                                    putExtra("routeId", routeId)
-                                    putExtra("busNo", busNo)
-                                    putExtra("stationName", stationName)
+                                    putExtra("routeId", routeId) // routeId is primary key for tracking
                                 }
                                 startService(stopIntent)
-                                Log.i(TAG, "특정 노선 추적 중지 인텐트 전송 완료")
-
-                                // 전체 중지 인텐트도 전송 (백업)
-                                val stopAllIntent = Intent(this, BusAlertService::class.java).apply {
-                                    action = BusAlertService.ACTION_STOP_TRACKING
-                                }
-                                startService(stopAllIntent)
-                                Log.i(TAG, "전체 추적 중지 인텐트 전송 완료 (백업)")
+                                Log.i(TAG, "특정 노선 추적 중지 인텐트 전송 완료 (서비스 null, 백업)")
                             }
 
                             // 4. NotificationHelper를 사용하여 알림 취소 (백업 방법)
@@ -347,22 +374,14 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         } catch (e: Exception) {
                             Log.e(TAG, "알람/추적 중지 처리 오류: ${e.message}", e)
 
-                            // 오류 발생 시에도 알림 취소 시도
+                            // 오류 발생 시에도 Flutter 측에 이벤트는 전송 시도
                             try {
-                                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                                notificationManager.cancelAll()
-                                Log.i(TAG, "오류 후 모든 알림 강제 취소 완료")
-
-                                // Flutter 측에 알림 취소 완료 이벤트 전송
                                 val alarmCancelData = mapOf(
                                     "busNo" to busNo,
                                     "routeId" to routeId,
                                     "stationName" to stationName
                                 )
                                 _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
-
-                                result.success(true)
-                                return@setMethodCallHandler
                             } catch (ex: Exception) {
                                 Log.e(TAG, "오류 후 알림 취소 시도 실패: ${ex.message}", ex)
                             }
@@ -1888,6 +1907,53 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             Log.w(TAG, "NotificationCancelReceiver 해제 시도 중 오류 (이미 해제되었거나 등록되지 않음): ${e.message}")
         } catch (e: Exception) {
             Log.e(TAG, "NotificationCancelReceiver 해제 중 예외 발생: ${e.message}", e)
+        }
+    }
+    
+    // 노티피케이션 완전 중지
+    private fun stopBusTrackingService() {
+        Log.d(TAG, "버스 추적 서비스 완전 중지 시작")
+        
+        try {
+            // 1. 서비스에 중지 명령 전송
+            val stopIntent = Intent(this, BusAlertService::class.java).apply {
+                action = "com.example.daegu_bus_app.action.STOP_TRACKING"
+            }
+            startService(stopIntent)
+            
+            // 2. 서비스 강제 중지
+            val serviceIntent = Intent(this, BusAlertService::class.java)
+            stopService(serviceIntent)
+            
+            // 3. 모든 알림 취소
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancelAll()
+            
+            Log.d(TAG, "버스 추적 서비스 완전 중지 완료")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "서비스 중지 중 오류 발생", e)
+        }
+    }
+    
+    // 특정 버스 추적 중지
+    private fun stopSpecificTracking(busNo: String, routeId: String, stationName: String) {
+        Log.d(TAG, "특정 버스 추적 중지: $busNo, $routeId, $stationName")
+        
+        try {
+            val intent = Intent(this, BusAlertService::class.java).apply {
+                action = "com.example.daegu_bus_app.action.STOP_SPECIFIC_TRACKING"
+                putExtra("busNo", busNo)
+                putExtra("routeId", routeId)
+                putExtra("stationName", stationName)
+            }
+            startService(intent)
+            
+            Log.d(TAG, "특정 버스 추적 중지 명령 전송 완료")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "특정 추적 중지 중 오류 발생", e)
+        
         }
     }
 

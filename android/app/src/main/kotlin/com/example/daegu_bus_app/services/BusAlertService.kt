@@ -51,6 +51,15 @@ class BusAlertService : Service() {
         private const val CHANNEL_NAME_ERROR = "추적 오류 알림"
         private const val CHANNEL_BUS_ALERTS = "bus_alerts"
 
+        // 서비스 상태 대한 싱글톤 인스턴스
+        private var instance: BusAlertService? = null
+        fun getInstance(): BusAlertService? = instance
+
+        // 서비스 상태 플래그
+        private var isServiceActive = false
+
+        fun isActive(): Boolean = isServiceActive
+
         // Notification IDs
         const val ONGOING_NOTIFICATION_ID = NotificationHandler.ONGOING_NOTIFICATION_ID
 
@@ -83,12 +92,9 @@ class BusAlertService : Service() {
         // Default Values
         const val DEFAULT_ALARM_SOUND = ""
 
-        // Keep instance for potential Singleton-like access if needed
-        private var instance: BusAlertService? = null
-        fun getInstance(): BusAlertService? = instance
-
-        private const val ARRIVAL_THRESHOLD_MINUTES = 1
+        // 추가 상수 정의
         private const val MAX_CONSECUTIVE_ERRORS = 3
+        private const val ARRIVAL_THRESHOLD_MINUTES = 1
     }
 
     private val binder = LocalBinder()
@@ -128,6 +134,7 @@ class BusAlertService : Service() {
         super.onCreate()
         Log.d(TAG, "Service onCreate")
         instance = this
+        isServiceActive = true
         busApiService = BusApiService(applicationContext)
         sharedPreferences = applicationContext.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         notificationHandler = NotificationHandler(this)
@@ -135,6 +142,7 @@ class BusAlertService : Service() {
         loadSettings()
         notificationHandler.createNotificationChannels()
         initializeTts()
+        Log.i(TAG, "BusAlertService onCreate - 서비스 생성됨")
     }
 
     private fun loadSettings() {
@@ -153,6 +161,12 @@ class BusAlertService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "onStartCommand Received: Action = ${intent?.action}, StartId=$startId")
+
+        if (!isServiceActive) {
+            Log.w(TAG, "서비스가 비활성 상태입니다. 요청 무시: ${intent?.action}")
+            return START_NOT_STICKY
+        }
+
         loadSettings()
 
         when (intent?.action) {
@@ -174,9 +188,25 @@ class BusAlertService : Service() {
             ACTION_STOP_TRACKING -> {
                 Log.i(TAG, "ACTION_STOP_TRACKING: Stopping all tracking.")
 
-                // 현재 추적 중인 모든 버스에 대해 취소 이벤트 발송
-                activeTrackings.forEach { (routeId, info) ->
-                    sendCancellationBroadcast(info.busNo, routeId, info.stationName)
+                // 포그라운드 서비스 즉시 중지
+                if (isInForeground) {
+                    try {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        isInForeground = false
+                        Log.d(TAG, "Foreground service stopped immediately in ACTION_STOP_TRACKING")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "포그라운드 서비스 즉시 중지 오류: ${e.message}")
+                    }
+                }
+
+                // 모든 알림 즉시 취소
+                try {
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.cancelAll()
+                    notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                    Log.i(TAG, "모든 알림 즉시 취소 완료 (ACTION_STOP_TRACKING)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "알림 즉시 취소 오류: ${e.message}")
                 }
 
                 // 전체 취소 이벤트 발송
@@ -185,15 +215,21 @@ class BusAlertService : Service() {
                 // 모든 추적 작업과 서비스 중지
                 Log.i(TAG, "Stopping all tracking jobs and the service.")
                 stopAllTracking()
+                return START_NOT_STICKY
             }
             ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> {
                 val routeId = intent.getStringExtra("routeId")
+                val busNo = intent.getStringExtra("busNo")
+                val stationName = intent.getStringExtra("stationName")
                 val notificationId = intent.getIntExtra("notificationId", -1)
-                if (routeId != null) {
-                    Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, notificationId=$notificationId")
-                    stopTrackingForRoute(routeId, cancelNotification = true, notificationId = if (notificationId != -1) notificationId else null)
+
+                if (routeId != null && busNo != null && stationName != null) {
+                    Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName, notificationId=$notificationId")
+
+                    // 개선된 stopSpecificTracking 메서드 호출
+                    stopSpecificTracking(routeId, busNo, stationName)
                 } else {
-                    Log.e(TAG, "Missing routeId for ACTION_STOP_SPECIFIC_ROUTE_TRACKING")
+                    Log.e(TAG, "Missing data for ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName")
                     stopTrackingIfIdle()
                 }
             }
@@ -322,29 +358,128 @@ class BusAlertService : Service() {
         return START_STICKY
     }
 
-    override fun onDestroy() {
-        Log.i(TAG, "🔔 BusAlertService onDestroy Starting")
-        instance = null
-        serviceScope.launch {
-            try {
-                stopTracking()
-                ttsEngine?.stop()
-                ttsEngine?.shutdown()
-                Log.d(TAG, "TTS Engine shutdown.")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during onDestroy cleanup: ${e.message}")
-            } finally {
-                ttsEngine = null
-                isTtsInitialized = false
-                audioManager?.abandonAudioFocus(audioFocusListener)
-                Log.d(TAG, "Audio focus abandoned.")
-            }
-        }.invokeOnCompletion {
-            serviceScope.cancel("Service Destroyed")
-            Log.i(TAG, "Service scope cancelled.")
-            super.onDestroy()
-            Log.i(TAG, "🔔 BusAlertService onDestroy Finished")
+    // 특정 버스 추적 중지 (개선된 버전)
+// 특정 버스 추적 중지
+    private fun stopSpecificTracking(routeId: String, busNo: String, stationName: String) {
+        Log.d(TAG, "🔔 특정 추적 중지 시작: routeId=$routeId, busNo=$busNo, stationName=$stationName")
+
+        if (!isServiceActive) {
+            Log.w(TAG, "서비스가 비활성 상태입니다. 특정 추적 중지 무시")
+            return
         }
+
+        try {
+            // 1. 낙관적 업데이트
+            Log.d(TAG, "🔔 1단계: 즉시 상태 변경")
+            monitoredRoutes.remove(routeId)
+            monitoringJobs[routeId]?.cancel()
+            monitoringJobs.remove(routeId)
+            activeTrackings.remove(routeId)
+            arrivingSoonNotified.remove(routeId)
+            hasNotifiedTts.remove(routeId)
+            hasNotifiedArrival.remove(routeId)
+            Log.d(TAG, "✅ 추적 데이터 제거 완료: $routeId")
+
+            // 2. 알림 취소
+            Log.d(TAG, "🔔 2단계: 알림 취소")
+            val notificationManager = NotificationManagerCompat.from(this)
+            val specificNotificationId = generateNotificationId(routeId)
+
+            // 개별 알림 취소
+            try {
+                notificationManager.cancel(specificNotificationId)
+                Log.d(TAG, "✅ 개별 알림 취소됨: ID=$specificNotificationId")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 개별 알림 취소 실패: ID=$specificNotificationId, 오류=${e.message}")
+            }
+
+            // 통합 알림 갱신 또는 취소
+            if (activeTrackings.isEmpty()) {
+                try {
+                    notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                    Log.d(TAG, "✅ 통합 알림 취소됨: ID=$ONGOING_NOTIFICATION_ID")
+                    if (isInForeground) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        isInForeground = false
+                        Log.d(TAG, "✅ 포그라운드 서비스 중지")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 통합 알림/포그라운드 중지 실패: ${e.message}")
+                }
+            } else {
+                updateForegroundNotification()
+                Log.d(TAG, "📱 다른 추적이 남아있어 포그라운드 알림 갱신")
+            }
+
+            // 3. Flutter에 알림
+            Log.d(TAG, "🔔 3단계: Flutter 이벤트 전송")
+            sendCancellationBroadcast(busNo, routeId, stationName)
+
+            // 4. TTS 중지
+            stopTTSServiceTracking(routeId)
+            Log.d(TAG, "✅ TTS 추적 중지: $routeId")
+
+            // 5. 서비스 상태 확인
+            Log.d(TAG, "🔔 4단계: 서비스 상태 확인 (남은 추적: ${activeTrackings.size}개)")
+            checkAndStopServiceIfNeeded()
+
+            Log.d(TAG, "✅ 특정 추적 중지 완료: $routeId")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 특정 추적 중지 중 오류 발생: ${e.message}", e)
+            try {
+                // 오류 복구
+                monitoringJobs[routeId]?.cancel()
+                monitoringJobs.remove(routeId)
+                activeTrackings.remove(routeId)
+                monitoredRoutes.remove(routeId)
+                NotificationManagerCompat.from(this).cancel(generateNotificationId(routeId))
+                updateForegroundNotification()
+                checkAndStopServiceIfNeeded()
+                Log.d(TAG, "⚠️ 오류 복구: 최소한의 정리 작업 완료")
+            } catch (cleanupError: Exception) {
+                Log.e(TAG, "❌ 오류 복구 실패: ${cleanupError.message}")
+            }
+        }
+    }
+
+    // 노티피케이션 ID 생성
+    private fun generateNotificationId(routeId: String): Int {
+        return routeId.hashCode()
+    }
+
+    // UPDATE_TRACKING 처리
+    private fun handleUpdateTracking(intent: Intent?) {
+        val busNo = intent?.getStringExtra("busNo") ?: ""
+        val remainingTime = intent?.getStringExtra("remainingTime") ?: ""
+        val currentLocation = intent?.getStringExtra("currentLocation") ?: ""
+        val routeId = intent?.getStringExtra("routeId") ?: ""
+        val stationName = intent?.getStringExtra("stationName") ?: ""
+        val remainingMinutes = intent?.getIntExtra("remainingMinutes", -1) ?: -1
+
+        Log.d(TAG, "UPDATE_TRACKING 처리: $busNo, $remainingTime, $currentLocation")
+
+        // 업데이트 로직 처리
+        if (routeId.isNotEmpty() && busNo.isNotEmpty()) {
+            updateTrackingInfoFromFlutter(
+                routeId = routeId,
+                busNo = busNo,
+                stationName = stationName,
+                remainingMinutes = remainingMinutes,
+                currentStation = currentLocation
+            )
+        }
+    }
+    override fun onDestroy() {
+        Log.i(TAG, "BusAlertService onDestroy - 서비스 종료됨")
+
+        isServiceActive = false
+        instance = null
+
+        // 모든 리소스 정리
+        stopAllTracking()
+
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent): IBinder {
@@ -931,15 +1066,43 @@ class BusAlertService : Service() {
                 // 통합 추적 알림 생성
                 notificationHandler.buildOngoingNotification(activeTrackings)
             }
+
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(notificationId, notification) // 개별 알람 ID 또는 ONGOING_NOTIFICATION_ID
+
+            // 포그라운드 서비스 시작 (통합 추적 알림인 경우)
+            if (!isIndividualAlarm && notificationId == ONGOING_NOTIFICATION_ID && !isInForeground) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(ONGOING_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    } else {
+                        startForeground(ONGOING_NOTIFICATION_ID, notification)
+                    }
+                    isInForeground = true
+                    Log.d(TAG, "✅ 포그라운드 서비스 시작됨: ID=$ONGOING_NOTIFICATION_ID")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 포그라운드 서비스 시작 오류: ${e.message}")
+                    // 포그라운드 시작 실패 시 일반 노티피케이션으로 표시
+                    notificationManager.notify(notificationId, notification)
+                }
+            } else {
+                // 일반 노티피케이션 업데이트
+                notificationManager.notify(notificationId, notification)
+            }
+
             Log.d(TAG, "✅ 알림 ${if(isIndividualAlarm) "개별 생성" else "업데이트"}: $busNo, $formattedTime, $currentStationFinal, notifId=$notificationId")
-            
+
             // 백업 업데이트 (개별 알람이 아닐 때만)
             if (!isIndividualAlarm) {
                  Handler(Looper.getMainLooper()).postDelayed({
                     try {
-                        notificationManager.notify(ONGOING_NOTIFICATION_ID, notificationHandler.buildOngoingNotification(activeTrackings))
+                        val backupNotification = notificationHandler.buildOngoingNotification(activeTrackings)
+                        if (isInForeground) {
+                            // 포그라운드 서비스가 실행 중이면 포그라운드 노티피케이션 업데이트
+                            notificationManager.notify(ONGOING_NOTIFICATION_ID, backupNotification)
+                        } else {
+                            // 포그라운드 서비스가 실행 중이 아니면 일반 노티피케이션으로 업데이트
+                            notificationManager.notify(ONGOING_NOTIFICATION_ID, backupNotification)
+                        }
                     } catch (_: Exception) {}
                 }, 1000)
             }
@@ -1204,31 +1367,28 @@ class BusAlertService : Service() {
     fun cancelOngoingTracking() {
         Log.d(TAG, "cancelOngoingTracking called (ID: $ONGOING_NOTIFICATION_ID)")
         try {
-            // 1. 먼저 모든 추적 작업 중지
-            monitoringJobs.values.forEach { it.cancel() }
-            monitoringJobs.clear()
-            activeTrackings.clear()
-            monitoredRoutes.clear()
-
-            // 2. 포그라운드 서비스 중지
+            // 1. 포그라운드 서비스 먼저 중지 (노티피케이션 제거를 위해)
             if (isInForeground) {
                 Log.d(TAG, "Service is in foreground, calling stopForeground(STOP_FOREGROUND_REMOVE).")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 isInForeground = false
             }
 
-            // 3. 알림 직접 취소 (모든 알림 취소)
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancelAll() // 모든 알림 취소
-            Log.d(TAG, "All notifications cancelled via NotificationManager.")
-
-            // 4. NotificationManagerCompat을 통한 취소 (백업)
+            // 2. 모든 알림 직접 취소
             try {
-                NotificationManagerCompat.from(this).cancelAll() // 모든 알림 취소
-                Log.d(TAG, "All notifications cancelled via NotificationManagerCompat (backup).")
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancelAll()
+                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                Log.d(TAG, "모든 알림 직접 취소 완료 (cancelOngoingTracking)")
             } catch (e: Exception) {
-                Log.e(TAG, "NotificationManagerCompat 취소 오류: ${e.message}", e)
+                Log.e(TAG, "알림 취소 오류 (cancelOngoingTracking): ${e.message}")
             }
+
+            // 4. 모든 추적 작업 중지
+            monitoringJobs.values.forEach { it.cancel() }
+            monitoringJobs.clear()
+            activeTrackings.clear()
+            monitoredRoutes.clear()
 
             // 5. Flutter 측에 알림 취소 이벤트 전송 시도
             try {
@@ -1274,20 +1434,28 @@ class BusAlertService : Service() {
                 activeTrackings.clear() // 추가: 활성 추적 목록 초기화
                 Log.d(TAG, "Monitoring, jobs, and related caches/flags reset.")
 
-                // 2. 모든 알림 직접 취소
+                // 2. 포그라운드 서비스 먼저 중지 (노티피케이션 제거를 위해)
+                if (isInForeground) {
+                    try {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        isInForeground = false
+                        Log.d(TAG, "Foreground service stopped explicitly.")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "포그라운드 서비스 중지 오류: ${e.message}")
+                    }
+                }
+
+                // 3. 모든 알림 직접 취소 (포그라운드 중지 후)
                 try {
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     notificationManager.cancelAll()
                     Log.i(TAG, "모든 알림 직접 취소 완료 (stopTracking)")
+
+                    // 특정 노티피케이션 ID도 명시적으로 취소
+                    notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                    Log.i(TAG, "ONGOING_NOTIFICATION_ID 명시적 취소 완료")
                 } catch (e: Exception) {
                     Log.e(TAG, "알림 취소 오류: ${e.message}")
-                }
-
-                // 3. 포그라운드 서비스 중지
-                if (isInForeground) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    isInForeground = false
-                    Log.d(TAG, "Foreground service stopped explicitly.")
                 }
 
                 // 4. Flutter 측에 알림 취소 이벤트 전송 시도
@@ -1296,6 +1464,16 @@ class BusAlertService : Service() {
                     val intent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
                     context.sendBroadcast(intent)
                     Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송 (stopTracking)")
+
+                    // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+                    try {
+                        if (context is MainActivity) {
+                            context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                            Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료 (stopTracking)")
+                        }
+                    } catch (ex: Exception) {
+                        Log.e(TAG, "Flutter 메서드 채널 전송 오류 (stopTracking): ${ex.message}")
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
                 }
@@ -1333,15 +1511,38 @@ class BusAlertService : Service() {
         }
     }
 
+    // 알림 취소 (MainActivity 호출 호환)
     fun cancelNotification(id: Int) {
-        Log.d(TAG, "Cancel requested for notification ID: $id")
-        notificationHandler.cancelNotification(id)
+        Log.d(TAG, "알림 취소 요청: ID=$id")
+        try {
+            NotificationManagerCompat.from(this).cancel(id)
+            if (id == ONGOING_NOTIFICATION_ID && activeTrackings.isEmpty()) {
+                if (isInForeground) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    isInForeground = false
+                }
+                checkAndStopServiceIfNeeded()
+            }
+            Log.d(TAG, "✅ 알림 취소 완료: ID=$id")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 알림 취소 오류: ID=$id, ${e.message}")
+        }
     }
 
+    // 모든 알림 취소
     fun cancelAllNotifications() {
-        Log.i(TAG, "Cancel all notifications requested.")
-        notificationHandler.cancelAllNotifications()
-        cancelOngoingTracking()
+        Log.i(TAG, "모든 알림 취소 요청")
+        try {
+            NotificationManagerCompat.from(this).cancelAll()
+            if (isInForeground) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                isInForeground = false
+            }
+            stopAllTracking()
+            Log.d(TAG, "✅ 모든 알림 취소 및 추적 중지 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 모든 알림 취소 오류: ${e.message}")
+        }
     }
 
     private fun stopTrackingIfIdle() {
@@ -1679,30 +1880,125 @@ class BusAlertService : Service() {
         }
     }
 
-    // [ADD] Stop all tracking jobs and clean up everything (used for ACTION_STOP_TRACKING etc)
+// 모든 추적 중지
     private fun stopAllTracking() {
-        serviceScope.launch {
-            Log.i(TAG, "--- stopAllTracking called ---")
+        Log.i(TAG, "📱 --- stopAllTracking 시작 ---")
+
+        if (!isServiceActive) {
+            Log.w(TAG, "서비스가 이미 비활성 상태입니다.")
+            return
+        }
+
+        try {
+            isServiceActive = false
+            Log.d(TAG, "✅ 서비스 비활성화 플래그 설정")
+
+            // 1. 모니터링 타이머 중지
+            stopMonitoringTimer()
+            Log.d(TAG, "✅ 모니터링 타이머 중지")
+
+            // 2. TTS 추적 중지
+            stopTtsTracking(forceStop = true)
+            Log.d(TAG, "✅ TTS 추적 중지")
+
+            // 3. 개별 취소 이벤트 전송
+            Log.d(TAG, "📨 개별 취소 이벤트 전송 시작")
+            val routesToCancel = monitoredRoutes.toMap()
+            routesToCancel.forEach { (routeId, route) ->
+                try {
+                    val stationName = route.second
+                    val busNoFromTracking = activeTrackings[routeId]?.busNo ?: "unknown"
+                    sendCancellationBroadcast(busNoFromTracking, routeId, stationName)
+                    Log.d(TAG, "✅ 개별 취소 이벤트 전송: $routeId")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 개별 취소 이벤트 전송 오류: $routeId, ${e.message}")
+                }
+            }
+
+            // 4. 모든 취소 이벤트 전송
+            sendAllCancellationBroadcast()
+            Log.d(TAG, "✅ 모든 취소 이벤트 전송")
+
+            // 5. 데이터 정리
+            Log.d(TAG, "🧭 데이터 정리 시작")
+            monitoringJobs.values.forEach { it.cancel() }
+            monitoringJobs.clear()
+            activeTrackings.clear()
+            monitoredRoutes.clear()
+            cachedBusInfo.clear()
+            arrivingSoonNotified.clear()
+            hasNotifiedTts.clear()
+            hasNotifiedArrival.clear()
+            Log.d(TAG, "✅ 모든 데이터 정리 완료")
+
+            // 6. 포그라운드 서비스 먼저 중지 (노티피케이션 제거를 위해)
+            Log.d(TAG, "🚀 포그라운드 서비스 중지 시작")
             try {
-                monitoringJobs.values.forEach { it.cancel() }
+                if (isInForeground) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    isInForeground = false
+                    Log.d(TAG, "✅ 포그라운드 서비스 중지 완료")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 포그라운드 서비스 중지 오류: ${e.message}")
+            }
+
+            // 7. 모든 알림 취소 (여러 방법으로 시도)
+            Log.d(TAG, "🔔 알림 취소 시작")
+            try {
+                // 7.1. NotificationManagerCompat으로 취소
+                val notificationManagerCompat = NotificationManagerCompat.from(this)
+                notificationManagerCompat.cancelAll()
+                notificationManagerCompat.cancel(ONGOING_NOTIFICATION_ID)
+                Log.d(TAG, "✅ 모든 알림 취소 완료 (NotificationManagerCompat)")
+
+                // 7.2. NotificationManager로도 취소 (백업)
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancelAll()
+                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                Log.d(TAG, "✅ 모든 알림 취소 완료 (NotificationManager)")
+
+                // 7.3. 지연된 추가 취소 (백업)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        notificationManager.cancelAll()
+                        notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                        Log.d(TAG, "✅ 지연된 알림 취소 완료")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 지연된 알림 취소 오류: ${e.message}")
+                    }
+                }, 500)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 알림 취소 오류: ${e.message}")
+            }
+
+            // 8. 서비스 중지
+            try {
+                stopSelf()
+                Log.d(TAG, "✅ 서비스 중지 요청 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 서비스 중지 오류: ${e.message}")
+            }
+
+            Log.i(TAG, "✅ stopAllTracking 완료 - 모든 리소스 정리 완료")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ stopAllTracking 중 오류 발생: ${e.message}", e)
+            try {
+                Log.w(TAG, "⚠️ 오류 복구 시작: 최소한의 정리 작업 수행")
                 monitoringJobs.clear()
-                stopMonitoringTimer()
-                stopTtsTracking(forceStop = true)
-                monitoredRoutes.clear()
-                cachedBusInfo.clear()
-                arrivingSoonNotified.clear()
                 activeTrackings.clear()
-                Log.d(TAG, "All tracking jobs and caches cleared.");
+                monitoredRoutes.clear()
+                NotificationManagerCompat.from(this).cancelAll()
                 if (isInForeground) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     isInForeground = false
                 }
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancelAll()
-                Log.d(TAG, "All notifications cancelled (stopAllTracking)");
                 stopSelf()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in stopAllTracking: ${e.message}", e)
+                Log.w(TAG, "⚠️ 오류 복구 완료: 최소한의 정리 작업 완료")
+            } catch (cleanupError: Exception) {
+                Log.e(TAG, "❌ 오류 복구 실패: ${cleanupError.message}")
             }
         }
     }
@@ -1745,15 +2041,47 @@ class BusAlertService : Service() {
         }
     }
 
-    // [ADD] Update the foreground notification with the latest tracking info
+    // 포그라운드 알림 갱신
     private fun updateForegroundNotification() {
         try {
+            if (activeTrackings.isEmpty()) {
+                Log.d(TAG, "활성 추적 없음, 포그라운드 알림 취소")
+                NotificationManagerCompat.from(this).cancel(ONGOING_NOTIFICATION_ID)
+                if (isInForeground) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    isInForeground = false
+                }
+                checkAndStopServiceIfNeeded()
+                return
+            }
+
             val notification = notificationHandler.buildOngoingNotification(activeTrackings)
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
-            Log.d(TAG, "Foreground notification updated (updateForegroundNotification)");
+
+            // 포그라운드 서비스가 실행 중이 아니면 시작
+            if (!isInForeground) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(ONGOING_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    } else {
+                        startForeground(ONGOING_NOTIFICATION_ID, notification)
+                    }
+                    isInForeground = true
+                    Log.d(TAG, "✅ 포그라운드 서비스 시작됨 (updateForegroundNotification): ID=$ONGOING_NOTIFICATION_ID")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 포그라운드 서비스 시작 오류 (updateForegroundNotification): ${e.message}")
+                    // 포그라운드 시작 실패 시 일반 노티피케이션으로 표시
+                    val notificationManager = NotificationManagerCompat.from(this)
+                    notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
+                }
+            } else {
+                // 이미 포그라운드 서비스가 실행 중이면 노티피케이션만 업데이트
+                val notificationManager = NotificationManagerCompat.from(this)
+                notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
+            }
+
+            Log.d(TAG, "✅ 포그라운드 알림 갱신 완료")
         } catch (e: Exception) {
-            Log.e(TAG, "Error updating foreground notification: ${e.message}", e)
+            Log.e(TAG, "❌ 포그라운드 알림 갱신 오류: ${e.message}", e)
         }
     }
 
