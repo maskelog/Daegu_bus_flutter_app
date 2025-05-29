@@ -18,6 +18,7 @@ class SettingsService extends ChangeNotifier {
   static const String _kSpeakerModeKey = 'speaker_mode';
   static const String _notificationDisplayModeKey = 'notificationDisplayMode';
   static const String _kAutoAlarmVolumeKey = 'auto_alarm_volume';
+  static const String _kUseAutoAlarmKey = 'use_auto_alarm';
 
   // 스피커 모드 상수
   static const int speakerModeHeadset = 0; // 이어폰 전용
@@ -44,6 +45,7 @@ class SettingsService extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   bool _useTts = true;
   bool _vibrate = true;
+  bool _useAutoAlarm = true; // 자동 알람 사용 여부 (기본값: 사용)
   int _speakerMode = speakerModeHeadset; // 스피커 모드 변수 (기본값: 이어폰 전용)
 
   // MethodChannel 추가
@@ -63,6 +65,7 @@ class SettingsService extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   bool get useTts => _useTts;
   bool get vibrate => _vibrate;
+  bool get useAutoAlarm => _useAutoAlarm;
   int get speakerMode => _speakerMode;
   double get autoAlarmVolume => _autoAlarmVolume;
   NotificationDisplayMode get notificationDisplayMode =>
@@ -131,6 +134,7 @@ class SettingsService extends ChangeNotifier {
 
       _useTts = _prefs.getBool(_kUseTtsKey) ?? true;
       _vibrate = _prefs.getBool(_kVibrateKey) ?? true;
+      _useAutoAlarm = _prefs.getBool(_kUseAutoAlarmKey) ?? true;
       _speakerMode = _prefs.getInt(_kSpeakerModeKey) ??
           speakerModeHeadset; // 스피커 모드 로드 (기본 이어폰 전용)
 
@@ -176,6 +180,19 @@ class SettingsService extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('진동 설정 저장 오류: $e');
+    }
+  }
+
+  Future<void> updateUseAutoAlarm(bool value) async {
+    if (_useAutoAlarm == value) return;
+
+    _useAutoAlarm = value;
+
+    try {
+      await _prefs.setBool(_kUseAutoAlarmKey, value);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('자동 알람 설정 저장 오류: $e');
     }
   }
 

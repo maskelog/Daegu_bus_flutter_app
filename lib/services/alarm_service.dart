@@ -104,12 +104,12 @@ class AlarmService extends ChangeNotifier {
           // 즉시 Flutter 측 상태 동기화 (낙관적 업데이트)
           final String alarmKey = "${busNo}_${stationName}_$routeId";
           final removedAlarm = _activeAlarms.remove(alarmKey);
-          
+
           if (removedAlarm != null) {
             // 캐시 정리
             final cacheKey = "${busNo}_$routeId";
             _cachedBusInfo.remove(cacheKey);
-            
+
             // 추적 상태 업데이트
             if (_trackedRouteId == routeId) {
               _trackedRouteId = null;
@@ -120,17 +120,17 @@ class AlarmService extends ChangeNotifier {
               _isInTrackingMode = false;
               _trackedRouteId = null;
             }
-            
+
             // 상태 저장 및 UI 업데이트
             await _saveAlarms();
             notifyListeners();
-            
+
             logMessage('🐛 [DEBUG] ✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료: $alarmKey',
                 level: LogLevel.info);
           } else {
             logMessage('🐛 [DEBUG] ⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리만 수행',
                 level: LogLevel.warning);
-            
+
             // 상태 정리
             if (_activeAlarms.isEmpty && _isInTrackingMode) {
               _isInTrackingMode = false;
@@ -637,6 +637,13 @@ class AlarmService extends ChangeNotifier {
   // 자동 알람 체크 메서드 수정 (Concurrent modification 오류 해결)
   Future<void> _checkAutoAlarms() async {
     try {
+      // 자동 알람 설정이 비활성화되어 있으면 실행하지 않음
+      final settingsService = SettingsService();
+      if (!settingsService.useAutoAlarm) {
+        logMessage('⚠️ 자동 알람이 설정에서 비활성화되어 있습니다.', level: LogLevel.warning);
+        return;
+      }
+
       final now = DateTime.now();
 
       // 리스트를 복사해서 순회하여 Concurrent modification 방지
@@ -862,7 +869,7 @@ class AlarmService extends ChangeNotifier {
           backoffPolicy: BackoffPolicy.linear,
           existingWorkPolicy: ExistingWorkPolicy.replace,
         );
-        
+
         logMessage('✅ 자동 알람 즉시 실행 및 백업 작업 등록 완료: ${alarm.routeNo}번', level: LogLevel.info);
       } else {
         // 일반적인 지연 실행
@@ -923,6 +930,13 @@ class AlarmService extends ChangeNotifier {
   // 즉시 실행 자동 알람 메서드 추가
   Future<void> _executeAutoAlarmImmediately(AutoAlarm alarm) async {
     try {
+      // 자동 알람 설정이 비활성화되어 있으면 실행하지 않음
+      final settingsService = SettingsService();
+      if (!settingsService.useAutoAlarm) {
+        logMessage('⚠️ 자동 알람이 설정에서 비활성화되어 있어 실행하지 않습니다: ${alarm.routeNo}번', level: LogLevel.warning);
+        return;
+      }
+
       logMessage('⚡ 즉시 자동 알람 실행: ${alarm.routeNo}번, ${alarm.stationName}',
           level: LogLevel.info);
 
@@ -960,12 +974,12 @@ class AlarmService extends ChangeNotifier {
         currentStation: currentStation,
         useTTS: alarm.useTTS,
       );
-      
+
       // activeAlarms에 추가하여 ActiveAlarmPanel에서 표시되도록 함
       final alarmKey = "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}";
       _activeAlarms[alarmKey] = alarmData;
       await _saveAlarms();
-      
+
       logMessage('✅ 자동 알람을 activeAlarms에 추가: ${alarm.routeNo}번 ($remainingMinutes분 후)', level: LogLevel.info);
 
       // TTS 발화 (강제 스피커 모드)
@@ -989,7 +1003,7 @@ class AlarmService extends ChangeNotifier {
       }
 
       logMessage('✅ 즉시 자동 알람 실행 완료: ${alarm.routeNo}번', level: LogLevel.info);
-      
+
       // UI 업데이트
       notifyListeners();
     } catch (e) {
@@ -1519,13 +1533,13 @@ class AlarmService extends ChangeNotifier {
         try {
           await SimpleTTSHelper.initialize();
           await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
-          
+
           // 이어폰 전용 모드로 TTS 발화
           await SimpleTTSHelper.speak(
             "$busNo번 버스가 $remainingMinutes분 후 도착 예정입니다.",
             earphoneOnly: true, // 이어폰 전용 모드 명시
           );
-          
+
           logMessage('🔊 일반 알람 TTS 발화 완료 (이어폰 전용 모드, 볼륨: ${volume * 100}%)');
         } catch (e) {
           logMessage('🔊 일반 알람 TTS 발화 오료: $e', level: LogLevel.error);
@@ -1562,20 +1576,20 @@ class AlarmService extends ChangeNotifier {
   }) async {
     try {
       logMessage('🐛 [DEBUG] 특정 추적 중지 요청: $busNo번 버스, $stationName, $routeId');
-      
+
       // 1. 네이티브 서비스에 특정 추적 중지 요청
       await _methodChannel?.invokeMethod('stopSpecificTracking', {
         'busNo': busNo,
         'routeId': routeId,
         'stationName': stationName,
       });
-      
+
       // 2. Flutter 측 상태 업데이트
       await cancelAlarmByRoute(busNo, stationName, routeId);
-      
+
       logMessage('🐛 [DEBUG] ✅ 특정 추적 중지 완료: $busNo번 버스');
       return true;
-      
+
     } catch (e) {
       logMessage('❌ [ERROR] 특정 추적 중지 실패: $e', level: LogLevel.error);
       return false;
@@ -1586,34 +1600,34 @@ class AlarmService extends ChangeNotifier {
   Future<bool> stopAllTracking() async {
     try {
       logMessage('🐛 [DEBUG] 모든 추적 중지 요청: ${_activeAlarms.length}개');
-      
+
       // 1. 네이티브 서비스 완전 중지
       await _methodChannel?.invokeMethod('stopBusTrackingService');
-      
+
       // 2. TTS 추적 중지
       await _methodChannel?.invokeMethod('stopTtsTracking');
-      
+
       // 3. 모든 알림 취소
       await _notificationService.cancelAllNotifications();
-      
+
       // 4. Flutter 측 상태 완전 정리
       _activeAlarms.clear();
       _cachedBusInfo.clear();
       _isInTrackingMode = false;
       _trackedRouteId = null;
       _processedNotifications.clear();
-      
+
       // 5. 타이머 정리
       _refreshTimer?.cancel();
       _refreshTimer = null;
-      
+
       // 6. 상태 저장 및 UI 업데이트
       await _saveAlarms();
       notifyListeners();
-      
+
       logMessage('🐛 [DEBUG] ✅ 모든 추적 중지 완료');
       return true;
-      
+
     } catch (e) {
       logMessage('❌ [ERROR] 모든 추적 중지 실패: $e', level: LogLevel.error);
       return false;

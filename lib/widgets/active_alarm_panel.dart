@@ -280,45 +280,32 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     if (_activeAlarms.isEmpty) {
       return const SizedBox.shrink();
     }
+
     return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade100,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
+          // 헤더 (새로고침, 모든 알람 취소 버튼)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                onPressed: _loadActiveAlarms,
+                icon: const Icon(Icons.refresh, color: Colors.grey),
+                tooltip: '새로고침',
+                iconSize: 20,
               ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: _loadActiveAlarms,
-                      icon: Icon(Icons.refresh, color: Colors.blue.shade700),
-                      tooltip: '새로고침',
-                    ),
-                    IconButton(
-                      onPressed: _cancelAllAlarms,
-                      icon: Icon(Icons.clear_all, color: Colors.red.shade700),
-                      tooltip: '모든 알람 취소',
-                    ),
-                  ],
-                ),
-              ],
-            ),
+              IconButton(
+                onPressed: _cancelAllAlarms,
+                icon: const Icon(Icons.clear_all, color: Colors.red),
+                tooltip: '모든 알람 취소',
+                iconSize: 20,
+              ),
+            ],
           ),
+
+          // 로딩 상태 또는 알람 목록
           if (_isLoading)
             const Padding(
               padding: EdgeInsets.all(24),
@@ -328,7 +315,6 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
             ListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
               itemCount: _activeAlarms.length,
               itemBuilder: (context, index) {
                 final alarm = _activeAlarms[index];
@@ -341,127 +327,154 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
   }
 
   Widget _buildAlarmItem(AlarmInfo alarm) {
-    // Assume remaining time is fetched or approximated; here we use a placeholder
-    // In a real app, integrate with BusCard's remainingTime via AlarmManager or API
-    final double progress =
-        _progressController.value; // Placeholder for animation
-    final isArrivingSoon = progress > 0.8; // Simulate nearing arrival
-
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.1),
+            spreadRadius: 1,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.directions_bus,
-                    color: isArrivingSoon ? Colors.red : Colors.blue,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${alarm.busNo}번 버스',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        alarm.stationName,
-                        style:
-                            const TextStyle(fontSize: 14, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              IconButton(
-                onPressed: () => _cancelSpecificAlarm(alarm),
-                icon: const Icon(Icons.alarm_off),
-                color: Colors.red,
-                tooltip: '알람 취소',
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (alarm.routeId.isNotEmpty)
-            Text(
-              '노선 ID: ${alarm.routeId}',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+          // 버스 아이콘
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
             ),
-          const SizedBox(height: 8),
-          Stack(
+            child: Icon(
+              Icons.directions_bus,
+              color: Colors.blue.shade600,
+              size: 24,
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          // 버스 정보
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${alarm.busNo}번 버스',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  alarm.stationName,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 남은 시간 표시
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Container(
-                height: 6,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(3),
+              Text(
+                _getRemainingTimeText(alarm),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: _getRemainingTimeColor(alarm),
                 ),
               ),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: MediaQuery.of(context).size.width * progress * 0.85,
-                height: 6,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: isArrivingSoon
-                        ? [Colors.red, Colors.orange]
-                        : [Colors.blue, Colors.lightBlue],
-                  ),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-              Positioned(
-                left: MediaQuery.of(context).size.width * progress * 0.85 - 8,
-                top: -4,
-                child: Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: isArrivingSoon ? Colors.red : Colors.blue,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withAlpha(77),
-                        blurRadius: 2,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.directions_bus,
-                    color: Colors.white,
-                    size: 10,
-                  ),
+              const SizedBox(height: 2),
+              Text(
+                '남은 시간',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            isArrivingSoon ? '곧 도착' : '도착 예정',
-            style: TextStyle(
-              fontSize: 12,
-              color: isArrivingSoon ? Colors.red : Colors.grey,
-            ),
+
+          const SizedBox(width: 8),
+
+          // 취소 버튼
+          IconButton(
+            onPressed: () => _cancelSpecificAlarm(alarm),
+            icon: const Icon(Icons.close),
+            color: Colors.grey.shade600,
+            tooltip: '알람 취소',
+            iconSize: 20,
           ),
         ],
       ),
     );
+  }
+
+  // 남은 시간 텍스트 반환
+  String _getRemainingTimeText(AlarmInfo alarm) {
+    // 실제 구현에서는 AlarmService나 BusApiService에서 실시간 정보를 가져와야 함
+    // 여기서는 임시로 Al람 생성 시간을 기준으로 추정
+    try {
+      // AlarmService에서 실시간 버스 정보 가져오기 시도
+      final busInfo =
+          _alarmService.getCachedBusInfo(alarm.busNo, alarm.routeId);
+      if (busInfo != null) {
+        final minutes = busInfo.remainingMinutes;
+        if (minutes <= 0) {
+          return '곧 도착';
+        } else if (minutes == 1) {
+          return '1분';
+        } else {
+          return '$minutes분';
+        }
+      }
+
+      // 캐시된 정보가 없으면 알람 생성 시간 기준으로 추정 (5-15분 사이)
+      final now = DateTime.now();
+      final createdTime = alarm.createdAt;
+      final elapsedMinutes = now.difference(createdTime).inMinutes;
+
+      // 알람 생성 후 시간이 지날수록 도착 시간이 가까워진다고 가정
+      final estimatedMinutes = (10 - elapsedMinutes).clamp(0, 15);
+
+      if (estimatedMinutes <= 0) {
+        return '곧 도착';
+      } else if (estimatedMinutes == 1) {
+        return '1분';
+      } else {
+        return '$estimatedMinutes분';
+      }
+    } catch (e) {
+      return '정보 없음';
+    }
+  }
+
+  // 남은 시간에 따른 색상 반환
+  Color _getRemainingTimeColor(AlarmInfo alarm) {
+    final timeText = _getRemainingTimeText(alarm);
+
+    if (timeText == '곧 도착') {
+      return Colors.red;
+    } else if (timeText.contains('1분') ||
+        timeText.contains('2분') ||
+        timeText.contains('3분')) {
+      return Colors.orange;
+    } else {
+      return Colors.blue;
+    }
   }
 }

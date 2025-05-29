@@ -199,6 +199,15 @@ class BusAlertService : Service() {
                     }
                 }
 
+                // 자동 알람 WorkManager 작업 취소
+                try {
+                    val workManager = androidx.work.WorkManager.getInstance(this)
+                    workManager.cancelAllWorkByTag("autoAlarmTask")
+                    Log.d(TAG, "✅ 자동 알람 WorkManager 작업 취소 완료 (ACTION_STOP_TRACKING)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 자동 알람 WorkManager 작업 취소 오류 (ACTION_STOP_TRACKING): ${e.message}")
+                }
+
                 // 모든 알림 즉시 취소
                 try {
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -1428,6 +1437,16 @@ class BusAlertService : Service() {
                 monitoringJobs.clear()
                 stopMonitoringTimer()
                 stopTtsTracking(forceStop = true)
+
+                // 자동 알람 WorkManager 작업 취소
+                try {
+                    val workManager = androidx.work.WorkManager.getInstance(this@BusAlertService)
+                    workManager.cancelAllWorkByTag("autoAlarmTask")
+                    Log.d(TAG, "✅ 자동 알람 WorkManager 작업 취소 완료 (stopTracking)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 자동 알람 WorkManager 작업 취소 오류 (stopTracking): ${e.message}")
+                }
+
                 monitoredRoutes.clear()
                 cachedBusInfo.clear()
                 arrivingSoonNotified.clear()
@@ -1900,6 +1919,15 @@ class BusAlertService : Service() {
             // 2. TTS 추적 중지
             stopTtsTracking(forceStop = true)
             Log.d(TAG, "✅ TTS 추적 중지")
+
+            // 2.1. 자동 알람 WorkManager 작업 취소
+            try {
+                val workManager = androidx.work.WorkManager.getInstance(this)
+                workManager.cancelAllWorkByTag("autoAlarmTask")
+                Log.d(TAG, "✅ 자동 알람 WorkManager 작업 취소 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 자동 알람 WorkManager 작업 취소 오류: ${e.message}")
+            }
 
             // 3. 개별 취소 이벤트 전송
             Log.d(TAG, "📨 개별 취소 이벤트 전송 시작")

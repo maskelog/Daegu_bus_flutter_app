@@ -96,6 +96,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (value) => settingsService.updateVibrate(value),
                   ),
 
+                  _buildSectionHeader(context, '자동 알람 설정'),
+                  SwitchListTile(
+                    title: const Text('자동 알람 사용'),
+                    subtitle: const Text('설정된 시간에 자동으로 버스 도착 알림 (항상 스피커 출력)'),
+                    value: settingsService.useAutoAlarm,
+                    onChanged: (value) => settingsService.updateUseAutoAlarm(value),
+                  ),
+
                   _buildSectionHeader(context, '테마 설정'),
                   _buildThemeModeSelector(context, settingsService),
 
