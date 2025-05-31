@@ -232,42 +232,72 @@ class DatabaseHelper {
     }
   }
 
-  // ✅ wincId로 stationId 조회하는 메서드 개선
-  Future<String?> getStationIdFromWincId(String wincId) async {
+  // ✅ wincId 또는 정류장 이름으로 stationId 조회하는 메서드 개선
+  Future<String?> getStationIdFromWincId(String searchValue) async {
     final db = await database;
     try {
-      // bsId 컬럼으로 검색 (wincId와 bsId는 일반적으로 동일)
+      // 1. bsId 컬럼으로 검색 (wincId와 bsId는 일반적으로 동일)
       final List<Map<String, dynamic>> maps = await db.query(
         'bus_stops',
         columns: ['stationId'],
         where: 'bsId = ?',
-        whereArgs: [wincId],
+        whereArgs: [searchValue],
       );
 
       if (maps.isNotEmpty) {
         final stationId = maps.first['stationId']?.toString();
-        debugPrint('✅ wincId $wincId → stationId $stationId');
+        debugPrint('✅ bsId $searchValue → stationId $stationId');
         return stationId;
       }
 
-      // bsId로 찾지 못한 경우 wincId 컬럼으로도 시도
+      // 2. bsId로 찾지 못한 경우 wincId 컬럼으로도 시도
       final List<Map<String, dynamic>> maps2 = await db.query(
         'bus_stops',
         columns: ['stationId'],
         where: 'wincId = ?',
-        whereArgs: [wincId],
+        whereArgs: [searchValue],
       );
 
       if (maps2.isNotEmpty) {
         final stationId = maps2.first['stationId']?.toString();
-        debugPrint('✅ wincId $wincId → stationId $stationId (wincId 컬럼 사용)');
+        debugPrint(
+            '✅ wincId $searchValue → stationId $stationId (wincId 컬럼 사용)');
         return stationId;
       }
 
-      debugPrint('⚠️ wincId $wincId에 해당하는 stationId를 찾을 수 없습니다');
+      // 3. 정류장 이름으로 검색 (정확히 일치하는 경우)
+      final List<Map<String, dynamic>> maps3 = await db.query(
+        'bus_stops',
+        columns: ['stationId'],
+        where: 'stop_name = ?',
+        whereArgs: [searchValue],
+      );
+
+      if (maps3.isNotEmpty) {
+        final stationId = maps3.first['stationId']?.toString();
+        debugPrint('✅ 정류장 이름 $searchValue → stationId $stationId');
+        return stationId;
+      }
+
+      // 4. 정류장 이름으로 유사 검색 (LIKE 사용)
+      final List<Map<String, dynamic>> maps4 = await db.query(
+        'bus_stops',
+        columns: ['stationId'],
+        where: 'stop_name LIKE ?',
+        whereArgs: ['%$searchValue%'],
+        limit: 1,
+      );
+
+      if (maps4.isNotEmpty) {
+        final stationId = maps4.first['stationId']?.toString();
+        debugPrint('✅ 정류장 이름 유사검색 $searchValue → stationId $stationId');
+        return stationId;
+      }
+
+      debugPrint('⚠️ $searchValue에 해당하는 stationId를 찾을 수 없습니다');
       return null;
     } catch (e) {
-      debugPrint('❌ wincId → stationId 변환 오류: $e');
+      debugPrint('❌ $searchValue → stationId 변환 오류: $e');
       return null;
     }
   }

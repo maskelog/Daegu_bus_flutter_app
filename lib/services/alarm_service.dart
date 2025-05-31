@@ -98,7 +98,8 @@ class AlarmService extends ChangeNotifier {
           final String routeId = args['routeId'] ?? '';
           final String stationName = args['stationName'] ?? '';
 
-          logMessage('🐛 [DEBUG] 네이티브에서 특정 알람 취소 이벤트 수신: $busNo, $stationName, $routeId',
+          logMessage(
+              '🐛 [DEBUG] 네이티브에서 특정 알람 취소 이벤트 수신: $busNo, $stationName, $routeId',
               level: LogLevel.info);
 
           // 즉시 Flutter 측 상태 동기화 (낙관적 업데이트)
@@ -128,7 +129,8 @@ class AlarmService extends ChangeNotifier {
             logMessage('🐛 [DEBUG] ✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료: $alarmKey',
                 level: LogLevel.info);
           } else {
-            logMessage('🐛 [DEBUG] ⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리만 수행',
+            logMessage(
+                '🐛 [DEBUG] ⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리만 수행',
                 level: LogLevel.warning);
 
             // 상태 정리
@@ -658,12 +660,31 @@ class AlarmService extends ChangeNotifier {
               '⚡ 자동 알람 시간 임박: ${alarm.busNo}번, ${timeUntilAlarm.inMinutes}분 남음',
               level: LogLevel.info);
 
+          // 올바른 stationId 가져오기
+          String effectiveStationId = alarm.routeId;
+          try {
+            final dbHelper = DatabaseHelper();
+            final resolvedStationId =
+                await dbHelper.getStationIdFromWincId(alarm.stationName);
+            if (resolvedStationId != null && resolvedStationId.isNotEmpty) {
+              effectiveStationId = resolvedStationId;
+              logMessage(
+                  '✅ 자동 알람 stationId 보정: ${alarm.stationName} → $effectiveStationId',
+                  level: LogLevel.debug);
+            } else {
+              logMessage('⚠️ stationId 보정 실패, 기본값 사용: ${alarm.stationName}',
+                  level: LogLevel.warning);
+            }
+          } catch (e) {
+            logMessage('❌ stationId 보정 중 오류: $e', level: LogLevel.error);
+          }
+
           // AutoAlarm 객체로 변환
           final autoAlarm = AutoAlarm(
             id: alarm.getAlarmId().toString(),
             routeNo: alarm.busNo,
             stationName: alarm.stationName,
-            stationId: alarm.routeId, // 임시 대안
+            stationId: effectiveStationId, // 올바른 stationId 사용
             routeId: alarm.routeId,
             hour: alarm.scheduledTime.hour,
             minute: alarm.scheduledTime.minute,
@@ -846,7 +867,8 @@ class AlarmService extends ChangeNotifier {
         await Workmanager().registerOneOffTask(
           uniqueId,
           'autoAlarmTask',
-          initialDelay: executionDelay.isNegative ? Duration.zero : executionDelay,
+          initialDelay:
+              executionDelay.isNegative ? Duration.zero : executionDelay,
           inputData: {
             'alarmId': id,
             'busNo': alarm.routeNo,
@@ -870,7 +892,8 @@ class AlarmService extends ChangeNotifier {
           existingWorkPolicy: ExistingWorkPolicy.replace,
         );
 
-        logMessage('✅ 자동 알람 즉시 실행 및 백업 작업 등록 완료: ${alarm.routeNo}번', level: LogLevel.info);
+        logMessage('✅ 자동 알람 즉시 실행 및 백업 작업 등록 완료: ${alarm.routeNo}번',
+            level: LogLevel.info);
       } else {
         // 일반적인 지연 실행
         await Workmanager().registerOneOffTask(
@@ -918,7 +941,9 @@ class AlarmService extends ChangeNotifier {
       // 2분 후 백업 알람 등록 (즉시 실행되지 않은 경우만)
       if (executionDelay.inMinutes > 2) {
         _scheduleBackupAlarm(alarm, id, scheduledTime);
-        logMessage('✅ 백업 알람 등록: ${alarm.routeNo}번, ${executionDelay.inMinutes}분 후 실행', level: LogLevel.info);
+        logMessage(
+            '✅ 백업 알람 등록: ${alarm.routeNo}번, ${executionDelay.inMinutes}분 후 실행',
+            level: LogLevel.info);
       }
     } catch (e) {
       logMessage('❌ 자동 알람 예약 오류: $e', level: LogLevel.error);
@@ -933,7 +958,8 @@ class AlarmService extends ChangeNotifier {
       // 자동 알람 설정이 비활성화되어 있으면 실행하지 않음
       final settingsService = SettingsService();
       if (!settingsService.useAutoAlarm) {
-        logMessage('⚠️ 자동 알람이 설정에서 비활성화되어 있어 실행하지 않습니다: ${alarm.routeNo}번', level: LogLevel.warning);
+        logMessage('⚠️ 자동 알람이 설정에서 비활성화되어 있어 실행하지 않습니다: ${alarm.routeNo}번',
+            level: LogLevel.warning);
         return;
       }
 
@@ -970,7 +996,8 @@ class AlarmService extends ChangeNotifier {
         stationName: alarm.stationName,
         remainingMinutes: remainingMinutes,
         routeId: alarm.routeId,
-        scheduledTime: DateTime.now().add(Duration(minutes: remainingMinutes.clamp(0, 60))),
+        scheduledTime: DateTime.now()
+            .add(Duration(minutes: remainingMinutes.clamp(0, 60))),
         currentStation: currentStation,
         useTTS: alarm.useTTS,
       );
@@ -980,27 +1007,12 @@ class AlarmService extends ChangeNotifier {
       _activeAlarms[alarmKey] = alarmData;
       await _saveAlarms();
 
-      logMessage('✅ 자동 알람을 activeAlarms에 추가: ${alarm.routeNo}번 ($remainingMinutes분 후)', level: LogLevel.info);
+      logMessage(
+          '✅ 자동 알람을 activeAlarms에 추가: ${alarm.routeNo}번 ($remainingMinutes분 후)',
+          level: LogLevel.info);
 
-      // TTS 발화 (강제 스피커 모드)
-      if (alarm.useTTS) {
-        try {
-          await SimpleTTSHelper.initialize();
-
-          // 자동 알람용 TTS 발화
-          await SimpleTTSHelper.speakBusAlert(
-            busNo: alarm.routeNo,
-            stationName: alarm.stationName,
-            remainingMinutes: remainingMinutes,
-            currentStation: currentStation,
-            isAutoAlarm: true, // 자동 알람 플래그 설정
-          );
-
-          logMessage('🔊 자동 알람 TTS 발화 완료 (강제 스피커 모드)', level: LogLevel.info);
-        } catch (e) {
-          logMessage('❌ 자동 알람 TTS 발화 오류: $e', level: LogLevel.error);
-        }
-      }
+      // TTS는 WorkManager(AutoAlarmWorker)에서 처리하므로 여기서는 제거
+      // 중복 TTS 방지
 
       logMessage('✅ 즉시 자동 알람 실행 완료: ${alarm.routeNo}번', level: LogLevel.info);
 
@@ -1190,7 +1202,8 @@ class AlarmService extends ChangeNotifier {
           logMessage('  ⚡ 알람 시간이 지났음 - 즉시 실행 (${timeUntilAlarm.inMinutes}분)');
           await _executeAutoAlarmImmediately(alarm);
         } else if (timeUntilAlarm.inMinutes <= 10) {
-          logMessage('  ⏰ 10분 이내 알람 - 예약만 등록, 정확한 시간에 실행됨 (${timeUntilAlarm.inMinutes}분 남음)');
+          logMessage(
+              '  ⏰ 10분 이내 알람 - 예약만 등록, 정확한 시간에 실행됨 (${timeUntilAlarm.inMinutes}분 남음)');
           // 예약만 하고 즉시 실행하지 않음 - 정확한 시간에 WorkManager가 실행
         } else {
           logMessage('  ⏰ 알람 예약: ${timeUntilAlarm.inMinutes}분 후 실행');
@@ -1589,7 +1602,6 @@ class AlarmService extends ChangeNotifier {
 
       logMessage('🐛 [DEBUG] ✅ 특정 추적 중지 완료: $busNo번 버스');
       return true;
-
     } catch (e) {
       logMessage('❌ [ERROR] 특정 추적 중지 실패: $e', level: LogLevel.error);
       return false;
@@ -1627,7 +1639,6 @@ class AlarmService extends ChangeNotifier {
 
       logMessage('🐛 [DEBUG] ✅ 모든 추적 중지 완료');
       return true;
-
     } catch (e) {
       logMessage('❌ [ERROR] 모든 추적 중지 실패: $e', level: LogLevel.error);
       return false;

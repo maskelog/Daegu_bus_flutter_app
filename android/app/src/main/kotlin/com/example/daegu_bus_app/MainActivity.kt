@@ -280,16 +280,16 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         val busNo = call.argument<String>("busNo") ?: ""
                         val stationName = call.argument<String>("stationName") ?: ""
                         val routeId = call.argument<String>("routeId") ?: ""
-                        
+
                         Log.d(TAG, "Flutter에서 버스 추적 서비스 시작 요청: $busNo, $stationName, $routeId")
-                        
+
                         val intent = Intent(this, BusAlertService::class.java).apply {
                             action = "com.example.daegu_bus_app.action.START_TRACKING"
                             putExtra("busNo", busNo)
                             putExtra("stationName", stationName)
                             putExtra("routeId", routeId)
                         }
-                        
+
                         try {
                             startForegroundService(intent)
                             result.success(true)
@@ -298,27 +298,27 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             result.error("SERVICE_ERROR", "서비스 시작 실패: ${e.message}", null)
                         }
                     }
-                    
+
                     "stopBusTrackingService" -> {
                         Log.d(TAG, "Flutter에서 버스 추적 서비스 중지 요청")
                         stopBusTrackingService()
                         result.success(true)
                     }
-                    
+
                     "stopSpecificTracking" -> {
                         val busNo = call.argument<String>("busNo") ?: ""
                         val routeId = call.argument<String>("routeId") ?: ""
                         val stationName = call.argument<String>("stationName") ?: ""
-                        
+
                         Log.d(TAG, "특정 버스 추적 중지 요청: $busNo, $routeId, $stationName")
                         stopSpecificTracking(busNo, routeId, stationName)
                         result.success(true)
                     }
-                    
+
                     else -> result.notImplemented()
                 }
             }
-            
+
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL).setMethodCallHandler { call, result ->
                 when (call.method) {
                     "cancelAlarmNotification" -> {
@@ -1051,7 +1051,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 val title = "$busNo 번 버스 도착 임박"
                                 val contentText = "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
                                 val subText = if (currentStation != null) "현재 위치: $currentStation" else null
-                                
+
                                 val builder = NotificationCompat.Builder(this, ALARM_NOTIFICATION_CHANNEL_ID)
                                     .setContentTitle(title)
                                     .setContentText(contentText)
@@ -1061,7 +1061,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                     .setAutoCancel(true)
                                     .setDefaults(NotificationCompat.DEFAULT_ALL)
                                 if (subText != null) builder.setSubText(subText)
-                                
+
                                 val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                                 notificationManager.notify(busNo.hashCode(), builder.build())
                                 Log.d(TAG, "도착 임박 알림 표시 (대안 방법)")
@@ -1179,14 +1179,21 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     "speakTTS" -> {
                         val message = call.argument<String>("message") ?: ""
                         val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false
+                        val forceSpeaker = call.argument<Boolean>("forceSpeaker") ?: false
                         if (message.isEmpty()) {
                              result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
                              return@setMethodCallHandler
                         }
                         try {
                             if (busAlertService != null) {
-                                // BusAlertService의 speakTts 호출 (오디오 포커스 관리 포함)
-                                busAlertService?.speakTts(message, earphoneOnly = isHeadphoneMode)
+                                // 강제 스피커 모드인 경우 이어폰 체크 무시
+                                if (forceSpeaker) {
+                                    Log.d(TAG, "🔊 강제 스피커 모드로 TTS 발화: $message")
+                                    busAlertService?.speakTts(message, earphoneOnly = false, forceSpeaker = true)
+                                } else {
+                                    // BusAlertService의 speakTts 호출 (오디오 포커스 관리 포함)
+                                    busAlertService?.speakTts(message, earphoneOnly = isHeadphoneMode, forceSpeaker = false)
+                                }
                             } else {
                                 // BusAlertService가 null인 경우 MainActivity의 TTS 사용
                                 if (::tts.isInitialized) {
@@ -1909,37 +1916,37 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             Log.e(TAG, "NotificationCancelReceiver 해제 중 예외 발생: ${e.message}", e)
         }
     }
-    
+
     // 노티피케이션 완전 중지
     private fun stopBusTrackingService() {
         Log.d(TAG, "버스 추적 서비스 완전 중지 시작")
-        
+
         try {
             // 1. 서비스에 중지 명령 전송
             val stopIntent = Intent(this, BusAlertService::class.java).apply {
                 action = "com.example.daegu_bus_app.action.STOP_TRACKING"
             }
             startService(stopIntent)
-            
+
             // 2. 서비스 강제 중지
             val serviceIntent = Intent(this, BusAlertService::class.java)
             stopService(serviceIntent)
-            
+
             // 3. 모든 알림 취소
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancelAll()
-            
+
             Log.d(TAG, "버스 추적 서비스 완전 중지 완료")
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "서비스 중지 중 오류 발생", e)
         }
     }
-    
+
     // 특정 버스 추적 중지
     private fun stopSpecificTracking(busNo: String, routeId: String, stationName: String) {
         Log.d(TAG, "특정 버스 추적 중지: $busNo, $routeId, $stationName")
-        
+
         try {
             val intent = Intent(this, BusAlertService::class.java).apply {
                 action = "com.example.daegu_bus_app.action.STOP_SPECIFIC_TRACKING"
@@ -1948,12 +1955,12 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 putExtra("stationName", stationName)
             }
             startService(intent)
-            
+
             Log.d(TAG, "특정 버스 추적 중지 명령 전송 완료")
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "특정 추적 중지 중 오류 발생", e)
-        
+
         }
     }
 

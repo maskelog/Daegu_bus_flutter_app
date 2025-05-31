@@ -168,22 +168,8 @@ class SimpleTTSHelper {
 
       logMessage('✅ 네이티브 TTS 발화 요청 성공: $result', level: LogLevel.info);
 
-      // 강제 모드인 경우 5초 후 한 번 더 시도
-      if (force) {
-        Future.delayed(const Duration(seconds: 5), () async {
-          try {
-            await _ttsChannel.invokeMethod('speakTTS', {
-              'message': message,
-              'isHeadphoneMode': false,
-              'forceSpeaker': true,
-              'volume': 1.0,
-            });
-            logMessage('✅ 백업 네이티브 TTS 발화 요청 성공 (5초 후)', level: LogLevel.info);
-          } catch (e) {
-            logMessage('❌ 백업 네이티브 TTS 발화 오류: $e', level: LogLevel.error);
-          }
-        });
-      }
+      // 강제 모드인 경우 백업 TTS는 실행하지 않음 (중복 방지)
+      // 자동알람의 경우 TTSService에서 별도로 백업 TTS를 처리함
 
       return true;
     } catch (e) {
@@ -220,18 +206,8 @@ class SimpleTTSHelper {
       logMessage('✅ Flutter TTS 발화 시작: $message (force=$force)',
           level: LogLevel.info);
 
-      // 강제 모드인 경우 5초 후 한 번 더 시도
-      if (force) {
-        Future.delayed(const Duration(seconds: 5), () async {
-          try {
-            await _flutterTts?.stop();
-            await _flutterTts?.speak(message);
-            logMessage('✅ 백업 Flutter TTS 발화 시작 (5초 후)', level: LogLevel.info);
-          } catch (e) {
-            logMessage('❌ 백업 Flutter TTS 발화 오류: $e', level: LogLevel.error);
-          }
-        });
-      }
+      // 강제 모드인 경우 백업 TTS는 실행하지 않음 (중복 방지)
+      // 자동알람의 경우 TTSService에서 별도로 백업 TTS를 처리함
 
       return true;
     } catch (e) {

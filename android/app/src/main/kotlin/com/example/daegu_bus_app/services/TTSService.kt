@@ -318,20 +318,20 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
 
             // 볼륨 최대화 (자동 알람인 경우)
             if (forceSpeaker) {
-                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
                 audioManager.setStreamVolume(
-                    AudioManager.STREAM_MUSIC,
+                    AudioManager.STREAM_ALARM,
                     (maxVolume * 0.9).toInt(), // 최대 볼륨의 90%
                     0
                 )
-                Log.d(TAG, "🔊 자동 알람 볼륨 설정: ${(maxVolume * 0.9).toInt()}/${maxVolume}")
+                Log.d(TAG, "🔊 자동 알람 볼륨 설정 (STREAM_ALARM): ${(maxVolume * 0.9).toInt()}/${maxVolume}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "❌ 오디오 설정 오류: ${e.message}")
         }
 
         // TTS 파라미터 설정
-        val streamType = AudioManager.STREAM_MUSIC
+        val streamType = if (forceSpeaker) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
         val utteranceId = "tts_${System.currentTimeMillis()}"
         val volume = if (forceSpeaker) 1.0f else getTtsVolume()
 
@@ -351,7 +351,8 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         }
 
         // TTS 발화
-        Log.i(TAG, "🔊 TTS 발화: $message, 스피커=$useSpeaker, 볼륨=$volume, forceSpeaker=$forceSpeaker")
+        val streamName = if (streamType == AudioManager.STREAM_ALARM) "ALARM" else "MUSIC"
+        Log.i(TAG, "🔊 TTS 발화: $message, 스피커=$useSpeaker, 볼륨=$volume, forceSpeaker=$forceSpeaker, 스트림=$streamName")
         try {
             tts?.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
         } catch (e: Exception) {

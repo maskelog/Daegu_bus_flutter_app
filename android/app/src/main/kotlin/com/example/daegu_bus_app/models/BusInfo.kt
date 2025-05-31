@@ -39,44 +39,44 @@ data class BusInfo(
     fun getRemainingMinutes(): Int {
         return try {
             val timeStr = estimatedTime.trim()
-            
+
             // 빈 문자열이나 null 체크
             if (timeStr.isEmpty() || timeStr == "null") {
                 return -1
             }
-            
+
             // 곧 도착 관련
-            if (timeStr == "곧 도착" || timeStr == "전" || timeStr == "도착" || timeStr == "곧") {
+            if (timeStr == "곧 도착" || timeStr == "전" || timeStr == "전전" || timeStr == "도착" || timeStr == "곧") {
                 return 0
             }
-            
+
             // 운행 종료 관련
             if (timeStr == "운행종료" || timeStr == "-" || timeStr.contains("종료")) {
                 return -1
             }
-            
+
             // 출발 예정 관련
             if (timeStr.contains("출발예정") || timeStr.contains("기점출발") || timeStr.contains("출발")) {
                 return -1
             }
-            
+
             // "분" 제거 후 숫자 추출
             val cleanTimeStr = timeStr.replace("분", "").replace("약", "").trim()
-            
+
             // 숫자만 추출
             val numericValue = cleanTimeStr.replace("[^0-9]".toRegex(), "")
-            
+
             if (numericValue.isNotEmpty()) {
                 val minutes = numericValue.toIntOrNull()
                 if (minutes != null && minutes >= 0 && minutes <= 180) { // 3시간 이내만 유효
                     return minutes
                 }
             }
-            
+
             // 파싱할 수 없는 경우
             android.util.Log.w("BusInfo", "⚠️ 파싱할 수 없는 시간 형식: '$timeStr'")
             return -1
-            
+
         } catch (e: Exception) {
             android.util.Log.e("BusInfo", "❌ getRemainingMinutes 오류: ${e.message}")
             return -1
@@ -125,9 +125,9 @@ data class BusInfo(
     // 유효한 버스 정보인지 확인 메서드
     fun isValid(): Boolean {
         return try {
-            !estimatedTime.isNullOrEmpty() && 
-            estimatedTime != "null" && 
-            !currentStation.isNullOrEmpty() && 
+            !estimatedTime.isNullOrEmpty() &&
+            estimatedTime != "null" &&
+            !currentStation.isNullOrEmpty() &&
             currentStation != "null" &&
             !isOutOfService
         } catch (e: Exception) {
@@ -143,4 +143,4 @@ data class BusInfo(
             "BusInfo(parsing_error: ${e.message})"
         }
     }
-} 
+}
