@@ -179,9 +179,9 @@ class AlarmService extends ChangeNotifier {
       await loadAutoAlarms();
 
       _alarmCheckTimer?.cancel();
-      _alarmCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _alarmCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
         refreshAlarms();
-        _checkAutoAlarms(); // 자동 알람 체크 추가
+        _checkAutoAlarms(); // 자동 알람 체크 추가 (15초마다 정밀 체크)
       });
 
       _initialized = true;
@@ -652,16 +652,21 @@ class AlarmService extends ChangeNotifier {
       final alarmsCopy = List<alarm_model.AlarmData>.from(_autoAlarms);
 
       for (var alarm in alarmsCopy) {
-        // 알람 시간이 지났거나 지난 자동 알람 확인 (음수값만)
+        // 알람 시간이 정확히 지났는지 확인 (초 단위로 정밀 체크)
         final timeUntilAlarm = alarm.scheduledTime.difference(now);
 
-        if (timeUntilAlarm.inMinutes <= 0 && timeUntilAlarm.inMinutes >= -5) {
+        // 알람 시간이 지났거나 30초 이내인 경우만 실행
+        if (timeUntilAlarm.inSeconds <= 30 &&
+            timeUntilAlarm.inSeconds >= -300) {
           logMessage(
-              '⚡ 자동 알람 시간 임박: ${alarm.busNo}번, ${timeUntilAlarm.inMinutes}분 남음',
+              '⚡ 자동 알람 시간 임박: ${alarm.busNo}번, ${timeUntilAlarm.inSeconds}초 남음',
               level: LogLevel.info);
 
-          // 올바른 stationId 가져오기
-          String effectiveStationId = alarm.routeId;
+          // 올바른 stationId 가져오기 (DB 실패 시 매핑 사용)
+          String effectiveStationId =
+              _getStationIdFromName(alarm.stationName, alarm.routeId);
+
+          // DB를 통한 추가 보정 시도 (선택사항)
           try {
             final dbHelper = DatabaseHelper();
             final resolvedStationId =
@@ -669,14 +674,17 @@ class AlarmService extends ChangeNotifier {
             if (resolvedStationId != null && resolvedStationId.isNotEmpty) {
               effectiveStationId = resolvedStationId;
               logMessage(
-                  '✅ 자동 알람 stationId 보정: ${alarm.stationName} → $effectiveStationId',
+                  '✅ 자동 알람 DB stationId 보정: ${alarm.stationName} → $effectiveStationId',
                   level: LogLevel.debug);
             } else {
-              logMessage('⚠️ stationId 보정 실패, 기본값 사용: ${alarm.stationName}',
-                  level: LogLevel.warning);
+              logMessage(
+                  '⚠️ DB stationId 보정 실패, 매핑값 사용: ${alarm.stationName} → $effectiveStationId',
+                  level: LogLevel.debug);
             }
           } catch (e) {
-            logMessage('❌ stationId 보정 중 오류: $e', level: LogLevel.error);
+            logMessage(
+                '❌ DB stationId 보정 중 오류, 매핑값 사용: $e → $effectiveStationId',
+                level: LogLevel.warning);
           }
 
           // AutoAlarm 객체로 변환
@@ -853,11 +861,11 @@ class AlarmService extends ChangeNotifier {
       // 백업 ID 사용 - 충돌 방지
       final uniqueId = 'autoAlarm_${id}_${now.millisecondsSinceEpoch}';
 
-      // 예약 시간에 정확히 실행되도록 수정 (즉시 실행 제거)
-      // 음수 딜레이는 즉시 실행하지만, 양수 딜레이는 모두 예약 실행
-      if (executionDelay.isNegative || executionDelay.inSeconds <= 30) {
+      // 예약 시간에 정확히 실행되도록 수정 (즉시 실행 조건 완화)
+      // 음수 딜레이나 2분 이내는 즉시 실행하여 정확한 시간 보장
+      if (executionDelay.isNegative || executionDelay.inMinutes <= 2) {
         logMessage(
-            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inSeconds}초 (이미 지났거나 30초 이내)',
+            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inMinutes}분 (이미 지났거나 2분 이내)',
             level: LogLevel.info);
 
         // 즉시 알람 실행
@@ -1011,8 +1019,21 @@ class AlarmService extends ChangeNotifier {
           '✅ 자동 알람을 activeAlarms에 추가: ${alarm.routeNo}번 ($remainingMinutes분 후)',
           level: LogLevel.info);
 
-      // TTS는 WorkManager(AutoAlarmWorker)에서 처리하므로 여기서는 제거
-      // 중복 TTS 방지
+      // 즉시 실행 자동 알람에서는 TTS도 즉시 실행 (정확한 시간 보장)
+      if (alarm.useTTS) {
+        try {
+          await SimpleTTSHelper.speakBusAlert(
+            busNo: alarm.routeNo,
+            stationName: alarm.stationName,
+            remainingMinutes: remainingMinutes,
+            currentStation: currentStation,
+            isAutoAlarm: true, // 자동 알람 플래그 설정
+          );
+          logMessage('🔊 즉시 자동 알람 TTS 발화 완료 (강제 스피커 모드)', level: LogLevel.info);
+        } catch (e) {
+          logMessage('❌ 즉시 자동 알람 TTS 발화 오류: $e', level: LogLevel.error);
+        }
+      }
 
       logMessage('✅ 즉시 자동 알람 실행 완료: ${alarm.routeNo}번', level: LogLevel.info);
 
@@ -1263,11 +1284,18 @@ class AlarmService extends ChangeNotifier {
           repeatDays = [1, 2, 3, 4, 5];
         }
 
+        // stationId 보정 - 정류장 이름 기반 매핑
+        String effectiveStationId =
+            _getStationIdFromName(alarm.stationName, alarm.routeId);
+        logMessage(
+            '✅ 자동 알람 저장 시 stationId 보정: ${alarm.stationName} → $effectiveStationId',
+            level: LogLevel.debug);
+
         final autoAlarm = AutoAlarm(
           id: alarm.getAlarmId().toString(),
           routeNo: alarm.busNo,
           stationName: alarm.stationName,
-          stationId: alarm.routeId,
+          stationId: effectiveStationId, // 보정된 stationId 사용
           routeId: alarm.routeId,
           hour: alarm.scheduledTime.hour,
           minute: alarm.scheduledTime.minute,
@@ -1738,11 +1766,16 @@ class AlarmService extends ChangeNotifier {
           '🔄 자동 알람 버스 정보 업데이트 시작: [36m${alarm.routeNo}번, ${alarm.stationName}[0m',
           level: LogLevel.debug);
 
-      // ✅ stationId 보정 로직 개선
+      // ✅ stationId 보정 로직 개선 (DB 실패 시 매핑 사용)
       String effectiveStationId = alarm.stationId;
       if (effectiveStationId.isEmpty ||
           effectiveStationId.length < 10 ||
           !effectiveStationId.startsWith('7')) {
+        // 먼저 매핑을 통해 stationId 가져오기
+        effectiveStationId =
+            _getStationIdFromName(alarm.stationName, alarm.routeId);
+
+        // DB를 통한 추가 보정 시도 (선택사항)
         try {
           final dbHelper = DatabaseHelper();
           final resolvedStationId =
@@ -1750,15 +1783,22 @@ class AlarmService extends ChangeNotifier {
           if (resolvedStationId != null && resolvedStationId.isNotEmpty) {
             effectiveStationId = resolvedStationId;
             logMessage(
-                '✅ 자동 알람 stationId 보정: ${alarm.stationName} → $effectiveStationId',
+                '✅ 자동 알람 DB stationId 보정: ${alarm.stationName} → $effectiveStationId',
                 level: LogLevel.debug);
           } else {
-            logMessage('⚠️ stationId 보정 실패: ${alarm.stationName}',
-                level: LogLevel.warning);
-            return false;
+            logMessage(
+                '⚠️ DB stationId 보정 실패, 매핑값 사용: ${alarm.stationName} → $effectiveStationId',
+                level: LogLevel.debug);
           }
         } catch (e) {
-          logMessage('❌ stationId 보정 중 오류: $e', level: LogLevel.error);
+          logMessage('❌ DB stationId 보정 중 오류, 매핑값 사용: $e → $effectiveStationId',
+              level: LogLevel.warning);
+        }
+
+        // 매핑도 실패한 경우에만 오류 처리
+        if (effectiveStationId.isEmpty || effectiveStationId == alarm.routeId) {
+          logMessage('❌ stationId 보정 완전 실패: ${alarm.stationName}',
+              level: LogLevel.error);
           return false;
         }
       }
@@ -1992,5 +2032,36 @@ class AlarmService extends ChangeNotifier {
 
     logMessage('⚠️ 파싱할 수 없는 도착 시간 형식: "$timeStr"', level: LogLevel.warning);
     return -1;
+  }
+
+  /// 정류장 이름으로 stationId 매핑
+  String _getStationIdFromName(String stationName, String fallbackRouteId) {
+    // 알려진 정류장 이름과 stationId 매핑
+    final Map<String, String> stationMapping = {
+      '새동네아파트앞': '7021024000',
+      '새동네아파트건너': '7021023900',
+      '칠성고가도로하단': '7021051300',
+      '대구삼성창조캠퍼스3': '7021011000',
+      '대구삼성창조캠퍼스': '7021011200',
+      '동대구역': '7021052100',
+      '동대구역건너': '7021052000',
+      '경명여고건너': '7021024200',
+      '경명여고': '7021024100',
+    };
+
+    // 정확한 매칭 시도
+    if (stationMapping.containsKey(stationName)) {
+      return stationMapping[stationName]!;
+    }
+
+    // 부분 매칭 시도
+    for (var entry in stationMapping.entries) {
+      if (stationName.contains(entry.key) || entry.key.contains(stationName)) {
+        return entry.value;
+      }
+    }
+
+    // 매칭 실패 시 fallback 사용
+    return fallbackRouteId;
   }
 }

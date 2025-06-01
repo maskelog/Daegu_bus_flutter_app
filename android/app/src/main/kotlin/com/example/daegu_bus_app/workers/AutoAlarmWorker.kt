@@ -181,55 +181,64 @@ class AutoAlarmWorker(
 
                 Log.i(TAG, "🗣️ TTS 메시지: $ttsMessage")
 
-                // 자동 알람용 TTS 서비스 시작 (강제 스피커 모드)
-                val ttsIntent = Intent(applicationContext, TTSService::class.java).apply {
-                    action = "REPEAT_TTS_ALERT"
-                    putExtra("busNo", busNo)
-                    putExtra("stationName", stationName)
-                    putExtra("routeId", routeId)
-                    putExtra("stationId", stationId)
-                    putExtra("remainingMinutes", fetchedMinutes ?: 0)
-                    putExtra("currentStation", fetchedStation ?: "")
-                    putExtra("isAutoAlarm", true)  // 자동 알람 플래그 추가
-                    putExtra("forceSpeaker", true) // 강제 스피커 모드 플래그 추가
-                    putExtra("ttsMessage", ttsMessage) // TTS 메시지 직접 전달
-                }
+                // 즉시 실행된 알람인지 확인 (중복 TTS 방지)
+                val scheduledFor = inputData.getLong("scheduledFor", 0L)
+                val currentTime = System.currentTimeMillis()
+                val isImmediate = (currentTime - scheduledFor) > -120000L // 2분 이내면 즉시 실행으로 간주
 
-                // 서비스 시작
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    applicationContext.startForegroundService(ttsIntent)
+                if (isImmediate) {
+                    Log.d(TAG, "⏰ [AutoAlarm] 즉시 실행된 알람 - TTS 건너뛰기 (중복 방지)")
                 } else {
-                    applicationContext.startService(ttsIntent)
-                }
-                Log.d(TAG, "✅ 자동 알람 TTSService 시작 요청 완료 (강제 스피커 모드)")
-
-                // 백업 TTS는 한 번만 실행 (5초 후)
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    try {
-                        val backupTtsIntent = Intent(applicationContext, TTSService::class.java).apply {
-                            action = "REPEAT_TTS_ALERT"
-                            putExtra("busNo", busNo)
-                            putExtra("stationName", stationName)
-                            putExtra("routeId", routeId)
-                            putExtra("stationId", stationId)
-                            putExtra("remainingMinutes", fetchedMinutes ?: 0)
-                            putExtra("currentStation", fetchedStation ?: "")
-                            putExtra("isAutoAlarm", true)
-                            putExtra("forceSpeaker", true)
-                            putExtra("ttsMessage", ttsMessage)
-                            putExtra("isBackup", true)
-                            putExtra("backupNumber", 1)
-                        }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            applicationContext.startForegroundService(backupTtsIntent)
-                        } else {
-                            applicationContext.startService(backupTtsIntent)
-                        }
-                        Log.d(TAG, "✅ 백업 TTSService 시작 요청 완료 (5초 후)")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ 백업 TTSService 시작 중 오류: ${e.message}", e)
+                    // 자동 알람용 TTS 서비스 시작 (강제 스피커 모드)
+                    val ttsIntent = Intent(applicationContext, TTSService::class.java).apply {
+                        action = "REPEAT_TTS_ALERT"
+                        putExtra("busNo", busNo)
+                        putExtra("stationName", stationName)
+                        putExtra("routeId", routeId)
+                        putExtra("stationId", stationId)
+                        putExtra("remainingMinutes", fetchedMinutes ?: 0)
+                        putExtra("currentStation", fetchedStation ?: "")
+                        putExtra("isAutoAlarm", true)  // 자동 알람 플래그 추가
+                        putExtra("forceSpeaker", true) // 강제 스피커 모드 플래그 추가
+                        putExtra("ttsMessage", ttsMessage) // TTS 메시지 직접 전달
                     }
-                }, 5000L)
+
+                    // 서비스 시작
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        applicationContext.startForegroundService(ttsIntent)
+                    } else {
+                        applicationContext.startService(ttsIntent)
+                    }
+                    Log.d(TAG, "✅ 자동 알람 TTSService 시작 요청 완료 (강제 스피커 모드)")
+
+                    // 백업 TTS는 한 번만 실행 (5초 후)
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        try {
+                            val backupTtsIntent = Intent(applicationContext, TTSService::class.java).apply {
+                                action = "REPEAT_TTS_ALERT"
+                                putExtra("busNo", busNo)
+                                putExtra("stationName", stationName)
+                                putExtra("routeId", routeId)
+                                putExtra("stationId", stationId)
+                                putExtra("remainingMinutes", fetchedMinutes ?: 0)
+                                putExtra("currentStation", fetchedStation ?: "")
+                                putExtra("isAutoAlarm", true)
+                                putExtra("forceSpeaker", true)
+                                putExtra("ttsMessage", ttsMessage)
+                                putExtra("isBackup", true)
+                                putExtra("backupNumber", 1)
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                applicationContext.startForegroundService(backupTtsIntent)
+                            } else {
+                                applicationContext.startService(backupTtsIntent)
+                            }
+                            Log.d(TAG, "✅ 백업 TTSService 시작 요청 완료 (5초 후)")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ 백업 TTSService 시작 중 오류: ${e.message}", e)
+                        }
+                    }, 5000L)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ TTSService 시작 중 오류: ${e.message}", e)
             }

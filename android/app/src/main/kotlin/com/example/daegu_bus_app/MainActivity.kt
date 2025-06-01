@@ -567,16 +567,22 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     }
                     "startBusMonitoringService" -> {
                         val routeId = call.argument<String>("routeId") ?: ""
-                        val stationId = call.argument<String>("stationId") ?: ""
+                        var stationId = call.argument<String>("stationId") ?: ""
                         val stationName = call.argument<String>("stationName") ?: ""
                         val busNo = call.argument<String>("busNo") ?: ""
 
                         try {
                             Log.i(TAG, "버스 모니터링 서비스 시작 요청: Bus=$busNo, Route=$routeId, Station=$stationName")
 
-                            if (routeId.isEmpty() || stationId.isEmpty() || stationName.isEmpty() || busNo.isEmpty()) {
+                            if (routeId.isEmpty() || stationName.isEmpty() || busNo.isEmpty()) {
                                 result.error("INVALID_ARGUMENT", "필수 인자가 누락되었습니다", null)
                                 return@setMethodCallHandler
+                            }
+
+                            // stationId 보정 - 정류장 이름 기반 매핑
+                            if (stationId.isEmpty() || stationId == routeId) {
+                                stationId = getStationIdFromName(stationName)
+                                Log.d(TAG, "stationId 보정: $stationName → $stationId")
                             }
 
                             // 1. 모니터링 노선 추가
@@ -1972,6 +1978,34 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     override fun onPause() {
         super.onPause()
         unregisterNotificationCancelReceiver() // 리시버 해제
+    }
+
+    // 정류장 이름으로 stationId 매핑
+    private fun getStationIdFromName(stationName: String): String {
+        val stationMapping = mapOf(
+            "새동네아파트앞" to "7021024000",
+            "새동네아파트건너" to "7021023900",
+            "칠성고가도로하단" to "7021051300",
+            "대구삼성창조캠퍼스3" to "7021011000",
+            "대구삼성창조캠퍼스" to "7021011200",
+            "동대구역" to "7021052100",
+            "동대구역건너" to "7021052000",
+            "경명여고건너" to "7021024200",
+            "경명여고" to "7021024100"
+        )
+
+        // 정확한 매칭 시도
+        stationMapping[stationName]?.let { return it }
+
+        // 부분 매칭 시도
+        for ((key, value) in stationMapping) {
+            if (stationName.contains(key) || key.contains(stationName)) {
+                return value
+            }
+        }
+
+        // 매칭 실패 시 빈 문자열 반환
+        return ""
     }
 
 }

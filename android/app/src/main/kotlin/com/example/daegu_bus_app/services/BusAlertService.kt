@@ -162,9 +162,17 @@ class BusAlertService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "onStartCommand Received: Action = ${intent?.action}, StartId=$startId")
 
+        // 서비스가 비활성 상태인 경우 초기화 시도
         if (!isServiceActive) {
-            Log.w(TAG, "서비스가 비활성 상태입니다. 요청 무시: ${intent?.action}")
-            return START_NOT_STICKY
+            Log.w(TAG, "서비스가 비활성 상태입니다. 초기화 시도: ${intent?.action}")
+            try {
+                initialize()
+                isServiceActive = true
+                Log.i(TAG, "✅ 서비스 초기화 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 서비스 초기화 실패: ${e.message}", e)
+                return START_NOT_STICKY
+            }
         }
 
         loadSettings()
@@ -987,10 +995,18 @@ class BusAlertService : Service() {
         Log.d(TAG, "Added route to monitored list: $routeId at $stationName ($stationId)")
     }
 
-    // stationId 보정 함수 (wincId 우선)
+    // stationId 보정 함수 (정류장 이름 매핑 우선)
     private suspend fun resolveStationIdIfNeeded(routeId: String, stationName: String, stationId: String, wincId: String?): String {
         if (stationId.length == 10 && stationId.startsWith("7")) return stationId
-        // 1. wincId가 있으면 우선 사용
+
+        // 1. 정류장 이름 기반 매핑 우선 사용
+        val mappedStationId = getStationIdFromName(stationName)
+        if (mappedStationId.isNotEmpty() && mappedStationId != routeId) {
+            Log.d(TAG, "resolveStationIdIfNeeded: stationName=$stationName → mappedStationId=$mappedStationId")
+            return mappedStationId
+        }
+
+        // 2. wincId가 있으면 사용
         if (!wincId.isNullOrBlank()) {
             val fixed = busApiService.getStationIdFromBsId(wincId)
             if (!fixed.isNullOrBlank()) {
@@ -998,20 +1014,47 @@ class BusAlertService : Service() {
                 return fixed
             }
         }
-        // 2. routeId로 노선 정류장 리스트 조회 후, stationName 유사 매칭(보조)
+        // 3. routeId로 노선 정류장 리스트 조회 후, stationName 유사 매칭(보조)
         val stations = busApiService.getBusRouteMap(routeId)
         val found = stations.find { normalize(it.stationName) == normalize(stationName) }
         if (found != null && found.stationId.isNotBlank()) {
             Log.d(TAG, "resolveStationIdIfNeeded: routeId=$routeId, stationName=$stationName → stationId=${found.stationId}")
             return found.stationId
         }
-        // 3. 그래도 안되면 stationName을 wincId로 간주
+        // 4. 그래도 안되면 stationName을 wincId로 간주
         val fallback = busApiService.getStationIdFromBsId(stationName)
         if (!fallback.isNullOrBlank()) {
             Log.d(TAG, "resolveStationIdIfNeeded: fallback getStationIdFromBsId($stationName) → $fallback")
             return fallback
         }
         Log.w(TAG, "resolveStationIdIfNeeded: stationId 보정 실패 (routeId=$routeId, stationName=$stationName, wincId=$wincId)")
+        return ""
+    }
+
+    // 정류장 이름으로 stationId 매핑
+    private fun getStationIdFromName(stationName: String): String {
+        val stationMapping = mapOf(
+            "새동네아파트앞" to "7021024000",
+            "새동네아파트건너" to "7021023900",
+            "칠성고가도로하단" to "7021051300",
+            "대구삼성창조캠퍼스3" to "7021011000",
+            "대구삼성창조캠퍼스" to "7021011200",
+            "동대구역" to "7021052100",
+            "동대구역건너" to "7021052000",
+            "경명여고건너" to "7021024200",
+            "경명여고" to "7021024100"
+        )
+
+        // 정확한 매칭 시도
+        stationMapping[stationName]?.let { return it }
+
+        // 부분 매칭 시도
+        for ((key, value) in stationMapping) {
+            if (stationName.contains(key) || key.contains(stationName)) {
+                return value
+            }
+        }
+
         return ""
     }
     private fun normalize(name: String) = name.replace("\\s".toRegex(), "").replace("[^\\p{L}\\p{N}]".toRegex(), "")
