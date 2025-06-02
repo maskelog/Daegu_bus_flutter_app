@@ -1104,17 +1104,18 @@ class BusAlertService : Service() {
         }
 
         // BusInfo 생성 (remainingMinutes는 BusInfo에서 파생)
-        // 운행종료 판단 로직 개선 - "전", "전전" 같은 정상 상태는 운행종료가 아님
-        val isOutOfService = (remainingMinutes < 0 && remainingMinutes != -999) || // -999는 파싱 실패를 의미
-                            (currentStation?.contains("운행종료") == true) ||
-                            (trackingInfo.lastBusInfo?.estimatedTime?.contains("운행종료") == true)
+        // 운행종료 판단 로직 개선 - 기점출발예정, 차고지행 등은 운행종료가 아님
+        val isOutOfService = (currentStation?.contains("운행종료") == true) ||
+                            (trackingInfo.lastBusInfo?.estimatedTime?.contains("운행종료") == true) ||
+                            (currentStation?.contains("차고지") == true && remainingMinutes < 0)
 
         Log.d(TAG, "🔍 [BusAlertService] 운행종료 판단: remainingMinutes=$remainingMinutes, currentStation='$currentStation', isOutOfService=$isOutOfService")
 
         val busInfo = BusInfo(
             currentStation = currentStation ?: "정보 없음",
             estimatedTime = if (isOutOfService) "운행종료" else when {
-                remainingMinutes <= 0 -> "곧 도착"
+                remainingMinutes < 0 -> currentStation ?: "정보 없음" // 기점출발예정 등의 정보 표시
+                remainingMinutes == 0 -> "곧 도착"
                 remainingMinutes == 1 -> "1분"
                 else -> "${remainingMinutes}분"
             },
@@ -1244,16 +1245,17 @@ class BusAlertService : Service() {
             stationId = stationId
         ).also { activeTrackings[routeId] = it }
 
-        // 운행종료 판단 로직 개선 - "전", "전전" 같은 정상 상태는 운행종료가 아님
-        val isOutOfService = (remainingMinutes < 0 && remainingMinutes != -999) || // -999는 파싱 실패를 의미
-                            (currentStation.contains("운행종료"))
+        // 운행종료 판단 로직 개선 - 기점출발예정, 차고지행 등은 운행종료가 아님
+        val isOutOfService = (currentStation.contains("운행종료")) ||
+                            (currentStation.contains("차고지") && remainingMinutes < 0)
 
         Log.d(TAG, "🔍 [updateAutoAlarmBusInfo] 운행종료 판단: remainingMinutes=$remainingMinutes, currentStation='$currentStation', isOutOfService=$isOutOfService")
 
         val busInfo = BusInfo(
             currentStation = currentStation,
             estimatedTime = if (isOutOfService) "운행종료" else when {
-                remainingMinutes <= 0 -> "곧 도착"
+                remainingMinutes < 0 -> currentStation // 기점출발예정 등의 정보 표시
+                remainingMinutes == 0 -> "곧 도착"
                 remainingMinutes == 1 -> "1분"
                 else -> "${remainingMinutes}분"
             },

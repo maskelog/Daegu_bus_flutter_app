@@ -317,14 +317,14 @@ class SimpleTTSHelper {
     }
   }
 
-  /// 버스 도착 알림 TTS 발화
+  /// 버스 도착 알림 TTS 발화 (간소화)
   static Future<bool> speakBusArriving(String busNo, String stationName,
       {bool earphoneOnly = true}) async {
-    final message = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.";
+    final message = "$busNo번 버스가 곧 도착합니다. 탑승 준비하세요.";
     return await speak(message, earphoneOnly: earphoneOnly);
   }
 
-  /// 버스 알림 TTS 발화 (상세 정보 포함)
+  /// 버스 알림 TTS 발화 (간소화된 메시지)
   static Future<bool> speakBusAlert({
     required String busNo,
     required String stationName,
@@ -336,18 +336,13 @@ class SimpleTTSHelper {
   }) async {
     String message;
 
+    // 정류장 이름 제거로 메시지 간소화
     if (remainingMinutes <= 0) {
-      message = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다.";
+      message = "$busNo번 버스가 곧 도착합니다.";
     } else if (remainingStops == 1) {
       message = "$busNo번 버스가 앞 정류장에 도착했습니다. 곧 도착합니다.";
     } else {
-      final locationInfo = currentStation != null &&
-              currentStation.isNotEmpty &&
-              currentStation != "정보 없음"
-          ? " 현재 $currentStation 위치에서"
-          : "";
-      message =
-          "$busNo번 버스가$locationInfo $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.";
+      message = "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.";
     }
 
     // 자동 알람인 경우 강제 스피커 모드로 발화

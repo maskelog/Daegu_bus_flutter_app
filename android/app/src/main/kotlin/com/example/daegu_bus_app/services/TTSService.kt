@@ -347,7 +347,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         } else if (remainingMinutes > 0) {
             "$busNo 번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
         } else {
-            "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
+            "$busNo 번 버스가 곧 도착합니다."
         }
 
         // TTS 발화

@@ -168,15 +168,15 @@ class AutoAlarmWorker(
             try {
                 Log.d(TAG, "🔊 자동 알람 TTS 발화 시작: $busNo 번, $stationName")
 
-                // TTS 메시지 생성
+                // TTS 메시지 생성 (정류장 이름 제거로 간소화)
                 val ttsMessage = if (fetchSuccess && fetchedMinutes != null) {
                     when {
-                        fetchedMinutes <= 0 -> "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
+                        fetchedMinutes <= 0 -> "$busNo 번 버스가 곧 도착합니다."
                         fetchedMinutes == 1 -> "$busNo 번 버스가 약 1분 후 도착 예정입니다."
                         else -> "$busNo 번 버스가 약 ${fetchedMinutes}분 후 도착 예정입니다."
                     }
                 } else {
-                    "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
+                    "$busNo 번 버스가 곧 도착합니다."
                 }
 
                 Log.i(TAG, "🗣️ TTS 메시지: $ttsMessage")
