@@ -74,7 +74,14 @@ class AlarmService extends ChangeNotifier {
   final Set<String> _processedNotifications = {};
   Timer? _refreshTimer;
 
-  List<alarm_model.AlarmData> get activeAlarms => _activeAlarms.values.toList();
+  List<alarm_model.AlarmData> get activeAlarms {
+    // 일반 알람과 자동 알람을 모두 포함
+    final allAlarms = <alarm_model.AlarmData>[];
+    allAlarms.addAll(_activeAlarms.values.toList());
+    allAlarms.addAll(_autoAlarms);
+    return allAlarms;
+  }
+
   List<alarm_model.AlarmData> get autoAlarms => _autoAlarms;
   bool get isInTrackingMode => _isInTrackingMode;
 
@@ -861,11 +868,11 @@ class AlarmService extends ChangeNotifier {
       // 백업 ID 사용 - 충돌 방지
       final uniqueId = 'autoAlarm_${id}_${now.millisecondsSinceEpoch}';
 
-      // 예약 시간에 정확히 실행되도록 수정 (즉시 실행 조건 완화)
-      // 음수 딜레이나 2분 이내는 즉시 실행하여 정확한 시간 보장
-      if (executionDelay.isNegative || executionDelay.inMinutes <= 2) {
+      // 예약 시간에 정확히 실행되도록 수정 (즉시 실행 조건 엄격화)
+      // 음수 딜레이나 30초 이내만 즉시 실행하여 정확한 시간 보장
+      if (executionDelay.isNegative || executionDelay.inSeconds <= 30) {
         logMessage(
-            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inMinutes}분 (이미 지났거나 2분 이내)',
+            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inSeconds}초 (이미 지났거나 30초 이내)',
             level: LogLevel.info);
 
         // 즉시 알람 실행
@@ -946,8 +953,27 @@ class AlarmService extends ChangeNotifier {
       logMessage(
           '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: $uniqueId');
 
-      // 2분 후 백업 알람 등록 (즉시 실행되지 않은 경우만)
-      if (executionDelay.inMinutes > 2) {
+      // 예약된 자동 알람을 activeAlarms에 추가하여 UI에 표시
+      final alarmData = alarm_model.AlarmData(
+        busNo: alarm.routeNo,
+        stationName: alarm.stationName,
+        remainingMinutes: executionDelay.inMinutes,
+        routeId: alarm.routeId,
+        scheduledTime: scheduledTime,
+        currentStation: "자동 알람 예약됨",
+        useTTS: alarm.useTTS,
+      );
+
+      final alarmKey = "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}";
+      _activeAlarms[alarmKey] = alarmData;
+      await _saveAlarms();
+
+      logMessage(
+          '✅ 예약된 자동 알람을 activeAlarms에 추가: ${alarm.routeNo}번 (${executionDelay.inMinutes}분 후)',
+          level: LogLevel.info);
+
+      // 30초 후 백업 알람 등록 (즉시 실행되지 않은 경우만)
+      if (executionDelay.inSeconds > 30) {
         _scheduleBackupAlarm(alarm, id, scheduledTime);
         logMessage(
             '✅ 백업 알람 등록: ${alarm.routeNo}번, ${executionDelay.inMinutes}분 후 실행',
@@ -1218,9 +1244,10 @@ class AlarmService extends ChangeNotifier {
         final timeUntilAlarm = scheduledTime.difference(now);
         logMessage('  ⏰ 다음 알람까지 ${timeUntilAlarm.inMinutes}분 남음');
 
-        // 알람 시간이 이미 지났거나 지난 경우만 즉시 실행 (음수 또는 0분)
-        if (timeUntilAlarm.inMinutes <= 0) {
-          logMessage('  ⚡ 알람 시간이 지났음 - 즉시 실행 (${timeUntilAlarm.inMinutes}분)');
+        // 알람 시간이 이미 지났거나 30초 이내인 경우만 즉시 실행
+        if (timeUntilAlarm.inSeconds <= 30 &&
+            timeUntilAlarm.inSeconds >= -300) {
+          logMessage('  ⚡ 알람 시간이 지났음 - 즉시 실행 (${timeUntilAlarm.inSeconds}초)');
           await _executeAutoAlarmImmediately(alarm);
         } else if (timeUntilAlarm.inMinutes <= 10) {
           logMessage(
@@ -1404,7 +1431,13 @@ class AlarmService extends ChangeNotifier {
           alarm.busNo == busNo &&
           alarm.stationName == stationName &&
           alarm.routeId == routeId);
+
+      // activeAlarms에서도 제거
+      final alarmKey = "${busNo}_${stationName}_$routeId";
+      _activeAlarms.remove(alarmKey);
+
       await _saveAutoAlarms();
+      await _saveAlarms();
 
       // TTS 중지 알림
       try {

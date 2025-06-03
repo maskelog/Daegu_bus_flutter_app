@@ -184,7 +184,7 @@ class AutoAlarmWorker(
                 // 즉시 실행된 알람인지 확인 (중복 TTS 방지)
                 val scheduledFor = inputData.getLong("scheduledFor", 0L)
                 val currentTime = System.currentTimeMillis()
-                val isImmediate = (currentTime - scheduledFor) > -120000L // 2분 이내면 즉시 실행으로 간주
+                val isImmediate = (currentTime - scheduledFor) > -30000L // 30초 이내면 즉시 실행으로 간주
 
                 if (isImmediate) {
                     Log.d(TAG, "⏰ [AutoAlarm] 즉시 실행된 알람 - TTS 건너뛰기 (중복 방지)")

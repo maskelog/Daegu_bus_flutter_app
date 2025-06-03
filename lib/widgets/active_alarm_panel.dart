@@ -122,6 +122,22 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
             a.routeId == alarm.routeId);
       });
 
+      // 자동 알람인지 확인하고 취소
+      final hasAutoAlarm = _alarmService.hasAutoAlarm(
+        alarm.busNo,
+        alarm.stationName,
+        alarm.routeId,
+      );
+
+      if (hasAutoAlarm) {
+        print('🐛 [DEBUG] 자동 알람 취소: ${alarm.busNo}번 버스');
+        await _alarmService.stopAutoAlarm(
+          alarm.busNo,
+          alarm.stationName,
+          alarm.routeId,
+        );
+      }
+
       // AlarmManager에서 알람 취소
       await AlarmManager.cancelAlarm(
         busNo: alarm.busNo,
@@ -195,6 +211,22 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         _activeAlarms.clear();
         _progressController.stop();
       });
+
+      // 모든 자동 알람 취소
+      for (final alarm in _activeAlarms) {
+        final hasAutoAlarm = _alarmService.hasAutoAlarm(
+          alarm.busNo,
+          alarm.stationName,
+          alarm.routeId,
+        );
+        if (hasAutoAlarm) {
+          await _alarmService.stopAutoAlarm(
+            alarm.busNo,
+            alarm.stationName,
+            alarm.routeId,
+          );
+        }
+      }
 
       await AlarmManager.cancelAllAlarms();
       await _stopAllNativeTracking();
@@ -345,16 +377,20 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
       ),
       child: Row(
         children: [
-          // 버스 아이콘
+          // 버스 아이콘 (자동 알람 구분)
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.blue.shade50,
+              color: _isAutoAlarm(alarm)
+                  ? Colors.orange.shade50
+                  : Colors.blue.shade50,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
-              Icons.directions_bus,
-              color: Colors.blue.shade600,
+              _isAutoAlarm(alarm) ? Icons.schedule : Icons.directions_bus,
+              color: _isAutoAlarm(alarm)
+                  ? Colors.orange.shade600
+                  : Colors.blue.shade600,
               size: 24,
             ),
           ),
@@ -366,13 +402,37 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${alarm.busNo}번 버스',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      '${alarm.busNo}번 버스',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    if (_isAutoAlarm(alarm)) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange.shade300),
+                        ),
+                        child: Text(
+                          '자동',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -426,10 +486,34 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
 
   // 남은 시간 텍스트 반환
   String _getRemainingTimeText(AlarmInfo alarm) {
-    // 실제 구현에서는 AlarmService나 BusApiService에서 실시간 정보를 가져와야 함
-    // 여기서는 임시로 Al람 생성 시간을 기준으로 추정
     try {
-      // AlarmService에서 실시간 버스 정보 가져오기 시도
+      // 자동 알람인 경우 예약된 시간까지의 남은 시간 표시
+      if (_isAutoAlarm(alarm)) {
+        final autoAlarm = _alarmService.getAutoAlarm(
+          alarm.busNo,
+          alarm.stationName,
+          alarm.routeId,
+        );
+        if (autoAlarm != null) {
+          final now = DateTime.now();
+          final remainingMinutes =
+              autoAlarm.scheduledTime.difference(now).inMinutes;
+
+          if (remainingMinutes <= 0) {
+            return '실행 중';
+          } else if (remainingMinutes == 1) {
+            return '1분 후';
+          } else if (remainingMinutes < 60) {
+            return '$remainingMinutes분 후';
+          } else {
+            final hours = remainingMinutes ~/ 60;
+            final minutes = remainingMinutes % 60;
+            return '$hours시간 $minutes분 후';
+          }
+        }
+      }
+
+      // 일반 알람의 경우 실시간 버스 정보 표시
       final busInfo =
           _alarmService.getCachedBusInfo(alarm.busNo, alarm.routeId);
       if (busInfo != null) {
@@ -443,12 +527,11 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         }
       }
 
-      // 캐시된 정보가 없으면 알람 생성 시간 기준으로 추정 (5-15분 사이)
+      // 캐시된 정보가 없으면 알람 생성 시간 기준으로 추정
       final now = DateTime.now();
       final createdTime = alarm.createdAt;
       final elapsedMinutes = now.difference(createdTime).inMinutes;
 
-      // 알람 생성 후 시간이 지날수록 도착 시간이 가까워진다고 가정
       final estimatedMinutes = (10 - elapsedMinutes).clamp(0, 15);
 
       if (estimatedMinutes <= 0) {
@@ -467,6 +550,20 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
   Color _getRemainingTimeColor(AlarmInfo alarm) {
     final timeText = _getRemainingTimeText(alarm);
 
+    // 자동 알람인 경우 오렌지 계열 색상 사용
+    if (_isAutoAlarm(alarm)) {
+      if (timeText == '실행 중') {
+        return Colors.red;
+      } else if (timeText.contains('1분') ||
+          timeText.contains('2분') ||
+          timeText.contains('3분')) {
+        return Colors.orange.shade700;
+      } else {
+        return Colors.orange.shade600;
+      }
+    }
+
+    // 일반 알람인 경우 기존 색상 사용
     if (timeText == '곧 도착') {
       return Colors.red;
     } else if (timeText.contains('1분') ||
@@ -476,5 +573,14 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     } else {
       return Colors.blue;
     }
+  }
+
+  // 자동 알람인지 확인
+  bool _isAutoAlarm(AlarmInfo alarm) {
+    return _alarmService.hasAutoAlarm(
+      alarm.busNo,
+      alarm.stationName,
+      alarm.routeId,
+    );
   }
 }
