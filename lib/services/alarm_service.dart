@@ -857,7 +857,7 @@ class AlarmService extends ChangeNotifier {
       final executionDelay =
           actualDelay.isNegative ? Duration.zero : actualDelay;
 
-      // 기존 작업 취소 확인
+      // 기존 작업 취소 확인 (WorkManager 작업만 취소)
       try {
         await Workmanager().cancelByUniqueName('autoAlarm_$id');
         logMessage('기존 자동 알람 작업 취소 완료, ID: $id');
@@ -865,85 +865,35 @@ class AlarmService extends ChangeNotifier {
         logMessage('기존 작업 취소 오류 (무시): $e', level: LogLevel.warning);
       }
 
-      // 백업 ID 사용 - 충돌 방지
-      final uniqueId = 'autoAlarm_${id}_${now.millisecondsSinceEpoch}';
+      // 이제 WorkManager 대신 네이티브 AlarmManager를 통해 스케줄링
+      // 즉시 실행 조건은 Flutter에서 먼저 판단하여 네이티브에 전달
 
-      // 예약 시간에 정확히 실행되도록 수정 (즉시 실행 조건 엄격화)
-      // 음수 딜레이나 30초 이내만 즉시 실행하여 정확한 시간 보장
-      if (executionDelay.isNegative || executionDelay.inSeconds <= 30) {
-        logMessage(
-            '⚡ 즉시 실행 자동 알람: ${alarm.routeNo}번, 딜레이: ${executionDelay.inSeconds}초 (이미 지났거나 30초 이내)',
-            level: LogLevel.info);
+      final bool isImmediate =
+          executionDelay.isNegative || executionDelay.inSeconds <= 30;
 
-        // 즉시 알람 실행
-        await _executeAutoAlarmImmediately(alarm);
+      // 네이티브 AlarmManager 스케줄링 요청
+      await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
+        'alarmId': id,
+        'busNo': alarm.routeNo,
+        'stationName': alarm.stationName,
+        'routeId': alarm.routeId,
+        'stationId': alarm.stationId, // alarm 객체에서 stationId 사용
+        'useTTS': alarm.useTTS,
+        'hour': scheduledTime.hour,
+        'minute': scheduledTime.minute,
+        'repeatDays': alarm.repeatDays, // 요일 반복 정보 전달
+        'isImmediate': isImmediate, // 즉시 실행 여부 전달 (네이티브에서 활용)
+      });
 
-        // 그래도 WorkManager 작업도 등록 (백업용)
-        await Workmanager().registerOneOffTask(
-          uniqueId,
-          'autoAlarmTask',
-          initialDelay:
-              executionDelay.isNegative ? Duration.zero : executionDelay,
-          inputData: {
-            'alarmId': id,
-            'busNo': alarm.routeNo,
-            'stationName': alarm.stationName,
-            'remainingMinutes': 0,
-            'routeId': alarm.routeId,
-            'useTTS': alarm.useTTS,
-            'stationId': alarm.stationId,
-            'registeredAt': now.millisecondsSinceEpoch,
-            'scheduledFor': scheduledTime.millisecondsSinceEpoch,
-            'isImmediate': true,
-          },
-          constraints: Constraints(
-            networkType: NetworkType.connected,
-            requiresBatteryNotLow: false,
-            requiresCharging: false,
-            requiresDeviceIdle: false,
-            requiresStorageNotLow: false,
-          ),
-          backoffPolicy: BackoffPolicy.linear,
-          existingWorkPolicy: ExistingWorkPolicy.replace,
-        );
-
-        logMessage('✅ 자동 알람 즉시 실행 및 백업 작업 등록 완료: ${alarm.routeNo}번',
-            level: LogLevel.info);
-      } else {
-        // 일반적인 지연 실행
-        await Workmanager().registerOneOffTask(
-          uniqueId,
-          'autoAlarmTask',
-          initialDelay: executionDelay,
-          inputData: {
-            'alarmId': id,
-            'busNo': alarm.routeNo,
-            'stationName': alarm.stationName,
-            'remainingMinutes': 0,
-            'routeId': alarm.routeId,
-            'useTTS': alarm.useTTS,
-            'stationId': alarm.stationId,
-            'registeredAt': now.millisecondsSinceEpoch,
-            'scheduledFor': scheduledTime.millisecondsSinceEpoch,
-          },
-          constraints: Constraints(
-            networkType: NetworkType.connected,
-            requiresBatteryNotLow: false,
-            requiresCharging: false,
-            requiresDeviceIdle: false,
-            requiresStorageNotLow: false,
-          ),
-          backoffPolicy: BackoffPolicy.linear,
-          existingWorkPolicy: ExistingWorkPolicy.replace,
-        );
-      }
+      logMessage(
+          '✅ 네이티브 AlarmManager 스케줄링 요청 완료: ${alarm.routeNo} at $scheduledTime, 즉시 실행: $isImmediate');
 
       // SharedPreferences에 작업 등록 정보 저장 (검증용)
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
           'last_scheduled_alarm_$id',
           jsonEncode({
-            'workId': uniqueId,
+            'workId': 'native_alarm_$id', // 네이티브 알람임을 표시
             'busNo': alarm.routeNo,
             'stationName': alarm.stationName,
             'scheduledTime': scheduledTime.toIso8601String(),
@@ -951,7 +901,7 @@ class AlarmService extends ChangeNotifier {
           }));
 
       logMessage(
-          '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: $uniqueId');
+          '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: native_alarm_$id');
 
       // 예약된 자동 알람을 activeAlarms에 추가하여 UI에 표시
       final alarmData = alarm_model.AlarmData(
@@ -981,7 +931,7 @@ class AlarmService extends ChangeNotifier {
       }
     } catch (e) {
       logMessage('❌ 자동 알람 예약 오류: $e', level: LogLevel.error);
-      // 오류 발생 시 앱 내 로컬 알림으로 예약 시도
+      // 오류 발생 시 앱 내 로컬 알림으로 예약 시도 (이 부분은 유지 또는 개선 필요)
       _scheduleLocalBackupAlarm(alarm, scheduledTime);
     }
   }
@@ -1110,37 +1060,28 @@ class AlarmService extends ChangeNotifier {
     try {
       final backupTime = scheduledTime.subtract(const Duration(minutes: 5));
       final now = DateTime.now();
-      if (backupTime.isBefore(now)) return; // 이미 지난 시간이면 등록 취소
+      if (backupTime.isBefore(now)) {
+        logMessage('⚠️ 백업 알람 시간($backupTime)이 현재($now)보다 빠릅니다. 백업 알람 등록 취소.');
+        return; // 이미 지난 시간이면 등록 취소
+      }
 
-      final backupId = 'autoAlarm_backup_${id}_${now.millisecondsSinceEpoch}';
       final backupDelay = backupTime.difference(now);
 
-      await Workmanager().registerOneOffTask(
-        backupId,
-        'autoAlarmTask',
-        initialDelay: backupDelay,
-        inputData: {
-          'alarmId': id,
-          'busNo': alarm.routeNo,
-          'stationName': alarm.stationName,
-          'remainingMinutes': 0,
-          'routeId': alarm.routeId,
-          'useTTS': alarm.useTTS,
-          'stationId': alarm.stationId,
-          'isBackup': true,
-        },
-        constraints: Constraints(
-          networkType: NetworkType.connected,
-          requiresBatteryNotLow: false,
-          requiresCharging: false,
-          requiresDeviceIdle: false,
-          requiresStorageNotLow: false,
-        ),
-        existingWorkPolicy: ExistingWorkPolicy.replace,
-      );
+      // 백업 알람도 네이티브 AlarmManager를 통해 스케줄링
+      await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
+        'alarmId': id, // 동일 ID 사용
+        'busNo': alarm.routeNo,
+        'stationName': alarm.stationName,
+        'routeId': alarm.routeId,
+        'stationId': alarm.stationId, // alarm 객체에서 stationId 사용
+        'useTTS': alarm.useTTS,
+        'hour': backupTime.hour,
+        'minute': backupTime.minute,
+        'repeatDays': alarm.repeatDays, // 동일 요일 반복 정보 전달
+        'isBackup': true, // 백업 알람임을 표시 (네이티브에서 활용)
+      });
 
-      logMessage(
-          '✅ 백업 자동 알람 예약 성공: ${alarm.routeNo} at $backupTime (${backupDelay.inMinutes}분 후)');
+      logMessage('✅ 네이티브 백업 알람 스케줄링 요청 완료: ${alarm.routeNo} at $backupTime');
     } catch (e) {
       logMessage('❌ 백업 알람 예약 오류: $e', level: LogLevel.error);
     }

@@ -63,6 +63,8 @@ import com.example.daegu_bus_app.services.StationTrackingService
 import com.example.daegu_bus_app.utils.DatabaseHelper
 import com.example.daegu_bus_app.utils.NotificationHelper
 import kotlinx.coroutines.runBlocking
+import android.os.PowerManager
+import android.provider.Settings
 
 class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
@@ -155,6 +157,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
             // 권한 요청 처리
             checkAndRequestPermissions()
+
+            // 배터리 최적화 예외 요청
+            requestBatteryOptimizationExemption()
 
         } catch (e: Exception) {
             Log.e(TAG, "MainActivity onCreate 오류: ${e.message}", e)
@@ -962,6 +967,50 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         } catch (e: Exception) {
                             Log.e(TAG, "알림 표시 오류: ${e.message}", e)
                             result.error("NOTIFICATION_ERROR", "알림 표시 중 오류 발생: ${e.message}", null)
+                        }
+                    }
+                    "scheduleNativeAlarm" -> {
+                        val alarmId = call.argument<Int>("alarmId") ?: 0
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        val stationId = call.argument<String>("stationId") ?: ""
+                        val useTTS = call.argument<Boolean>("useTTS") ?: true
+                        val hour = call.argument<Int>("hour") ?: 0
+                        val minute = call.argument<Int>("minute") ?: 0
+                        val repeatDays = call.argument<ArrayList<Int>>("repeatDays")?.toIntArray() ?: intArrayOf()
+                        
+                        if (busNo.isBlank() || stationName.isBlank() || routeId.isBlank() || stationId.isBlank() || repeatDays.isEmpty()) {
+                            result.error("INVALID_ARGUMENT", "필수 인자가 누락되었습니다", null)
+                            return@setMethodCallHandler
+                        }
+                        
+                        try {
+                            val workManager = androidx.work.WorkManager.getInstance(applicationContext)
+                            val inputData = androidx.work.Data.Builder()
+                                .putString("taskName", "scheduleAlarmManager")
+                                .putInt("alarmId", alarmId)
+                                .putString("busNo", busNo)
+                                .putString("stationName", stationName)
+                                .putString("routeId", routeId)
+                                .putString("stationId", stationId)
+                                .putBoolean("useTTS", useTTS)
+                                .putInt("hour", hour)
+                                .putInt("minute", minute)
+                                .putIntArray("repeatDays", repeatDays)
+                                .build()
+                                
+                            val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.daegu_bus_app.workers.BackgroundWorker>()
+                                .setInputData(inputData)
+                                .addTag("autoAlarmScheduling_${alarmId}") // 태그 추가
+                                .build()
+                            
+                            workManager.enqueue(workRequest)
+                            Log.d(TAG, "✅ Native AlarmManager 스케줄링 요청 완료 (WorkManager 경유)")
+                            result.success(true)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Native AlarmManager 스케줄링 요청 실패: ${e.message}", e)
+                            result.error("SCHEDULE_ERROR", "Failed to schedule native alarm", e.message)
                         }
                     }
                     else -> result.notImplemented()
@@ -2006,6 +2055,29 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
         // 매칭 실패 시 빈 문자열 반환
         return ""
+    }
+
+    // 배터리 최적화 예외 요청
+    private fun requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val packageName = packageName
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                    Log.d(TAG, "배터리 최적화 예외 요청 대화상자 표시")
+                } catch (e: Exception) {
+                    Log.e(TAG, "배터리 최적화 예외 요청 실패: ${e.message}")
+                }
+            } else {
+                Log.d(TAG, "이미 배터리 최적화 예외 설정됨")
+            }
+        } else {
+            Log.d(TAG, "Android M 미만 버전, 배터리 최적화 예외 요청 불필요")
+        }
     }
 
 }
