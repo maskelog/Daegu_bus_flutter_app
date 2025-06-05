@@ -35,7 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<BusStop> _nearbyStops = [];
   BusStop? _selectedStop;
   List<BusArrival> _busArrivals = [];
-  Map<String, List<BusArrival>> _stationArrivals = {};
+  final Map<String, List<BusArrival>> _stationArrivals = {};
 
   @override
   void initState() {
@@ -293,40 +293,37 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
 
-      // 백그라운드에서 다른 모든 정류장 정보 로드
-      final List<List<BusArrival>> arrivals = await Future.wait(
-        allStops.map((stop) async {
-          try {
-            // 이미 로드한 선택된 정류장은 건너뛰기
-            if (_selectedStop != null && stop.id == _selectedStop!.id) {
-              return _stationArrivals[stop.id] ?? <BusArrival>[];
+      // 백그라운드에서 다른 모든 정류장 정보 로드 (선택된 정류장 제외)
+      final otherStops = allStops
+          .where(
+              (stop) => _selectedStop == null || stop.id != _selectedStop!.id)
+          .toList();
+
+      for (final stop in otherStops) {
+        try {
+          final stationId = stop.stationId ?? stop.id;
+          if (stationId.isNotEmpty) {
+            final arrivals = await ApiService.getStationInfo(stationId);
+            if (mounted) {
+              setState(() {
+                _stationArrivals[stop.id] = arrivals;
+              });
             }
-
-            final stationId = stop.stationId ?? stop.id;
-            if (stationId.isNotEmpty) {
-              return await ApiService.getStationInfo(stationId);
-            }
-            return <BusArrival>[];
-          } catch (e) {
-            debugPrint('${stop.id} 도착 정보 로딩 오류: $e');
-            return <BusArrival>[];
           }
-        }),
-      );
-
-      if (mounted) {
-        setState(() {
-          _stationArrivals = Map.fromIterables(
-            allStops.map((stop) => stop.id),
-            arrivals,
-          );
-
-          // 선택된 정류장이 있으면 해당 정류장의 도착 정보 업데이트
-          if (_selectedStop != null) {
-            _busArrivals = _stationArrivals[_selectedStop!.id] ?? [];
-            debugPrint('📊 전체 업데이트 후 버스 도착 정보: ${_busArrivals.length}개');
+        } catch (e) {
+          debugPrint('${stop.id} 도착 정보 로딩 오류: $e');
+          if (mounted) {
+            setState(() {
+              _stationArrivals[stop.id] = <BusArrival>[];
+            });
           }
-        });
+        }
+      }
+
+      // 최종 상태 확인
+      if (mounted && _selectedStop != null) {
+        debugPrint('📊 최종 버스 도착 정보: ${_busArrivals.length}개');
+        debugPrint('📋 전체 정류장 캐시: ${_stationArrivals.keys.length}개 정류장');
       }
     } catch (e) {
       debugPrint('❌ 버스 도착 정보 로딩 오류: $e');
@@ -432,8 +429,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             _favoriteStops.add(result);
                             _saveFavoriteStops();
                           }
-                          _loadBusArrivals();
                         });
+                        // setState 완료 후 비동기로 데이터 로드
+                        _loadBusArrivals();
                       } else if (result is List) {
                         setState(() {
                           _favoriteStops.clear();

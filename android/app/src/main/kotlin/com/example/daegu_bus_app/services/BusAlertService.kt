@@ -535,6 +535,16 @@ class BusAlertService : Service() {
 
         // 모든 리소스 정리
         stopAllTracking()
+        
+        // TTS 리소스 정리 (메모리 누수 방지)
+        cleanupTts()
+        
+        // 오디오 포커스 해제
+        try {
+            audioManager?.abandonAudioFocus(audioFocusListener)
+        } catch (e: Exception) {
+            Log.e(TAG, "오디오 포커스 해제 오류: ${e.message}")
+        }
 
         super.onDestroy()
     }
@@ -707,17 +717,10 @@ class BusAlertService : Service() {
         startBackupUpdateTimer()
     }
 
-    // 백업 타이머 추가 - 노티피케이션이 갱신되지 않는 문제 해결
+    // 경량화된 백업 업데이트 (메모리 효율적)
     private fun startBackupUpdateTimer() {
-        if (monitoringTimer != null) {
-            try {
-                monitoringTimer?.cancel()
-                monitoringTimer = null
-                Log.d(TAG, "기존 백업 타이머 취소")
-            } catch (e: Exception) {
-                Log.e(TAG, "기존 타이머 취소 중 오류: ${e.message}", e)
-            }
-        }
+        // 기존 타이머가 있으면 정리
+        stopMonitoringTimer()
 
         monitoringTimer = Timer("BackupUpdateTimer")
         monitoringTimer?.schedule(object : TimerTask() {
@@ -725,49 +728,28 @@ class BusAlertService : Service() {
                 try {
                     if (activeTrackings.isEmpty()) {
                         Log.d(TAG, "백업 타이머: 활성 추적 없음, 타이머 종료")
-                        monitoringTimer?.cancel()
-                        monitoringTimer = null
+                        stopMonitoringTimer()
                         return
                     }
 
-                    Log.d(TAG, "🔄 백업 타이머: 활성 노티피케이션 갱신 (${activeTrackings.size}개 추적 중)")
+                    // 60초로 변경하여 리소스 사용량 감소
+                    Log.d(TAG, "🔄 백업 타이머: 알림 갱신 (${activeTrackings.size}개)")
 
-                    // 메인 스레드에서 UI 작업 실행
+                    // 메인 스레드에서 최소한의 작업만 수행
                     Handler(Looper.getMainLooper()).post {
-                        // 포그라운드 알림 즉시 업데이트
                         try {
-                            val notification = notificationHandler.buildOngoingNotification(activeTrackings)
-                            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                            notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
-                            Log.d(TAG, "✅ 백업 타이머: 포그라운드 알림 업데이트 성공")
+                            updateForegroundNotification()
                         } catch (e: Exception) {
-                            Log.e(TAG, "❌ 백업 타이머: 포그라운드 알림 업데이트 실패: ${e.message}", e)
-                        }
-
-                        // 각 추적 중인 노선의 정보도 업데이트 (백그라운드에서)
-                        serviceScope.launch {
-                            activeTrackings.forEach { (routeId, info) ->
-                                try {
-                                    val stationId = info.stationId
-                                    if (stationId.isNotEmpty()) {
-                                        Log.d(TAG, "🔄 백업 타이머: $routeId 노선 정보 업데이트 시도")
-                                        updateBusInfo(routeId, stationId, info.stationName)
-                                    } else {
-                                        Log.w(TAG, "⚠️ 백업 타이머: $routeId 노선의 stationId가 비어있음")
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "❌ 백업 타이머 노선 업데이트 오류: ${e.message}", e)
-                                }
-                            }
+                            Log.e(TAG, "❌ 백업 타이머 알림 업데이트 실패: ${e.message}")
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ 백업 타이머 오류: ${e.message}", e)
+                    Log.e(TAG, "❌ 백업 타이머 오류: ${e.message}")
                 }
             }
-        }, 10000, 30000)  // 10초 후 시작, 30초마다 반복 (기존 60초에서 변경)
+        }, 30000, 60000)  // 30초 후 시작, 60초마다 반복 (리소스 절약)
 
-        Log.d(TAG, "✅ 백업 타이머 시작됨: 10초 후 첫 실행, 30초 간격")
+        Log.d(TAG, "✅ 경량화된 백업 타이머 시작됨")
     }
 
     // JSON에서 버스 도착 정보 파싱하는 함수
@@ -930,34 +912,42 @@ class BusAlertService : Service() {
         if (isTtsInitialized || ttsEngine != null) return
         synchronized(ttsInitializationLock) {
             if (isTtsInitialized || ttsEngine != null) return
-            Log.d(TAG, "🔊 Initializing TTS Engine...")
+            Log.d(TAG, "🔊 TTS 엔진 초기화 중...")
             try {
                 ttsEngine = TextToSpeech(this, TextToSpeech.OnInitListener { status ->
-                    Log.d(TAG, "🔊 TTS OnInitListener called. Status: $status")
                     if (status == TextToSpeech.SUCCESS) {
                         val result = ttsEngine?.setLanguage(Locale.KOREAN)
-                        Log.d(TAG, "🔊 TTS setLanguage result: $result")
                         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                            Log.e(TAG, "🔊 TTS Korean language not supported.")
-                            ttsEngine = null
-                            isTtsInitialized = false
+                            Log.w(TAG, "🔊 한국어 TTS 미지원, TTS 비활성화")
+                            cleanupTts()
                         } else {
                             ttsEngine?.setPitch(1.0f)
                             ttsEngine?.setSpeechRate(1.0f)
                             isTtsInitialized = true
-                            Log.i(TAG, "🔊 TTS Engine Initialized Successfully.")
+                            Log.i(TAG, "✅ TTS 엔진 초기화 완료")
                         }
                     } else {
-                        Log.e(TAG, "🔊 TTS Engine Initialization Failed! Status: $status")
-                        ttsEngine = null
-                        isTtsInitialized = false
+                        Log.w(TAG, "🔊 TTS 초기화 실패: $status")
+                        cleanupTts()
                     }
                 })
             } catch (e: Exception) {
-                Log.e(TAG, "🔊 TTS Engine Initialization Exception: ${e.message}", e)
-                ttsEngine = null
-                isTtsInitialized = false
+                Log.e(TAG, "❌ TTS 초기화 오류: ${e.message}")
+                cleanupTts()
             }
+        }
+    }
+    
+    // TTS 리소스 정리 (메모리 누수 방지)
+    private fun cleanupTts() {
+        try {
+            ttsEngine?.stop()
+            ttsEngine?.shutdown()
+            ttsEngine = null
+            isTtsInitialized = false
+            Log.d(TAG, "TTS 리소스 정리 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "TTS 정리 오류: ${e.message}")
         }
     }
 
@@ -1988,29 +1978,8 @@ class BusAlertService : Service() {
             // 3.2. 백업 방법으로 알림 업데이트
             updateForegroundNotification()
 
-            // 3.3. 메인 스레드에서 알림 강제 업데이트 (추가 백업)
-            Handler(Looper.getMainLooper()).post {
-                try {
-                    val notification = notificationHandler.buildOngoingNotification(activeTrackings)
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
-                    Log.d(TAG, "✅ 메인 스레드에서 알림 강제 업데이트 완료: ${System.currentTimeMillis()}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ 메인 스레드 알림 업데이트 오류: ${e.message}", e)
-                }
-            }
-
-            // 3.4. 1초 후 다시 한번 업데이트 (지연 백업)
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    val notification = notificationHandler.buildOngoingNotification(activeTrackings)
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
-                    Log.d(TAG, "✅ 지연 알림 업데이트 완료: ${System.currentTimeMillis()}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ 지연 알림 업데이트 오류: ${e.message}", e)
-                }
-            }, 1000)
+            // 경량화: 불필요한 중복 업데이트 제거
+            // 백업 타이머가 주기적으로 업데이트하므로 즉시 업데이트는 최소화
 
             Log.d(TAG, "✅ 버스 추적 알림 업데이트 완료: $busNo, ${remainingMinutes}분, 현재 위치: $currentStation")
         } catch (e: Exception) {

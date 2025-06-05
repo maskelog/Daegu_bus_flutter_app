@@ -75,7 +75,8 @@ class _BusCardState extends State<BusCard> {
       remainingTime = _calculateRemainingTime();
       _updateAlarmServiceCache();
 
-      _updateTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      // 타이머 간격을 60초로 증가하여 리소스 절약
+      _updateTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
         if (mounted) {
           _updateBusArrivalInfo();
         } else {
@@ -108,85 +109,110 @@ class _BusCardState extends State<BusCard> {
         widget.busArrival.routeId,
       );
 
-      if (mounted &&
-          updatedBusArrivals.isNotEmpty &&
-          updatedBusArrivals[0].busInfoList.isNotEmpty) {
-        final updatedBusArrival = updatedBusArrivals[0];
-        setState(() {
-          firstBus = updatedBusArrival.busInfoList.first;
-          remainingTime =
-              firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
-          logMessage('BusCard - 업데이트된 남은 시간: $remainingTime',
-              level: LogLevel.debug);
-
-          final hasAlarm = _alarmService.hasAlarm(
-            widget.busArrival.routeNo,
-            widget.stationName ?? '정류장 정보 없음',
-            widget.busArrival.routeId,
-          );
-
-          if (hasAlarm) {
-            _alarmService.updateBusInfoCache(
-              widget.busArrival.routeNo,
-              widget.busArrival.routeId,
-              firstBus,
-              remainingTime,
-            );
-            logMessage(
-              '버스 카드 캐시 업데이트: ${widget.busArrival.routeNo}번, $remainingTime분 후 도착',
-              level: LogLevel.debug,
-            );
-
-            if (!hasBoarded && remainingTime <= 3 && remainingTime > 0) {
-              _playAlarm();
+      if (mounted) {
+        if (updatedBusArrivals.isNotEmpty &&
+            updatedBusArrivals[0].busInfoList.isNotEmpty) {
+          final updatedBusArrival = updatedBusArrivals[0];
+          setState(() {
+            // 기존 버스 정보를 업데이트된 정보로 교체하지 말고,
+            // 유효한 정보만 업데이트
+            final newFirstBus = updatedBusArrival.busInfoList.first;
+            if (!newFirstBus.isOutOfService ||
+                newFirstBus.estimatedTime != "운행종료") {
+              firstBus = newFirstBus;
+              remainingTime = firstBus.getRemainingMinutes();
             }
 
-            final bool hasActiveTracking = _alarmService.hasAlarm(
+            logMessage(
+                '🚌 BusCard 업데이트: ${widget.busArrival.routeNo}번, $remainingTime분, 상태: ${firstBus.estimatedTime}',
+                level: LogLevel.debug);
+
+            final hasAlarm = _alarmService.hasAlarm(
               widget.busArrival.routeNo,
               widget.stationName ?? '정류장 정보 없음',
               widget.busArrival.routeId,
             );
 
-            if (hasActiveTracking) {
-              _notificationService.updateBusTrackingNotification(
-                busNo: widget.busArrival.routeNo,
-                stationName: widget.stationName ?? '정류장 정보 없음',
-                remainingMinutes: remainingTime,
-                currentStation: firstBus.currentStation,
-                routeId: widget.busArrival.routeId,
-                stationId: widget.stationId,
+            if (hasAlarm) {
+              _alarmService.updateBusInfoCache(
+                widget.busArrival.routeNo,
+                widget.busArrival.routeId,
+                firstBus,
+                remainingTime,
               );
+
+              if (!hasBoarded && remainingTime <= 3 && remainingTime > 0) {
+                _playAlarm();
+              }
+
+              final bool hasActiveTracking = _alarmService.hasAlarm(
+                widget.busArrival.routeNo,
+                widget.stationName ?? '정류장 정보 없음',
+                widget.busArrival.routeId,
+              );
+
+              if (hasActiveTracking) {
+                _notificationService.updateBusTrackingNotification(
+                  busNo: widget.busArrival.routeNo,
+                  stationName: widget.stationName ?? '정류장 정보 없음',
+                  remainingMinutes: remainingTime,
+                  currentStation: firstBus.currentStation,
+                  routeId: widget.busArrival.routeId,
+                  stationId: widget.stationId,
+                );
+              }
             }
-          }
-          if (!hasBoarded &&
-              remainingTime <= 0 &&
-              updatedBusArrival.busInfoList.length > 1) {
-            BusInfo nextBus = updatedBusArrival.busInfoList[1];
-            int nextRemainingTime = nextBus.getRemainingMinutes();
-            _setNextBusAlarm(nextRemainingTime, nextBus.currentStation);
-          }
-          _isUpdating = false;
-        });
-      } else {
+
+            // 다음 버스 처리도 개선
+            if (!hasBoarded &&
+                remainingTime <= 0 &&
+                updatedBusArrival.busInfoList.length > 1) {
+              final nextBus = updatedBusArrival.busInfoList[1];
+              if (!nextBus.isOutOfService) {
+                int nextRemainingTime = nextBus.getRemainingMinutes();
+                _setNextBusAlarm(nextRemainingTime, nextBus.currentStation);
+              }
+            }
+          });
+        } else {
+          // 업데이트된 정보가 없어도 기존 정보 유지
+          logMessage(
+              '🚌 업데이트된 버스 정보 없음, 기존 정보 유지: ${widget.busArrival.routeNo}번',
+              level: LogLevel.warning);
+        }
         setState(() => _isUpdating = false);
       }
     } catch (e) {
-      logMessage('버스 도착 정보 업데이트 오류: $e', level: LogLevel.error);
-      setState(() => _isUpdating = false);
+      logMessage('❌ 버스 도착 정보 업데이트 오류: $e', level: LogLevel.error);
+      if (mounted) {
+        setState(() => _isUpdating = false);
+      }
     }
   }
 
   void _updateAlarmServiceCache() {
-    if (!firstBus.isOutOfService && remainingTime > 0) {
-      logMessage(
-          '🚌 버스 정보 캐시 업데이트: ${widget.busArrival.routeNo}번, $remainingTime분 후',
-          level: LogLevel.debug);
-      _alarmService.updateBusInfoCache(
-        widget.busArrival.routeNo,
-        widget.busArrival.routeId,
-        firstBus,
-        remainingTime,
-      );
+    try {
+      // 유효한 버스 정보만 캐시에 저장
+      if (!firstBus.isOutOfService &&
+          remainingTime > 0 &&
+          firstBus.estimatedTime != "운행종료" &&
+          firstBus.estimatedTime.isNotEmpty) {
+        logMessage(
+            '🚌 버스 정보 캐시 업데이트: ${widget.busArrival.routeNo}번, $remainingTime분 후, 상태: ${firstBus.estimatedTime}',
+            level: LogLevel.debug);
+        _alarmService.updateBusInfoCache(
+          widget.busArrival.routeNo,
+          widget.busArrival.routeId,
+          firstBus,
+          remainingTime,
+        );
+      } else {
+        logMessage(
+            '🚌 캐시 업데이트 생략 - 무효한 버스 정보: ${widget.busArrival.routeNo}번, 운행종료: ${firstBus.isOutOfService}, 시간: $remainingTime',
+            level: LogLevel.debug);
+      }
+    } catch (e) {
+      logMessage('❌ 캐시 업데이트 오류: $e', level: LogLevel.error);
     }
   }
 
@@ -674,19 +700,33 @@ class _BusCardState extends State<BusCard> {
             children: [
               Icon(Icons.info_outline, color: Colors.grey[600], size: 20),
               const SizedBox(width: 8),
-              Text('도착 정보가 없습니다', style: TextStyle(color: Colors.grey[600])),
+              Text('도착 정보를 불러오는 중...',
+                  style: TextStyle(color: Colors.grey[600])),
             ],
           ),
         ),
       );
     }
 
-    firstBus = widget.busArrival.busInfoList.first;
-    remainingTime =
-        firstBus.isOutOfService ? 0 : firstBus.getRemainingMinutes();
+    // 상태 업데이트 시 기존 데이터 보존
+    if (widget.busArrival.busInfoList.isNotEmpty) {
+      final newFirstBus = widget.busArrival.busInfoList.first;
+      // 유효한 정보가 있을 때만 업데이트
+      if (!newFirstBus.isOutOfService ||
+          (newFirstBus.estimatedTime != "운행종료" &&
+              newFirstBus.estimatedTime.isNotEmpty)) {
+        firstBus = newFirstBus;
+        remainingTime = firstBus.getRemainingMinutes();
+      }
+    }
+
     final String currentStationText = firstBus.currentStation.trim().isNotEmpty
         ? firstBus.currentStation
         : "정보 업데이트 중";
+
+    logMessage(
+        '🚌 BusCard 빌드: ${widget.busArrival.routeNo}번, $remainingTime분, 상태: ${firstBus.estimatedTime}, 운행종료: ${firstBus.isOutOfService}',
+        level: LogLevel.debug);
 
     String arrivalTimeText;
     if (firstBus.isOutOfService) {
