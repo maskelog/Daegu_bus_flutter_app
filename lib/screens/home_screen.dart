@@ -272,59 +272,27 @@ class _HomeScreenState extends State<HomeScreen> {
         '📌 선택된 정류장: ${_selectedStop!.name} (id: ${_selectedStop!.id}, stationId: $busStationId)');
 
     try {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
-
-      final allStops = [..._nearbyStops, ..._favoriteStops];
-
-      // 선택된 정류장의 도착 정보 로드
-      debugPrint('🚌 선택된 정류장의 도착 정보 로드 중: $busStationId');
-      final stopArrivals = await ApiService.getStationInfo(busStationId);
-      debugPrint('✅ 도착 정보 로드 완료: ${stopArrivals.length}개 버스 발견');
-
-      if (mounted) {
+      // 1. 캐시된 데이터가 있으면 즉시 표시 (빠른 반응)
+      final cachedData = _stationArrivals[_selectedStop!.id];
+      if (cachedData != null && cachedData.isNotEmpty) {
+        debugPrint('⚡ 캐시된 데이터 즉시 표시: ${cachedData.length}개 버스');
         setState(() {
-          _stationArrivals[_selectedStop!.id] = stopArrivals;
-          _busArrivals = stopArrivals;
+          _busArrivals = cachedData;
           _isLoading = false;
-          debugPrint('🔄 UI 업데이트: ${_busArrivals.length}개 버스 도착 정보 설정');
+          _errorMessage = null;
+        });
+      } else {
+        setState(() {
+          _isLoading = true;
+          _errorMessage = null;
         });
       }
 
-      // 백그라운드에서 다른 모든 정류장 정보 로드 (선택된 정류장 제외)
-      final otherStops = allStops
-          .where(
-              (stop) => _selectedStop == null || stop.id != _selectedStop!.id)
-          .toList();
+      // 2. 백그라운드에서 최신 데이터 로드 (선택된 정류장 우선)
+      _loadSelectedStationData(busStationId);
 
-      for (final stop in otherStops) {
-        try {
-          final stationId = stop.stationId ?? stop.id;
-          if (stationId.isNotEmpty) {
-            final arrivals = await ApiService.getStationInfo(stationId);
-            if (mounted) {
-              setState(() {
-                _stationArrivals[stop.id] = arrivals;
-              });
-            }
-          }
-        } catch (e) {
-          debugPrint('${stop.id} 도착 정보 로딩 오류: $e');
-          if (mounted) {
-            setState(() {
-              _stationArrivals[stop.id] = <BusArrival>[];
-            });
-          }
-        }
-      }
-
-      // 최종 상태 확인
-      if (mounted && _selectedStop != null) {
-        debugPrint('📊 최종 버스 도착 정보: ${_busArrivals.length}개');
-        debugPrint('📋 전체 정류장 캐시: ${_stationArrivals.keys.length}개 정류장');
-      }
+      // 3. 다른 정류장들은 백그라운드에서 병렬 처리
+      _loadOtherStationsInBackground();
     } catch (e) {
       debugPrint('❌ 버스 도착 정보 로딩 오류: $e');
       if (mounted) {
@@ -334,6 +302,78 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
+  }
+
+  Future<void> _loadSelectedStationData(String busStationId) async {
+    try {
+      debugPrint('🚌 선택된 정류장의 최신 정보 로드 중: $busStationId');
+      final stopArrivals = await ApiService.getStationInfo(busStationId);
+      debugPrint('✅ 최신 정보 로드 완료: ${stopArrivals.length}개 버스 발견');
+
+      if (mounted && _selectedStop != null) {
+        setState(() {
+          _stationArrivals[_selectedStop!.id] = stopArrivals;
+          _busArrivals = stopArrivals;
+          _isLoading = false;
+          debugPrint('🔄 UI 업데이트: ${_busArrivals.length}개 버스 도착 정보 설정');
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ 선택된 정류장 데이터 로딩 오류: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
+        });
+      }
+    }
+  }
+
+  void _loadOtherStationsInBackground() {
+    Future.microtask(() async {
+      final allStops = [..._nearbyStops, ..._favoriteStops];
+      final otherStops = allStops
+          .where(
+              (stop) => _selectedStop == null || stop.id != _selectedStop!.id)
+          .toList();
+
+      // 배치 크기로 나누어 처리 (한 번에 5개씩)
+      const batchSize = 5;
+      for (int i = 0; i < otherStops.length; i += batchSize) {
+        final batch = otherStops.skip(i).take(batchSize);
+
+        // 배치 내에서는 병렬 처리
+        await Future.wait(batch.map((stop) async {
+          try {
+            final stationId = stop.stationId ?? stop.id;
+            if (stationId.isNotEmpty) {
+              final arrivals = await ApiService.getStationInfo(stationId);
+              if (mounted) {
+                setState(() {
+                  _stationArrivals[stop.id] = arrivals;
+                });
+              }
+            }
+          } catch (e) {
+            debugPrint('${stop.id} 백그라운드 로딩 오류: $e');
+            if (mounted) {
+              setState(() {
+                _stationArrivals[stop.id] = <BusArrival>[];
+              });
+            }
+          }
+        }));
+
+        // 배치 간 짧은 지연으로 UI 블로킹 방지
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
+      // 최종 상태 확인
+      if (mounted && _selectedStop != null) {
+        debugPrint('📊 최종 버스 도착 정보: ${_busArrivals.length}개');
+        debugPrint('📋 전체 정류장 캐시: ${_stationArrivals.keys.length}개 정류장');
+      }
+    });
   }
 
   @override
@@ -423,15 +463,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                     if (result != null) {
                       if (result is BusStop) {
+                        // 즉시 UI 업데이트로 빠른 반응 제공
                         setState(() {
                           _selectedStop = result;
+                          _isLoading = true; // 로딩 상태 즉시 표시
+                          _errorMessage = null;
                           if (result.isFavorite && !_isStopFavorite(result)) {
                             _favoriteStops.add(result);
                             _saveFavoriteStops();
                           }
                         });
-                        // setState 완료 후 비동기로 데이터 로드
-                        _loadBusArrivals();
+                        // 비동기로 데이터 로드 (UI 블로킹 방지)
+                        Future.microtask(() => _loadBusArrivals());
                       } else if (result is List) {
                         setState(() {
                           _favoriteStops.clear();
@@ -660,11 +703,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                     child: InkWell(
                                       onTap: () {
+                                        // 즉시 UI 업데이트로 빠른 반응 제공
                                         setState(() {
                                           _selectedStop = stop;
+                                          _isLoading = true;
+                                          _errorMessage = null;
                                         });
-                                        // 정류장 선택 후 즉시 도착 정보 로드
-                                        _loadBusArrivals();
+                                        // 비동기로 데이터 로드 (UI 블로킹 방지)
+                                        Future.microtask(
+                                            () => _loadBusArrivals());
                                       },
                                       borderRadius: BorderRadius.circular(12),
                                       child: Padding(
@@ -777,11 +824,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         child: InkWell(
                           onTap: () {
+                            // 즉시 UI 업데이트로 빠른 반응 제공
                             setState(() {
                               _selectedStop = stop;
+                              _isLoading = true;
+                              _errorMessage = null;
                             });
-                            // 정류장 선택 후 즉시 도착 정보 로드
-                            _loadBusArrivals();
+                            // 비동기로 데이터 로드 (UI 블로킹 방지)
+                            Future.microtask(() => _loadBusArrivals());
                           },
                           borderRadius: BorderRadius.circular(12),
                           child: Padding(
@@ -977,11 +1027,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return FavoritesScreen(
       favoriteStops: _favoriteStops,
       onStopSelected: (stop) {
+        // 즉시 UI 업데이트로 빠른 반응 제공
         setState(() {
           _selectedStop = stop;
+          _isLoading = true;
+          _errorMessage = null;
           debugPrint('Favorite stop selected: ${stop.id}, ${stop.name}');
-          _loadBusArrivals();
         });
+        // 비동기로 데이터 로드 (UI 블로킹 방지)
+        Future.microtask(() => _loadBusArrivals());
       },
       onFavoriteToggle: _toggleFavorite,
     );
