@@ -352,9 +352,11 @@ class _BusCardState extends State<BusCard> {
         busNo: widget.busArrival.routeNo,
       );
 
+      if (!mounted) return;
       final settings = Provider.of<SettingsService>(context, listen: false);
       final ttsSwitcher = TtsSwitcher();
       await ttsSwitcher.initialize();
+      if (!mounted) return;
       final headphoneConnected =
           await ttsSwitcher.isHeadphoneConnected().catchError((e) {
         logMessage('이어폰 연결 상태 확인 중 오류: $e', level: LogLevel.error);
@@ -550,9 +552,11 @@ class _BusCardState extends State<BusCard> {
             busNo: widget.busArrival.routeNo,
           );
 
+          if (!mounted) return;
           final settings = Provider.of<SettingsService>(context, listen: false);
           final ttsSwitcher = TtsSwitcher();
           await ttsSwitcher.initialize();
+          if (!mounted) return;
           final headphoneConnected =
               await ttsSwitcher.isHeadphoneConnected().catchError((e) {
             logMessage('이어폰 연결 상태 확인 중 오류: $e', level: LogLevel.error);

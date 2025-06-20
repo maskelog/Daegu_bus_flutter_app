@@ -50,6 +50,8 @@ class BusAlertService : Service() {
         private const val CHANNEL_ID_ERROR = "bus_tracking_error"
         private const val CHANNEL_NAME_ERROR = "추적 오류 알림"
         private const val CHANNEL_BUS_ALERTS = "bus_alerts"
+        private const val CHANNEL_ID_AUTO_ALARM = "auto_alarm_lightweight"
+        private const val CHANNEL_NAME_AUTO_ALARM = "자동 알람 (경량)"
 
         // 서비스 상태 대한 싱글톤 인스턴스
         private var instance: BusAlertService? = null
@@ -62,6 +64,7 @@ class BusAlertService : Service() {
 
         // Notification IDs
         const val ONGOING_NOTIFICATION_ID = NotificationHandler.ONGOING_NOTIFICATION_ID
+        const val AUTO_ALARM_NOTIFICATION_ID = 9999 // 자동알람 전용 ID
 
         // Intent Actions
         const val ACTION_START_TRACKING = "com.example.daegu_bus_app.action.START_TRACKING"
@@ -73,6 +76,7 @@ class BusAlertService : Service() {
         const val ACTION_START_TRACKING_FOREGROUND = "com.example.daegu_bus_app.action.START_TRACKING_FOREGROUND"
         const val ACTION_UPDATE_TRACKING = "com.example.daegu_bus_app.action.UPDATE_TRACKING"
         const val ACTION_STOP_BUS_ALERT_TRACKING = "com.example.daegu_bus_app.action.STOP_BUS_ALERT_TRACKING"
+        const val ACTION_START_AUTO_ALARM_LIGHTWEIGHT = "com.example.daegu_bus_app.action.START_AUTO_ALARM_LIGHTWEIGHT"
 
         // TTS Output Modes
         const val OUTPUT_MODE_HEADSET = 0  // 이어폰 전용 (현재 AUTO)
@@ -124,6 +128,11 @@ class BusAlertService : Service() {
     private var currentAlarmSound: String = DEFAULT_ALARM_SOUND
     private var notificationDisplayMode: Int = DISPLAY_MODE_ALARMED_ONLY
     private var monitoringTimer: Timer? = null
+
+    // 배터리 최적화를 위한 자동알람 모드
+    private var isAutoAlarmMode = false
+    private var autoAlarmStartTime = 0L
+    private val AUTO_ALARM_TIMEOUT_MS = 300000L // 5분 후 자동 종료
 
     // Simplified AudioFocusChangeListener
     private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -405,6 +414,15 @@ class BusAlertService : Service() {
                     Log.e(TAG, "Missing routeId for $intent.action")
                     stopTrackingIfIdle()
                 }
+            }
+            ACTION_START_AUTO_ALARM_LIGHTWEIGHT -> {
+                val busNo = intent.getStringExtra("busNo") ?: ""
+                val stationName = intent.getStringExtra("stationName") ?: ""
+                val remainingMinutes = intent.getIntExtra("remainingMinutes", -1)
+                val currentStation = intent.getStringExtra("currentStation") ?: ""
+
+                Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $busNo 번, $stationName")
+                handleAutoAlarmLightweight(busNo, stationName, remainingMinutes, currentStation)
             }
             else -> {
                 Log.w(TAG, "Unhandled action received: $intent.action")
@@ -2267,6 +2285,129 @@ class BusAlertService : Service() {
             isIndividualAlarm = true // 이 알림이 개별 알람임을 명시
         )
     }
+
+    /**
+     * 배터리 절약을 위한 자동알람 경량화 모드
+     * - Foreground Service 사용 안함
+     * - 간단한 알림만 표시
+     * - 5분 후 자동 종료
+     */
+    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String) {
+        try {
+            Log.d(TAG, "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName")
+
+            // 자동알람 모드 활성화
+            isAutoAlarmMode = true
+            autoAlarmStartTime = System.currentTimeMillis()
+
+            // 경량화된 알림 표시
+            showAutoAlarmLightweightNotification(busNo, stationName, remainingMinutes, currentStation)
+
+            // 5분 후 자동 종료 스케줄링
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (isAutoAlarmMode && (System.currentTimeMillis() - autoAlarmStartTime) >= AUTO_ALARM_TIMEOUT_MS) {
+                    Log.d(TAG, "🔔 자동알람 경량화 모드 타임아웃으로 종료")
+                    stopAutoAlarmLightweight()
+                }
+            }, AUTO_ALARM_TIMEOUT_MS)
+
+            Log.d(TAG, "✅ 자동알람 경량화 모드 시작 완료")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 자동알람 경량화 모드 처리 오류: ${e.message}", e)
+        }
+    }
+
+    /**
+     * 자동알람용 경량화된 알림 표시
+     */
+    private fun showAutoAlarmLightweightNotification(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String) {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // 자동알람 전용 채널 생성
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID_AUTO_ALARM,
+                    CHANNEL_NAME_AUTO_ALARM,
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "자동 알람 경량화 알림"
+                    enableLights(false)
+                    enableVibration(false)
+                    setShowBadge(false)
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            // 알림 내용 생성
+            val contentText = if (remainingMinutes >= 0) {
+                when {
+                    remainingMinutes <= 0 -> "$busNo 번 버스가 곧 도착합니다."
+                    remainingMinutes == 1 -> "$busNo 번 버스가 약 1분 후 도착 예정입니다."
+                    else -> "$busNo 번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
+                }
+            } else {
+                "$busNo 번 버스 정보를 확인해주세요."
+            }
+
+            val bigText = if (currentStation.isNotBlank() && currentStation != "정보 없음") {
+                "$contentText\n현재 위치: $currentStation"
+            } else {
+                contentText
+            }
+
+            // 앱 실행 인텐트
+            val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            val pendingIntent = intent?.let {
+                PendingIntent.getActivity(this, AUTO_ALARM_NOTIFICATION_ID, it,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            }
+
+            // 경량화된 알림 생성
+            val notification = NotificationCompat.Builder(this, CHANNEL_ID_AUTO_ALARM)
+                .setContentTitle("$busNo 번 버스 알람")
+                .setContentText(contentText)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setOnlyAlertOnce(true) // 중복 알림 방지
+                .build()
+
+            notificationManager.notify(AUTO_ALARM_NOTIFICATION_ID, notification)
+            Log.d(TAG, "✅ 자동알람 경량화 알림 표시 완료: $busNo 번")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 자동알람 경량화 알림 표시 실패: ${e.message}", e)
+        }
+    }
+
+    /**
+     * 자동알람 경량화 모드 종료
+     */
+    private fun stopAutoAlarmLightweight() {
+        try {
+            Log.d(TAG, "🔔 자동알람 경량화 모드 종료")
+
+            isAutoAlarmMode = false
+            autoAlarmStartTime = 0L
+
+            // 자동알람 알림 제거
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
+
+            Log.d(TAG, "✅ 자동알람 경량화 모드 종료 완료")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 자동알람 경량화 모드 종료 오류: ${e.message}", e)
+        }
+    }
 }
 
 class NotificationDismissReceiver : android.content.BroadcastReceiver() {
@@ -2317,6 +2458,8 @@ fun BusInfo.toMap(): Map<String, Any?> {
         "isOutOfService" to isOutOfService, "remainingMinutes" to remainingMinutes
     )
 }
+
+
 
 fun StationArrivalOutput.BusInfo.toMap(): Map<String, Any?> {
     return mapOf(

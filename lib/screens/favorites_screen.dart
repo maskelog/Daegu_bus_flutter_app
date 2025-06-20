@@ -317,7 +317,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                   level:
                                       success ? LogLevel.info : LogLevel.error);
 
-                              if (mounted) {
+                              if (mounted && context.mounted) {
                                 if (success) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(

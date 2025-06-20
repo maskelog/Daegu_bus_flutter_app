@@ -1065,8 +1065,6 @@ class AlarmService extends ChangeNotifier {
         return; // 이미 지난 시간이면 등록 취소
       }
 
-      final backupDelay = backupTime.difference(now);
-
       // 백업 알람도 네이티브 AlarmManager를 통해 스케줄링
       await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
         'alarmId': id, // 동일 ID 사용

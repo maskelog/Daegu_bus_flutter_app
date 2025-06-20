@@ -103,11 +103,6 @@ class NotificationService {
       MethodChannel('com.example.daegu_bus_app/notification');
   final SettingsService _settingsService = SettingsService();
 
-  // 알림 ID 생성 헬퍼 메소드
-  int _generateNotificationId(String busNo, String stationName) {
-    return ('${busNo}_$stationName').hashCode.abs();
-  }
-
   /// 알림 서비스 초기화
   Future<bool> initialize() async {
     try {

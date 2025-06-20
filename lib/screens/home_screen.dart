@@ -173,6 +173,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // 3. 권한과 서비스가 준비되면 주변 정류장 로드 시도
       log('📍 Permissions granted and services enabled. Fetching nearby stations...');
+      if (!mounted) return;
+
       final nearbyStations =
           await LocationService.getNearbyStations(500, context: context);
       log('📍 Found ${nearbyStations.length} nearby stations.');
@@ -634,7 +636,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 _loadNearbyStations(); // 권한 허용되면 다시 불러오기
                                               } else if (status
                                                       .isPermanentlyDenied &&
-                                                  mounted) {
+                                                  mounted &&
+                                                  context.mounted) {
                                                 // 영구 거부인 경우 설정창 열기
                                                 ScaffoldMessenger.of(context)
                                                     .showSnackBar(

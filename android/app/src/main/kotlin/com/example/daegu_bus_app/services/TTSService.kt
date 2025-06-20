@@ -36,6 +36,10 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     private val SPEAK_INTERVAL = 30000L // 30초마다 말하기
     private var ttsVolume: Float = 1.0f
 
+    // 배터리 최적화를 위한 자동알람 모드
+    private var isAutoAlarmMode = false
+    private var singleExecutionMode = false
+
     // Handler for repeating TTS announcements
     private val ttsHandler = Handler(Looper.getMainLooper())
     private val ttsRunnable = object : Runnable {
@@ -103,6 +107,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 val customMessage = intent.getStringExtra("ttsMessage")
                 val isBackup = intent.getBooleanExtra("isBackup", false)
                 val backupNumber = intent.getIntExtra("backupNumber", 0)
+                singleExecutionMode = intent.getBooleanExtra("singleExecution", false)
 
                 if (isBackup) {
                     Log.d(TAG, "🔊 백업 TTS 요청 ($backupNumber 번째): $busNo 번, $stationName")
@@ -110,17 +115,19 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                     Log.d(TAG, "🔊 TTS 요청: $busNo 번, $stationName (자동알람: $isAutoAlarm)")
                 }
 
-                // 자동 알람인 경우 이어폰 체크 무시하고 강제 스피커 모드 사용
+                // 자동 알람인 경우 배터리 최적화된 처리
                 if (isAutoAlarm) {
-                    Log.d(TAG, "🔊 자동 알람 TTS 요청 - 강제 스피커 모드 사용")
+                    Log.d(TAG, "🔊 자동 알람 TTS 요청 - 배터리 최적화 모드")
+                    isAutoAlarmMode = true
+
                     if (isInitialized) {
-                        speakBusAlert(forceSpeaker = true, customMessage = customMessage)
+                        handleAutoAlarmTTS(customMessage)
                     } else {
                         initializeTTS()
                         // 초기화 후 발화 시도
                         Handler(Looper.getMainLooper()).postDelayed({
                             if (isInitialized) {
-                                speakBusAlert(forceSpeaker = true, customMessage = customMessage)
+                                handleAutoAlarmTTS(customMessage)
                             }
                         }, 1000)
                     }
@@ -218,6 +225,17 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     private fun startTracking() {
         if (!isInitialized) {
             // Log.e(TAG, "TTS가 초기화되지 않았습니다")
+            return
+        }
+
+        // 자동알람 모드이거나 단일 실행 모드인 경우 반복 안함
+        if (isAutoAlarmMode || singleExecutionMode) {
+            Log.d(TAG, "🔊 자동알람/단일실행 모드: 반복 TTS 없음")
+            speakBusAlert(forceSpeaker = true)
+            // 발화 후 즉시 서비스 종료 (배터리 절약)
+            Handler(Looper.getMainLooper()).postDelayed({
+                stopSelf()
+            }, 3000) // 3초 후 종료
             return
         }
 
@@ -395,5 +413,31 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     private fun getTtsVolume(): Float {
         val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         return prefs.getFloat("tts_volume", 1.0f).coerceIn(0f, 1f)
+    }
+
+    /**
+     * 배터리 최적화된 자동알람 TTS 처리
+     * - 한 번만 발화
+     * - 강제 스피커 모드
+     * - 즉시 서비스 종료
+     */
+    private fun handleAutoAlarmTTS(customMessage: String?) {
+        try {
+            Log.d(TAG, "🔊 자동알람 TTS 처리 시작")
+
+            // 강제 스피커 모드로 한 번만 발화
+            speakBusAlert(forceSpeaker = true, customMessage = customMessage)
+
+            // TTS 발화 완료 후 서비스 종료 (배터리 절약)
+            Handler(Looper.getMainLooper()).postDelayed({
+                Log.d(TAG, "🔊 자동알람 TTS 완료, 서비스 종료")
+                stopSelf()
+            }, 5000) // 5초 후 종료 (발화 완료 대기)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 자동알람 TTS 처리 오류: ${e.message}", e)
+            // 오류 발생 시에도 서비스 종료
+            stopSelf()
+        }
     }
 }

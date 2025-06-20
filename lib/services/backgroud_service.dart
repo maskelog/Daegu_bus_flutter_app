@@ -590,7 +590,7 @@ Future<bool> _registerAutoAlarmTask(
     // 기존 알람 취소
     await Workmanager().cancelByUniqueName('autoAlarm_${alarm.id}');
 
-    // 알람 예약 (테스트를 위해 짧은 간격으로 설정)
+    // 배터리 절약을 위한 최적화된 알람 예약
     await Workmanager().registerOneOffTask(
       uniqueTaskId,
       'autoAlarmTask',
@@ -598,12 +598,13 @@ Future<bool> _registerAutoAlarmTask(
       inputData: inputData,
       constraints: Constraints(
         networkType: NetworkType.connected,
-        requiresBatteryNotLow: false,
+        requiresBatteryNotLow: true, // 배터리 부족 시 실행 안함
         requiresCharging: false,
         requiresDeviceIdle: false,
-        requiresStorageNotLow: false,
+        requiresStorageNotLow: true, // 저장공간 부족 시 실행 안함
       ),
-      backoffPolicy: BackoffPolicy.linear,
+      backoffPolicy: BackoffPolicy.exponential, // 지수적 백오프로 변경
+      backoffPolicyDelay: const Duration(minutes: 5), // 백오프 지연 시간 증가
       existingWorkPolicy: ExistingWorkPolicy.replace,
     );
 
@@ -787,7 +788,7 @@ Future<void> _registerBackupAlarm(
       'isBackup': true,
     };
 
-    // 백업 알람 등록
+    // 배터리 절약을 위한 최적화된 백업 알람 등록
     await Workmanager().registerOneOffTask(
       backupTaskId,
       'autoAlarmTask',
@@ -795,12 +796,13 @@ Future<void> _registerBackupAlarm(
       inputData: backupInputData,
       constraints: Constraints(
         networkType: NetworkType.connected,
-        requiresBatteryNotLow: false,
+        requiresBatteryNotLow: true, // 배터리 부족 시 백업도 실행 안함
         requiresCharging: false,
         requiresDeviceIdle: false,
-        requiresStorageNotLow: false,
+        requiresStorageNotLow: true, // 저장공간 부족 시 백업도 실행 안함
       ),
-      backoffPolicy: BackoffPolicy.linear,
+      backoffPolicy: BackoffPolicy.exponential, // 지수적 백오프
+      backoffPolicyDelay: const Duration(minutes: 10), // 백업은 더 긴 지연
       existingWorkPolicy: ExistingWorkPolicy.replace,
     );
 

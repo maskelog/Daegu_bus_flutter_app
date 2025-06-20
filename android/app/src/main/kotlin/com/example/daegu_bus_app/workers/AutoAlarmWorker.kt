@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -24,7 +25,7 @@ import com.example.daegu_bus_app.services.TTSService
 import com.example.daegu_bus_app.MainActivity
 import com.example.daegu_bus_app.R
 
-// --- Worker for Auto Alarms ---
+// --- Worker for Auto Alarms (Battery Optimized) ---
 class AutoAlarmWorker(
     private val context: Context,
     workerParams: WorkerParameters
@@ -32,13 +33,22 @@ class AutoAlarmWorker(
     private val TAG = "AutoAlarmWorker"
     private val ALARM_NOTIFICATION_CHANNEL_ID = "bus_alarm_channel"
 
+    // 배터리 최적화를 위한 상수들
+    private val API_TIMEOUT_MS = 10000L // 10초 타임아웃
+    private val MAX_RETRY_COUNT = 2 // 최대 재시도 횟수
+    private val CACHE_VALIDITY_MS = 30000L // 30초 캐시 유효성
+
     // Store data passed from input
     private var alarmId: Int = 0
     private var busNo: String = ""
     private var stationName: String = ""
-    private var routeId: String = "" // Added to pass to TTSService
-    private var stationId: String = "" // Added to pass to TTSService
+    private var routeId: String = ""
+    private var stationId: String = ""
     private var useTTS: Boolean = true
+
+    // 배터리 절약을 위한 캐시
+    private var lastApiCall: Long = 0
+    private var cachedBusInfo: Pair<Int, String>? = null
 
     override fun doWork(): Result {
         Log.d(TAG, "⏰ AutoAlarmWorker 실행 시작")
@@ -72,56 +82,13 @@ class AutoAlarmWorker(
             return Result.failure()
         }
 
-        // 실시간 버스 정보 fetch 시도 (BusApiService 직접 사용)
-        var fetchedMinutes: Int? = null
-        var fetchedStation: String? = null
-        var fetchSuccess = false
-        try {
-            Log.d(TAG, "🔍 [AutoAlarm] 실시간 버스 정보 조회 시작")
-            Log.d(TAG, "  - stationId: $stationId")
-            Log.d(TAG, "  - routeId: $routeId")
+        // 배터리 최적화된 실시간 버스 정보 조회
+        val busInfo = fetchBusInfoOptimized()
+        val fetchedMinutes = busInfo?.first
+        val fetchedStation = busInfo?.second
+        val fetchSuccess = busInfo != null
 
-            val apiService = BusApiService(applicationContext)
-            Log.d(TAG, "🔍 [AutoAlarm] BusApiService 인스턴스 생성 완료")
 
-            val stationInfoJson = runBlocking {
-                withContext(Dispatchers.IO) {
-                    try {
-                        Log.d(TAG, "🔍 [AutoAlarm] getStationInfo 호출 시작")
-                        val result = apiService.getStationInfo(stationId)
-                        Log.d(TAG, "🔍 [AutoAlarm] getStationInfo 호출 완료, 결과 길이: ${result.length}")
-                        result
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ [AutoAlarm] BusApiService.getStationInfo 호출 오류: ${e.message}", e)
-                        Log.e(TAG, "❌ [AutoAlarm] 오류 스택 트레이스: ${e.stackTrace.joinToString("\n")}")
-                        ""
-                    }
-                }
-            }
-
-            Log.d(TAG, "🔍 [AutoAlarm] 정류장 정보 조회 결과 (첫 200자): ${stationInfoJson.take(200)}")
-
-            if (stationInfoJson.isNotBlank() && stationInfoJson != "[]") {
-                Log.d(TAG, "🔍 [AutoAlarm] JSON 파싱 시작")
-                // JSON 파싱하여 해당 노선의 버스 정보 추출
-                val busInfo = parseBusInfoFromJson(stationInfoJson, routeId)
-                if (busInfo != null) {
-                    fetchedMinutes = busInfo.first
-                    fetchedStation = busInfo.second
-                    fetchSuccess = true
-                    Log.d(TAG, "✅ [AutoAlarm] 버스 정보 파싱 성공: ${fetchedMinutes}분, 현재위치: $fetchedStation")
-                } else {
-                    Log.w(TAG, "⚠️ [AutoAlarm] 해당 노선의 버스 정보를 찾을 수 없음: $routeId")
-                    Log.w(TAG, "⚠️ [AutoAlarm] 전체 JSON 내용: $stationInfoJson")
-                }
-            } else {
-                Log.w(TAG, "⚠️ [AutoAlarm] 정류장 정보가 비어있거나 빈 배열")
-                Log.w(TAG, "⚠️ [AutoAlarm] 응답 내용: '$stationInfoJson'")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ [AutoAlarm] 실시간 버스 정보 fetch 실패: ${e.message}", e)
-            Log.e(TAG, "❌ [AutoAlarm] 전체 스택 트레이스: ${e.stackTrace.joinToString("\n")}")
-        }
 
         // 알림 메시지 결정
         val contentText = if (fetchSuccess && fetchedMinutes != null && fetchedStation != null) {
@@ -134,114 +101,12 @@ class AutoAlarmWorker(
             "$busNo 번 버스의 실시간 정보를 불러오지 못했습니다. 네트워크 상태를 확인해주세요."
         }
 
-        // 노티피케이션 표시 (BusAlertService를 통해)
-        try {
-            val busAlertIntent = Intent(applicationContext, BusAlertService::class.java).apply {
-                action = "com.example.daegu_bus_app.action.START_TRACKING_FOREGROUND"
-                putExtra("busNo", busNo)
-                putExtra("stationName", stationName)
-                putExtra("routeId", routeId)
-                putExtra("stationId", stationId)
-                putExtra("remainingMinutes", fetchedMinutes ?: 0)
-                putExtra("currentStation", fetchedStation ?: "")
-                putExtra("isAutoAlarm", true)
-            }
+        // 배터리 절약을 위해 경량화된 알림만 표시 (Foreground Service 사용 안함)
+        showLightweightNotification(alarmId, busNo, stationName, contentText, fetchedMinutes, fetchedStation)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                applicationContext.startForegroundService(busAlertIntent)
-            } else {
-                applicationContext.startService(busAlertIntent)
-            }
-            Log.d(TAG, "✅ BusAlertService 시작 요청 완료 (자동 알람)")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ BusAlertService 시작 중 오류: ${e.message}", e)
-            // 백업으로 직접 노티피케이션 표시
-            try {
-                showNotification(alarmId, busNo, stationName, contentText)
-                Log.d(TAG, "✅ 백업 노티피케이션 표시 완료")
-            } catch (notifError: Exception) {
-                Log.e(TAG, "❌ 백업 노티피케이션 표시 실패: ${notifError.message}", notifError)
-            }
-        }
-
+        // 배터리 절약을 위한 최적화된 TTS 처리
         if (useTTS) {
-            try {
-                Log.d(TAG, "🔊 자동 알람 TTS 발화 시작: $busNo 번, $stationName")
-
-                // TTS 메시지 생성 (정류장 이름 제거로 간소화)
-                val ttsMessage = if (fetchSuccess && fetchedMinutes != null) {
-                    when {
-                        fetchedMinutes <= 0 -> "$busNo 번 버스가 곧 도착합니다."
-                        fetchedMinutes == 1 -> "$busNo 번 버스가 약 1분 후 도착 예정입니다."
-                        else -> "$busNo 번 버스가 약 ${fetchedMinutes}분 후 도착 예정입니다."
-                    }
-                } else {
-                    "$busNo 번 버스가 곧 도착합니다."
-                }
-
-                Log.i(TAG, "🗣️ TTS 메시지: $ttsMessage")
-
-                // 즉시 실행된 알람인지 확인 (중복 TTS 방지)
-                val scheduledFor = inputData.getLong("scheduledFor", 0L)
-                val currentTime = System.currentTimeMillis()
-                val isImmediate = (currentTime - scheduledFor) > -30000L // 30초 이내면 즉시 실행으로 간주
-
-                if (isImmediate) {
-                    Log.d(TAG, "⏰ [AutoAlarm] 즉시 실행된 알람 - TTS 건너뛰기 (중복 방지)")
-                } else {
-                    // 자동 알람용 TTS 서비스 시작 (강제 스피커 모드)
-                    val ttsIntent = Intent(applicationContext, TTSService::class.java).apply {
-                        action = "REPEAT_TTS_ALERT"
-                        putExtra("busNo", busNo)
-                        putExtra("stationName", stationName)
-                        putExtra("routeId", routeId)
-                        putExtra("stationId", stationId)
-                        putExtra("remainingMinutes", fetchedMinutes ?: 0)
-                        putExtra("currentStation", fetchedStation ?: "")
-                        putExtra("isAutoAlarm", true)  // 자동 알람 플래그 추가
-                        putExtra("forceSpeaker", true) // 강제 스피커 모드 플래그 추가
-                        putExtra("ttsMessage", ttsMessage) // TTS 메시지 직접 전달
-                    }
-
-                    // 서비스 시작
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        applicationContext.startForegroundService(ttsIntent)
-                    } else {
-                        applicationContext.startService(ttsIntent)
-                    }
-                    Log.d(TAG, "✅ 자동 알람 TTSService 시작 요청 완료 (강제 스피커 모드)")
-
-                    // 백업 TTS는 한 번만 실행 (5초 후)
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        try {
-                            val backupTtsIntent = Intent(applicationContext, TTSService::class.java).apply {
-                                action = "REPEAT_TTS_ALERT"
-                                putExtra("busNo", busNo)
-                                putExtra("stationName", stationName)
-                                putExtra("routeId", routeId)
-                                putExtra("stationId", stationId)
-                                putExtra("remainingMinutes", fetchedMinutes ?: 0)
-                                putExtra("currentStation", fetchedStation ?: "")
-                                putExtra("isAutoAlarm", true)
-                                putExtra("forceSpeaker", true)
-                                putExtra("ttsMessage", ttsMessage)
-                                putExtra("isBackup", true)
-                                putExtra("backupNumber", 1)
-                            }
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                applicationContext.startForegroundService(backupTtsIntent)
-                            } else {
-                                applicationContext.startService(backupTtsIntent)
-                            }
-                            Log.d(TAG, "✅ 백업 TTSService 시작 요청 완료 (5초 후)")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ 백업 TTSService 시작 중 오류: ${e.message}", e)
-                        }
-                    }, 5000L)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ TTSService 시작 중 오류: ${e.message}", e)
-            }
+            handleOptimizedTTS(fetchedMinutes, fetchSuccess)
         }
 
         Log.d(TAG, "✅ [AutoAlarm] Worker 작업 완료")
@@ -252,6 +117,155 @@ class AutoAlarmWorker(
 
         // 성공적으로 완료 (실패해도 재시도하지 않음)
         return Result.success()
+    }
+
+    /**
+     * 배터리 최적화된 버스 정보 조회
+     * - 캐시 사용으로 불필요한 API 호출 방지
+     * - 타임아웃 설정으로 무한 대기 방지
+     * - 재시도 횟수 제한
+     */
+    private fun fetchBusInfoOptimized(): Pair<Int, String>? {
+        val currentTime = System.currentTimeMillis()
+
+        // 캐시된 데이터가 유효한지 확인
+        if (cachedBusInfo != null && (currentTime - lastApiCall) < CACHE_VALIDITY_MS) {
+            Log.d(TAG, "🔄 [AutoAlarm] 캐시된 버스 정보 사용: ${cachedBusInfo?.first}분")
+            return cachedBusInfo
+        }
+
+        var retryCount = 0
+        while (retryCount < MAX_RETRY_COUNT) {
+            try {
+                Log.d(TAG, "🔍 [AutoAlarm] 실시간 버스 정보 조회 시작 (시도: ${retryCount + 1}/$MAX_RETRY_COUNT)")
+
+                val apiService = BusApiService(applicationContext)
+                val stationInfoJson = runBlocking {
+                    withTimeoutOrNull(API_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) {
+                            apiService.getStationInfo(stationId)
+                        }
+                    }
+                }
+
+                if (stationInfoJson != null && stationInfoJson.isNotBlank() && stationInfoJson != "[]") {
+                    val busInfo = parseBusInfoFromJson(stationInfoJson, routeId)
+                    if (busInfo != null) {
+                        // 캐시 업데이트
+                        cachedBusInfo = busInfo
+                        lastApiCall = currentTime
+                        Log.d(TAG, "✅ [AutoAlarm] 버스 정보 조회 성공: ${busInfo.first}분, 현재위치: ${busInfo.second}")
+                        return busInfo
+                    }
+                }
+
+                Log.w(TAG, "⚠️ [AutoAlarm] 버스 정보 조회 실패, 재시도 중...")
+                retryCount++
+
+                // 재시도 전 잠시 대기 (배터리 절약)
+                if (retryCount < MAX_RETRY_COUNT) {
+                    Thread.sleep(1000L * retryCount) // 점진적 백오프
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ [AutoAlarm] API 호출 오류 (시도 ${retryCount + 1}): ${e.message}")
+                retryCount++
+            }
+        }
+
+        Log.e(TAG, "❌ [AutoAlarm] 모든 재시도 실패, 기본값 반환")
+        return null
+    }
+
+    /**
+     * 배터리 절약을 위한 최적화된 TTS 처리
+     * - 백업 TTS 제거
+     * - 한 번만 실행
+     * - 즉시 실행 조건 개선
+     */
+    private fun handleOptimizedTTS(fetchedMinutes: Int?, fetchSuccess: Boolean) {
+        try {
+            Log.d(TAG, "🔊 자동 알람 TTS 발화 시작: $busNo 번")
+
+            // TTS 메시지 생성 (간소화)
+            val ttsMessage = if (fetchSuccess && fetchedMinutes != null) {
+                when {
+                    fetchedMinutes <= 0 -> "$busNo 번 버스가 곧 도착합니다."
+                    fetchedMinutes == 1 -> "$busNo 번 버스가 약 1분 후 도착 예정입니다."
+                    else -> "$busNo 번 버스가 약 ${fetchedMinutes}분 후 도착 예정입니다."
+                }
+            } else {
+                "$busNo 번 버스가 곧 도착합니다."
+            }
+
+            // 즉시 실행 조건 확인 (중복 방지)
+            val scheduledFor = inputData.getLong("scheduledFor", 0L)
+            val currentTime = System.currentTimeMillis()
+            val isImmediate = scheduledFor > 0 && (currentTime - scheduledFor) < 60000L // 1분 이내
+
+            if (isImmediate) {
+                Log.d(TAG, "⏰ [AutoAlarm] 즉시 실행된 알람 - TTS 건너뛰기")
+                return
+            }
+
+            // 단일 TTS 실행 (백업 없음)
+            val ttsIntent = Intent(applicationContext, TTSService::class.java).apply {
+                action = "REPEAT_TTS_ALERT"
+                putExtra("busNo", busNo)
+                putExtra("stationName", stationName)
+                putExtra("routeId", routeId)
+                putExtra("stationId", stationId)
+                putExtra("remainingMinutes", fetchedMinutes ?: 0)
+                putExtra("currentStation", "")
+                putExtra("isAutoAlarm", true)
+                putExtra("forceSpeaker", true)
+                putExtra("ttsMessage", ttsMessage)
+                putExtra("singleExecution", true) // 단일 실행 플래그
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(ttsIntent)
+            } else {
+                applicationContext.startService(ttsIntent)
+            }
+            Log.d(TAG, "✅ 최적화된 TTS 서비스 시작 완료")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 최적화된 TTS 처리 오류: ${e.message}", e)
+        }
+    }
+
+    /**
+     * 배터리 절약을 위한 경량화된 알림
+     * - BusAlertService의 경량화 모드 사용
+     * - Foreground Service 사용 안함
+     */
+    private fun showLightweightNotification(alarmId: Int, busNo: String, stationName: String, contentText: String, remainingMinutes: Int?, currentStation: String?) {
+        try {
+            Log.d(TAG, "📱 경량화된 알림 표시: $busNo 번")
+
+            // BusAlertService의 경량화 모드 사용
+            val lightweightIntent = Intent(applicationContext, BusAlertService::class.java).apply {
+                action = BusAlertService.ACTION_START_AUTO_ALARM_LIGHTWEIGHT
+                putExtra("busNo", busNo)
+                putExtra("stationName", stationName)
+                putExtra("remainingMinutes", remainingMinutes ?: 0)
+                putExtra("currentStation", currentStation ?: "")
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(lightweightIntent)
+            } else {
+                applicationContext.startService(lightweightIntent)
+            }
+
+            Log.d(TAG, "✅ BusAlertService 경량화 모드 시작 요청 완료")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 경량화된 알림 표시 실패, 백업 알림 사용: ${e.message}")
+            // 백업으로 직접 알림 표시
+            showNotification(alarmId, busNo, stationName, contentText)
+        }
     }
 
     private fun showNotification(alarmId: Int, busNo: String, stationName: String, contentText: String) {

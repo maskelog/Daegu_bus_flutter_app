@@ -521,14 +521,14 @@ void _setupAutoAlarms() {
         },
         constraints: Constraints(
           networkType: NetworkType.connected,
-          requiresBatteryNotLow: false,
+          requiresBatteryNotLow: true, // 배터리 부족 시 실행 안함
           requiresCharging: false,
           requiresDeviceIdle: false,
-          requiresStorageNotLow: false,
+          requiresStorageNotLow: true, // 저장공간 부족 시 실행 안함
         ),
         existingWorkPolicy: ExistingWorkPolicy.replace,
-        backoffPolicy: BackoffPolicy.linear,
-        backoffPolicyDelay: const Duration(minutes: 1),
+        backoffPolicy: BackoffPolicy.exponential, // 지수적 백오프
+        backoffPolicyDelay: const Duration(minutes: 5), // 백오프 지연 시간 증가
       );
       logMessage('✅ 자동 알람 초기화 작업 등록 완료', level: LogLevel.info);
 
@@ -559,14 +559,14 @@ void _setupAutoAlarms() {
             },
             constraints: Constraints(
               networkType: NetworkType.connected,
-              requiresBatteryNotLow: false,
+              requiresBatteryNotLow: true, // 배터리 부족 시 재시도도 실행 안함
               requiresCharging: false,
               requiresDeviceIdle: false,
-              requiresStorageNotLow: false,
+              requiresStorageNotLow: true, // 저장공간 부족 시 재시도도 실행 안함
             ),
             existingWorkPolicy: ExistingWorkPolicy.replace,
-            backoffPolicy: BackoffPolicy.linear,
-            backoffPolicyDelay: const Duration(minutes: 1),
+            backoffPolicy: BackoffPolicy.exponential, // 지수적 백오프
+            backoffPolicyDelay: const Duration(minutes: 10), // 재시도는 더 긴 지연
           );
           logMessage('✅ 자동 알람 초기화 작업 재시도 등록 완료', level: LogLevel.info);
         } catch (e) {
