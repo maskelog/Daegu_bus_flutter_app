@@ -16,6 +16,8 @@ import '../widgets/compact_bus_card.dart';
 import 'search_screen.dart';
 import 'favorites_screen.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
+import '../services/alarm_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -40,6 +42,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // AlarmService 초기화
+    // listen: false를 사용하여 initState에서 Provider를 안전하게 호출
+    Provider.of<AlarmService>(context, listen: false).initialize();
     _initializeData();
   }
 

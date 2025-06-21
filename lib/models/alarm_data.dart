@@ -2,6 +2,9 @@ import 'package:intl/intl.dart';
 
 /// 버스 알람 데이터 모델
 class AlarmData {
+  /// 고유 ID (AutoAlarm의 경우 해당 ID, 수동의 경우 생성된 ID)
+  final String id;
+
   /// 버스 번호
   final String busNo;
 
@@ -23,11 +26,18 @@ class AlarmData {
   /// TTS 사용 여부
   final bool useTTS;
 
+  /// 자동 알람 여부
+  final bool isAutoAlarm;
+
+  /// 반복 요일 (자동 알람 전용)
+  final List<int>? repeatDays;
+
   /// 마지막 업데이트 시간
   DateTime _lastUpdated;
 
   /// 생성자
   AlarmData({
+    required this.id,
     required this.busNo,
     required this.stationName,
     required int remainingMinutes,
@@ -35,12 +45,18 @@ class AlarmData {
     this.routeId = '',
     this.currentStation,
     this.useTTS = true,
+    this.isAutoAlarm = false,
+    this.repeatDays,
   })  : _remainingMinutes = remainingMinutes,
         _lastUpdated = DateTime.now();
 
   /// JSON에서 객체 생성
   factory AlarmData.fromJson(Map<String, dynamic> json) {
     return AlarmData(
+      id: json['id'] ??
+          "${json['busNo']}_${json['stationName']}_${json['routeId']}"
+              .hashCode
+              .toString(),
       busNo: json['busNo'] ?? '',
       stationName: json['stationName'] ?? '',
       remainingMinutes: json['remainingMinutes'] ?? 0,
@@ -51,12 +67,17 @@ class AlarmData {
               .add(Duration(minutes: json['remainingMinutes'] ?? 0)),
       currentStation: json['currentStation'],
       useTTS: json['useTTS'] ?? true,
+      isAutoAlarm: json['isAutoAlarm'] ?? false,
+      repeatDays: json['repeatDays'] != null
+          ? List<int>.from(json['repeatDays'])
+          : null,
     );
   }
 
   /// JSON으로 변환
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'busNo': busNo,
       'stationName': stationName,
       'remainingMinutes': _remainingMinutes,
@@ -64,6 +85,8 @@ class AlarmData {
       'scheduledTime': scheduledTime.toIso8601String(),
       'currentStation': currentStation,
       'useTTS': useTTS,
+      'isAutoAlarm': isAutoAlarm,
+      'repeatDays': repeatDays,
     };
   }
 
@@ -94,6 +117,7 @@ class AlarmData {
   }
 
   /// 알람 ID 생성 (해시코드 이용)
+  @Deprecated('Use id field instead')
   int getAlarmId() {
     return "${busNo}_${stationName}_$routeId".hashCode;
   }
@@ -110,6 +134,7 @@ class AlarmData {
 
   /// 복사본 생성 with 일부 필드 변경
   AlarmData copyWith({
+    String? id,
     String? busNo,
     String? stationName,
     int? remainingMinutes,
@@ -117,8 +142,11 @@ class AlarmData {
     DateTime? scheduledTime,
     String? currentStation,
     bool? useTTS,
+    bool? isAutoAlarm,
+    List<int>? repeatDays,
   }) {
     return AlarmData(
+      id: id ?? this.id,
       busNo: busNo ?? this.busNo,
       stationName: stationName ?? this.stationName,
       remainingMinutes: remainingMinutes ?? _remainingMinutes,
@@ -126,6 +154,8 @@ class AlarmData {
       scheduledTime: scheduledTime ?? this.scheduledTime,
       currentStation: currentStation ?? this.currentStation,
       useTTS: useTTS ?? this.useTTS,
+      isAutoAlarm: isAutoAlarm ?? this.isAutoAlarm,
+      repeatDays: repeatDays ?? this.repeatDays,
     );
   }
 
@@ -134,27 +164,18 @@ class AlarmData {
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
 
-    return other is AlarmData &&
-        other.busNo == busNo &&
-        other.stationName == stationName &&
-        other.routeId == routeId &&
-        other.scheduledTime.isAtSameMomentAs(scheduledTime) &&
-        other.useTTS == useTTS;
+    return other is AlarmData && other.id == id;
   }
 
   /// 해시코드
   @override
   int get hashCode {
-    return busNo.hashCode ^
-        stationName.hashCode ^
-        routeId.hashCode ^
-        scheduledTime.hashCode ^
-        useTTS.hashCode;
+    return id.hashCode;
   }
 
   /// 문자열 표현
   @override
   String toString() {
-    return 'AlarmData{busNo: $busNo, stationName: $stationName, remainingMinutes: $_remainingMinutes, scheduledTime: $scheduledTime}';
+    return 'AlarmData{id: $id, busNo: $busNo, stationName: $stationName, remainingMinutes: $_remainingMinutes, scheduledTime: $scheduledTime}';
   }
 }

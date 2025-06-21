@@ -71,6 +71,8 @@ class SettingsService extends ChangeNotifier {
   NotificationDisplayMode get notificationDisplayMode =>
       _notificationDisplayMode;
 
+  bool get isDarkMode => _themeMode == ThemeMode.dark;
+
   // 설정 초기화
   Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();

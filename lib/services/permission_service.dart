@@ -20,12 +20,12 @@ class PermissionService {
       final status = await Permission.notification.request();
 
       if (status.isGranted) {
-        log('🔔 알림 권한 승인됨', level: LogLevel.info);
+        logMessage('🔔 알림 권한 승인됨', level: LogLevel.info);
       } else if (status.isPermanentlyDenied) {
-        log('⚠️ 알림 권한 영구 거부 → 설정 페이지 유도', level: LogLevel.warning);
+        logMessage('⚠️ 알림 권한 영구 거부 → 설정 페이지 유도', level: LogLevel.warning);
         openAppSettings();
       } else {
-        log('❌ 알림 권한 거부됨', level: LogLevel.warning);
+        logMessage('❌ 알림 권한 거부됨', level: LogLevel.warning);
       }
 
       // flutter_local_notifications에서도 확인
@@ -35,10 +35,11 @@ class PermissionService {
       final bool? granted =
           await androidPlugin?.requestNotificationsPermission();
 
-      log('flutter_local_notifications 권한 상태: ${granted == true ? "OK" : "거부"}',
+      logMessage(
+          'flutter_local_notifications 권한 상태: ${granted == true ? "OK" : "거부"}',
           level: LogLevel.info);
     } else {
-      log('ℹ️ Android 12 이하 → 알림 권한 요청 생략됨 (SDK: $sdkVersion)',
+      logMessage('ℹ️ Android 12 이하 → 알림 권한 요청 생략됨 (SDK: $sdkVersion)',
           level: LogLevel.debug);
     }
   }
@@ -48,12 +49,12 @@ class PermissionService {
     final status = await Permission.locationWhenInUse.request();
 
     if (status.isGranted) {
-      log('📍 위치 권한 승인됨', level: LogLevel.info);
+      logMessage('📍 위치 권한 승인됨', level: LogLevel.info);
     } else if (status.isPermanentlyDenied) {
-      log('📍 위치 권한 영구 거부 → 설정으로 이동', level: LogLevel.warning);
+      logMessage('📍 위치 권한 영구 거부 → 설정으로 이동', level: LogLevel.warning);
       openAppSettings();
     } else {
-      log('📍 위치 권한 거부됨', level: LogLevel.warning);
+      logMessage('📍 위치 권한 거부됨', level: LogLevel.warning);
     }
   }
 
@@ -62,12 +63,12 @@ class PermissionService {
     final status = await Permission.locationAlways.request();
 
     if (status.isGranted) {
-      log('📡 백그라운드 위치 권한 승인됨', level: LogLevel.info);
+      logMessage('📡 백그라운드 위치 권한 승인됨', level: LogLevel.info);
     } else if (status.isPermanentlyDenied) {
-      log('📡 백그라운드 위치 영구 거부됨 → 설정 이동 필요', level: LogLevel.warning);
+      logMessage('📡 백그라운드 위치 영구 거부됨 → 설정 이동 필요', level: LogLevel.warning);
       openAppSettings();
     } else {
-      log('📡 백그라운드 위치 권한 거부됨', level: LogLevel.warning);
+      logMessage('📡 백그라운드 위치 권한 거부됨', level: LogLevel.warning);
     }
   }
 
@@ -84,18 +85,19 @@ class PermissionService {
         final status = await Permission.scheduleExactAlarm.request();
 
         if (status.isGranted) {
-          log('⏰ 정확한 알람 권한 승인됨', level: LogLevel.info);
+          logMessage('⏰ 정확한 알람 권한 승인됨', level: LogLevel.info);
         } else if (status.isPermanentlyDenied) {
-          log('⚠️ 정확한 알람 권한 영구 거부 → 설정 페이지 유도', level: LogLevel.warning);
+          logMessage('⚠️ 정확한 알람 권한 영구 거부 → 설정 페이지 유도', level: LogLevel.warning);
           openAppSettings();
         } else {
-          log('❌ 정확한 알람 권한 거부됨', level: LogLevel.warning);
+          logMessage('❌ 정확한 알람 권한 거부됨', level: LogLevel.warning);
         }
       } else {
-        log('ℹ️ Android 11 이하 → 정확한 알람 권한 요청 생략됨', level: LogLevel.debug);
+        logMessage('ℹ️ Android 11 이하 → 정확한 알람 권한 요청 생략됨',
+            level: LogLevel.debug);
       }
     } catch (e) {
-      log('❌ 정확한 알람 권한 요청 오류: $e', level: LogLevel.error);
+      logMessage('❌ 정확한 알람 권한 요청 오류: $e', level: LogLevel.error);
     }
   }
 
@@ -112,7 +114,7 @@ class PermissionService {
           await methodChannel.invokeMethod('isIgnoringBatteryOptimizations');
 
       if (isIgnored) {
-        log('🔋 이미 배터리 최적화에서 제외됨', level: LogLevel.info);
+        logMessage('🔋 이미 배터리 최적화에서 제외됨', level: LogLevel.info);
         return;
       }
 
@@ -121,23 +123,23 @@ class PermissionService {
           await methodChannel.invokeMethod('requestIgnoreBatteryOptimizations');
 
       if (result) {
-        log('🔋 배터리 최적화 제외 요청 성공', level: LogLevel.info);
+        logMessage('🔋 배터리 최적화 제외 요청 성공', level: LogLevel.info);
       } else {
-        log('⚠️ 배터리 최적화 제외 요청 실패', level: LogLevel.warning);
+        logMessage('⚠️ 배터리 최적화 제외 요청 실패', level: LogLevel.warning);
       }
     } catch (e) {
-      log('❌ 배터리 최적화 요청 오류: $e', level: LogLevel.error);
+      logMessage('❌ 배터리 최적화 요청 오류: $e', level: LogLevel.error);
 
       // 폴백: permission_handler 사용
       try {
         final status = await Permission.ignoreBatteryOptimizations.request();
         if (status.isGranted) {
-          log('🔋 배터리 최적화 제외 승인됨 (폴백)', level: LogLevel.info);
+          logMessage('🔋 배터리 최적화 제외 승인됨 (폴백)', level: LogLevel.info);
         } else {
-          log('⚠️ 배터리 최적화 제외 거부됨 (폴백)', level: LogLevel.warning);
+          logMessage('⚠️ 배터리 최적화 제외 거부됨 (폴백)', level: LogLevel.warning);
         }
       } catch (e2) {
-        log('❌ 배터리 최적화 폴백 요청 오류: $e2', level: LogLevel.error);
+        logMessage('❌ 배터리 최적화 폴백 요청 오류: $e2', level: LogLevel.error);
       }
     }
   }
@@ -152,27 +154,29 @@ class PermissionService {
 
       // 제조사별 자동 시작 설정 안내
       if (manufacturer.contains('xiaomi') || manufacturer.contains('redmi')) {
-        log('📱 Xiaomi/Redmi 기기: 자동 시작 허용을 수동으로 설정해주세요', level: LogLevel.info);
+        logMessage('📱 Xiaomi/Redmi 기기: 자동 시작 허용을 수동으로 설정해주세요',
+            level: LogLevel.info);
       } else if (manufacturer.contains('huawei') ||
           manufacturer.contains('honor')) {
-        log('📱 Huawei/Honor 기기: 앱 시작 관리에서 수동 관리로 설정해주세요',
+        logMessage('📱 Huawei/Honor 기기: 앱 시작 관리에서 수동 관리로 설정해주세요',
             level: LogLevel.info);
       } else if (manufacturer.contains('oppo')) {
-        log('📱 Oppo 기기: 개인정보 보호 권한에서 자동 시작 허용해주세요', level: LogLevel.info);
+        logMessage('📱 Oppo 기기: 개인정보 보호 권한에서 자동 시작 허용해주세요',
+            level: LogLevel.info);
       } else if (manufacturer.contains('vivo')) {
-        log('📱 Vivo 기기: 백그라운드 앱 새로고침을 허용해주세요', level: LogLevel.info);
+        logMessage('📱 Vivo 기기: 백그라운드 앱 새로고침을 허용해주세요', level: LogLevel.info);
       } else if (manufacturer.contains('samsung')) {
-        log('📱 Samsung 기기: 배터리 설정에서 앱을 최적화하지 않음으로 설정해주세요',
+        logMessage('📱 Samsung 기기: 배터리 설정에서 앱을 최적화하지 않음으로 설정해주세요',
             level: LogLevel.info);
       }
     } catch (e) {
-      log('❌ 자동 시작 권한 확인 오류: $e', level: LogLevel.error);
+      logMessage('❌ 자동 시작 권한 확인 오류: $e', level: LogLevel.error);
     }
   }
 
   /// 필요한 모든 권한 요청 일괄 실행 (초기 실행 시 사용)
   static Future<void> requestAllPermissions() async {
-    log('필요한 모든 권한 요청 시작', level: LogLevel.info);
+    logMessage('필요한 모든 권한 요청 시작', level: LogLevel.info);
     await requestNotificationPermission();
     await requestLocationPermission();
     // await requestBackgroundLocationPermission(); // 필요시 활성화

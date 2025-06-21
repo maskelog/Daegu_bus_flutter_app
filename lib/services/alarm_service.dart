@@ -57,12 +57,10 @@ class CachedBusInfo {
 }
 
 class AlarmService extends ChangeNotifier {
-  static final AlarmService _instance = AlarmService._internal();
-  factory AlarmService() => _instance;
+  final NotificationService _notificationService;
+  final SettingsService _settingsService;
 
   final Map<String, alarm_model.AlarmData> _activeAlarms = {};
-  final NotificationService _notificationService = NotificationService();
-  final SettingsService _settingsService = SettingsService();
   bool get _useTTS => _settingsService.useTts;
   Timer? _alarmCheckTimer;
   final List<alarm_model.AlarmData> _autoAlarms = [];
@@ -75,18 +73,20 @@ class AlarmService extends ChangeNotifier {
   Timer? _refreshTimer;
 
   List<alarm_model.AlarmData> get activeAlarms {
-    // 일반 알람과 자동 알람을 모두 포함
-    final allAlarms = <alarm_model.AlarmData>[];
-    allAlarms.addAll(_activeAlarms.values.toList());
+    final allAlarms = <alarm_model.AlarmData>{};
+    allAlarms.addAll(_activeAlarms.values);
     allAlarms.addAll(_autoAlarms);
-    return allAlarms;
+    return allAlarms.toList();
   }
 
   List<alarm_model.AlarmData> get autoAlarms => _autoAlarms;
   bool get isInTrackingMode => _isInTrackingMode;
 
-  AlarmService._internal() {
-    initialize();
+  AlarmService({
+    required NotificationService notificationService,
+    required SettingsService settingsService,
+  })  : _notificationService = notificationService,
+        _settingsService = settingsService {
     _setupMethodChannel();
   }
 
@@ -179,11 +179,13 @@ class AlarmService extends ChangeNotifier {
 
   Future<void> initialize() async {
     if (_initialized) return;
+    _initialized = true; // 초기화 시작을 먼저 표시
 
     try {
       await _notificationService.initialize();
-      await loadAlarms();
-      await loadAutoAlarms();
+
+      // 데이터 로딩을 비동기적으로 처리하여 앱 시작을 막지 않음
+      _loadDataInBackground();
 
       _alarmCheckTimer?.cancel();
       _alarmCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -191,11 +193,15 @@ class AlarmService extends ChangeNotifier {
         _checkAutoAlarms(); // 자동 알람 체크 추가 (15초마다 정밀 체크)
       });
 
-      _initialized = true;
-      logMessage('✅ AlarmService 초기화 완료');
+      logMessage('✅ AlarmService 초기화 시작 (데이터는 백그라운드 로딩)');
     } catch (e) {
       logMessage('❌ AlarmService 초기화 오류: $e', level: LogLevel.error);
     }
+  }
+
+  Future<void> _loadDataInBackground() async {
+    await loadAlarms();
+    await loadAutoAlarms();
   }
 
   @override
@@ -247,7 +253,6 @@ class AlarmService extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       logMessage('알람 로드 중 오류 발생: $e', level: LogLevel.error);
-      rethrow;
     }
   }
 
@@ -295,6 +300,8 @@ class AlarmService extends ChangeNotifier {
           }
 
           final alarm = alarm_model.AlarmData(
+            id: data['id'] ??
+                '${data['routeNo']}_${data['stationName']}'.hashCode.toString(),
             busNo: data['routeNo'] ?? '',
             stationName: data['stationName'] ?? '',
             remainingMinutes: 0,
@@ -307,6 +314,10 @@ class AlarmService extends ChangeNotifier {
               data['minute'] ?? 0,
             ),
             useTTS: data['useTTS'] ?? true,
+            isAutoAlarm: true, // 자동 알람으로 표시
+            repeatDays: data['repeatDays'] != null
+                ? List<int>.from(data['repeatDays'])
+                : [],
           );
 
           _autoAlarms.add(alarm);
@@ -905,6 +916,7 @@ class AlarmService extends ChangeNotifier {
 
       // 예약된 자동 알람을 activeAlarms에 추가하여 UI에 표시
       final alarmData = alarm_model.AlarmData(
+        id: alarm.id,
         busNo: alarm.routeNo,
         stationName: alarm.stationName,
         remainingMinutes: executionDelay.inMinutes,
@@ -912,6 +924,7 @@ class AlarmService extends ChangeNotifier {
         scheduledTime: scheduledTime,
         currentStation: "자동 알람 예약됨",
         useTTS: alarm.useTTS,
+        isAutoAlarm: true,
       );
 
       final alarmKey = "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}";
@@ -976,6 +989,7 @@ class AlarmService extends ChangeNotifier {
 
       // 자동 알람 실행 시 activeAlarms에도 추가하여 UI에 표시
       final alarmData = alarm_model.AlarmData(
+        id: alarm.id,
         busNo: alarm.routeNo,
         stationName: alarm.stationName,
         remainingMinutes: remainingMinutes,
@@ -984,6 +998,7 @@ class AlarmService extends ChangeNotifier {
             .add(Duration(minutes: remainingMinutes.clamp(0, 60))),
         currentStation: currentStation,
         useTTS: alarm.useTTS,
+        isAutoAlarm: true,
       );
 
       // activeAlarms에 추가하여 ActiveAlarmPanel에서 표시되도록 함
@@ -1358,8 +1373,11 @@ class AlarmService extends ChangeNotifier {
       logMessage(
           '🚌 일반 알람 설정 시작: $busNo번 버스, $stationName, $remainingMinutes분');
 
+      final id = "${busNo}_${stationName}_$routeId";
+
       // 알람 데이터 생성
       final alarmData = alarm_model.AlarmData(
+        id: id,
         busNo: busNo,
         stationName: stationName,
         remainingMinutes: remainingMinutes,
@@ -1367,6 +1385,7 @@ class AlarmService extends ChangeNotifier {
         scheduledTime: DateTime.now().add(Duration(minutes: remainingMinutes)),
         currentStation: currentStation,
         useTTS: useTTS,
+        isAutoAlarm: false,
       );
 
       // 알람 ID 생성
@@ -1941,12 +1960,14 @@ class AlarmService extends ChangeNotifier {
         }
 
         final alarmData = alarm_model.AlarmData(
+          id: alarm.id,
           busNo: alarm.routeNo,
           stationName: alarm.stationName,
           remainingMinutes: 0,
           routeId: alarm.routeId,
           scheduledTime: scheduledTime,
           useTTS: alarm.useTTS,
+          isAutoAlarm: true,
         );
         _autoAlarms.add(alarmData);
         logMessage('  ✅ 알람 데이터 생성 완료');

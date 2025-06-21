@@ -917,6 +917,27 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
     Navigator.pop(context, alarm);
   }
 
+  Future<void> _selectTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _hour, minute: _minute),
+      initialEntryMode: TimePickerEntryMode.input,
+      builder: (BuildContext context, Widget? child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && (picked.hour != _hour || picked.minute != _minute)) {
+      if (!mounted) return;
+      setState(() {
+        _hour = picked.hour;
+        _minute = picked.minute;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -937,26 +958,25 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
             const Text('알림 시간',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 150,
-              child: TimePickerSpinner(
-                key: UniqueKey(),
-                is24HourMode: true,
-                normalTextStyle:
-                    TextStyle(fontSize: 18, color: Colors.grey[500]),
-                highlightedTextStyle: const TextStyle(
-                    fontSize: 22,
-                    color: Colors.blue,
-                    fontWeight: FontWeight.bold),
-                time: DateTime(2023, 1, 1, _hour, _minute),
-                onTimeChange: (time) {
-                  if (mounted) {
-                    setState(() {
-                      _hour = time.hour;
-                      _minute = time.minute;
-                    });
-                  }
-                },
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                title: Text(
+                  '${_hour.toString().padLeft(2, '0')}:${_minute.toString().padLeft(2, '0')}',
+                  style: const TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'monospace'),
+                  textAlign: TextAlign.center,
+                ),
+                trailing: const Icon(Icons.edit_outlined, color: Colors.blue),
+                onTap: _selectTime,
               ),
             ),
             const SizedBox(height: 24),

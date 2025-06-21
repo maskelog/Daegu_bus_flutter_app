@@ -9,7 +9,7 @@ import 'package:daegu_bus_app/utils/tts_switcher.dart' show TtsSwitcher;
 import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 
 /// NotificationService: 네이티브 BusAlertService와 통신하는 Flutter 서비스
-class NotificationService {
+class NotificationService extends ChangeNotifier {
   // ===== [실시간 자동 알람 갱신용 상태 및 Timer 추가] =====
   Timer? _autoAlarmTimer;
   int? _currentAutoAlarmId;
