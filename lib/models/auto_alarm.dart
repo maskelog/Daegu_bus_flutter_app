@@ -1,4 +1,3 @@
-
 /// 요일 상수 정의
 class Weekday {
   static const int monday = 1;
@@ -36,7 +35,7 @@ class Weekday {
 class AutoAlarm {
   /// 알람 고유 ID
   final String id;
-  
+
   /// 버스 노선 번호
   final String routeNo;
 
@@ -57,10 +56,10 @@ class AutoAlarm {
 
   /// 반복 요일 (1-7, 월-일)
   final List<int> repeatDays;
-  
+
   /// 주말 제외 여부
   final bool excludeWeekends;
-  
+
   /// 공휴일 제외 여부
   final bool excludeHolidays;
 
@@ -139,6 +138,12 @@ class AutoAlarm {
     };
   }
 
+  /// 스케줄된 시간 [DateTime] 객체
+  DateTime get scheduledTime {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day, hour, minute);
+  }
+
   /// 시간 포맷 (HH:MM)
   String getFormattedTime() {
     return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
@@ -165,7 +170,7 @@ class AutoAlarm {
         // 주말이면 다음 평일 찾기
         return _findNextValidDay(now);
       }
-      
+
       // TODO: 공휴일 체크 로직 필요
 
       // 오늘 알람 시간 생성
@@ -185,25 +190,25 @@ class AutoAlarm {
 
     return _findNextValidDay(now);
   }
-  
+
   /// 다음 유효한 알람 요일 찾기
   DateTime? _findNextValidDay(DateTime now) {
     // 다음 요일 찾기
     for (int i = 1; i <= 7; i++) {
       final nextDate = now.add(Duration(days: i));
-      
+
       // 반복 요일에 포함되는지 확인
       if (!repeatDays.contains(nextDate.weekday)) {
         continue;
       }
-      
+
       // 주말 제외 옵션 확인
       if (excludeWeekends && (nextDate.weekday == 6 || nextDate.weekday == 7)) {
         continue;
       }
-      
+
       // TODO: 공휴일 체크 로직 필요
-      
+
       return DateTime(
         nextDate.year,
         nextDate.month,

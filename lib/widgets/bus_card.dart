@@ -430,19 +430,25 @@ class _BusCardState extends State<BusCard> {
         final routeId = widget.busArrival.routeId;
 
         setState(() {});
+
+        // 1. 네이티브 추적 중지 (개별 버스만)
+        await _stopSpecificNativeTracking();
+
+        // 2. AlarmManager에서 알람 취소
         await AlarmManager.cancelAlarm(
           busNo: busNo,
           stationName: stationName,
           routeId: routeId,
         );
-        await _stopSpecificNativeTracking();
 
+        // 3. AlarmService에서 알람 취소
         final success =
             await _alarmService.cancelAlarmByRoute(busNo, stationName, routeId);
         if (success) {
-          await _notificationService.cancelOngoingTracking();
+          // 4. TTS 추적 중단 (개별 버스만)
           await TtsSwitcher.stopTtsTracking(busNo);
-          await _alarmService.stopBusMonitoringService();
+
+          // 5. 알람 상태 갱신
           await _alarmService.loadAlarms();
           await _alarmService.refreshAlarms();
 
@@ -496,9 +502,7 @@ class _BusCardState extends State<BusCard> {
                 alarm.routeId,
               );
               if (success) {
-                await _notificationService.cancelOngoingTracking();
                 await TtsSwitcher.stopTtsTracking(alarm.busNo);
-                await _alarmService.stopBusMonitoringService();
                 await _alarmService.loadAlarms();
                 await _alarmService.refreshAlarms();
                 logMessage('🚌 이전 버스 알람 해제 성공: ${alarm.busNo}',
@@ -633,28 +637,25 @@ class _BusCardState extends State<BusCard> {
           final stationName = widget.stationName ?? '정류장 정보 없음';
           final routeId = widget.busArrival.routeId;
 
-          // AlarmService에서 알람 취소
-          final success = await _alarmService.cancelAlarmByRoute(
-              busNo, stationName, routeId);
+          // 1. 네이티브 추적 중지 (개별 버스만)
+          await _stopSpecificNativeTracking();
 
-          // AlarmManager에서도 알람 취소
+          // 2. AlarmManager에서 알람 취소
           await AlarmManager.cancelAlarm(
             busNo: busNo,
             stationName: stationName,
             routeId: routeId,
           );
 
-          if (success) {
-            // 포그라운드 알림 취소
-            await _notificationService.cancelOngoingTracking();
+          // 3. AlarmService에서 알람 취소
+          final success = await _alarmService.cancelAlarmByRoute(
+              busNo, stationName, routeId);
 
-            // TTS 추적 중단
+          if (success) {
+            // 4. TTS 추적 중단 (개별 버스만)
             await TtsSwitcher.stopTtsTracking(busNo);
 
-            // 버스 모니터링 서비스 중지
-            await _alarmService.stopBusMonitoringService();
-
-            // 알람 상태 갱신
+            // 5. 알람 상태 갱신
             await _alarmService.loadAlarms();
             await _alarmService.refreshAlarms();
 

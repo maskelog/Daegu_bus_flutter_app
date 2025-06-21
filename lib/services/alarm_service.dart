@@ -1085,149 +1085,6 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  Future<void> _updateNextAlarmTime(AutoAlarm alarm) async {
-    final nextAlarmTime = alarm.getNextAlarmTime();
-    if (nextAlarmTime != null) {
-      logMessage(
-          '[AlarmService] Updated next alarm time for ${alarm.routeNo} to ${nextAlarmTime.toString()}');
-    }
-  }
-
-  Future<void> updateAutoAlarms(List<AutoAlarm> autoAlarms) async {
-    try {
-      // 백그라운드 메신저 상태 확인 및 초기화
-      if (!kIsWeb) {
-        try {
-          final rootIsolateToken = RootIsolateToken.instance;
-          if (rootIsolateToken != null) {
-            BackgroundIsolateBinaryMessenger.ensureInitialized(
-                rootIsolateToken);
-            logMessage(
-                '✅ updateAutoAlarms - BackgroundIsolateBinaryMessenger 초기화 성공');
-          } else {
-            logMessage('⚠️ updateAutoAlarms - RootIsolateToken이 null입니다',
-                level: LogLevel.warning);
-          }
-        } catch (e) {
-          logMessage(
-              '⚠️ updateAutoAlarms - BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
-              level: LogLevel.warning);
-        }
-      }
-
-      logMessage('🔄 자동 알람 업데이트 시작: ${autoAlarms.length}개');
-
-      _autoAlarms.clear();
-      final now = DateTime.now();
-
-      for (var alarm in autoAlarms) {
-        logMessage('📝 알람 처리 중:');
-        logMessage('  - 버스: ${alarm.routeNo}번');
-        logMessage('  - 정류장: ${alarm.stationName}');
-        logMessage('  - 시간: ${alarm.hour}:${alarm.minute}');
-        logMessage('  - 반복: ${alarm.repeatDays.map((d) => [
-              '월',
-              '화',
-              '수',
-              '목',
-              '금',
-              '토',
-              '일'
-            ][d - 1]).join(', ')}');
-        logMessage('  - 활성화: ${alarm.isActive}');
-
-        if (!alarm.isActive) {
-          logMessage('  ⚠️ 비활성화된 알람 건너뛰기');
-          continue;
-        }
-
-        // 다음 알람 시간 업데이트
-        await _updateNextAlarmTime(alarm);
-
-        // 오늘 예약 시간 계산
-        DateTime scheduledTime =
-            DateTime(now.year, now.month, now.day, alarm.hour, alarm.minute);
-
-        // 오늘이 반복 요일이 아니거나 이미 지난 시간이면 다음 반복 요일 찾기
-        if (!alarm.repeatDays.contains(now.weekday) ||
-            scheduledTime.isBefore(now)) {
-          logMessage('  🔄 다음 유효한 알람 시간 계산 중...');
-          int daysToAdd = 1;
-          bool foundValidDay = false;
-
-          while (daysToAdd <= 7) {
-            final nextDate = now.add(Duration(days: daysToAdd));
-            if (alarm.repeatDays.contains(nextDate.weekday)) {
-              scheduledTime = DateTime(
-                nextDate.year,
-                nextDate.month,
-                nextDate.day,
-                alarm.hour,
-                alarm.minute,
-              );
-              foundValidDay = true;
-              logMessage('  ✅ 다음 알람 시간 찾음: ${scheduledTime.toString()}');
-              break;
-            }
-            daysToAdd++;
-          }
-
-          if (!foundValidDay) {
-            logMessage('  ⚠️ 유효한 반복 요일을 찾지 못함: ${alarm.routeNo}',
-                level: LogLevel.warning);
-            continue;
-          }
-        }
-
-        // 알람 시간까지 남은 시간 계산
-        final timeUntilAlarm = scheduledTime.difference(now);
-        logMessage('  ⏰ 다음 알람까지 ${timeUntilAlarm.inMinutes}분 남음');
-
-        // 알람 시간이 이미 지났거나 30초 이내인 경우만 즉시 실행
-        if (timeUntilAlarm.inSeconds <= 30 &&
-            timeUntilAlarm.inSeconds >= -300) {
-          logMessage('  ⚡ 알람 시간이 지났음 - 즉시 실행 (${timeUntilAlarm.inSeconds}초)');
-          await _executeAutoAlarmImmediately(alarm);
-        } else if (timeUntilAlarm.inMinutes <= 10) {
-          logMessage(
-              '  ⏰ 10분 이내 알람 - 예약만 등록, 정확한 시간에 실행됨 (${timeUntilAlarm.inMinutes}분 남음)');
-          // 예약만 하고 즉시 실행하지 않음 - 정확한 시간에 WorkManager가 실행
-        } else {
-          logMessage('  ⏰ 알람 예약: ${timeUntilAlarm.inMinutes}분 후 실행');
-        }
-
-        // 알람 데이터 생성
-        final alarmData = alarm_model.AlarmData(
-          busNo: alarm.routeNo,
-          stationName: alarm.stationName,
-          remainingMinutes: 0,
-          routeId: alarm.routeId,
-          scheduledTime: scheduledTime,
-          useTTS: alarm.useTTS,
-        );
-        _autoAlarms.add(alarmData);
-        logMessage('  ✅ 알람 데이터 생성 완료');
-
-        // 알람 예약
-        await _scheduleAutoAlarm(alarm, scheduledTime);
-      }
-
-      await _saveAutoAlarms();
-      logMessage('✅ 자동 알람 업데이트 완료: ${_autoAlarms.length}개');
-
-      // 저장된 알람 정보 출력
-      for (var alarm in _autoAlarms) {
-        logMessage('📋 저장된 알람 정보:');
-        logMessage('  - 버스: ${alarm.busNo}번');
-        logMessage('  - 정류장: ${alarm.stationName}');
-        logMessage('  - 예약 시간: ${alarm.scheduledTime.toString()}');
-      }
-    } catch (e) {
-      logMessage('❌ 자동 알람 업데이트 오류: $e', level: LogLevel.error);
-      logMessage('  - 스택 트레이스: ${e is Error ? e.stackTrace : "없음"}');
-    }
-  }
-
   Future<void> _saveAutoAlarms() async {
     try {
       logMessage('🔄 자동 알람 저장 시작...');
@@ -2035,5 +1892,73 @@ class AlarmService extends ChangeNotifier {
 
     // 매칭 실패 시 fallback 사용
     return fallbackRouteId;
+  }
+
+  Future<void> updateAutoAlarms(List<AutoAlarm> autoAlarms) async {
+    try {
+      // 백그라운드 메신저 상태 확인 및 초기화
+      if (!kIsWeb) {
+        try {
+          final rootIsolateToken = RootIsolateToken.instance;
+          if (rootIsolateToken != null) {
+            BackgroundIsolateBinaryMessenger.ensureInitialized(
+                rootIsolateToken);
+          }
+        } catch (e) {
+          logMessage(
+              '⚠️ updateAutoAlarms - BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
+              level: LogLevel.warning);
+        }
+      }
+
+      logMessage('🔄 자동 알람 업데이트 시작: ${autoAlarms.length}개');
+      _autoAlarms.clear();
+
+      for (var alarm in autoAlarms) {
+        logMessage('📝 알람 처리 중: ${alarm.routeNo}번, ${alarm.stationName}');
+
+        if (!alarm.isActive) {
+          logMessage('  ⚠️ 비활성화된 알람 건너뛰기');
+          continue;
+        }
+
+        final DateTime? scheduledTime = alarm.getNextAlarmTime();
+
+        if (scheduledTime == null) {
+          logMessage('  ⚠️ 유효한 다음 알람 시간을 찾지 못함: ${alarm.routeNo}',
+              level: LogLevel.warning);
+          continue;
+        }
+
+        final now = DateTime.now();
+        final timeUntilAlarm = scheduledTime.difference(now);
+        logMessage('  ⏰ 다음 알람까지 ${timeUntilAlarm.inMinutes}분 남음');
+
+        if (timeUntilAlarm.inSeconds <= 30 &&
+            timeUntilAlarm.inSeconds >= -300) {
+          logMessage('  ⚡ 알람 시간이 지났음 - 즉시 실행 (${timeUntilAlarm.inSeconds}초)');
+          await _executeAutoAlarmImmediately(alarm);
+        }
+
+        final alarmData = alarm_model.AlarmData(
+          busNo: alarm.routeNo,
+          stationName: alarm.stationName,
+          remainingMinutes: 0,
+          routeId: alarm.routeId,
+          scheduledTime: scheduledTime,
+          useTTS: alarm.useTTS,
+        );
+        _autoAlarms.add(alarmData);
+        logMessage('  ✅ 알람 데이터 생성 완료');
+
+        await _scheduleAutoAlarm(alarm, scheduledTime);
+      }
+
+      await _saveAutoAlarms();
+      logMessage('✅ 자동 알람 업데이트 완료: ${_autoAlarms.length}개');
+    } catch (e) {
+      logMessage('❌ 자동 알람 업데이트 오류: $e', level: LogLevel.error);
+      logMessage('  - 스택 트레이스: ${e is Error ? e.stackTrace : "없음"}');
+    }
   }
 }

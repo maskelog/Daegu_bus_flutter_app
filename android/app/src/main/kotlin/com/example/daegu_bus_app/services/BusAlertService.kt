@@ -2144,35 +2144,52 @@ class BusAlertService : Service() {
         serviceScope.launch {
             Log.i(TAG, "--- stopTrackingForRoute called: routeId=$routeId, stationId=$stationId, busNo=$busNo, cancelNotification=$cancelNotification, notificationId=$notificationId ---")
             try {
+                // 1. 추적 작업 취소 및 데이터 정리
                 monitoringJobs[routeId]?.cancel()
                 monitoringJobs.remove(routeId)
                 activeTrackings.remove(routeId)
                 monitoredRoutes.remove(routeId)
+                arrivingSoonNotified.remove(routeId)
+                hasNotifiedTts.remove(routeId)
+                hasNotifiedArrival.remove(routeId)
+
+                Log.d(TAG, "✅ 추적 데이터 정리 완료: $routeId, 남은 추적: ${activeTrackings.size}개")
+
+                // 2. 알림 취소 처리
                 if (cancelNotification) {
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    if (notificationId != null) {
-                        notificationManager.cancel(notificationId)
-                        Log.d(TAG, "Notification cancelled for route $routeId, notificationId=$notificationId");
-                    } else {
-                        notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                        Log.d(TAG, "Notification cancelled for route $routeId (ONGOING_NOTIFICATION_ID)");
+
+                    // 개별 알림 ID 계산 및 취소
+                    val specificNotificationId = notificationId ?: generateNotificationId(routeId)
+                    try {
+                        notificationManager.cancel(specificNotificationId)
+                        Log.d(TAG, "✅ 개별 알림 취소: routeId=$routeId, notificationId=$specificNotificationId")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 개별 알림 취소 실패: ${e.message}")
                     }
                 }
+
+                // 3. 포그라운드 알림 업데이트 또는 서비스 종료
                 if (activeTrackings.isEmpty()) {
-                    // 추적이 모두 해제되면 포그라운드 알림과 노티피케이션을 명확히 취소
+                    // 모든 추적이 끝났을 때만 포그라운드 서비스 종료
                     try {
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         isInForeground = false
                         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                        Log.d(TAG, "ONGOING_NOTIFICATION_ID 알림 취소 및 포그라운드 서비스 중지 완료")
+                        Log.d(TAG, "✅ 모든 추적 종료 - 포그라운드 서비스 중지")
                     } catch (e: Exception) {
-                        Log.e(TAG, "알림/포그라운드 중지 중 오류: ${e.message}", e)
+                        Log.e(TAG, "❌ 포그라운드 서비스 중지 오류: ${e.message}", e)
                     }
                     stopSelf()
+                } else {
+                    // 다른 추적이 남아있으면 포그라운드 알림만 업데이트
+                    Log.d(TAG, "🔄 다른 추적 존재 (${activeTrackings.size}개), 포그라운드 알림 업데이트")
+                    updateForegroundNotification()
                 }
+
             } catch (e: Exception) {
-                Log.e(TAG, "Error in stopTrackingForRoute: ${e.message}", e)
+                Log.e(TAG, "❌ stopTrackingForRoute 오류: ${e.message}", e)
             }
         }
     }

@@ -1413,6 +1413,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                     currentStation = busObj.optString("bsNm")
                                     remainingMinutes = when {
                                         estState == "곧 도착" -> 0
+                                        estState == "전전" -> 0  // "전전"은 곧 도착으로 처리
                                         estState == "운행종료" -> -1
                                         estState.contains("분") -> estState.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
                                         estState.all { it.isDigit() } -> estState.toIntOrNull() ?: Int.MAX_VALUE
@@ -2004,10 +2005,11 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
         try {
             val intent = Intent(this, BusAlertService::class.java).apply {
-                action = "com.example.daegu_bus_app.action.STOP_SPECIFIC_TRACKING"
+                action = "com.example.daegu_bus_app.action.STOP_BUS_ALERT_TRACKING"
                 putExtra("busNo", busNo)
                 putExtra("routeId", routeId)
                 putExtra("stationName", stationName)
+                putExtra("stationId", getStationIdFromName(stationName))
             }
             startService(intent)
 
