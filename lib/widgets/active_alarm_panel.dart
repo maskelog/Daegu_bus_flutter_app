@@ -173,12 +173,18 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                     icon: const Icon(Icons.refresh, color: Colors.grey),
                     tooltip: '새로고침',
                     iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    visualDensity: VisualDensity.compact,
                   ),
                   IconButton(
                     onPressed: () => _cancelAllAlarms(context),
                     icon: const Icon(Icons.clear_all, color: Colors.red),
                     tooltip: '모든 알람 취소',
                     iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    visualDensity: VisualDensity.compact,
                   ),
                 ],
               ),
@@ -223,10 +229,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
             scrollDirection: Axis.horizontal,
             itemCount: alarms.length,
             itemBuilder: (context, index) {
-              return SizedBox(
-                width: 180,
-                child: _buildAutoAlarmItem(alarms[index]),
-              );
+              return _buildAutoAlarmItem(alarms[index]);
             },
           ),
         ),

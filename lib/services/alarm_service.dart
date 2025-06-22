@@ -914,27 +914,6 @@ class AlarmService extends ChangeNotifier {
       logMessage(
           '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: native_alarm_$id');
 
-      // 예약된 자동 알람을 activeAlarms에 추가하여 UI에 표시
-      final alarmData = alarm_model.AlarmData(
-        id: alarm.id,
-        busNo: alarm.routeNo,
-        stationName: alarm.stationName,
-        remainingMinutes: executionDelay.inMinutes,
-        routeId: alarm.routeId,
-        scheduledTime: scheduledTime,
-        currentStation: "자동 알람 예약됨",
-        useTTS: alarm.useTTS,
-        isAutoAlarm: true,
-      );
-
-      final alarmKey = "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}";
-      _activeAlarms[alarmKey] = alarmData;
-      await _saveAlarms();
-
-      logMessage(
-          '✅ 예약된 자동 알람을 activeAlarms에 추가: ${alarm.routeNo}번 (${executionDelay.inMinutes}분 후)',
-          level: LogLevel.info);
-
       // 30초 후 백업 알람 등록 (즉시 실행되지 않은 경우만)
       if (executionDelay.inSeconds > 30) {
         _scheduleBackupAlarm(alarm, id, scheduledTime);
