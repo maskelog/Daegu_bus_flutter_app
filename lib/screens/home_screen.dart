@@ -452,9 +452,32 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: Text('${_selectedStop!.name} 도착 정보',
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold)),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        _isStopFavorite(_selectedStop!)
+                            ? Icons.star
+                            : Icons.star_border,
+                        color: _isStopFavorite(_selectedStop!)
+                            ? Colors.amber
+                            : Colors.grey,
+                      ),
+                      onPressed: () => _toggleFavorite(_selectedStop!),
+                      tooltip: _isStopFavorite(_selectedStop!)
+                          ? '즐겨찾기 제거'
+                          : '즐겨찾기 추가',
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${_selectedStop!.name} 도착 정보',
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           if (_isLoading)
@@ -512,6 +535,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 itemCount: stops.length,
                 itemBuilder: (context, index) {
                   final stop = stops[index];
+                  final showDistance = title == '주변 정류장';
                   return StopCard(
                     stop: stop,
                     isSelected: _selectedStop?.id == stop.id,
@@ -519,6 +543,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       setState(() => _selectedStop = stop);
                       _loadBusArrivals();
                     },
+                    showDistance: showDistance,
+                    distanceText:
+                        showDistance ? _formatDistance(stop.distance) : null,
                   );
                 },
               ),
@@ -878,12 +905,16 @@ class StopCard extends StatelessWidget {
   final BusStop stop;
   final bool isSelected;
   final VoidCallback onTap;
+  final bool showDistance;
+  final String? distanceText;
 
   const StopCard({
     super.key,
     required this.stop,
     required this.isSelected,
     required this.onTap,
+    this.showDistance = false,
+    this.distanceText,
   });
 
   @override
@@ -919,6 +950,16 @@ class StopCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+                if (showDistance &&
+                    distanceText != null &&
+                    distanceText!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2.0),
+                    child: Text(
+                      distanceText!,
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                  ),
                 const SizedBox(height: 4),
                 if (stop.wincId != null && stop.wincId!.isNotEmpty)
                   Text(
