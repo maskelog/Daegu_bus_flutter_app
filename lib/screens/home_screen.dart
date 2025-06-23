@@ -529,7 +529,7 @@ class _HomeScreenState extends State<HomeScreen> {
             )
           else
             SizedBox(
-              height: 120,
+              height: 90,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 itemCount: stops.length,
@@ -920,12 +920,12 @@ class StopCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 180,
-      margin: const EdgeInsets.only(right: 12),
+      width: 160,
+      margin: const EdgeInsets.only(right: 8),
       child: Card(
-        elevation: 2,
+        elevation: 1,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           side: BorderSide(
             color: isSelected ? Colors.blue.shade300 : Colors.grey.shade200,
             width: isSelected ? 2 : 1,
@@ -933,9 +933,9 @@ class StopCard extends StatelessWidget {
         ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: const EdgeInsets.all(8.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -943,7 +943,7 @@ class StopCard extends StatelessWidget {
                 Text(
                   stop.name,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: isSelected ? Colors.blue.shade700 : Colors.black87,
                   ),
@@ -957,15 +957,10 @@ class StopCard extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 2.0),
                     child: Text(
                       distanceText!,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      style: TextStyle(color: Colors.grey[600], fontSize: 11),
                     ),
                   ),
-                const SizedBox(height: 4),
-                if (stop.wincId != null && stop.wincId!.isNotEmpty)
-                  Text(
-                    stop.wincId!,
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                  ),
+                const SizedBox(height: 2),
               ],
             ),
           ),
