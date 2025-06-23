@@ -12,7 +12,6 @@ import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../widgets/active_alarm_panel.dart';
 import '../widgets/bus_card.dart';
-import '../widgets/compact_bus_card.dart';
 import 'search_screen.dart';
 import 'favorites_screen.dart';
 import 'package:geolocator/geolocator.dart';
