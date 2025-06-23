@@ -104,14 +104,23 @@ class NotificationService extends ChangeNotifier {
   final SettingsService _settingsService = SettingsService();
 
   /// 알림 서비스 초기화
-  Future<bool> initialize() async {
+  Future<void> initialize() async {
     try {
-      final bool result = await _channel.invokeMethod('initialize');
-      debugPrint('🔔 알림 서비스 초기화 완료');
-      return result;
+      await _channel.invokeMethod('initialize');
+      final prefs = await SharedPreferences.getInstance();
+      final soundFileName = prefs.getString('alarm_sound_filename');
+      await setAlarmSound(soundFileName);
     } on PlatformException catch (e) {
-      debugPrint('🔔 알림 서비스 초기화 오류: ${e.message}');
-      return false;
+      debugPrint('🔔 알림 서비스 초기화 오류:  [31m${e.message} [0m');
+    }
+  }
+
+  Future<void> setAlarmSound(String? soundFileName) async {
+    try {
+      await _channel.invokeMethod(
+          'setAlarmSound', {'soundFileName': soundFileName ?? ''});
+    } on PlatformException catch (e) {
+      debugPrint('🔔 네이티브 알람음 설정 오류: ${e.message}');
     }
   }
 

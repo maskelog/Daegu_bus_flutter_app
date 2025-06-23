@@ -15,6 +15,22 @@ class NotificationHelper(private val context: Context) {
     private val TAG = "NotificationHelper"
 
     /**
+     * 알람 소리 설정
+     */
+    fun setAlarmSound(soundFileName: String) {
+        try {
+            val intent = Intent(context, BusAlertService::class.java).apply {
+                action = BusAlertService.ACTION_SET_ALARM_SOUND
+                putExtra("soundFileName", soundFileName)
+            }
+            context.startService(intent)
+            Log.i(TAG, "알람 소리 설정 명령 전송 완료: $soundFileName")
+        } catch (e: Exception) {
+            Log.e(TAG, "알람 소리 설정 오류: ${e.message}", e)
+        }
+    }
+
+    /**
      * 특정 버스 추적 알림 취소
      */
     fun cancelBusTrackingNotification(routeId: String, busNo: String, stationName: String) {

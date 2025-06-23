@@ -77,6 +77,7 @@ class BusAlertService : Service() {
         const val ACTION_UPDATE_TRACKING = "com.example.daegu_bus_app.action.UPDATE_TRACKING"
         const val ACTION_STOP_BUS_ALERT_TRACKING = "com.example.daegu_bus_app.action.STOP_BUS_ALERT_TRACKING"
         const val ACTION_START_AUTO_ALARM_LIGHTWEIGHT = "com.example.daegu_bus_app.action.START_AUTO_ALARM_LIGHTWEIGHT"
+        const val ACTION_SET_ALARM_SOUND = "com.example.daegu_bus_app.action.SET_ALARM_SOUND"
 
         // TTS Output Modes
         const val OUTPUT_MODE_HEADSET = 0  // 이어폰 전용 (현재 AUTO)
@@ -1563,6 +1564,7 @@ class BusAlertService : Service() {
             try {
                 // 1. 모든 추적 작업 중지
                 monitoringJobs.values.forEach { it.cancel() }
+               
                 monitoringJobs.clear()
                 stopMonitoringTimer()
                 stopTtsTracking(forceStop = true)
@@ -2424,6 +2426,19 @@ class BusAlertService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "❌ 자동알람 경량화 모드 종료 오류: ${e.message}", e)
         }
+    }
+
+    fun startBusTracking(busNo: String, stationName: String, routeId: String) {
+        val stationId = activeTrackings[routeId]?.stationId ?: ""
+        if (stationId.isNotEmpty()) {
+            startTracking(routeId, stationId, stationName, busNo)
+        } else {
+            Log.e(TAG, "Cannot start tracking, stationId not found for routeId: $routeId")
+        }
+    }
+
+    fun stopBusTracking(busNo: String, stationName: String, routeId: String) {
+        stopSpecificTracking(routeId, busNo, stationName)
     }
 }
 

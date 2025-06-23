@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -27,16 +29,33 @@ class LocationService {
     if (!hasPermission) {
       return null;
     }
+
     try {
+      // 1. 마지막으로 알려진 위치를 먼저 시도 (빠름)
+      Position? lastKnownPosition = await Geolocator.getLastKnownPosition();
+      if (lastKnownPosition != null) {
+        // 마지막 위치가 너무 오래되지 않았다면 바로 사용
+        final positionAge =
+            DateTime.now().difference(lastKnownPosition.timestamp);
+        if (positionAge < const Duration(minutes: 2)) {
+          debugPrint('Last known location is recent, using it.');
+          return lastKnownPosition;
+        }
+      }
+
+      // 2. 마지막 위치가 없거나 오래되었으면 현재 위치 요청
+      debugPrint('Getting current location...');
       return await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 100, // 100미터마다 위치 업데이트
-        ),
+        desiredAccuracy: LocationAccuracy.medium, // 정확도를 약간 낮춰 속도 향상
+        timeLimit: const Duration(seconds: 10), // 10초 타임아웃
       );
     } catch (e) {
       debugPrint('Error getting current location: $e');
-      return null;
+      if (e is TimeoutException) {
+        debugPrint('Getting location timed out.');
+      }
+      // 오류 발생 시 마지막으로 알려진 위치라도 반환 시도
+      return await Geolocator.getLastKnownPosition();
     }
   }
 
@@ -119,18 +138,18 @@ class LocationService {
       bool hasPermission = await Permission.location.isGranted;
       if (!hasPermission) {
         debugPrint('위치 권한이 없습니다. 권한 수동 요청 완료된 화면으로 넘어갑니다.');
-        
+
         // 전달하는 정보가 없는 경우 권한이 없음을 알리기 위한 확인
         if (context != null && context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('주변 정류장을 검색하려면 위치 권한이 필요합니다.')),
           );
         }
-        
+
         // 권한이 없어도 앱이 멈추지 않도록 비어있는 리스트 반환
         return [];
       }
-      
+
       final position = await getCurrentLocation();
 
       if (position == null) {
