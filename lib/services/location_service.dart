@@ -46,8 +46,10 @@ class LocationService {
       // 2. 마지막 위치가 없거나 오래되었으면 현재 위치 요청
       debugPrint('Getting current location...');
       return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium, // 정확도를 약간 낮춰 속도 향상
-        timeLimit: const Duration(seconds: 10), // 10초 타임아웃
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium, // 정확도를 약간 낮춰 속도 향상
+          timeLimit: Duration(seconds: 10), // 10초 타임아웃
+        ),
       );
     } catch (e) {
       debugPrint('Error getting current location: $e');

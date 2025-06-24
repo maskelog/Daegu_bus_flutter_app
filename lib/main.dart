@@ -1,24 +1,15 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:daegu_bus_app/models/auto_alarm.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
-import 'models/alarm_data.dart' as alarm_model;
 import 'screens/home_screen.dart';
 import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
 import 'services/permission_service.dart';
 import 'services/settings_service.dart';
-import 'utils/database_helper.dart';
-
-// 로거 설정
-final Logger _logger = Logger('MyApp');
 
 /// WorkManager 콜백 함수 (백그라운드에서 실행)
 @pragma('vm:entry-point')
@@ -43,20 +34,6 @@ void callbackDispatcher() {
 
       final String busNo = inputData['busNo'] ?? 'N/A';
       logMessage('백그라운드 작업 실행: $busNo', level: LogLevel.info);
-
-      final autoAlarm = AutoAlarm(
-        id: inputData['id']?.toString() ?? '',
-        routeNo: inputData['routeNo'] ?? '',
-        stationName: inputData['stationName'] ?? '',
-        stationId: inputData['stationId'] ?? '',
-        routeId: inputData['routeId'] ?? '',
-        hour: inputData['hour'] ?? 0,
-        minute: inputData['minute'] ?? 0,
-        repeatDays:
-            (inputData['repeatDays'] as List<dynamic>?)?.cast<int>() ?? [],
-        useTTS: inputData['useTTS'] ?? true,
-        isActive: true,
-      );
 
       // await alarmService.triggerAutoAlarm(autoAlarm);
       return Future.value(true);

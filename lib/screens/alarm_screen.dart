@@ -8,7 +8,6 @@ import '../models/alarm_sound.dart';
 import '../models/auto_alarm.dart';
 import '../services/alarm_service.dart';
 import '../services/settings_service.dart';
-import '../widgets/time_picker_spinner.dart';
 import 'search_screen.dart';
 import '../main.dart' show logMessage, LogLevel;
 import '../screens/settings_screen.dart';
@@ -184,22 +183,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
       );
       _saveAutoAlarms();
     });
-  }
-
-  void _updateNotificationModeSetting(NotificationDisplayMode? value) {
-    if (value != null) {
-      final settingsService =
-          Provider.of<SettingsService>(context, listen: false);
-      if (settingsService.notificationDisplayMode != value) {
-        settingsService.updateNotificationDisplayMode(value);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('알림 표시 설정이 저장되었습니다.'),
-            duration: Duration(seconds: 1),
-          ),
-        );
-      }
-    }
   }
 
   @override

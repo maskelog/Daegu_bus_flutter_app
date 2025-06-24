@@ -1,7 +1,7 @@
 import 'package:daegu_bus_app/models/bus_arrival.dart';
-import 'package:daegu_bus_app/main.dart' show log;
 import 'package:daegu_bus_app/services/alarm_service.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class BusArrivalScreen extends StatefulWidget {
   final BusArrival busArrival;
@@ -15,16 +15,17 @@ class BusArrivalScreen extends StatefulWidget {
 }
 
 class _BusArrivalScreenState extends State<BusArrivalScreen> {
-  late final AlarmService _alarmService;
+  AlarmService? _alarmService;
   final _formKey = GlobalKey<FormState>();
   String? _message;
   bool _isLoading = false;
   bool _isSuccess = false;
 
   @override
-  void initState() {
-    super.initState();
-    _alarmService = AlarmService();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Provider에서 AlarmService를 받아옴
+    _alarmService = Provider.of<AlarmService>(context, listen: false);
   }
 
   @override
@@ -211,13 +212,14 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         return;
       }
 
-      bool success = await _alarmService.setOneTimeAlarm(
-        widget.busArrival.routeNo,
-        widget.stationName,
-        remainingMinutes,
-        routeId: widget.busArrival.routeId,
-        useTTS: true,
-      );
+      bool success = await _alarmService?.setOneTimeAlarm(
+            widget.busArrival.routeNo,
+            widget.stationName,
+            remainingMinutes,
+            routeId: widget.busArrival.routeId,
+            useTTS: true,
+          ) ??
+          false;
 
       if (success) {
         _showMessage('알람이 설정되었습니다', true);
@@ -225,7 +227,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         _showMessage('알람 설정에 실패했습니다', false);
       }
     } catch (e) {
-      log('알람 설정 중 오류 발생: $e');
+      debugPrint('알람 설정 중 오류 발생: $e');
       _showMessage('오류가 발생했습니다: $e', false);
     } finally {
       setState(() {

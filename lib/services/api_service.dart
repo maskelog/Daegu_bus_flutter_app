@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_stop.dart';
@@ -105,7 +106,7 @@ class ApiService {
       final result = await _channel.invokeMethod(method, params);
       return result;
     } on PlatformException catch (e) {
-      print('네이티브 API 호출 오류: ${e.message}');
+      debugPrint('네이티브 API 호출 오류: ${e.message}');
       return null;
     }
   }
@@ -141,7 +142,7 @@ class ApiService {
 
       return result == true;
     } catch (e) {
-      print('백그라운드 알림 표시 오류: $e');
+      debugPrint('백그라운드 알림 표시 오류: $e');
       return false;
     }
   }

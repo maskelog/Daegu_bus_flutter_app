@@ -707,7 +707,7 @@ class AlarmService extends ChangeNotifier {
 
           // AutoAlarm 객체로 변환
           final autoAlarm = AutoAlarm(
-            id: alarm.getAlarmId().toString(),
+            id: alarm.id.toString(),
             routeNo: alarm.busNo,
             stationName: alarm.stationName,
             stationId: effectiveStationId, // 올바른 stationId 사용
@@ -723,7 +723,7 @@ class AlarmService extends ChangeNotifier {
           await _startContinuousAutoAlarm(autoAlarm);
 
           // 알람 목록에서 제거 (이미 실행됨)
-          _autoAlarms.removeWhere((a) => a.getAlarmId() == alarm.getAlarmId());
+          _autoAlarms.removeWhere((a) => a.id == alarm.id);
           await _saveAutoAlarms();
 
           logMessage('✅ 자동 알람 실행 완료: ${alarm.busNo}번', level: LogLevel.info);
@@ -1109,7 +1109,7 @@ class AlarmService extends ChangeNotifier {
             level: LogLevel.debug);
 
         final autoAlarm = AutoAlarm(
-          id: alarm.getAlarmId().toString(),
+          id: alarm.id.toString(),
           routeNo: alarm.busNo,
           stationName: alarm.stationName,
           stationId: effectiveStationId, // 보정된 stationId 사용

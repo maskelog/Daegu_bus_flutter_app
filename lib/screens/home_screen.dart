@@ -22,7 +22,7 @@ import 'package:daegu_bus_app/services/alarm_manager.dart';
 import 'package:daegu_bus_app/services/settings_service.dart';
 import 'package:daegu_bus_app/utils/tts_switcher.dart';
 import 'package:flutter/services.dart';
-import 'package:daegu_bus_app/services/notification_service.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,7 +31,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _currentIndex = 0;
+  int _currentIndex = 2;
   final TextEditingController _searchController = TextEditingController();
   bool _isLoading = true;
   bool _isLoadingNearby = false;
@@ -402,33 +402,126 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          Expanded(child: _buildBody()),
-        ],
+      resizeToAvoidBottomInset: false,
+      body: SafeArea(
+        child: _buildBody(),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
+      bottomNavigationBar: _buildBottomAppBar(),
     );
   }
 
   Widget _buildBody() {
-    if (_currentIndex == 0) return _buildNearbyTab();
-    if (_currentIndex == 1) return _buildRouteMapTab();
-    if (_currentIndex == 2) return _buildFavoritesTab();
-    return _buildAlarmTab();
+    // 0: 노선도, 1: 즐겨찾기, 2: 홈(FAB), 3: 알람, 4: 설정
+    if (_currentIndex == 0) {
+      return Container(color: Colors.white, child: _buildRouteMapTab());
+    }
+    if (_currentIndex == 1) {
+      return Container(color: Colors.white, child: _buildFavoritesTab());
+    }
+    if (_currentIndex == 2) {
+      return Container(color: Colors.white, child: _buildNearbyTab());
+    }
+    if (_currentIndex == 3) {
+      return Container(color: Colors.white, child: _buildAlarmTab());
+    }
+    return Container(color: Colors.white, child: _buildSettingsTab());
+  }
+
+  Widget _buildBottomAppBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return BottomAppBar(
+      elevation: isDark ? 4 : 8,
+      notchMargin: 0,
+      color: Colors.white,
+      child: SafeArea(
+        top: false,
+        bottom: true,
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(0, Icons.map_outlined, Icons.map, '노선도'),
+              _buildNavItem(1, Icons.favorite_outline, Icons.favorite, '즐겨찾기'),
+              _buildNavItem(2, Icons.home_outlined, Icons.home, '홈'),
+              _buildNavItem(3, Icons.alarm_outlined, Icons.alarm, '알람'),
+              _buildNavItem(4, Icons.settings_outlined, Icons.settings, '설정'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem(
+      int index, IconData icon, IconData activeIcon, String label) {
+    final isSelected = _currentIndex == index;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Expanded(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        child: InkWell(
+          onTap: () => setState(() => _currentIndex = index),
+          borderRadius: BorderRadius.circular(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.blue.shade300 : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  isSelected ? activeIcon : icon,
+                  color: isSelected
+                      ? Colors.blue.shade700
+                      : (isDark ? Colors.grey[300] : Colors.grey[600]),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isSelected
+                      ? Colors.blue.shade700
+                      : (isDark ? Colors.grey[300] : Colors.grey[600]),
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsTab() {
+    return const SafeArea(
+      top: true,
+      bottom: false,
+      child: SettingsScreen(),
+    );
   }
 
   Widget _buildNearbyTab() {
+    // BottomAppBar의 높이
+    const double bottomAppBarContentHeight = 60;
+    // 안전 마진
+    const double safetyMargin = 20;
+
     return RefreshIndicator(
       onRefresh: _initializeData,
       child: CustomScrollView(
         slivers: [
           const SliverToBoxAdapter(
-            child: SafeArea(
-              top: true,
-              bottom: false,
-              child: ActiveAlarmPanel(),
-            ),
+            child: ActiveAlarmPanel(),
           ),
           SliverToBoxAdapter(
             child: Align(
@@ -487,13 +580,18 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           if (_isLoading)
-            const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()))
+            const SliverToBoxAdapter(
+                child: SizedBox(
+                    height: 200,
+                    child: Center(child: CircularProgressIndicator())))
           else if (_errorMessage != null)
-            SliverFillRemaining(child: Center(child: Text(_errorMessage!)))
+            SliverToBoxAdapter(
+                child: SizedBox(
+                    height: 200, child: Center(child: Text(_errorMessage!))))
           else if (_busArrivals.isEmpty)
-            const SliverFillRemaining(
-                child: Center(child: Text('도착 예정 버스가 없습니다.')))
+            const SliverToBoxAdapter(
+                child: SizedBox(
+                    height: 200, child: Center(child: Text('도착 예정 버스가 없습니다.'))))
           else
             SliverList(
               delegate: SliverChildBuilderDelegate(
@@ -509,6 +607,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 childCount: _busArrivals.length,
               ),
             ),
+          // 남은 공간 자동 채우기 및 overflow 방지
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Builder(
+              builder: (context) => Container(
+                height: bottomAppBarContentHeight +
+                    safetyMargin +
+                    MediaQuery.of(context).padding.bottom,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -521,7 +630,7 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(10),
             child: Text(title,
                 style:
                     const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -596,167 +705,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return distance < 1000
         ? '${distance.round()}m'
         : '${(distance / 1000).toStringAsFixed(1)}km';
-  }
-
-  Widget _buildBottomNavigationBar() {
-    return BottomNavigationBar(
-      items: const <BottomNavigationBarItem>[
-        BottomNavigationBarItem(
-          icon: Icon(Icons.home_outlined),
-          activeIcon: Icon(Icons.home),
-          label: '홈',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.map_outlined),
-          activeIcon: Icon(Icons.map),
-          label: '노선도',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.favorite_outline),
-          activeIcon: Icon(Icons.favorite),
-          label: '즐겨찾기',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.alarm_outlined),
-          activeIcon: Icon(Icons.alarm),
-          label: '알람',
-        ),
-      ],
-      currentIndex: _currentIndex,
-      selectedItemColor: Theme.of(context).primaryColor,
-      unselectedItemColor: Colors.grey,
-      onTap: (index) => setState(() => _currentIndex = index),
-      type: BottomNavigationBarType.fixed,
-    );
-  }
-
-  Future<void> _startNativeTracking(
-      String busNo, String stationName, String routeId) async {
-    try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
-      await platform.invokeMethod('startBusTrackingService', {
-        'busNo': busNo,
-        'stationName': stationName,
-        'routeId': routeId,
-      });
-      log('🔔 ✅ 네이티브 추적 시작 요청 완료');
-    } catch (e) {
-      log('❌ [ERROR] 네이티브 추적 시작 실패: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> _stopSpecificNativeTracking(
-      String busNo, String stationName, String routeId) async {
-    try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
-      await platform.invokeMethod('stopSpecificTracking', {
-        'busNo': busNo,
-        'routeId': routeId,
-        'stationName': stationName,
-      });
-      log('🔔 ✅ 네이티브 특정 추적 중지 요청 완료');
-    } catch (e) {
-      log('❌ [ERROR] 네이티브 특정 추적 중지 실패: $e');
-    }
-  }
-
-  Future<void> _handleBoardingAlarm(
-      BusArrival busArrival, BuildContext modalContext) async {
-    if (_selectedStop == null || busArrival.busInfoList.isEmpty) return;
-
-    final alarmService = Provider.of<AlarmService>(context, listen: false);
-    final firstBus = busArrival.busInfoList.first;
-    final routeId = busArrival.routeId;
-    final stationId = _selectedStop!.id;
-    final wincId = _selectedStop!.wincId ?? '';
-    final busNo = busArrival.routeNo;
-    final stationName = _selectedStop!.name;
-    final remainingMinutes = firstBus.getRemainingMinutes();
-
-    final hasAlarm = alarmService.hasAlarm(busNo, stationName, routeId);
-
-    Navigator.pop(modalContext);
-
-    try {
-      if (hasAlarm) {
-        await _stopSpecificNativeTracking(busNo, stationName, routeId);
-        await AlarmManager.cancelAlarm(
-            busNo: busNo, stationName: stationName, routeId: routeId);
-        await alarmService.cancelAlarmByRoute(busNo, stationName, routeId);
-        await TtsSwitcher.stopTtsTracking(busNo);
-        await alarmService.refreshAlarms();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('승차 알람이 취소되었습니다.')),
-        );
-      } else {
-        if (remainingMinutes <= 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('이미 도착했거나 운행이 종료된 버스입니다.')),
-          );
-          return;
-        }
-
-        for (var alarm in [...alarmService.activeAlarms]) {
-          if (alarm.stationName == stationName) {
-            await alarmService.cancelAlarmByRoute(
-                alarm.busNo, alarm.stationName, alarm.routeId);
-            await TtsSwitcher.stopTtsTracking(alarm.busNo);
-          }
-        }
-
-        await AlarmManager.addAlarm(
-            busNo: busNo,
-            stationName: stationName,
-            routeId: routeId,
-            wincId: wincId);
-        await _startNativeTracking(busNo, stationName, routeId);
-
-        bool success = await alarmService.setOneTimeAlarm(
-          busNo,
-          stationName,
-          remainingMinutes,
-          routeId: routeId,
-          useTTS: true,
-          isImmediateAlarm: true,
-          currentStation: firstBus.currentStation,
-        );
-
-        if (success) {
-          await alarmService.startBusMonitoringService(
-            stationId: stationId,
-            stationName: stationName,
-            routeId: routeId,
-            busNo: busNo,
-          );
-
-          final settings = Provider.of<SettingsService>(context, listen: false);
-          if (settings.useTts) {
-            TtsSwitcher.startTtsTracking(
-              routeId: routeId,
-              stationId: stationId,
-              busNo: busNo,
-              stationName: stationName,
-              remainingMinutes: remainingMinutes,
-            );
-          }
-          await alarmService.refreshAlarms();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('승차 알람이 설정되었습니다.')),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('승차 알람 설정에 실패했습니다.')),
-          );
-        }
-      }
-    } catch (e) {
-      log('알람 처리 중 오류: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('알람 처리 중 오류가 발생했습니다: $e')),
-      );
-    }
   }
 
   void _showBusDetailModal(BusArrival busArrival) {
@@ -912,6 +860,135 @@ class _HomeScreenState extends State<HomeScreen> {
         _loadBusArrivals();
       }
     });
+  }
+
+  Future<void> _startNativeTracking(
+      String busNo, String stationName, String routeId) async {
+    try {
+      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      await platform.invokeMethod('startBusTrackingService', {
+        'busNo': busNo,
+        'stationName': stationName,
+        'routeId': routeId,
+      });
+      log('🔔 ✅ 네이티브 추적 시작 요청 완료');
+    } catch (e) {
+      log('❌ [ERROR] 네이티브 추적 시작 실패: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _stopSpecificNativeTracking(
+      String busNo, String stationName, String routeId) async {
+    try {
+      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      await platform.invokeMethod('stopSpecificTracking', {
+        'busNo': busNo,
+        'routeId': routeId,
+        'stationName': stationName,
+      });
+      log('🔔 ✅ 네이티브 특정 추적 중지 요청 완료');
+    } catch (e) {
+      log('❌ [ERROR] 네이티브 특정 추적 중지 실패: $e');
+    }
+  }
+
+  Future<void> _handleBoardingAlarm(
+      BusArrival busArrival, BuildContext modalContext) async {
+    if (_selectedStop == null || busArrival.busInfoList.isEmpty) return;
+
+    final alarmService = Provider.of<AlarmService>(context, listen: false);
+    final firstBus = busArrival.busInfoList.first;
+    final routeId = busArrival.routeId;
+    final stationId = _selectedStop!.id;
+    final wincId = _selectedStop!.wincId ?? '';
+    final busNo = busArrival.routeNo;
+    final stationName = _selectedStop!.name;
+    final remainingMinutes = firstBus.getRemainingMinutes();
+
+    final hasAlarm = alarmService.hasAlarm(busNo, stationName, routeId);
+
+    Navigator.pop(modalContext);
+
+    try {
+      if (hasAlarm) {
+        await _stopSpecificNativeTracking(busNo, stationName, routeId);
+        await AlarmManager.cancelAlarm(
+            busNo: busNo, stationName: stationName, routeId: routeId);
+        await alarmService.cancelAlarmByRoute(busNo, stationName, routeId);
+        await TtsSwitcher.stopTtsTracking(busNo);
+        await alarmService.refreshAlarms();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('승차 알람이 취소되었습니다.')),
+        );
+      } else {
+        if (remainingMinutes <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('이미 도착했거나 운행이 종료된 버스입니다.')),
+          );
+          return;
+        }
+
+        for (var alarm in [...alarmService.activeAlarms]) {
+          if (alarm.stationName == stationName) {
+            await alarmService.cancelAlarmByRoute(
+                alarm.busNo, alarm.stationName, alarm.routeId);
+            await TtsSwitcher.stopTtsTracking(alarm.busNo);
+          }
+        }
+
+        await AlarmManager.addAlarm(
+            busNo: busNo,
+            stationName: stationName,
+            routeId: routeId,
+            wincId: wincId);
+        await _startNativeTracking(busNo, stationName, routeId);
+
+        bool success = await alarmService.setOneTimeAlarm(
+          busNo,
+          stationName,
+          remainingMinutes,
+          routeId: routeId,
+          useTTS: true,
+          isImmediateAlarm: true,
+          currentStation: firstBus.currentStation,
+        );
+
+        if (success) {
+          await alarmService.startBusMonitoringService(
+            stationId: stationId,
+            stationName: stationName,
+            routeId: routeId,
+            busNo: busNo,
+          );
+
+          final settings = Provider.of<SettingsService>(context, listen: false);
+          if (settings.useTts) {
+            TtsSwitcher.startTtsTracking(
+              routeId: routeId,
+              stationId: stationId,
+              busNo: busNo,
+              stationName: stationName,
+              remainingMinutes: remainingMinutes,
+            );
+          }
+          await alarmService.refreshAlarms();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('승차 알람이 설정되었습니다.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('승차 알람 설정에 실패했습니다.')),
+          );
+        }
+      }
+    } catch (e) {
+      log('알람 처리 중 오류: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('알람 처리 중 오류가 발생했습니다: $e')),
+      );
+    }
   }
 }
 

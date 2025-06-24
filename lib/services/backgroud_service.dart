@@ -8,6 +8,8 @@ import 'dart:convert';
 import 'alarm_service.dart';
 import '../models/auto_alarm.dart';
 import '../models/bus_info.dart';
+import 'notification_service.dart';
+import 'settings_service.dart';
 
 const int defaultPreNotificationMinutes = 5;
 
@@ -428,7 +430,10 @@ Future<bool> _handleTTSRepeatingTask({
     }
 
     // AlarmService 인스턴스 생성하여 TTS 알람 시작 기능 사용
-    final alarmService = AlarmService();
+    final alarmService = AlarmService(
+      notificationService: NotificationService(),
+      settingsService: SettingsService(),
+    );
 
     // 버스 도착 정보 가져오기
     try {

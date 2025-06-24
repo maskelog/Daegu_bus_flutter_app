@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 class AlarmManager {
   static const String _activeAlarmsKey = 'active_alarms';
-  static List<Function()> _listeners = [];
+  static final List<Function()> _listeners = [];
   static List<AlarmInfo> _cachedAlarms = [];
 
   // 리스너 관리
@@ -22,7 +23,7 @@ class AlarmManager {
       try {
         listener();
       } catch (e) {
-        print('❌ [ERROR] AlarmManager 리스너 알림 중 오류: $e');
+        debugPrint('❌ [ERROR] AlarmManager 리스너 알림 중 오류: $e');
       }
     }
   }
@@ -35,23 +36,23 @@ class AlarmManager {
     required String wincId,
   }) async {
     try {
-      print('🐛 [DEBUG] [AlarmManager] 알람 추가 요청: $busNo, $stationName, $routeId');
-      
+      debugPrint(
+          '🐛 [DEBUG] [AlarmManager] 알람 추가 요청: $busNo, $stationName, $routeId');
+
       final alarmKey = '${busNo}_${stationName}_$routeId';
-      
+
       // 중복 체크
       final existingAlarms = await getActiveAlarms();
-      final isDuplicate = existingAlarms.any((alarm) => 
-        alarm.busNo == busNo && 
-        alarm.stationName == stationName && 
-        alarm.routeId == routeId
-      );
-      
+      final isDuplicate = existingAlarms.any((alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId);
+
       if (isDuplicate) {
-        print('🐛 [DEBUG] [$alarmKey] 이미 존재하는 알람 - 스킵');
+        debugPrint('🐛 [DEBUG] [$alarmKey] 이미 존재하는 알람 - 스킵');
         return;
       }
-      
+
       // 새 알람 생성
       final newAlarm = AlarmInfo(
         busNo: busNo,
@@ -60,21 +61,20 @@ class AlarmManager {
         wincId: wincId,
         createdAt: DateTime.now(),
       );
-      
+
       // 캐시에 추가
       _cachedAlarms.add(newAlarm);
-      
+
       // 저장
       await _saveAlarms(_cachedAlarms);
-      
-      print('🐛 [DEBUG] [$alarmKey] 알람 추가 완료');
-      
+
+      debugPrint('🐛 [DEBUG] [$alarmKey] 알람 추가 완료');
+
       // 리스너들에게 알림
       _notifyListeners();
-      
     } catch (e) {
-      print('❌ [ERROR] 알람 추가 실패: $e');
-      throw e;
+      debugPrint('❌ [ERROR] 알람 추가 실패: $e');
+      rethrow;
     }
   }
 
@@ -85,52 +85,51 @@ class AlarmManager {
     required String routeId,
   }) async {
     try {
-      print('🐛 [DEBUG] [AlarmManager] 알람 취소 요청: $busNo, $stationName, $routeId');
-      
+      debugPrint(
+          '🐛 [DEBUG] [AlarmManager] 알람 취소 요청: $busNo, $stationName, $routeId');
+
       final alarmKey = '${busNo}_${stationName}_$routeId';
-      
+
       // 캐시에서 제거
       _cachedAlarms.removeWhere((alarm) =>
-        alarm.busNo == busNo &&
-        alarm.stationName == stationName &&
-        alarm.routeId == routeId
-      );
-      
-      print('🐛 [DEBUG] [$alarmKey] 캐시에서 제거됨');
-      
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId);
+
+      debugPrint('🐛 [DEBUG] [$alarmKey] 캐시에서 제거됨');
+
       // 저장
       await _saveAlarms(_cachedAlarms);
-      
-      print('🐛 [DEBUG] [$alarmKey] 알람 취소 완료');
-      
+
+      debugPrint('🐛 [DEBUG] [$alarmKey] 알람 취소 완료');
+
       // 리스너들에게 알림
       _notifyListeners();
-      
     } catch (e) {
-      print('❌ [ERROR] 알람 취소 실패: $e');
-      throw e;
+      debugPrint('❌ [ERROR] 알람 취소 실패: $e');
+      rethrow;
     }
   }
 
   // 모든 알람 취소
   static Future<void> cancelAllAlarms() async {
     try {
-      print('🐛 [DEBUG] [AlarmManager] 모든 알람 취소 요청: ${_cachedAlarms.length}개');
-      
+      debugPrint(
+          '🐛 [DEBUG] [AlarmManager] 모든 알람 취소 요청: ${_cachedAlarms.length}개');
+
       // 캐시 클리어
       _cachedAlarms.clear();
-      
+
       // 저장
       await _saveAlarms(_cachedAlarms);
-      
-      print('🐛 [DEBUG] ✅ 모든 알람 취소 완료');
-      
+
+      debugPrint('�� [DEBUG] ✅ 모든 알람 취소 완료');
+
       // 리스너들에게 알림
       _notifyListeners();
-      
     } catch (e) {
-      print('❌ [ERROR] 모든 알람 취소 실패: $e');
-      throw e;
+      debugPrint('❌ [ERROR] 모든 알람 취소 실패: $e');
+      rethrow;
     }
   }
 
@@ -145,17 +144,15 @@ class AlarmManager {
       if (_cachedAlarms.isEmpty) {
         await loadAlarms();
       }
-      
+
       final isActive = _cachedAlarms.any((alarm) =>
-        alarm.busNo == busNo &&
-        alarm.stationName == stationName &&
-        alarm.routeId == routeId
-      );
-      
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId);
+
       return isActive;
-      
     } catch (e) {
-      print('❌ [ERROR] 알람 활성 상태 확인 실패: $e');
+      debugPrint('❌ [ERROR] 알람 활성 상태 확인 실패: $e');
       return false;
     }
   }
@@ -167,11 +164,10 @@ class AlarmManager {
       if (_cachedAlarms.isEmpty) {
         await loadAlarms();
       }
-      
+
       return List.from(_cachedAlarms);
-      
     } catch (e) {
-      print('❌ [ERROR] 활성 알람 목록 가져오기 실패: $e');
+      debugPrint('❌ [ERROR] 활성 알람 목록 가져오기 실패: $e');
       return [];
     }
   }
@@ -181,18 +177,19 @@ class AlarmManager {
     try {
       final prefs = await SharedPreferences.getInstance();
       final alarmsJson = prefs.getString(_activeAlarmsKey);
-      
+
       if (alarmsJson != null && alarmsJson.isNotEmpty) {
         final List<dynamic> alarmsList = json.decode(alarmsJson);
-        _cachedAlarms = alarmsList.map((json) => AlarmInfo.fromJson(json)).toList();
+        _cachedAlarms =
+            alarmsList.map((json) => AlarmInfo.fromJson(json)).toList();
       } else {
         _cachedAlarms = [];
       }
-      
-      print('🐛 [DEBUG] [AlarmManager] 알람 로드 완료: ${_cachedAlarms.length}개');
-      
+
+      debugPrint(
+          '🐛 [DEBUG] [AlarmManager] 알람 로드 완료: ${_cachedAlarms.length}개');
     } catch (e) {
-      print('❌ [ERROR] 알람 로드 실패: $e');
+      debugPrint('❌ [ERROR] 알람 로드 실패: $e');
       _cachedAlarms = [];
     }
   }
@@ -201,14 +198,14 @@ class AlarmManager {
   static Future<void> _saveAlarms(List<AlarmInfo> alarms) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final alarmsJson = json.encode(alarms.map((alarm) => alarm.toJson()).toList());
+      final alarmsJson =
+          json.encode(alarms.map((alarm) => alarm.toJson()).toList());
       await prefs.setString(_activeAlarmsKey, alarmsJson);
-      
-      print('🐛 [DEBUG] ✅ 알람 저장 완료: ${alarms.length}개');
-      
+
+      debugPrint('🐛 [DEBUG] ✅ 알람 저장 완료: ${alarms.length}개');
     } catch (e) {
-      print('❌ [ERROR] 알람 저장 실패: $e');
-      throw e;
+      debugPrint('❌ [ERROR] 알람 저장 실패: $e');
+      rethrow;
     }
   }
 
@@ -218,26 +215,26 @@ class AlarmManager {
       _cachedAlarms.clear();
       await loadAlarms();
       _notifyListeners();
-      
-      print('🐛 [DEBUG] [AlarmManager] 캐시 새로고침 완료');
-      
+
+      debugPrint('🐛 [DEBUG] [AlarmManager] 캐시 새로고침 완료');
     } catch (e) {
-      print('❌ [ERROR] 캐시 새로고침 실패: $e');
+      debugPrint('❌ [ERROR] 캐시 새로고침 실패: $e');
     }
   }
 
   // 디버그 정보 출력
   static void printDebugInfo() {
-    print('🐛 [DEBUG] === AlarmManager 상태 ===');
-    print('🐛 [DEBUG] 캐시된 알람 수: ${_cachedAlarms.length}');
-    print('🐛 [DEBUG] 등록된 리스너 수: ${_listeners.length}');
-    
+    debugPrint('🐛 [DEBUG] === AlarmManager 상태 ===');
+    debugPrint('🐛 [DEBUG] 캐시된 알람 수: ${_cachedAlarms.length}');
+    debugPrint('🐛 [DEBUG] 등록된 리스너 수: ${_listeners.length}');
+
     for (int i = 0; i < _cachedAlarms.length; i++) {
       final alarm = _cachedAlarms[i];
-      print('🐛 [DEBUG] [$i] ${alarm.busNo}번 - ${alarm.stationName} (${alarm.routeId})');
+      debugPrint(
+          '🐛 [DEBUG] [$i] ${alarm.busNo}번 - ${alarm.stationName} (${alarm.routeId})');
     }
-    
-    print('🐛 [DEBUG] ========================');
+
+    debugPrint('🐛 [DEBUG] ========================');
   }
 }
 
