@@ -404,7 +404,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: Column(
         children: [
-          const ActiveAlarmPanel(),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -424,6 +423,13 @@ class _HomeScreenState extends State<HomeScreen> {
       onRefresh: _initializeData,
       child: CustomScrollView(
         slivers: [
+          const SliverToBoxAdapter(
+            child: SafeArea(
+              top: true,
+              bottom: false,
+              child: ActiveAlarmPanel(),
+            ),
+          ),
           SliverToBoxAdapter(
             child: Align(
               alignment: Alignment.centerRight,
@@ -556,20 +562,28 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildRouteMapTab() {
-    return const RouteMapScreen();
+    return const SafeArea(
+      top: true,
+      bottom: false,
+      child: RouteMapScreen(),
+    );
   }
 
   Widget _buildFavoritesTab() {
-    return FavoritesScreen(
-      favoriteStops: _favoriteStops,
-      onStopSelected: (stop) {
-        setState(() {
-          _currentIndex = 0; // 홈 탭으로 이동
-          _selectedStop = stop;
-        });
-        _loadBusArrivals();
-      },
-      onFavoriteToggle: _toggleFavorite,
+    return SafeArea(
+      top: true,
+      bottom: false,
+      child: FavoritesScreen(
+        favoriteStops: _favoriteStops,
+        onStopSelected: (stop) {
+          setState(() {
+            _currentIndex = 0; // 홈 탭으로 이동
+            _selectedStop = stop;
+          });
+          _loadBusArrivals();
+        },
+        onFavoriteToggle: _toggleFavorite,
+      ),
     );
   }
 
