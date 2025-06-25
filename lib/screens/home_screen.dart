@@ -562,7 +562,7 @@ class _HomeScreenState extends State<HomeScreen> {
               )
             else
               SizedBox(
-                height: 100, // 높이를 약간 늘려 카드 간격 개선
+                height: 70, // 높이를 100에서 70으로 축소
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: stops.length,
@@ -892,21 +892,21 @@ class StopCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 170, // 너비 약간 증가
-      margin: const EdgeInsets.only(right: 10),
+      width: 150, // 너비를 170에서 150으로 축소
+      margin: const EdgeInsets.only(right: 8), // 마진도 줄임
       child: Card(
-        elevation: 2,
+        elevation: 1, // elevation 축소
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10), // 둥근 모서리 축소
           side: BorderSide(
               color: isSelected ? Colors.blue.shade300 : Colors.grey.shade200,
               width: isSelected ? 2 : 1),
         ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: const EdgeInsets.all(10.0),
+            padding: const EdgeInsets.all(8.0), // 패딩 축소 (10->8)
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -914,7 +914,7 @@ class StopCard extends StatelessWidget {
                 Text(
                   stop.name,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 14, // 폰트 크기 축소 (16->14)
                     fontWeight: FontWeight.w600,
                     color: isSelected ? Colors.blue.shade700 : Colors.black87,
                   ),
@@ -925,13 +925,13 @@ class StopCard extends StatelessWidget {
                     distanceText != null &&
                     distanceText!.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 4.0),
+                    padding: const EdgeInsets.only(top: 2.0), // 패딩 축소
                     child: Text(
                       distanceText!,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      style: TextStyle(color: Colors.grey[600], fontSize: 11), // 폰트 크기 축소
                     ),
                   ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2), // 높이 축소
               ],
             ),
           ),
