@@ -106,9 +106,9 @@ class BusStop {
       'isFavorite': isFavorite,
       'wincId': wincId,
       'stationId': stationId,
-      'ngisYPos': latitude?.toString(),
-      'ngisXPos': longitude?.toString(),
-      'distance': distance?.toString(),
+      'latitude': latitude, // latitude로 통일
+      'longitude': longitude, // longitude로 통일
+      'distance': distance,
       'routeList': routeList,
     };
   }

@@ -67,17 +67,10 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final favorites = _favoriteStops
-          .map((stop) => jsonEncode({
-                'id': stop.id,
-                'name': stop.name,
-                'isFavorite': true,
-                'wincId': stop.wincId,
-                'routeList': stop.routeList,
-                'longitude': stop.longitude,
-                'latitude': stop.latitude,
-              }))
+          .map((stop) => jsonEncode(stop.toJson())) // toJson() 메서드 사용로 통일
           .toList();
       await prefs.setStringList('favorites', favorites);
+      debugPrint('즐겨찾기 저장 완료: ${_favoriteStops.length}개 정류장');
     } catch (e) {
       debugPrint('Error saving favorites: $e');
       if (mounted) {
@@ -97,6 +90,7 @@ class _SearchScreenState extends State<SearchScreen> {
           _searchResults[index] =
               _searchResults[index].copyWith(isFavorite: false);
         }
+        debugPrint('즐겨찾기에서 제거: ${stop.name}');
       } else {
         _favoriteStops.add(stop.copyWith(isFavorite: true));
         final index = _searchResults.indexWhere((s) => s.id == stop.id);
@@ -104,9 +98,24 @@ class _SearchScreenState extends State<SearchScreen> {
           _searchResults[index] =
               _searchResults[index].copyWith(isFavorite: true);
         }
+        debugPrint('즐겨찾기에 추가: ${stop.name}');
       }
-      _saveFavoriteStops();
     });
+    
+    // 즉시 저장
+    _saveFavoriteStops();
+    
+    // 사용자에게 피드백 제공
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isStopFavorite(stop)
+              ? '${stop.name} 정류장이 즐겨찾기에 추가되었습니다'
+              : '${stop.name} 정류장이 즐겨찾기에서 제거되었습니다'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
   }
 
   bool _isStopFavorite(BusStop stop) {
@@ -247,6 +256,7 @@ class _SearchScreenState extends State<SearchScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
+            // 즐겨찾기 변경 사항을 호출자에게 알리기 위해 favoriteStops를 반환
             Navigator.of(context).pop(_favoriteStops);
           },
         ),

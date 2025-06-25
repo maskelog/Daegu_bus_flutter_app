@@ -188,6 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final favorites =
           _favoriteStops.map((stop) => jsonEncode(stop.toJson())).toList();
       await prefs.setStringList('favorites', favorites);
+      debugPrint('홈화면 즐겨찾기 저장 완료: ${_favoriteStops.length}개 정류장');
     } catch (e) {
       debugPrint('Error saving favorites: $e');
       if (!mounted) return;
@@ -208,11 +209,17 @@ class _HomeScreenState extends State<HomeScreen> {
           else
             _busArrivals = [];
         }
+        debugPrint('홈화면에서 즐겨찾기 제거: ${stop.name}');
       } else {
         _favoriteStops.add(stop.copyWith(isFavorite: true));
+        debugPrint('홈화면에서 즐겨찾기 추가: ${stop.name}');
       }
-      _saveFavoriteStops();
     });
+
+    // 즐겨찾기 저장
+    _saveFavoriteStops();
+
+    // 사용자 피드백
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_isStopFavorite(stop)
@@ -359,7 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360;
     final fontSize = isSmallScreen ? 10.0 : 12.0;
-    
+
     return BottomNavigationBar(
       type: BottomNavigationBarType.fixed,
       currentIndex: _currentIndex,
@@ -423,12 +430,26 @@ class _HomeScreenState extends State<HomeScreen> {
                       final result = await Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (context) => const SearchScreen()),
+                            builder: (context) => SearchScreen(
+                                  favoriteStops: _favoriteStops,
+                                )),
                       );
-                      if (result != null && result is BusStop) {
-                        setState(() => _selectedStop = result);
-                        _loadBusArrivals();
+
+                      // 결과 처리: BusStop이면 선택된 정류장, List<BusStop>이면 업데이트된 즐겨찾기 목록
+                      if (result != null) {
+                        if (result is BusStop) {
+                          setState(() => _selectedStop = result);
+                          _loadBusArrivals();
+                        } else if (result is List<BusStop>) {
+                          setState(() {
+                            _favoriteStops.clear();
+                            _favoriteStops.addAll(result);
+                          });
+                        }
                       }
+
+                      // 추가적으로 즐겨찾기 목록 다시 로드 (안전장치)
+                      await _loadFavoriteStops();
                     },
                   ),
                 ),
@@ -470,7 +491,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '${_selectedStop!.name} 도착 정보',
+                          _selectedStop!.name,
                           style: const TextStyle(
                               fontSize: 18, fontWeight: FontWeight.bold),
                           overflow: TextOverflow.ellipsis,
@@ -928,7 +949,8 @@ class StopCard extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 2.0), // 패딩 축소
                     child: Text(
                       distanceText!,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 11), // 폰트 크기 축소
+                      style: TextStyle(
+                          color: Colors.grey[600], fontSize: 11), // 폰트 크기 축소
                     ),
                   ),
                 const SizedBox(height: 2), // 높이 축소
