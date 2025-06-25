@@ -190,22 +190,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
     return Consumer<SettingsService>(
       builder: (context, settingsService, child) {
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('자동 알람'),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const SettingsScreen()),
-                  );
-                },
-                tooltip: '설정',
-              ),
-            ],
-          ),
           body: _isLoading
               ? const Center(child: CircularProgressIndicator())
               : CustomScrollView(
@@ -220,7 +204,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 const Text(
-                                  '자동 버스 알림',
+                                  '버스 알람',
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,
