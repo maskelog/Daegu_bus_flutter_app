@@ -3,9 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
-import '../services/api_service.dart'; // ApiService로 변경
+import '../services/api_service.dart';
 import '../widgets/station_item.dart';
-import '../widgets/compact_bus_card.dart';
+import '../widgets/unified_bus_detail_widget.dart';
 
 class SearchScreen extends StatefulWidget {
   final List<BusStop>? favoriteStops;
@@ -101,10 +101,10 @@ class _SearchScreenState extends State<SearchScreen> {
         debugPrint('즐겨찾기에 추가: ${stop.name}');
       }
     });
-    
+
     // 즉시 저장
     _saveFavoriteStops();
-    
+
     // 사용자에게 피드백 제공
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -403,12 +403,18 @@ class _SearchScreenState extends State<SearchScreen> {
                             Column(
                               children: _stationArrivals[station.id]!
                                   .take(3)
-                                  .map((arrival) => CompactBusCard(
+                                  .map((arrival) => UnifiedBusDetailWidget(
                                         busArrival: arrival,
-                                        onTap: () {},
-                                        stationName: station.name,
                                         stationId:
                                             station.stationId ?? station.id,
+                                        stationName: station.name,
+                                        isCompact: true,
+                                        onTap: () => showUnifiedBusDetailModal(
+                                          context,
+                                          arrival,
+                                          station.stationId ?? station.id,
+                                          station.name,
+                                        ),
                                       ))
                                   .toList(),
                             ),

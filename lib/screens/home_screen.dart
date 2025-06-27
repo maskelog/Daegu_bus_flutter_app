@@ -419,13 +419,15 @@ class _HomeScreenState extends State<HomeScreen> {
             const SliverToBoxAdapter(child: ActiveAlarmPanel()),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: IconButton(
-                    icon: const Icon(Icons.search, size: 28),
-                    color: Theme.of(context).primaryColor,
-                    onPressed: () async {
+                padding: const EdgeInsets.all(16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.grey[100],
+                  ),
+                  child: TextField(
+                    readOnly: true,
+                    onTap: () async {
                       final result = await Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -446,6 +448,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       }
                       await _loadFavoriteStops();
                     },
+                    decoration: InputDecoration(
+                      hintText: '정류장 이름 또는 번호 검색 (예: 동대구역, 2001)',
+                      prefixIcon: Icon(Icons.search, color: Colors.blue[700]),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          vertical: 16, horizontal: 16),
+                    ),
                   ),
                 ),
               ),

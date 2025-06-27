@@ -1051,6 +1051,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return ""
     }
 
+    private fun normalize(name: String) = name.replace("\\s".toRegex(), "").replace("[^\\p{L}\\p{N}]".toRegex(), "")
+
     // 정류장 이름으로 stationId 매핑
     private fun getStationIdFromName(stationName: String): String {
         val stationMapping = mapOf(
@@ -1077,7 +1079,6 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
         return ""
     }
-    private fun normalize(name: String) = name.replace("\\s".toRegex(), "").replace("[^\\p{L}\\p{N}]".toRegex(), "")
 
     // showOngoingBusTracking에서 wincId 파라미터 추가
     fun showOngoingBusTracking(
