@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:daegu_bus_app/services/alarm_service.dart';
 import 'package:daegu_bus_app/services/notification_service.dart';
+import 'package:daegu_bus_app/widgets/unified_bus_detail_widget.dart';
 import 'package:daegu_bus_app/widgets/bus_card.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -11,7 +12,6 @@ import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
 import '../services/api_service.dart';
-import '../widgets/compact_bus_card.dart';
 import '../widgets/station_item.dart';
 
 class FavoritesScreen extends StatefulWidget {
@@ -244,12 +244,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               itemCount: stationArrivals.length,
                               itemBuilder: (context, idx) {
                                 final busArrival = stationArrivals[idx];
-                                return CompactBusCard(
+                                return UnifiedBusDetailWidget(
                                   busArrival: busArrival,
                                   stationName: station.name,
                                   stationId: station.id,
-                                  onTap: () => _showBusDetailModal(
-                                      context, station, busArrival),
+                                  isCompact: true,
+                                  onTap: () => showUnifiedBusDetailModal(
+                                    context,
+                                    busArrival,
+                                    station.id,
+                                    station.name,
+                                  ),
                                 );
                               },
                             ),

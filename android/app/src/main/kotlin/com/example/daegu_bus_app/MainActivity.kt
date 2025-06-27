@@ -65,6 +65,8 @@ import com.example.daegu_bus_app.utils.NotificationHelper
 import kotlinx.coroutines.runBlocking
 import android.os.PowerManager
 import android.provider.Settings
+import android.os.Handler
+import android.os.Looper
 
 class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
@@ -154,9 +156,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             Log.i(TAG, "특정 노선 추적 중지 인텐트 전송 완료 (서비스 null, 백업)")
                         }
 
-                        // 4. NotificationHelper를 사용하여 알림 취소 (백업 방법)
-                        notificationHelper.cancelBusTrackingNotification(routeId, busNo, stationName)
-                        Log.i(TAG, "NotificationHelper를 통한 알림 취소 완료")
+                        // 4. NotificationHelper를 사용하여 알림 취소 (백업 방법, 브로드캐스트 없이)
+                        notificationHelper.cancelBusTrackingNotification(routeId, busNo, stationName, false)
+                        Log.i(TAG, "NotificationHelper를 통한 알림 취소 완료 (브로드캐스트 없이)")
 
                         // 5. Flutter 측에 알림 취소 완료 이벤트 전송
                         val alarmCancelData = mapOf(
@@ -192,6 +194,11 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         // Call the comprehensive stopTracking method in BusAlertService
                         busAlertService?.stopTracking()
                         Log.i(TAG, "BusAlertService.stopTracking() 호출 완료")
+                        
+                        // NotificationHelper를 사용하여 모든 알림 취소 (브로드캐스트 없이)
+                        notificationHelper.cancelAllNotifications(false)
+                        Log.i(TAG, "NotificationHelper를 통한 모든 알림 취소 완료 (브로드캐스트 없이)")
+                        
                         result.success(true)
                     } catch (e: Exception) {
                         Log.e(TAG, "강제 전체 추적 중지 처리 오류: ${e.message}", e)
@@ -1757,7 +1764,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         val alarmCancelData = mapOf(
                             "busNo" to busNo,
                             "routeId" to routeId,
-                            "stationName" to stationName
+                            "stationName" to stationName,
+                            "source" to "notification"
                         )
                         _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
                         Log.i(TAG, "Flutter 측에 알람 취소 알림 전송 완료 (From BroadcastReceiver)")
@@ -1766,7 +1774,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         Log.i(TAG, "모든 추적 취소 이벤트 수신")
 
                         // Flutter 측에 모든 알림 취소 이벤트 전송
-                        _methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                        _methodChannel?.invokeMethod("onAllAlarmsCanceled", mapOf("source" to "notification"))
                         Log.i(TAG, "Flutter 측에 모든 알람 취소 알림 전송 완료")
                     }
                 }
@@ -1792,21 +1800,68 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         Log.d(TAG, "버스 추적 서비스 완전 중지 시작")
 
         try {
-            // 1. 서비스에 중지 명령 전송
+            // 1. 서비스에 중지 명령 전송 (여러 방법으로 시도)
             val stopIntent = Intent(this, BusAlertService::class.java).apply {
-                action = "com.example.daegu_bus_app.action.STOP_TRACKING"
+                action = BusAlertService.ACTION_STOP_TRACKING
             }
             startService(stopIntent)
+            Log.d(TAG, "✅ STOP_TRACKING 액션 전송")
 
-            // 2. 서비스 강제 중지
+            // 2. 강제 서비스 중지
             val serviceIntent = Intent(this, BusAlertService::class.java)
             stopService(serviceIntent)
+            Log.d(TAG, "✅ 서비스 강제 중지 요청")
 
-            // 3. 모든 알림 취소
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancelAll()
+            // 3. TTS 서비스도 중지
+            try {
+                val ttsServiceIntent = Intent(this, TTSService::class.java)
+                stopService(ttsServiceIntent)
+                Log.d(TAG, "✅ TTS 서비스 중지")
+            } catch (e: Exception) {
+                Log.e(TAG, "TTS 서비스 중지 오류: ${e.message}")
+            }
 
-            Log.d(TAG, "버스 추적 서비스 완전 중지 완료")
+            // 4. 모든 알림 취소 (여러 방법으로 시도)
+            try {
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancelAll()
+                notificationManager.cancel(1001) // ONGOING_NOTIFICATION_ID
+                notificationManager.cancel(9999) // AUTO_ALARM_NOTIFICATION_ID
+                Log.d(TAG, "✅ 모든 알림 취소 완료 (NotificationManager)")
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 취소 오류: ${e.message}")
+            }
+
+            // 5. NotificationManagerCompat으로도 시도 (백업)
+            try {
+                val notificationManagerCompat = NotificationManagerCompat.from(this)
+                notificationManagerCompat.cancelAll()
+                Log.d(TAG, "✅ 모든 알림 취소 완료 (NotificationManagerCompat)")
+            } catch (e: Exception) {
+                Log.e(TAG, "NotificationManagerCompat 알림 취소 오류: ${e.message}")
+            }
+
+            // 6. WorkManager 작업 취소
+            try {
+                val workManager = androidx.work.WorkManager.getInstance(this)
+                workManager.cancelAllWork()
+                Log.d(TAG, "✅ WorkManager 작업 취소")
+            } catch (e: Exception) {
+                Log.e(TAG, "WorkManager 작업 취소 오류: ${e.message}")
+            }
+
+            // 7. 지연된 추가 정리 작업
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.cancelAll()
+                    Log.d(TAG, "✅ 지연된 알림 취소 완료")
+                } catch (e: Exception) {
+                    Log.e(TAG, "지연된 알림 취소 오류: ${e.message}")
+                }
+            }, 1000)
+
+            Log.d(TAG, "✅ 버스 추적 서비스 완전 중지 완료")
 
         } catch (e: Exception) {
             Log.e(TAG, "서비스 중지 중 오류 발생", e)

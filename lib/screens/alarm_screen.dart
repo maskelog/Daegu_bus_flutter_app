@@ -10,7 +10,6 @@ import '../services/alarm_service.dart';
 import '../services/settings_service.dart';
 import 'search_screen.dart';
 import '../main.dart' show logMessage, LogLevel;
-import '../screens/settings_screen.dart';
 
 class AlarmScreen extends StatefulWidget {
   const AlarmScreen({super.key});

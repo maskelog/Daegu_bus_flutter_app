@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:daegu_bus_app/models/alarm_data.dart';
 import 'package:daegu_bus_app/models/auto_alarm.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -79,7 +80,11 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         ],
       ),
     );
-    if (confirmed == true) await alarmService.stopAllTracking();
+    if (confirmed == true) {
+      // Android에 모든 알람 취소 알림 (NotificationHelper.kt 동기화)
+      await _notifyAndroidAllAlarmsCancelled();
+      await alarmService.stopAllTracking();
+    }
   }
 
   @override
@@ -280,9 +285,36 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     );
   }
 
+  Future<void> _notifyAndroidAllAlarmsCancelled() async {
+    try {
+      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      await platform.invokeMethod('forceStopTracking');
+      debugPrint('✅ Android에 모든 알람 취소 알림 전송');
+    } catch (e) {
+      debugPrint('❌ Android 모든 알람 취소 알림 실패: $e');
+    }
+  }
+
+  Future<void> _notifyAndroidSpecificAlarmCancelled(AlarmData alarm) async {
+    try {
+      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      await platform.invokeMethod('cancelAlarmNotification', {
+        'busNo': alarm.busNo,
+        'routeId': alarm.routeId,
+        'stationName': alarm.stationName,
+      });
+      debugPrint('✅ Android에 특정 알람 취소 알림 전송: ${alarm.busNo}');
+    } catch (e) {
+      debugPrint('❌ Android 특정 알람 취소 알림 실패: $e');
+    }
+  }
+
   Future<void> _cancelSpecificAlarm(
       BuildContext context, AlarmData alarm) async {
     try {
+      // Android에 특정 알람 취소 알림 (NotificationHelper.kt 동기화)
+      await _notifyAndroidSpecificAlarmCancelled(alarm);
+
       await context
           .read<AlarmService>()
           .cancelAlarmByRoute(alarm.busNo, alarm.stationName, alarm.routeId);

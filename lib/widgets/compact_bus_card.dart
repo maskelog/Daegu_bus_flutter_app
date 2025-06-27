@@ -118,6 +118,8 @@ class _CompactBusCardState extends State<CompactBusCard> {
                   routeId: widget.busArrival.routeId,
                   stationId: widget.stationId,
                 );
+              } else {
+                NotificationService().cancelOngoingTracking();
               }
             }
           }

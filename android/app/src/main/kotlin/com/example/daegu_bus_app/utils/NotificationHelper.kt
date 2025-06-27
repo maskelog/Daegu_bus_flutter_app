@@ -33,7 +33,7 @@ class NotificationHelper(private val context: Context) {
     /**
      * 특정 버스 추적 알림 취소
      */
-    fun cancelBusTrackingNotification(routeId: String, busNo: String, stationName: String) {
+    fun cancelBusTrackingNotification(routeId: String, busNo: String, stationName: String, sendBroadcast: Boolean = true) {
         try {
             // 1. 특정 노선 추적 중지 요청 전송
             val stopSpecificIntent = Intent(context, BusAlertService::class.java).apply {
@@ -61,17 +61,21 @@ class NotificationHelper(private val context: Context) {
             context.startService(stopAllIntent)
             Log.i(TAG, "전체 추적 중지 명령 전송 완료 (백업)")
 
-            // 4. Flutter 측에 알림 취소 이벤트 전송 시도
-            try {
-                val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
-                intent.putExtra("routeId", routeId)
-                intent.putExtra("busNo", busNo)
-                intent.putExtra("stationName", stationName)
-                intent.putExtra("source", "notification_helper")
-                context.sendBroadcast(intent)
-                Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $busNo, $routeId, $stationName")
-            } catch (e: Exception) {
-                Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
+            // 4. Flutter 측에 알림 취소 이벤트 전송 (무한 루프 방지)
+            if (sendBroadcast) {
+                try {
+                    val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
+                    intent.putExtra("routeId", routeId)
+                    intent.putExtra("busNo", busNo)
+                    intent.putExtra("stationName", stationName)
+                    intent.putExtra("source", "notification_helper")
+                    context.sendBroadcast(intent)
+                    Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $busNo, $routeId, $stationName")
+                } catch (e: Exception) {
+                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
+                }
+            } else {
+                Log.d(TAG, "브로드캐스트 전송 생략 (무한 루프 방지): $busNo, $routeId")
             }
         } catch (e: Exception) {
             Log.e(TAG, "버스 추적 알림 취소 오류: ${e.message}", e)
@@ -90,7 +94,7 @@ class NotificationHelper(private val context: Context) {
     /**
      * 모든 알림 취소
      */
-    fun cancelAllNotifications() {
+    fun cancelAllNotifications(sendBroadcast: Boolean = true) {
         try {
             // 1. 모든 알림 직접 취소
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -113,13 +117,17 @@ class NotificationHelper(private val context: Context) {
                 Log.e(TAG, "NotificationManagerCompat 취소 오류: ${e.message}", e)
             }
 
-            // 4. Flutter 측에 알림 취소 이벤트 전송 시도
-            try {
-                val intent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
-                context.sendBroadcast(intent)
-                Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
-            } catch (e: Exception) {
-                Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
+            // 4. Flutter 측에 알림 취소 이벤트 전송 (무한 루프 방지)
+            if (sendBroadcast) {
+                try {
+                    val intent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                    context.sendBroadcast(intent)
+                    Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
+                } catch (e: Exception) {
+                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
+                }
+            } else {
+                Log.d(TAG, "브로드캐스트 전송 생략 (무한 루프 방지)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "모든 알림 취소 오류: ${e.message}", e)

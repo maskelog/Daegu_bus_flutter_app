@@ -286,9 +286,13 @@ class NotificationService extends ChangeNotifier {
         await ttsSwitcher.initialize();
         final shouldUse = await ttsSwitcher.shouldUseNativeTts();
         if (shouldUse) {
-          await SimpleTTSHelper.speak(
-              "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
-          debugPrint('TTS 실행 요청: $busNo, $stationName');
+          try {
+            await SimpleTTSHelper.speak(
+                "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
+            debugPrint('TTS 실행 요청: $busNo, $stationName');
+          } catch (e) {
+            debugPrint('🔊 자동 알람 TTS 실행 오류: $e');
+          }
         } else {
           debugPrint('🔇 이어폰 미연결 또는 TTS 모드 비허용 - TTS 건너뜀');
         }
@@ -321,48 +325,77 @@ class NotificationService extends ChangeNotifier {
   /// 이전 버전과의 호환성을 위한 메서드 별칭
   Future<bool> cancel(int id) => cancelNotification(id);
 
-  /// 지속적인 추적 알림 취소
+  /// 지속적인 추적 알림 취소 - 완전히 개선된 버전
   Future<bool> cancelOngoingTracking() async {
     try {
+      logMessage('🚌 [cancelOngoingTracking] 모든 추적 중지 시작',
+          level: LogLevel.info);
+
       // 0. 실시간 버스 정보 업데이트 타이머 중지
       _stopRealTimeBusUpdates();
+      logMessage('✅ 실시간 버스 업데이트 타이머 중지', level: LogLevel.debug);
 
-      // 1. 기존 방식: 'cancelOngoingTracking' 메서드 호출
+      // 1. 자동 알람 업데이트 타이머도 중지
+      stopAutoAlarmUpdates();
+      logMessage('✅ 자동 알람 업데이트 타이머 중지', level: LogLevel.debug);
+
+      // 2. 기존 방식: 'cancelOngoingTracking' 메서드 호출
       final bool result = await _channel.invokeMethod('cancelOngoingTracking');
+      logMessage('✅ 네이티브 cancelOngoingTracking 호출 완료', level: LogLevel.debug);
 
-      // 2. 추가: 'stopStationTracking' 메서드 호출하여 정류장 추적 서비스도 확실하게 중지
+      // 3. 추가: 'stopStationTracking' 메서드 호출하여 정류장 추적 서비스도 확실하게 중지
       try {
         await const MethodChannel('com.example.daegu_bus_app/station_tracking')
             .invokeMethod('stopStationTracking');
-        logMessage('🚌 정류장 추적 서비스도 중지 요청 완료', level: LogLevel.debug);
+        logMessage('✅ 정류장 추적 서비스 중지 요청 완료', level: LogLevel.debug);
       } catch (e) {
-        logMessage('🚌 정류장 추적 서비스 중지 요청 중 오류: ${e.toString()}',
+        logMessage('⚠️ 정류장 추적 서비스 중지 요청 중 오류: ${e.toString()}',
             level: LogLevel.error);
       }
 
-      // 3. 추가: 'stopBusTracking' 메서드 호출하여 버스 추적 서비스 중지
+      // 4. 추가: 'stopBusTracking' 메서드 호출하여 버스 추적 서비스 중지
       try {
         await const MethodChannel('com.example.daegu_bus_app/bus_tracking')
             .invokeMethod('stopBusTracking', {});
-        logMessage('🚌 버스 추적 서비스 중지 요청 완료', level: LogLevel.debug);
+        logMessage('✅ 버스 추적 서비스 중지 요청 완료', level: LogLevel.debug);
       } catch (e) {
-        logMessage('🚌 버스 추적 서비스 중지 요청 중 오류: ${e.toString()}',
+        logMessage('⚠️ 버스 추적 서비스 중지 요청 중 오류: ${e.toString()}',
             level: LogLevel.error);
       }
 
-      // 4. 자동 알람 업데이트 타이머도 중지
-      stopAutoAlarmUpdates();
+      // 5. 추가: 특정 네이티브 서비스들 강제 중지
+      try {
+        await _channel.invokeMethod('stopBusTrackingService');
+        logMessage('✅ stopBusTrackingService 호출 완료', level: LogLevel.debug);
+      } catch (e) {
+        logMessage('⚠️ stopBusTrackingService 호출 오류: ${e.toString()}',
+            level: LogLevel.error);
+      }
 
-      // 5. 추가: 실시간 버스 정보 업데이트 타이머 중지 (한 번 더 확실하게)
-      _stopRealTimeBusUpdates();
+      // 6. 추가: 강제 전체 중지
+      try {
+        await _channel.invokeMethod('forceStopTracking');
+        logMessage('✅ forceStopTracking 호출 완료', level: LogLevel.debug);
+      } catch (e) {
+        logMessage('⚠️ forceStopTracking 호출 오류: ${e.toString()}',
+            level: LogLevel.error);
+      }
 
-      logMessage('🚌 모든 지속적인 추적 알림 취소 시도 완료', level: LogLevel.info);
+      // 7. 모든 알림 강제 취소
+      try {
+        await _channel.invokeMethod('cancelAllNotifications');
+        logMessage('✅ 모든 알림 강제 취소 완료', level: LogLevel.debug);
+      } catch (e) {
+        logMessage('⚠️ 모든 알림 강제 취소 오류: ${e.toString()}', level: LogLevel.error);
+      }
+
+      logMessage('✅ 모든 지속적인 추적 알림 취소 완료', level: LogLevel.info);
       return result;
     } on PlatformException catch (e) {
-      logMessage('🚌 지속적인 추적 알림 취소 오류: ${e.message}', level: LogLevel.error);
+      logMessage('❌ 지속적인 추적 알림 취소 오류: ${e.message}', level: LogLevel.error);
       return false;
     } catch (e) {
-      logMessage('🚌 추적 알림 취소 중 예외 발생: ${e.toString()}', level: LogLevel.error);
+      logMessage('❌ 추적 알림 취소 중 예외 발생: ${e.toString()}', level: LogLevel.error);
       return false;
     }
   }

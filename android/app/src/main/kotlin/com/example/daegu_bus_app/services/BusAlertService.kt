@@ -169,272 +169,283 @@ class BusAlertService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i(TAG, "onStartCommand Received: Action = ${intent?.action}, StartId=$startId")
+override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    Log.i(TAG, "onStartCommand Received: Action = ${intent?.action}, StartId=$startId")
 
-        // 서비스가 비활성 상태인 경우 초기화 시도
-        if (!isServiceActive) {
-            Log.w(TAG, "서비스가 비활성 상태입니다. 초기화 시도: ${intent?.action}")
-            try {
-                initialize()
-                isServiceActive = true
-                Log.i(TAG, "✅ 서비스 초기화 완료")
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ 서비스 초기화 실패: ${e.message}", e)
-                return START_NOT_STICKY
+    // 서비스가 비활성 상태인 경우 UPDATE_TRACKING은 무시
+    if (!isServiceActive && intent?.action == ACTION_UPDATE_TRACKING) {
+        Log.w(TAG, "⚠️ 서비스가 비활성 상태입니다. UPDATE_TRACKING 무시: ${intent.action}")
+        return START_NOT_STICKY
+    }
+
+    // 서비스가 비활성 상태인 경우 초기화 시도 (STOP_TRACKING 제외)
+    if (!isServiceActive && intent?.action != ACTION_STOP_TRACKING) {
+        Log.w(TAG, "서비스가 비활성 상태입니다. 초기화 시도: ${intent?.action}")
+        try {
+            initialize()
+            isServiceActive = true
+            Log.i(TAG, "✅ 서비스 초기화 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 서비스 초기화 실패: ${e.message}", e)
+            return START_NOT_STICKY
+        }
+    }
+
+    loadSettings()
+
+    when (intent?.action) {
+        ACTION_START_TRACKING -> {
+            val routeId = intent.getStringExtra("routeId")
+            val stationId = intent.getStringExtra("stationId")
+            val stationName = intent.getStringExtra("stationName")
+            val busNo = intent.getStringExtra("busNo")
+
+            if (routeId != null && stationId != null && stationName != null && busNo != null) {
+                Log.i(TAG, "ACTION_START_TRACKING: routeId=$routeId, stationId=$stationId, stationName=$stationName, busNo=$busNo")
+                addMonitoredRoute(routeId, stationId, stationName)
+                startTracking(routeId, stationId, stationName, busNo)
+            } else {
+                Log.e(TAG, "Missing data for ACTION_START_TRACKING")
+                stopTrackingIfIdle()
             }
         }
+        ACTION_STOP_TRACKING -> {
+            Log.i(TAG, "ACTION_STOP_TRACKING: Stopping all tracking.")
 
-        loadSettings()
-
-        when (intent?.action) {
-            ACTION_START_TRACKING -> {
-                val routeId = intent.getStringExtra("routeId")
-                val stationId = intent.getStringExtra("stationId")
-                val stationName = intent.getStringExtra("stationName")
-                val busNo = intent.getStringExtra("busNo")
-
-                if (routeId != null && stationId != null && stationName != null && busNo != null) {
-                    Log.i(TAG, "ACTION_START_TRACKING: routeId=$routeId, stationId=$stationId, stationName=$stationName, busNo=$busNo")
-                    addMonitoredRoute(routeId, stationId, stationName)
-                    startTracking(routeId, stationId, stationName, busNo)
-                } else {
-                    Log.e(TAG, "Missing data for ACTION_START_TRACKING")
-                    stopTrackingIfIdle()
+            // 포그라운드 서비스 즉시 중지
+            if (isInForeground) {
+                try {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    isInForeground = false
+                    Log.d(TAG, "Foreground service stopped immediately in ACTION_STOP_TRACKING")
+                } catch (e: Exception) {
+                    Log.e(TAG, "포그라운드 서비스 즉시 중지 오류: ${e.message}")
                 }
             }
-            ACTION_STOP_TRACKING -> {
-                Log.i(TAG, "ACTION_STOP_TRACKING: Stopping all tracking.")
 
-                // 포그라운드 서비스 즉시 중지
-                if (isInForeground) {
-                    try {
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                        isInForeground = false
-                        Log.d(TAG, "Foreground service stopped immediately in ACTION_STOP_TRACKING")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "포그라운드 서비스 즉시 중지 오류: ${e.message}")
-                    }
+            // 자동 알람 WorkManager 작업 취소
+            try {
+                val workManager = androidx.work.WorkManager.getInstance(this)
+                workManager.cancelAllWorkByTag("autoAlarmTask")
+                Log.d(TAG, "✅ 자동 알람 WorkManager 작업 취소 완료 (ACTION_STOP_TRACKING)")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 자동 알람 WorkManager 작업 취소 오류 (ACTION_STOP_TRACKING): ${e.message}")
+            }
+
+            // 모든 알림 즉시 취소
+            try {
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancelAll()
+                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                Log.i(TAG, "모든 알림 즉시 취소 완료 (ACTION_STOP_TRACKING)")
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 즉시 취소 오류: ${e.message}")
+            }
+
+            // 전체 취소 이벤트 발송
+            sendAllCancellationBroadcast()
+
+            // 모든 추적 작업과 서비스 중지
+            Log.i(TAG, "Stopping all tracking jobs and the service.")
+            stopAllTracking()
+            return START_NOT_STICKY
+        }
+        ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> {
+            val routeId = intent.getStringExtra("routeId")
+            val busNo = intent.getStringExtra("busNo")
+            val stationName = intent.getStringExtra("stationName")
+            val notificationId = intent.getIntExtra("notificationId", -1)
+
+            if (routeId != null && busNo != null && stationName != null) {
+                Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName, notificationId=$notificationId")
+
+                // 개선된 stopSpecificTracking 메서드 호출
+                stopSpecificTracking(routeId, busNo, stationName)
+            } else {
+                Log.e(TAG, "Missing data for ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName")
+                stopTrackingIfIdle()
+            }
+        }
+        ACTION_CANCEL_NOTIFICATION -> {
+            val notificationId = intent.getIntExtra("notificationId", -1)
+            if (notificationId != -1) {
+                Log.i(TAG, "ACTION_CANCEL_NOTIFICATION: notificationId=$notificationId")
+                notificationHandler.cancelNotification(notificationId)
+
+                // 알림이 지속적인 추적 알림인 경우 서비스도 중지
+                if (notificationId == ONGOING_NOTIFICATION_ID) {
+                    Log.i(TAG, "지속적인 추적 알림 취소. 서비스 중지 시도.")
+                    stopAllTracking()
                 }
 
-                // 자동 알람 WorkManager 작업 취소
+                // Flutter 측에 알림 취소 이벤트 전송 시도
                 try {
-                    val workManager = androidx.work.WorkManager.getInstance(this)
-                    workManager.cancelAllWorkByTag("autoAlarmTask")
-                    Log.d(TAG, "✅ 자동 알람 WorkManager 작업 취소 완료 (ACTION_STOP_TRACKING)")
+                    val context = applicationContext
+                    val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
+                    intent.putExtra("notificationId", notificationId)
+                    context.sendBroadcast(intent)
+                    Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $notificationId")
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ 자동 알람 WorkManager 작업 취소 오류 (ACTION_STOP_TRACKING): ${e.message}")
+                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
                 }
-
-                // 모든 알림 즉시 취소
-                try {
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.cancelAll()
-                    notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                    Log.i(TAG, "모든 알림 즉시 취소 완료 (ACTION_STOP_TRACKING)")
-                } catch (e: Exception) {
-                    Log.e(TAG, "알림 즉시 취소 오류: ${e.message}")
-                }
-
-                // 전체 취소 이벤트 발송
-                sendAllCancellationBroadcast()
-
-                // 모든 추적 작업과 서비스 중지
-                Log.i(TAG, "Stopping all tracking jobs and the service.")
-                stopAllTracking()
+            }
+        }
+        ACTION_START_TTS_TRACKING -> {
+            Log.w(TAG, "Received ACTION_START_TTS_TRACKING, but this should likely be handled by TTSService itself or specific internal logic.")
+        }
+        ACTION_STOP_TTS_TRACKING -> {
+            Log.w(TAG, "Received ACTION_STOP_TTS_TRACKING.")
+        }
+        ACTION_START_TRACKING_FOREGROUND, ACTION_UPDATE_TRACKING -> {
+            // 추가 체크: 서비스가 비활성화되어 있으면 UPDATE_TRACKING 무시
+            if (!isServiceActive && intent.action == ACTION_UPDATE_TRACKING) {
+                Log.w(TAG, "⚠️ 서비스 비활성화 상태에서 UPDATE_TRACKING 무시")
                 return START_NOT_STICKY
             }
-            ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> {
-                val routeId = intent.getStringExtra("routeId")
-                val busNo = intent.getStringExtra("busNo")
-                val stationName = intent.getStringExtra("stationName")
-                val notificationId = intent.getIntExtra("notificationId", -1)
 
-                if (routeId != null && busNo != null && stationName != null) {
-                    Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName, notificationId=$notificationId")
+            val busNo = intent.getStringExtra("busNo") ?: ""
+            val stationName = intent.getStringExtra("stationName") ?: ""
+            val remainingMinutes = intent.getIntExtra("remainingMinutes", -1)
+            val currentStation = intent.getStringExtra("currentStation")
+            val isUpdate = intent.action == ACTION_UPDATE_TRACKING
+            val allBusesSummary = intent.getStringExtra("allBusesSummary")
+            val routeId = intent.getStringExtra("routeId")
+            var stationId = intent.getStringExtra("stationId")
+            val isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
 
-                    // 개선된 stopSpecificTracking 메서드 호출
-                    stopSpecificTracking(routeId, busNo, stationName)
-                } else {
-                    Log.e(TAG, "Missing data for ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName")
-                    stopTrackingIfIdle()
+            Log.d(TAG, "🔔 자동알람 플래그 확인: isAutoAlarm=$isAutoAlarm, busNo=$busNo, stationName=$stationName")
+            Log.d(TAG, "🔔 자동알람 상세 정보: routeId=$routeId, stationId=$stationId, remainingMinutes=$remainingMinutes, currentStation=$currentStation")
+
+            if (routeId == null || busNo.isBlank() || stationName.isBlank()) {
+                Log.e(TAG, "${intent.action} Aborted: Missing required info")
+                stopTrackingIfIdle()
+                return START_NOT_STICKY
+            }
+
+            // --- stationId 보정 로직 추가 ---
+            if (stationId.isNullOrBlank()) {
+                // routeId가 10자리 숫자(7로 시작)면 stationId로 잘못 들어온 것일 수 있으니 분리
+                if (routeId.length == 10 && routeId.startsWith("7")) {
+                    // 실제 routeId는 busApiService.getRouteIdByStationId 등으로 찾아야 함(여기선 생략)
+                    Log.w(TAG, "routeId가 10자리 stationId로 들어옴. stationId로 간주: $routeId");
+                    val fixedStationId = routeId
+                    addMonitoredRoute(routeId, fixedStationId, stationName)
+                    startTracking(routeId, fixedStationId, stationName, busNo)
+                    return START_STICKY
                 }
-            }
-            ACTION_CANCEL_NOTIFICATION -> {
-                val notificationId = intent.getIntExtra("notificationId", -1)
-                if (notificationId != -1) {
-                    Log.i(TAG, "ACTION_CANCEL_NOTIFICATION: notificationId=$notificationId")
-                    notificationHandler.cancelNotification(notificationId)
-
-                    // 알림이 지속적인 추적 알림인 경우 서비스도 중지
-                    if (notificationId == ONGOING_NOTIFICATION_ID) {
-                        Log.i(TAG, "지속적인 추적 알림 취소. 서비스 중지 시도.")
-                        stopAllTracking()
-                    }
-
-                    // Flutter 측에 알림 취소 이벤트 전송 시도
-                    try {
-                        val context = applicationContext
-                        val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
-                        intent.putExtra("notificationId", notificationId)
-                        context.sendBroadcast(intent)
-                        Log.d(TAG, "알림 취소 이벤트 브로드캩0스트 전송: $notificationId")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
-                    }
-                }
-            }
-            ACTION_START_TTS_TRACKING -> {
-                Log.w(TAG, "Received ACTION_START_TTS_TRACKING, but this should likely be handled by TTSService itself or specific internal logic.")
-            }
-            ACTION_STOP_TTS_TRACKING -> {
-                Log.w(TAG, "Received ACTION_STOP_TTS_TRACKING.")
-            }
-            ACTION_START_TRACKING_FOREGROUND, ACTION_UPDATE_TRACKING -> {
-                val busNo = intent.getStringExtra("busNo") ?: ""
-                val stationName = intent.getStringExtra("stationName") ?: ""
-                val remainingMinutes = intent.getIntExtra("remainingMinutes", -1)
-                val currentStation = intent.getStringExtra("currentStation")
-                val isUpdate = intent.action == ACTION_UPDATE_TRACKING
-                val allBusesSummary = intent.getStringExtra("allBusesSummary")
-                val routeId = intent.getStringExtra("routeId")
-                var stationId = intent.getStringExtra("stationId")
-                val isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
-
-                Log.d(TAG, "🔔 자동알람 플래그 확인: isAutoAlarm=$isAutoAlarm, busNo=$busNo, stationName=$stationName")
-                Log.d(TAG, "🔔 자동알람 상세 정보: routeId=$routeId, stationId=$stationId, remainingMinutes=$remainingMinutes, currentStation=$currentStation")
-
-                if (routeId == null || busNo.isBlank() || stationName.isBlank()) {
-                    Log.e(TAG, "${intent.action} Aborted: Missing required info")
-                    stopTrackingIfIdle()
-                    return START_NOT_STICKY
-                }
-
-                // --- stationId 보정 로직 추가 ---
-                if (stationId.isNullOrBlank()) {
-                    // routeId가 10자리 숫자(7로 시작)면 stationId로 잘못 들어온 것일 수 있으니 분리
-                    if (routeId.length == 10 && routeId.startsWith("7")) {
-                        // 실제 routeId는 busApiService.getRouteIdByStationId 등으로 찾아야 함(여기선 생략)
-                        Log.w(TAG, "routeId가 10자리 stationId로 들어옴. stationId로 간주: $routeId");
-                        val fixedStationId = routeId
+                // stationId가 비어있으면 코루틴에서 보정 시도
+                serviceScope.launch {
+                    val fixedStationId = resolveStationIdIfNeeded(routeId, stationName, "", null)
+                    if (fixedStationId.isNotBlank()) {
                         addMonitoredRoute(routeId, fixedStationId, stationName)
                         startTracking(routeId, fixedStationId, stationName, busNo)
-                        return START_STICKY
-                    }
-                    // stationId가 비어있으면 코루틴에서 보정 시도
-                    serviceScope.launch {
-                        val fixedStationId = resolveStationIdIfNeeded(routeId, stationName, "", null)
-                        if (fixedStationId.isNotBlank()) {
-                            addMonitoredRoute(routeId, fixedStationId, stationName)
-                            startTracking(routeId, fixedStationId, stationName, busNo)
-                        } else {
-                            Log.e(TAG, "stationId 보정 실패. 추적 불가: routeId=$routeId, busNo=$busNo, stationName=$stationName")
-                            stopTrackingIfIdle()
-                        }
-                    }
-                    return START_NOT_STICKY
-                }
-
-                if (intent.action == ACTION_START_TRACKING_FOREGROUND && stationId != null) {
-                    addMonitoredRoute(routeId, stationId, stationName)
-
-                    // 자동알람인 경우 즉시 추적 시작
-                    if (isAutoAlarm) {
-                        Log.d(TAG, "🔔 자동알람 추적 시작: $busNo 번, $stationName")
-                        startTracking(routeId, stationId, stationName, busNo)
+                    } else {
+                        Log.e(TAG, "stationId 보정 실패. 추적 불가: routeId=$routeId, busNo=$busNo, stationName=$stationName")
+                        stopTrackingIfIdle()
                     }
                 }
+                return START_NOT_STICKY
+            }
 
-                // 업데이트 요청인 경우 추적 정보도 업데이트
-                if (isUpdate) {
-                    Log.d(TAG, "업데이트 요청 수신: $busNo, $stationName, 현재 위치: $currentStation")
+            if (intent.action == ACTION_START_TRACKING_FOREGROUND && stationId != null) {
+                addMonitoredRoute(routeId, stationId, stationName)
 
-                    // 추적 정보 업데이트
-                    updateTrackingInfoFromFlutter(
-                        routeId = routeId,
-                        busNo = busNo,
-                        stationName = stationName,
-                        remainingMinutes = remainingMinutes,
-                        currentStation = currentStation ?: "정보 없음"
-                    )
-                }
-
-                // 자동알람인 경우 강제로 노티피케이션 표시
+                // 자동알람인 경우 즉시 추적 시작
                 if (isAutoAlarm) {
-                    Log.d(TAG, "🔔 자동알람 노티피케이션 강제 표시: $busNo 번, $stationName")
+                    Log.d(TAG, "🔔 자동알람 추적 시작: $busNo 번, $stationName")
+                    startTracking(routeId, stationId, stationName, busNo)
+                }
+            }
 
-                    // 자동알람의 경우 무조건 포그라운드 서비스 시작
-                    try {
-                        if (!isInForeground) {
-                            val notification = notificationHandler.buildOngoingNotification(mapOf())
-                            startForeground(ONGOING_NOTIFICATION_ID, notification)
-                            isInForeground = true
-                            Log.d(TAG, "🔔 자동알람: 포그라운드 서비스 시작")
-                        }
+            // 업데이트 요청인 경우 추적 정보도 업데이트
+            if (isUpdate) {
+                Log.d(TAG, "업데이트 요청 수신: $busNo, $stationName, 현재 위치: $currentStation")
 
-                        showOngoingBusTracking(
-                            busNo = busNo,
-                            stationName = stationName,
-                            remainingMinutes = remainingMinutes,
-                            currentStation = currentStation ?: "정보 없음",
-                            isUpdate = false, // 자동알람은 새로운 추적으로 처리
-                            notificationId = ONGOING_NOTIFICATION_ID,
-                            allBusesSummary = allBusesSummary,
-                            routeId = routeId
-                        )
+                // 추적 정보 업데이트
+                updateTrackingInfoFromFlutter(
+                    routeId = routeId,
+                    busNo = busNo,
+                    stationName = stationName,
+                    remainingMinutes = remainingMinutes,
+                    currentStation = currentStation ?: "정보 없음"
+                )
+            }
 
-                        Log.d(TAG, "✅ 자동알람 노티피케이션 표시 완료")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ 자동알람 노티피케이션 표시 오류: ${e.message}", e)
+            // 자동알람인 경우 강제로 노티피케이션 표시
+            if (isAutoAlarm) {
+                Log.d(TAG, "🔔 자동알람 노티피케이션 강제 표시: $busNo 번, $stationName")
+
+                // 자동알람의 경우 무조건 포그라운드 서비스 시작
+                try {
+                    if (!isInForeground) {
+                        val notification = notificationHandler.buildOngoingNotification(mapOf())
+                        startForeground(ONGOING_NOTIFICATION_ID, notification)
+                        isInForeground = true
+                        Log.d(TAG, "🔔 자동알람: 포그라운드 서비스 시작")
                     }
-                } else {
+
                     showOngoingBusTracking(
                         busNo = busNo,
                         stationName = stationName,
                         remainingMinutes = remainingMinutes,
-                        currentStation = currentStation,
-                        isUpdate = isUpdate,
+                        currentStation = currentStation ?: "정보 없음",
+                        isUpdate = false, // 자동알람은 새로운 추적으로 처리
                         notificationId = ONGOING_NOTIFICATION_ID,
                         allBusesSummary = allBusesSummary,
                         routeId = routeId
                     )
-                }
-                // [AUTO ALARM 실시간 정보 즉시 갱신] autoAlarmTask 등 자동알람 진입점에서 실시간 정보 즉시 fetch
-                if (routeId != null && !routeId.isBlank() && stationId != null && !stationId.isBlank() && stationName.isNotBlank()) {
-                    updateBusInfo(routeId, stationId, stationName)
-                }
-            }
-            ACTION_STOP_BUS_ALERT_TRACKING -> {
-                val routeId = intent.getStringExtra("routeId")
-                val stationId = intent.getStringExtra("stationId")
-                val busNo = intent.getStringExtra("busNo")
-                Log.i(TAG, "Notification Action '$intent.action': Route=$routeId, Station=$stationId, Bus=$busNo")
-                if (routeId != null) {
-                    stopTrackingForRoute(routeId, stationId = stationId, busNo = busNo, cancelNotification = true)
-                } else {
-                    Log.e(TAG, "Missing routeId for $intent.action")
-                    stopTrackingIfIdle()
-                }
-            }
-            ACTION_START_AUTO_ALARM_LIGHTWEIGHT -> {
-                val busNo = intent.getStringExtra("busNo") ?: ""
-                val stationName = intent.getStringExtra("stationName") ?: ""
-                val remainingMinutes = intent.getIntExtra("remainingMinutes", -1)
-                val currentStation = intent.getStringExtra("currentStation") ?: ""
 
-                Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $busNo 번, $stationName")
-                handleAutoAlarmLightweight(busNo, stationName, remainingMinutes, currentStation)
+                    Log.d(TAG, "✅ 자동알람 노티피케이션 표시 완료")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 자동알람 노티피케이션 표시 오류: ${e.message}", e)
+                }
+            } else {
+                showOngoingBusTracking(
+                    busNo = busNo,
+                    stationName = stationName,
+                    remainingMinutes = remainingMinutes,
+                    currentStation = currentStation,
+                    isUpdate = isUpdate,
+                    notificationId = ONGOING_NOTIFICATION_ID,
+                    allBusesSummary = allBusesSummary,
+                    routeId = routeId
+                )
             }
-            else -> {
-                Log.w(TAG, "Unhandled action received: $intent.action")
+            // [AUTO ALARM 실시간 정보 즉시 갱신] autoAlarmTask 등 자동알람 진입점에서 실시간 정보 즉시 fetch
+            if (routeId != null && !routeId.isBlank() && stationId != null && !stationId.isBlank() && stationName.isNotBlank()) {
+                updateBusInfo(routeId, stationId, stationName)
+            }
+        }
+        ACTION_STOP_BUS_ALERT_TRACKING -> {
+            val routeId = intent.getStringExtra("routeId")
+            val stationId = intent.getStringExtra("stationId")
+            val busNo = intent.getStringExtra("busNo")
+            Log.i(TAG, "Notification Action '$intent.action': Route=$routeId, Station=$stationId, Bus=$busNo")
+            if (routeId != null) {
+                stopTrackingForRoute(routeId, stationId = stationId, busNo = busNo, cancelNotification = true)
+            } else {
+                Log.e(TAG, "Missing routeId for $intent.action")
                 stopTrackingIfIdle()
             }
         }
+        ACTION_START_AUTO_ALARM_LIGHTWEIGHT -> {
+            val busNo = intent.getStringExtra("busNo") ?: ""
+            val stationName = intent.getStringExtra("stationName") ?: ""
+            val remainingMinutes = intent.getIntExtra("remainingMinutes", -1)
+            val currentStation = intent.getStringExtra("currentStation") ?: ""
 
-        return START_STICKY
+            Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $busNo 번, $stationName")
+            handleAutoAlarmLightweight(busNo, stationName, remainingMinutes, currentStation)
+        }
+        else -> {
+            Log.w(TAG, "Unhandled action received: $intent.action")
+            stopTrackingIfIdle()
+        }
     }
 
-    // 특정 버스 추적 중지 (개선된 버전)
+    return START_STICKY
+}
+
 // 특정 버스 추적 중지
     private fun stopSpecificTracking(routeId: String, busNo: String, stationName: String) {
         Log.d(TAG, "🔔 특정 추적 중지 시작: routeId=$routeId, busNo=$busNo, stationName=$stationName")

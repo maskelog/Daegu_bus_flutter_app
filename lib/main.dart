@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +11,7 @@ import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
 import 'services/permission_service.dart';
 import 'services/settings_service.dart';
+import 'services/alarm_manager.dart';
 
 /// WorkManager 콜백 함수 (백그라운드에서 실행)
 @pragma('vm:entry-point')
@@ -44,10 +46,58 @@ void callbackDispatcher() {
   });
 }
 
+/// Android에서 온 이벤트를 처리하기 위한 MethodChannel 핸들러 설정
+void _setupMethodChannelHandlers() {
+  const platform = MethodChannel('com.example.daegu_bus_app/notification');
+
+  platform.setMethodCallHandler((call) async {
+    try {
+      switch (call.method) {
+        case 'onAlarmCanceledFromNotification':
+          // 특정 알람 취소 이벤트
+          final busNo = call.arguments['busNo'] as String? ?? '';
+          final routeId = call.arguments['routeId'] as String? ?? '';
+          final stationName = call.arguments['stationName'] as String? ?? '';
+          final source = call.arguments['source'] as String? ?? '';
+
+          debugPrint(
+              '🔄 [SYNC] Android에서 알람 취소 이벤트 수신: $busNo, $routeId, $stationName (source: $source)');
+
+          if (busNo.isNotEmpty &&
+              routeId.isNotEmpty &&
+              stationName.isNotEmpty) {
+            await AlarmManager.cancelAlarm(
+              busNo: busNo,
+              stationName: stationName,
+              routeId: routeId,
+            );
+          }
+          break;
+
+        case 'onAllAlarmsCanceled':
+          // 모든 알람 취소 이벤트
+          final source = call.arguments?['source'] as String? ?? '';
+          debugPrint('🔄 [SYNC] Android에서 모든 알람 취소 이벤트 수신 (source: $source)');
+
+          await AlarmManager.cancelAllAlarms();
+          break;
+
+        default:
+          debugPrint('⚠️ [WARN] 알 수 없는 메서드 호출: ${call.method}');
+      }
+    } catch (e) {
+      debugPrint('❌ [ERROR] MethodChannel 핸들러 오류: $e');
+    }
+  });
+}
+
 /// 애플리케이션 시작점
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
+
+  // Android에서 온 알람 취소 이벤트를 처리하기 위한 MethodChannel 핸들러 설정
+  _setupMethodChannelHandlers();
 
   // 로깅 설정
   Logger.root.level = Level.ALL;
