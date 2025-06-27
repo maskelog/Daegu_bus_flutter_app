@@ -327,20 +327,356 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Scaffold(
-      resizeToAvoidBottomInset: false,
-      body: SafeArea(
-        child: Container(
-          color: colorScheme.surface,
-          child: _buildBody(),
-        ),
+      backgroundColor: colorScheme.surface,
+      body: CustomScrollView(
+        slivers: [
+          // Material 3 스타일 AppBar
+          SliverAppBar.large(
+            backgroundColor: colorScheme.surface,
+            surfaceTintColor: colorScheme.surfaceTint,
+            foregroundColor: colorScheme.onSurface,
+            elevation: 0,
+            pinned: true,
+            expandedHeight: 180,
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
+              title: Text(
+                '대구버스',
+                style: theme.textTheme.headlineLarge?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              background: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      colorScheme.primary.withOpacity(0.05),
+                      colorScheme.surface,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              // Material 3 스타일 설정 버튼
+              IconButton.filledTonal(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const SettingsScreen()),
+                  );
+                },
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: '설정',
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+
+          // 검색 필드 (Material 3 스타일)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: colorScheme.outline.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => SearchScreen(
+                            favoriteStops: _favoriteStops,
+                          ),
+                        ),
+                      );
+                      if (result != null) {
+                        if (result is BusStop) {
+                          setState(() => _selectedStop = result);
+                          _loadBusArrivals();
+                        }
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 16),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.search,
+                            color: colorScheme.primary,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              "정류장 이름 또는 번호 검색 (예: 동대구역, 2001)",
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // 활성 알람 패널
+          Consumer<AlarmService>(
+            builder: (context, alarmService, child) {
+              return alarmService.alarms.isNotEmpty
+                  ? SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: ActiveAlarmPanel(alarms: alarmService.alarms),
+                      ),
+                    )
+                  : const SliverToBoxAdapter(child: SizedBox.shrink());
+            },
+          ),
+
+          // 탭 선택기 (Material 3 스타일)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Material(
+                        color: _currentIndex == 0
+                            ? colorScheme.primaryContainer
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        child: InkWell(
+                          onTap: () => setState(() => _currentIndex = 0),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.favorite,
+                                  size: 18,
+                                  color: _currentIndex == 0
+                                      ? colorScheme.onPrimaryContainer
+                                      : colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '즐겨찾기',
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: _currentIndex == 0
+                                        ? colorScheme.onPrimaryContainer
+                                        : colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Material(
+                        color: _currentIndex == 1
+                            ? colorScheme.primaryContainer
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        child: InkWell(
+                          onTap: () => setState(() => _currentIndex = 1),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.location_on,
+                                  size: 18,
+                                  color: _currentIndex == 1
+                                      ? colorScheme.onPrimaryContainer
+                                      : colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '주변정류장',
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: _currentIndex == 1
+                                        ? colorScheme.onPrimaryContainer
+                                        : colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Material(
+                        color: _currentIndex == 2
+                            ? colorScheme.primaryContainer
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        child: InkWell(
+                          onTap: () => setState(() => _currentIndex = 2),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.directions_bus,
+                                  size: 18,
+                                  color: _currentIndex == 2
+                                      ? colorScheme.onPrimaryContainer
+                                      : colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '실시간 도착',
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: _currentIndex == 2
+                                        ? colorScheme.onPrimaryContainer
+                                        : colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // 내용
+          if (_isLoading)
+            SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: colorScheme.primary),
+                    const SizedBox(height: 16),
+                    Text(
+                      '데이터를 불러오는 중...',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (_errorMessage != null)
+            SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: colorScheme.error,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _errorMessage!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurface,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.tonal(
+                      onPressed: _initializeData,
+                      child: const Text('다시 시도'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ..._buildTabContent(),
+        ],
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
+      // Material 3 스타일 NavigationBar
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _getBottomNavIndex(),
+        onDestinationSelected: (index) => _navigateToScreen(index),
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: colorScheme.surfaceTint,
+        indicatorColor: colorScheme.secondaryContainer,
+        destinations: [
+          NavigationDestination(
+            icon:
+                Icon(Icons.home_outlined, color: colorScheme.onSurfaceVariant),
+            selectedIcon:
+                Icon(Icons.home, color: colorScheme.onSecondaryContainer),
+            label: '홈',
+          ),
+          NavigationDestination(
+            icon:
+                Icon(Icons.route_outlined, color: colorScheme.onSurfaceVariant),
+            selectedIcon:
+                Icon(Icons.route, color: colorScheme.onSecondaryContainer),
+            label: '노선도',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.notifications_outlined,
+                color: colorScheme.onSurfaceVariant),
+            selectedIcon: Icon(Icons.notifications,
+                color: colorScheme.onSecondaryContainer),
+            label: '알람',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.star_border, color: colorScheme.onSurfaceVariant),
+            selectedIcon:
+                Icon(Icons.star, color: colorScheme.onSecondaryContainer),
+            label: '즐겨찾기',
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildTabContent() {
     final colorScheme = Theme.of(context).colorScheme;
     switch (_currentIndex) {
       case 0:
@@ -359,49 +695,6 @@ class _HomeScreenState extends State<HomeScreen> {
       default:
         return Container(color: colorScheme.surface, child: _buildNearbyTab());
     }
-  }
-
-  Widget _buildBottomNavigationBar() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isSmallScreen = screenWidth < 360;
-    final fontSize = isSmallScreen ? 10.0 : 12.0;
-
-    return BottomNavigationBar(
-      type: BottomNavigationBarType.fixed,
-      currentIndex: _currentIndex,
-      onTap: (index) => setState(() => _currentIndex = index),
-      selectedFontSize: fontSize,
-      unselectedFontSize: fontSize,
-      iconSize: isSmallScreen ? 22.0 : 24.0,
-      elevation: 8,
-      items: const [
-        BottomNavigationBarItem(
-          icon: Icon(Icons.map_outlined),
-          activeIcon: Icon(Icons.map),
-          label: '노선도',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.favorite_outline),
-          activeIcon: Icon(Icons.favorite),
-          label: '즐겨찾기',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.home_outlined),
-          activeIcon: Icon(Icons.home),
-          label: '홈',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.alarm_outlined),
-          activeIcon: Icon(Icons.alarm),
-          label: '알람',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.settings_outlined),
-          activeIcon: Icon(Icons.settings),
-          label: '설정',
-        ),
-      ],
-    );
   }
 
   Widget _buildSettingsTab() {
@@ -565,57 +858,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const SliverPadding(
               padding: EdgeInsets.only(bottom: 20),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  SliverToBoxAdapter _buildStopSelectionList(
-      String title, List<BusStop> stops, bool isLoading) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87)),
-            const SizedBox(height: 8),
-            if (isLoading)
-              const Center(child: CircularProgressIndicator())
-            else if (stops.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Text('$title이 없습니다.',
-                    style: const TextStyle(color: Colors.grey, fontSize: 14)),
-              )
-            else
-              SizedBox(
-                height: 70, // 높이를 100에서 70으로 축소
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: stops.length,
-                  itemBuilder: (context, index) {
-                    final stop = stops[index];
-                    final showDistance = title == '주변 정류장';
-                    return StopCard(
-                      stop: stop,
-                      isSelected: _selectedStop?.id == stop.id,
-                      onTap: () {
-                        setState(() => _selectedStop = stop);
-                        _loadBusArrivals();
-                      },
-                      showDistance: showDistance,
-                      distanceText:
-                          showDistance ? _formatDistance(stop.distance) : null,
-                    );
-                  },
-                ),
-              ),
           ],
         ),
       ),
@@ -1360,6 +1602,27 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('알람 처리 중 오류가 발생했습니다: $e')));
     }
+  }
+
+  int _getBottomNavIndex() {
+    switch (_currentIndex) {
+      case 0:
+        return 0;
+      case 1:
+        return 1;
+      case 2:
+        return 2;
+      case 3:
+        return 3;
+      case 4:
+        return 4;
+      default:
+        return 2;
+    }
+  }
+
+  void _navigateToScreen(int index) {
+    setState(() => _currentIndex = index);
   }
 }
 

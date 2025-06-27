@@ -55,87 +55,143 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Consumer를 사용하여 SettingsService의 변경사항을 감지하고 UI 업데이트
     return Consumer<SettingsService>(
       builder: (context, settingsService, child) {
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+
         // SettingsService에서 직접 값을 가져와 groupValue에 사용
         _selectedNotificationMode = settingsService.notificationDisplayMode;
-        // 다른 설정 값들도 필요하면 여기서 가져옴
-        // final currentAlarmSoundId = settingsService.alarmSoundId;
-        // final useTts = settingsService.useTts;
 
         return Scaffold(
+          backgroundColor: colorScheme.surface,
           appBar: AppBar(
-            title: const Text('설정'),
+            title: Text(
+              '설정',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            backgroundColor: colorScheme.surface,
+            surfaceTintColor: colorScheme.surfaceTint,
             elevation: 0,
+            centerTitle: true,
+            leading: IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: Icon(
+                Icons.arrow_back,
+                color: colorScheme.onSurface,
+              ),
+            ),
           ),
           body: Consumer<SettingsService>(
             builder: (context, settingsService, child) {
               if (settingsService.isLoading) {
-                return const Center(child: CircularProgressIndicator());
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: colorScheme.primary),
+                      const SizedBox(height: 16),
+                      Text(
+                        '설정을 불러오는 중...',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
               }
 
               return ListView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 children: [
-                  _buildSectionHeader(context, '알림 설정'),
-                  _buildAlarmSoundSelector(context, settingsService),
-
-                  _buildSectionHeader(context, 'TTS 설정'),
-                  SwitchListTile(
-                    title: const Text('음성 안내 사용'),
-                    subtitle: const Text('버스 도착 정보를 음성으로 안내합니다'),
-                    value: settingsService.useTts,
-                    onChanged: (value) => settingsService.updateUseTts(value),
+                  // 알림 설정 섹션
+                  _buildSectionCard(
+                    context,
+                    title: '알림 설정',
+                    icon: Icons.notifications_outlined,
+                    children: [
+                      _buildAlarmSoundSelector(context, settingsService),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      _buildSwitchTile(
+                        context,
+                        title: '진동 사용',
+                        subtitle: '알림 시 진동을 사용합니다',
+                        icon: Icons.vibration,
+                        value: settingsService.vibrate,
+                        onChanged: (value) =>
+                            settingsService.updateVibrate(value),
+                      ),
+                    ],
                   ),
 
-                  // 스피커 모드 선택 UI 추가
-                  _buildSpeakerModeSelector(context, settingsService),
+                  const SizedBox(height: 16),
 
-                  _buildSectionHeader(context, '진동 설정'),
-                  SwitchListTile(
-                    title: const Text('진동 사용'),
-                    subtitle: const Text('알림 시 진동을 사용합니다'),
-                    value: settingsService.vibrate,
-                    onChanged: (value) => settingsService.updateVibrate(value),
+                  // TTS 설정 섹션
+                  _buildSectionCard(
+                    context,
+                    title: 'TTS 설정',
+                    icon: Icons.record_voice_over_outlined,
+                    children: [
+                      _buildSwitchTile(
+                        context,
+                        title: '음성 안내 사용',
+                        subtitle: '버스 도착 정보를 음성으로 안내합니다',
+                        icon: Icons.volume_up_outlined,
+                        value: settingsService.useTts,
+                        onChanged: (value) =>
+                            settingsService.updateUseTts(value),
+                      ),
+                      if (settingsService.useTts) ...[
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        _buildSpeakerModeSelector(context, settingsService),
+                      ],
+                    ],
                   ),
 
-                  _buildSectionHeader(context, '자동 알람 설정'),
-                  SwitchListTile(
-                    title: const Text('자동 알람 사용'),
-                    subtitle: const Text('설정된 시간에 자동으로 버스 도착 알림 (항상 스피커 출력)'),
-                    value: settingsService.useAutoAlarm,
-                    onChanged: (value) => settingsService.updateUseAutoAlarm(value),
+                  const SizedBox(height: 16),
+
+                  // 자동 알람 설정 섹션
+                  _buildSectionCard(
+                    context,
+                    title: '자동 알람 설정',
+                    icon: Icons.schedule_outlined,
+                    children: [
+                      _buildSwitchTile(
+                        context,
+                        title: '자동 알람 사용',
+                        subtitle: '설정된 시간에 자동으로 버스 도착 알림 (항상 스피커 출력)',
+                        icon: Icons.alarm_outlined,
+                        value: settingsService.useAutoAlarm,
+                        onChanged: (value) =>
+                            settingsService.updateUseAutoAlarm(value),
+                      ),
+                    ],
                   ),
 
-                  _buildSectionHeader(context, '테마 설정'),
-                  _buildThemeModeSelector(context, settingsService),
+                  const SizedBox(height: 16),
 
-                  // --- 신규: 추적 알림 표시 방식 설정 ---
-                  const ListTile(
-                    leading: Icon(Icons.notifications_active_outlined),
-                    title: Text('진행 중 알림 표시 방식'),
-                    subtitle: Text('버스 추적 시 알림에 표시할 버스 범위'),
+                  // 테마 설정 섹션
+                  _buildSectionCard(
+                    context,
+                    title: '테마 설정',
+                    icon: Icons.palette_outlined,
+                    children: [
+                      _buildThemeModeSelector(context, settingsService),
+                    ],
                   ),
-                  RadioListTile<NotificationDisplayMode>(
-                    title: const Text('알람 설정된 버스만 표시'),
-                    value: NotificationDisplayMode.alarmedOnly,
-                    groupValue: _selectedNotificationMode, // 상태 변수 사용
-                    onChanged: _updateNotificationModeSetting, // 업데이트 함수 호출
-                    secondary: const Icon(Icons.alarm_on_outlined), // 아이콘 변경
-                    contentPadding:
-                        const EdgeInsets.only(left: 32.0, right: 16.0), // 들여쓰기
-                    visualDensity: VisualDensity.compact, // 좀 더 컴팩트하게
+
+                  const SizedBox(height: 16),
+
+                  // 알림 표시 방식 설정 섹션
+                  _buildSectionCard(
+                    context,
+                    title: '알림 표시 방식',
+                    icon: Icons.notifications_active_outlined,
+                    children: [
+                      _buildNotificationModeSelector(context, settingsService),
+                    ],
                   ),
-                  RadioListTile<NotificationDisplayMode>(
-                    title: const Text('정류장의 모든 버스 표시'),
-                    subtitle: const Text('가장 빨리 도착하는 버스 기준 정보'), // 부제 수정
-                    value: NotificationDisplayMode.allBuses,
-                    groupValue: _selectedNotificationMode, // 상태 변수 사용
-                    onChanged: _updateNotificationModeSetting, // 업데이트 함수 호출
-                    secondary:
-                        const Icon(Icons.dynamic_feed_outlined), // 아이콘 변경
-                    contentPadding:
-                        const EdgeInsets.only(left: 32.0, right: 16.0), // 들여쓰기
-                    visualDensity: VisualDensity.compact, // 좀 더 컴팩트하게
-                  ),
-                  // --- 끝: 추적 알림 표시 방식 설정 ---
                 ],
               );
             },
@@ -145,25 +201,144 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context, String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.bold,
+  Widget _buildSectionCard(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        elevation: 0,
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: colorScheme.outline.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 섹션 헤더
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      icon,
+                      size: 20,
+                      color: colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
+            // 섹션 내용
+            ...children,
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSwitchTile(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(
+        icon,
+        color: colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      title: Text(
+        title,
+        style: theme.textTheme.bodyLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: Switch(
+        value: value,
+        onChanged: onChanged,
+        activeColor: colorScheme.primary,
+        activeTrackColor: colorScheme.primaryContainer,
+        inactiveThumbColor: colorScheme.outline,
+        inactiveTrackColor: colorScheme.surfaceContainerHighest,
       ),
     );
   }
 
   Widget _buildAlarmSoundSelector(
       BuildContext context, SettingsService settingsService) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return ListTile(
-      title: const Text('알람 소리'),
-      subtitle: Text(settingsService.selectedAlarmSound.name),
-      trailing: const Icon(Icons.chevron_right),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(
+        Icons.music_note_outlined,
+        color: colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      title: Text(
+        '알람 소리',
+        style: theme.textTheme.bodyLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        settingsService.selectedAlarmSound.name,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: colorScheme.secondaryContainer.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          Icons.chevron_right,
+          color: colorScheme.onSecondaryContainer,
+          size: 20,
+        ),
+      ),
       onTap: () async {
         final result = await showDialog<String>(
           context: context,
@@ -179,24 +354,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 스피커 모드 선택 UI 구현
-  Widget _buildSpeakerModeSelector(
+  Widget _buildNotificationModeSelector(
       BuildContext context, SettingsService settingsService) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '음성 출력 모드',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 16,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '버스 추적 시 알림에 표시할 버스 범위',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        RadioListTile<int>(
-          title: const Text('이어폰 전용'),
-          subtitle: const Text('이어폰이 연결된 경우에만 음성 안내'),
+        _buildRadioTile<NotificationDisplayMode>(
+          context,
+          title: '알람 설정된 버스만 표시',
+          icon: Icons.alarm_on_outlined,
+          value: NotificationDisplayMode.alarmedOnly,
+          groupValue: _selectedNotificationMode,
+          onChanged: _updateNotificationModeSetting,
+        ),
+        _buildRadioTile<NotificationDisplayMode>(
+          context,
+          title: '정류장의 모든 버스 표시',
+          subtitle: '가장 빨리 도착하는 버스 기준 정보',
+          icon: Icons.dynamic_feed_outlined,
+          value: NotificationDisplayMode.allBuses,
+          groupValue: _selectedNotificationMode,
+          onChanged: _updateNotificationModeSetting,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSpeakerModeSelector(
+      BuildContext context, SettingsService settingsService) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.volume_up_outlined,
+                size: 16,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '음성 출력 모드',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        _buildRadioTile<int>(
+          context,
+          title: '이어폰 전용',
+          subtitle: '이어폰이 연결된 경우에만 음성 안내',
+          icon: Icons.headphones_outlined,
           value: SettingsService.speakerModeHeadset,
           groupValue: settingsService.speakerMode,
           onChanged: (value) {
@@ -205,9 +443,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             }
           },
         ),
-        RadioListTile<int>(
-          title: const Text('스피커 전용'),
-          subtitle: const Text('항상 스피커로 음성 안내'),
+        _buildRadioTile<int>(
+          context,
+          title: '스피커 전용',
+          subtitle: '항상 스피커로 음성 안내',
+          icon: Icons.speaker_outlined,
           value: SettingsService.speakerModeSpeaker,
           groupValue: settingsService.speakerMode,
           onChanged: (value) {
@@ -216,9 +456,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             }
           },
         ),
-        RadioListTile<int>(
-          title: const Text('자동 감지 (기본값)'),
-          subtitle: const Text('시스템이 적절한 출력 장치 자동 선택'),
+        _buildRadioTile<int>(
+          context,
+          title: '자동 감지 (기본값)',
+          subtitle: '시스템이 적절한 출력 장치 자동 선택',
+          icon: Icons.auto_mode_outlined,
           value: SettingsService.speakerModeAuto,
           groupValue: settingsService.speakerMode,
           onChanged: (value) {
@@ -231,13 +473,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 테마 모드 선택 UI 구현
   Widget _buildThemeModeSelector(
       BuildContext context, SettingsService settingsService) {
     return Column(
       children: [
-        RadioListTile<ThemeMode>(
-          title: const Text('라이트 모드'),
+        _buildRadioTile<ThemeMode>(
+          context,
+          title: '라이트 모드',
+          icon: Icons.light_mode_outlined,
           value: ThemeMode.light,
           groupValue: settingsService.themeMode,
           onChanged: (value) {
@@ -246,8 +489,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             }
           },
         ),
-        RadioListTile<ThemeMode>(
-          title: const Text('다크 모드'),
+        _buildRadioTile<ThemeMode>(
+          context,
+          title: '다크 모드',
+          icon: Icons.dark_mode_outlined,
           value: ThemeMode.dark,
           groupValue: settingsService.themeMode,
           onChanged: (value) {
@@ -256,8 +501,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             }
           },
         ),
-        RadioListTile<ThemeMode>(
-          title: const Text('시스템 설정 따르기 (기본값)'),
+        _buildRadioTile<ThemeMode>(
+          context,
+          title: '시스템 설정 따름',
+          icon: Icons.settings_system_daydream_outlined,
           value: ThemeMode.system,
           groupValue: settingsService.themeMode,
           onChanged: (value) {
@@ -267,6 +514,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildRadioTile<T>(
+    BuildContext context, {
+    required String title,
+    String? subtitle,
+    required IconData icon,
+    required T value,
+    required T? groupValue,
+    required ValueChanged<T?> onChanged,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isSelected = value == groupValue;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? colorScheme.primaryContainer.withOpacity(0.3)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: RadioListTile<T>(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        title: Text(
+          title,
+          style: theme.textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: isSelected
+                ? colorScheme.onPrimaryContainer
+                : colorScheme.onSurface,
+          ),
+        ),
+        subtitle: subtitle != null
+            ? Text(
+                subtitle,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: isSelected
+                      ? colorScheme.onPrimaryContainer.withOpacity(0.8)
+                      : colorScheme.onSurfaceVariant,
+                ),
+              )
+            : null,
+        secondary: Icon(
+          icon,
+          color: isSelected
+              ? colorScheme.onPrimaryContainer
+              : colorScheme.onSurfaceVariant,
+          size: 20,
+        ),
+        value: value,
+        groupValue: groupValue,
+        onChanged: onChanged,
+        activeColor: colorScheme.primary,
+        visualDensity: VisualDensity.compact,
+      ),
     );
   }
 }
