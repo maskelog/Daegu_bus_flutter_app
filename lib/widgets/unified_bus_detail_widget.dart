@@ -742,7 +742,11 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                             style: Theme.of(context)
                                 .textTheme
                                 .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w600)),
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
+                                )),
                       ),
                       if (_isUpdating)
                         const SizedBox(
@@ -970,7 +974,11 @@ void showUnifiedBusDetailModal(
                               style: Theme.of(context)
                                   .textTheme
                                   .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color:
+                                        Theme.of(context).colorScheme.onSurface,
+                                  )),
                           Text('$stationName → ${busArrival.direction}',
                               style: Theme.of(context)
                                   .textTheme
@@ -1015,7 +1023,11 @@ void showUnifiedBusDetailModal(
                             style: Theme.of(context)
                                 .textTheme
                                 .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold)),
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
+                                )),
                         const SizedBox(height: 16),
                         ...busArrival.busInfoList.skip(1).map((bus) {
                           final remainingMinutes = bus.getRemainingMinutes();
@@ -1076,8 +1088,10 @@ void showUnifiedBusDetailModal(
                                                         .textTheme
                                                         .labelSmall
                                                         ?.copyWith(
-                                                            color: Colors
-                                                                .green[700],
+                                                            color: Theme.of(
+                                                                    context)
+                                                                .colorScheme
+                                                                .onTertiaryContainer,
                                                             fontWeight:
                                                                 FontWeight
                                                                     .w500)),
