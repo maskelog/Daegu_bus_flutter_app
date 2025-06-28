@@ -41,7 +41,13 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
   @override
   void dispose() {
     _progressController.dispose();
-    context.read<AlarmService>().removeListener(_loadFullAutoAlarms);
+    if (mounted) {
+      try {
+        context.read<AlarmService>().removeListener(_loadFullAutoAlarms);
+      } catch (e) {
+        // 이미 dispose된 경우 무시
+      }
+    }
     super.dispose();
   }
 
@@ -102,7 +108,6 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildPanelActions(context, alarmService),
               if (autoAlarms.isNotEmpty) _buildAutoAlarmSection(autoAlarms),
               if (manualAlarms.isNotEmpty)
                 _buildManualAlarmList(context, manualAlarms),
@@ -113,41 +118,19 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     );
   }
 
-  Widget _buildPanelActions(BuildContext context, AlarmService alarmService) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        IconButton(
-          onPressed: alarmService.refreshAlarms,
-          icon: const Icon(Icons.refresh, color: Colors.grey),
-          tooltip: '새로고침',
-          iconSize: 20,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          visualDensity: VisualDensity.compact,
-        ),
-        IconButton(
-          onPressed: () => _cancelAllAlarms(context),
-          icon: const Icon(Icons.clear_all, color: Colors.red),
-          tooltip: '모든 알람 취소',
-          iconSize: 20,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          visualDensity: VisualDensity.compact,
-        ),
-      ],
-    );
-  }
-
   Widget _buildAutoAlarmSection(List<AlarmData> alarms) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 8, bottom: 8, top: 8),
-          child: Text("자동 알람",
-              style: TextStyle(
-                  fontWeight: FontWeight.bold, color: Colors.black54)),
+        Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 8, top: 8),
+          child: Text(
+            "자동 알람",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         ),
         SizedBox(
           height: 110,
@@ -188,16 +171,25 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
             const Spacer(),
             Row(
               children: [
-                const Icon(Icons.alarm, size: 14, color: Colors.grey),
+                Icon(
+                  Icons.alarm,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 const SizedBox(width: 4),
                 Text(fullAlarm.getFormattedTime(),
                     style: const TextStyle(fontSize: 14)),
               ],
             ),
-            Text(_getRepeatDaysText(fullAlarm.repeatDays),
-                style: const TextStyle(fontSize: 10, color: Colors.grey),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
+            Text(
+              _getRepeatDaysText(fullAlarm.repeatDays),
+              style: TextStyle(
+                fontSize: 10,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
       ),
@@ -215,72 +207,80 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
   }
 
   Widget _buildManualAlarmItem(BuildContext context, AlarmData alarm) {
-    return Container(
+    return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withAlpha(25),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(8),
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.directions_bus,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                size: 24,
+              ),
             ),
-            child: Icon(Icons.directions_bus,
-                color: Colors.blue.shade600, size: 24),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('${alarm.busNo}번 버스',
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87)),
-                const SizedBox(height: 4),
-                Text(alarm.stationName,
-                    style:
-                        TextStyle(fontSize: 14, color: Colors.grey.shade600)),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(_getRemainingTimeText(alarm),
-                  style: TextStyle(
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${alarm.busNo}번 버스',
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: _getRemainingTimeColor(alarm))),
-              const SizedBox(height: 2),
-              Text('남은 시간',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-            ],
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: () => _cancelSpecificAlarm(context, alarm),
-            icon: const Icon(Icons.close),
-            color: Colors.grey.shade600,
-            tooltip: '알람 취소',
-            iconSize: 20,
-          ),
-        ],
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    alarm.stationName,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _getRemainingTimeText(alarm),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: _getRemainingTimeColor(context, alarm),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '남은 시간',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              onPressed: () => _cancelSpecificAlarm(context, alarm),
+              icon: const Icon(Icons.close),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              tooltip: '알람 취소',
+              iconSize: 20,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -334,12 +334,12 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     return '${remaining.inMinutes}분';
   }
 
-  Color _getRemainingTimeColor(AlarmData alarm) {
+  Color _getRemainingTimeColor(BuildContext context, AlarmData alarm) {
     final now = DateTime.now();
     final remaining = alarm.scheduledTime.difference(now);
-    if (remaining.inMinutes < 1) return Colors.red.shade600;
-    if (remaining.inMinutes < 5) return Colors.orange.shade700;
-    return Colors.blue;
+    if (remaining.inMinutes < 1) return Theme.of(context).colorScheme.error;
+    if (remaining.inMinutes < 5) return Theme.of(context).colorScheme.tertiary;
+    return Theme.of(context).colorScheme.primary;
   }
 
   String _getRepeatDaysText(List<int> days) {

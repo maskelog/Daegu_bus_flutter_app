@@ -77,6 +77,7 @@ class BusAlertService : Service() {
         const val ACTION_UPDATE_TRACKING = "com.example.daegu_bus_app.action.UPDATE_TRACKING"
         const val ACTION_STOP_BUS_ALERT_TRACKING = "com.example.daegu_bus_app.action.STOP_BUS_ALERT_TRACKING"
         const val ACTION_START_AUTO_ALARM_LIGHTWEIGHT = "com.example.daegu_bus_app.action.START_AUTO_ALARM_LIGHTWEIGHT"
+        const val ACTION_STOP_AUTO_ALARM = "com.example.daegu_bus_app.action.STOP_AUTO_ALARM"
         const val ACTION_SET_ALARM_SOUND = "com.example.daegu_bus_app.action.SET_ALARM_SOUND"
 
         // TTS Output Modes
@@ -237,6 +238,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 notificationManager.cancelAll()
                 notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
                 Log.i(TAG, "모든 알림 즉시 취소 완료 (ACTION_STOP_TRACKING)")
             } catch (e: Exception) {
                 Log.e(TAG, "알림 즉시 취소 오류: ${e.message}")
@@ -347,14 +349,23 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 return START_NOT_STICKY
             }
 
-            if (intent.action == ACTION_START_TRACKING_FOREGROUND && stationId != null) {
+            // 자동알람인 경우 무조건 추적 시작 (ACTION에 관계없이)
+            if (isAutoAlarm && stationId != null) {
+                Log.d(TAG, "🔔 자동알람 감지: 무조건 추적 시작 - $busNo 번, $stationName")
                 addMonitoredRoute(routeId, stationId, stationName)
-
-                // 자동알람인 경우 즉시 추적 시작
-                if (isAutoAlarm) {
-                    Log.d(TAG, "🔔 자동알람 추적 시작: $busNo 번, $stationName")
-                    startTracking(routeId, stationId, stationName, busNo)
+                
+                // 이미 추적 중이어도 자동알람은 강제로 재시작
+                if (monitoringJobs.containsKey(routeId)) {
+                    Log.d(TAG, "🔔 자동알람: 기존 추적 중지 후 재시작 - $routeId")
+                    monitoringJobs[routeId]?.cancel()
+                    monitoringJobs.remove(routeId)
                 }
+                
+                startTracking(routeId, stationId, stationName, busNo, isAutoAlarm = true)
+            } else if (intent.action == ACTION_START_TRACKING_FOREGROUND && stationId != null) {
+                // 일반 추적 시작
+                addMonitoredRoute(routeId, stationId, stationName)
+                startTracking(routeId, stationId, stationName, busNo)
             }
 
             // 업데이트 요청인 경우 추적 정보도 업데이트
@@ -437,6 +448,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $busNo 번, $stationName")
             handleAutoAlarmLightweight(busNo, stationName, remainingMinutes, currentStation)
         }
+        ACTION_STOP_AUTO_ALARM -> {
+            Log.i(TAG, "ACTION_STOP_AUTO_ALARM received")
+            stopAutoAlarmLightweight()
+            return START_NOT_STICKY
+        }
         else -> {
             Log.w(TAG, "Unhandled action received: $intent.action")
             stopTrackingIfIdle()
@@ -456,6 +472,37 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
 
         try {
+            // 0. 자동알람 여부 확인 및 WorkManager 작업 취소
+            val trackingInfo = activeTrackings[routeId]
+            val isAutoAlarmTracking = trackingInfo?.isAutoAlarm ?: false
+            
+            if (isAutoAlarmTracking) {
+                Log.d(TAG, "🔔 자동알람 추적 중지 감지: WorkManager 작업 취소 시작")
+                try {
+                    val workManager = androidx.work.WorkManager.getInstance(this)
+                    
+                    // 1. 전체 자동알람 작업 취소
+                    workManager.cancelAllWorkByTag("autoAlarmTask")
+                    
+                    // 2. 특정 버스에 대한 자동알람 작업 취소 (태그 기반)
+                    workManager.cancelAllWorkByTag("autoAlarm_$busNo")
+                    workManager.cancelAllWorkByTag("autoAlarm_$routeId")
+                    
+                    // 3. 모든 대기 중인 작업 취소
+                    workManager.cancelAllWork()
+                    
+                    Log.d(TAG, "✅ 자동알람 WorkManager 작업 취소 완료: $busNo ($routeId)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 자동알람 WorkManager 작업 취소 오류: ${e.message}", e)
+                }
+                
+                // 자동알람 모드 비활성화
+                isAutoAlarmMode = false
+                autoAlarmStartTime = 0L
+                
+                Log.d(TAG, "✅ 자동알람 상태 초기화 완료")
+            }
+
             // 1. 낙관적 업데이트
             Log.d(TAG, "🔔 1단계: 즉시 상태 변경")
             monitoredRoutes.remove(routeId)
@@ -480,6 +527,16 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 Log.e(TAG, "❌ 개별 알림 취소 실패: ID=$specificNotificationId, 오류=${e.message}")
             }
 
+            // 자동알람 전용 알림도 취소
+            if (isAutoAlarmTracking) {
+                try {
+                    notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
+                    Log.d(TAG, "✅ 자동알람 전용 알림 취소됨: ID=$AUTO_ALARM_NOTIFICATION_ID")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 자동알람 전용 알림 취소 실패: ${e.message}")
+                }
+            }
+
             // 통합 알림 갱신 또는 취소
             if (activeTrackings.isEmpty()) {
                 try {
@@ -498,8 +555,24 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 Log.d(TAG, "📱 다른 추적이 남아있어 포그라운드 알림 갱신")
             }
 
-            // 3. Flutter에 알림
+            // 3. Flutter에 알림 (자동알람인 경우 특별한 이벤트 전송)
             Log.d(TAG, "🔔 3단계: Flutter 이벤트 전송")
+            if (isAutoAlarmTracking) {
+                // 자동알람 전용 취소 이벤트 전송
+                try {
+                    val context = applicationContext
+                    val intent = Intent("com.example.daegu_bus_app.AUTO_ALARM_CANCELLED").apply {
+                        putExtra("busNo", busNo)
+                        putExtra("routeId", routeId)
+                        putExtra("stationName", stationName)
+                        flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
+                    }
+                    context.sendBroadcast(intent)
+                    Log.d(TAG, "✅ 자동알람 취소 이벤트 브로드캐스트 전송: $busNo")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 자동알람 취소 이벤트 전송 오류: ${e.message}")
+                }
+            }
             sendCancellationBroadcast(busNo, routeId, stationName)
 
             // 4. TTS 중지
@@ -510,17 +583,30 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             Log.d(TAG, "🔔 4단계: 서비스 상태 확인 (남은 추적: ${activeTrackings.size}개)")
             checkAndStopServiceIfNeeded()
 
-            Log.d(TAG, "✅ 특정 추적 중지 완료: $routeId")
+            Log.d(TAG, "✅ 특정 추적 중지 완료: $routeId (자동알람: $isAutoAlarmTracking)")
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ 특정 추적 중지 중 오류 발생: ${e.message}", e)
             try {
-                // 오류 복구
+                // 오류 복구 (자동알람 관련 정리 포함)
+                if (activeTrackings[routeId]?.isAutoAlarm == true) {
+                    try {
+                        val workManager = androidx.work.WorkManager.getInstance(this)
+                        workManager.cancelAllWorkByTag("autoAlarmTask")
+                        workManager.cancelAllWorkByTag("autoAlarm_$busNo")
+                        isAutoAlarmMode = false
+                        Log.d(TAG, "⚠️ 오류 복구: 자동알람 WorkManager 작업 취소")
+                    } catch (cleanupError: Exception) {
+                        Log.e(TAG, "❌ 자동알람 오류 복구 실패: ${cleanupError.message}")
+                    }
+                }
+                
                 monitoringJobs[routeId]?.cancel()
                 monitoringJobs.remove(routeId)
                 activeTrackings.remove(routeId)
                 monitoredRoutes.remove(routeId)
                 NotificationManagerCompat.from(this).cancel(generateNotificationId(routeId))
+                NotificationManagerCompat.from(this).cancel(AUTO_ALARM_NOTIFICATION_ID)
                 updateForegroundNotification()
                 checkAndStopServiceIfNeeded()
                 Log.d(TAG, "⚠️ 오류 복구: 최소한의 정리 작업 완료")
@@ -589,8 +675,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
     data class TrackingInfo(
         val routeId: String,
-        val stationName: String,
-        val busNo: String,
+        var stationName: String,
+        var busNo: String,
         var lastBusInfo: BusInfo? = null,
         var consecutiveErrors: Int = 0,
         var lastUpdateTime: Long = System.currentTimeMillis(),
@@ -598,10 +684,12 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         var stationId: String = "",
         // [추가] TTS 중복 방지용
         var lastTtsAnnouncedMinutes: Int? = null,
-        var lastTtsAnnouncedStation: String? = null
+        var lastTtsAnnouncedStation: String? = null,
+        // [추가] 자동알람 플래그 - 자동알람인 경우 버스가 지나가도 계속 추적
+        var isAutoAlarm: Boolean = false
     )
 
-    private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String) {
+    private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false) {
         serviceScope.launch {
             var realStationId = stationId
             if (stationId.length < 10 || !stationId.startsWith("7")) {
@@ -609,18 +697,28 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 realStationId = busApiService.getStationIdFromBsId(stationId) ?: stationId
                 Log.d(TAG, "stationId 변환: $stationId → $realStationId")
             }
-            startTrackingInternal(routeId, realStationId, stationName, busNo)
+            startTrackingInternal(routeId, realStationId, stationName, busNo, isAutoAlarm)
         }
     }
 
-    private fun startTrackingInternal(routeId: String, stationId: String, stationName: String, busNo: String) {
+    private fun startTrackingInternal(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false) {
         if (monitoringJobs.containsKey(routeId)) {
             Log.d(TAG, "Tracking already active for route $routeId")
+            // 이미 추적 중인 경우 추적 정보만 업데이트
+            val existingInfo = activeTrackings[routeId]
+            if (existingInfo != null) {
+                existingInfo.busNo = busNo
+                existingInfo.stationName = stationName
+                existingInfo.stationId = stationId
+                Log.d(TAG, "✅ 기존 추적 정보 업데이트: $routeId, $busNo, $stationName")
+                // 즉시 버스 정보 업데이트
+                updateBusInfo(routeId, stationId, stationName)
+            }
             return
         }
 
         Log.i(TAG, "Starting tracking for route $routeId ($busNo) at station $stationName ($stationId)")
-        val trackingInfo = TrackingInfo(routeId, stationName, busNo, stationId = stationId)
+        val trackingInfo = TrackingInfo(routeId, stationName, busNo, stationId = stationId, isAutoAlarm = isAutoAlarm)
         activeTrackings[routeId] = trackingInfo
 
         monitoringJobs[routeId] = serviceScope.launch {
@@ -1530,6 +1628,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 notificationManager.cancelAll()
                 notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
                 Log.d(TAG, "모든 알림 직접 취소 완료 (cancelOngoingTracking)")
             } catch (e: Exception) {
                 Log.e(TAG, "알림 취소 오류 (cancelOngoingTracking): ${e.message}")
@@ -1809,7 +1908,16 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
 
         if (remainingMinutes >= 0 && remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES) {
-            if (useTextToSpeech && !hasNotifiedTts.contains(trackingInfo.routeId)) {
+            // 자동알람인 경우 항상 TTS 발화 (다음 버스 추적을 위해)
+            val shouldNotifyTts = if (trackingInfo.isAutoAlarm) {
+                // 자동알람: 이전 알림 시간과 다르면 항상 발화
+                trackingInfo.lastNotifiedMinutes != remainingMinutes
+            } else {
+                // 일반 알람: 한 번만 발화
+                !hasNotifiedTts.contains(trackingInfo.routeId)
+            }
+
+            if (useTextToSpeech && shouldNotifyTts) {
                 // TTS 시스템을 통한 발화 시도
                 try {
                     startTTSServiceSpeak(
@@ -1820,28 +1928,56 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                         remainingMinutes = 0, // 곧 도착 상태
                         currentStation = busInfo.currentStation
                     )
-                    hasNotifiedTts.add(trackingInfo.routeId)
-                    Log.d(TAG, "📢 TTS 발화 시도 성공: ${trackingInfo.busNo}번 버스, ${trackingInfo.stationName}")
+                    
+                    // 자동알람이 아닌 경우에만 hasNotifiedTts에 추가 (중복 방지)
+                    if (!trackingInfo.isAutoAlarm) {
+                        hasNotifiedTts.add(trackingInfo.routeId)
+                    }
+                    trackingInfo.lastNotifiedMinutes = remainingMinutes
+                    
+                    Log.d(TAG, "📢 TTS 발화 시도 성공: ${trackingInfo.busNo}번 버스, ${trackingInfo.stationName} (자동알람: ${trackingInfo.isAutoAlarm})")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ TTS 발화 시도 오류: ${e.message}", e)
 
                     // TTSService 실패 시 백업으로 내부 TTS 시도
                     val message = "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
                     speakTts(message)
-                    hasNotifiedTts.add(trackingInfo.routeId)
+                    
+                    // 자동알람이 아닌 경우에만 hasNotifiedTts에 추가 (중복 방지)
+                    if (!trackingInfo.isAutoAlarm) {
+                        hasNotifiedTts.add(trackingInfo.routeId)
+                    }
+                    trackingInfo.lastNotifiedMinutes = remainingMinutes
                 }
             }
 
-            // 도착 알림
-            if (!hasNotifiedArrival.contains(trackingInfo.routeId)) {
+            // 자동알람인 경우 항상 도착 알림 (다음 버스 추적을 위해)
+            val shouldNotifyArrival = if (trackingInfo.isAutoAlarm) {
+                // 자동알람: 이전 알림 시간과 다르면 항상 알림
+                trackingInfo.lastNotifiedMinutes != remainingMinutes
+            } else {
+                // 일반 알람: 한 번만 알림
+                !hasNotifiedArrival.contains(trackingInfo.routeId)
+            }
+
+            if (shouldNotifyArrival) {
                 notificationHandler.sendAlertNotification(
                     trackingInfo.routeId,
                     trackingInfo.busNo,
                     trackingInfo.stationName
                 )
-                hasNotifiedArrival.add(trackingInfo.routeId)
-                Log.d(TAG, "📳 도착 알림 전송: ${trackingInfo.busNo}번, ${trackingInfo.stationName}")
+                
+                // 자동알람이 아닌 경우에만 hasNotifiedArrival에 추가 (중복 방지)
+                if (!trackingInfo.isAutoAlarm) {
+                    hasNotifiedArrival.add(trackingInfo.routeId)
+                }
+                
+                Log.d(TAG, "📳 도착 알림 전송: ${trackingInfo.busNo}번, ${trackingInfo.stationName} (자동알람: ${trackingInfo.isAutoAlarm})")
             }
+        } else if (remainingMinutes > ARRIVAL_THRESHOLD_MINUTES && trackingInfo.isAutoAlarm) {
+            // 자동알람인 경우 버스가 멀어지면 알림 상태 초기화 (다음 버스를 위해)
+            trackingInfo.lastNotifiedMinutes = Int.MAX_VALUE
+            Log.d(TAG, "🔄 자동알람 상태 초기화: ${trackingInfo.busNo}번 버스가 멀어짐 (${remainingMinutes}분)")
         }
     }
 
@@ -2045,7 +2181,25 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             // 2.1. 자동 알람 WorkManager 작업 취소
             try {
                 val workManager = androidx.work.WorkManager.getInstance(this)
+                
+                // 1. 모든 자동알람 관련 태그 작업 취소
                 workManager.cancelAllWorkByTag("autoAlarmTask")
+                
+                // 2. 개별 버스별 자동알람 작업 취소
+                activeTrackings.values.forEach { tracking ->
+                    if (tracking.isAutoAlarm) {
+                        workManager.cancelAllWorkByTag("autoAlarm_${tracking.busNo}")
+                        workManager.cancelAllWorkByTag("autoAlarm_${tracking.routeId}")
+                    }
+                }
+                
+                // 3. 모든 대기 중인 작업 취소 (강력한 정리)
+                workManager.cancelAllWork()
+                
+                // 4. 자동알람 모드 비활성화
+                isAutoAlarmMode = false
+                autoAlarmStartTime = 0L
+                
                 Log.d(TAG, "✅ 자동 알람 WorkManager 작업 취소 완료")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ 자동 알람 WorkManager 작업 취소 오류: ${e.message}")
@@ -2100,12 +2254,14 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 val notificationManagerCompat = NotificationManagerCompat.from(this)
                 notificationManagerCompat.cancelAll()
                 notificationManagerCompat.cancel(ONGOING_NOTIFICATION_ID)
+                notificationManagerCompat.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
                 Log.d(TAG, "✅ 모든 알림 취소 완료 (NotificationManagerCompat)")
 
                 // 7.2. NotificationManager로도 취소 (백업)
                 val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 notificationManager.cancelAll()
                 notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
                 Log.d(TAG, "✅ 모든 알림 취소 완료 (NotificationManager)")
 
                 // 7.3. 지연된 추가 취소 (백업)
@@ -2113,6 +2269,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                     try {
                         notificationManager.cancelAll()
                         notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                        notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
                         Log.d(TAG, "✅ 지연된 알림 취소 완료")
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ 지연된 알림 취소 오류: ${e.message}")

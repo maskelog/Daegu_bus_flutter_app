@@ -246,7 +246,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     title,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      color: colorScheme.onSurface,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white
+                          : colorScheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -284,6 +286,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title,
         style: theme.textTheme.bodyLarge?.copyWith(
           fontWeight: FontWeight.w500,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.white
+              : null,
         ),
       ),
       subtitle: Text(
@@ -319,6 +324,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         '알람 소리',
         style: theme.textTheme.bodyLarge?.copyWith(
           fontWeight: FontWeight.w500,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.white
+              : null,
         ),
       ),
       subtitle: Text(
@@ -375,7 +383,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Text(
                   '버스 추적 시 알림에 표시할 버스 범위',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white70
+                        : colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -423,7 +433,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text(
                 '음성 출력 모드',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white70
+                      : colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -546,7 +558,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             fontWeight: FontWeight.w500,
             color: isSelected
                 ? colorScheme.onPrimaryContainer
-                : colorScheme.onSurface,
+                : (Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white
+                    : colorScheme.onSurface),
           ),
         ),
         subtitle: subtitle != null
@@ -555,7 +569,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: isSelected
                       ? colorScheme.onPrimaryContainer.withOpacity(0.8)
-                      : colorScheme.onSurfaceVariant,
+                      : (Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white70
+                          : colorScheme.onSurfaceVariant),
                 ),
               )
             : null,
@@ -593,14 +609,28 @@ class _AlarmSoundDialog extends StatelessWidget {
     ];
 
     return AlertDialog(
-      title: const Text('알람 소리 선택'),
+      title: Text(
+        '알람 소리 선택',
+        style: TextStyle(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.white
+              : null,
+        ),
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: allSounds
               .map(
                 (sound) => RadioListTile<String>(
-                  title: Text(sound.name),
+                  title: Text(
+                    sound.name,
+                    style: TextStyle(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white
+                          : null,
+                    ),
+                  ),
                   value: sound.id,
                   groupValue: selectedId,
                   onChanged: (value) {
@@ -614,7 +644,14 @@ class _AlarmSoundDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('취소'),
+          child: Text(
+            '취소',
+            style: TextStyle(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.white
+                  : null,
+            ),
+          ),
         ),
       ],
     );

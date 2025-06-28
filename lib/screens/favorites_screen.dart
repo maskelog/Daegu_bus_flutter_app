@@ -35,7 +35,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   final Map<String, bool> _isLoadingMap = {};
   final Map<String, String?> _errorMap = {};
   BusStop? _selectedStop;
-  dynamic _refreshTimer;
+  Timer? _refreshTimer;
   final Map<String, bool> _stationTrackingStatus = {};
 
   static const _stationTrackingChannel =
@@ -47,13 +47,15 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     if (widget.favoriteStops.isNotEmpty) {
       _loadAllFavoriteArrivals();
     }
-    _refreshTimer = Future.delayed(const Duration(minutes: 1), () {
+    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       if (mounted) {
         if (_selectedStop != null) {
           _loadStationArrivals(_selectedStop!);
         } else if (widget.favoriteStops.isNotEmpty) {
           _loadAllFavoriteArrivals();
         }
+      } else {
+        timer.cancel();
       }
     });
   }
@@ -83,20 +85,25 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       final arrivals = await ApiService.getStationInfo(station.id);
       if (!mounted) return;
 
-      setState(() {
-        _stationArrivals[station.id] = arrivals;
-        _isLoadingMap[station.id] = false;
-      });
+      if (mounted) {
+        setState(() {
+          _stationArrivals[station.id] = arrivals;
+          _isLoadingMap[station.id] = false;
+        });
+      }
+
       _updateAlarmServiceCache(arrivals, station.name);
     } catch (e) {
       logMessage('Error loading arrivals for station ${station.id}: $e',
           level: LogLevel.error);
       if (!mounted) return;
 
-      setState(() {
-        _errorMap[station.id] = '도착 정보를 불러오지 못했습니다';
-        _isLoadingMap[station.id] = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMap[station.id] = '도착 정보를 불러오지 못했습니다';
+          _isLoadingMap[station.id] = false;
+        });
+      }
     }
   }
 
@@ -130,151 +137,168 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     if (widget.favoriteStops.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.star_border, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              '즐겨찾는 정류장이 없습니다',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '정류장 검색 후 별표 아이콘을 눌러 추가하세요',
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-            ),
-          ],
+      return Container(
+        color: colorScheme.surface,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.star_border,
+                  size: 64, color: colorScheme.onSurfaceVariant),
+              const SizedBox(height: 16),
+              Text(
+                '즐겨찾는 정류장이 없습니다',
+                style: TextStyle(fontSize: 16, color: colorScheme.onSurface),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '정류장 검색 후 별표 아이콘을 눌러 추가하세요',
+                style: TextStyle(
+                    fontSize: 14, color: colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: widget.favoriteStops.length,
-      itemBuilder: (context, index) {
-        final station = widget.favoriteStops[index];
-        final isSelected = _selectedStop?.id == station.id;
-        final stationArrivals = _stationArrivals[station.id] ?? [];
-        final isLoading = _isLoadingMap[station.id] ?? false;
-        final error = _errorMap[station.id];
+    return Container(
+      color: colorScheme.surface,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: widget.favoriteStops.length,
+        itemBuilder: (context, index) {
+          final station = widget.favoriteStops[index];
+          final isSelected = _selectedStop?.id == station.id;
+          final stationArrivals = _stationArrivals[station.id] ?? [];
+          final isLoading = _isLoadingMap[station.id] ?? false;
+          final error = _errorMap[station.id];
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            StationItem(
-              station: station,
-              isSelected: isSelected,
-              isTracking: _stationTrackingStatus[station.id] ?? false,
-              onTap: () {
-                setState(() {
-                  if (_selectedStop?.id == station.id) {
-                    _selectedStop = null;
-                  } else {
-                    _selectedStop = station;
-                    if (stationArrivals.isEmpty && !isLoading) {
-                      _loadStationArrivals(station);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              StationItem(
+                station: station,
+                isSelected: isSelected,
+                isTracking: _stationTrackingStatus[station.id] ?? false,
+                onTap: () {
+                  setState(() {
+                    if (_selectedStop?.id == station.id) {
+                      _selectedStop = null;
+                    } else {
+                      _selectedStop = station;
+                      if (stationArrivals.isEmpty && !isLoading) {
+                        _loadStationArrivals(station);
+                      }
                     }
+                  });
+                  widget.onStopSelected(station);
+                },
+                onFavoriteToggle: () => widget.onFavoriteToggle(station),
+                onTrackingToggle: () {
+                  final isTracking =
+                      _stationTrackingStatus[station.id] ?? false;
+                  if (isTracking) {
+                    _stopStationTracking(station);
+                  } else {
+                    _startStationTracking(station);
                   }
-                });
-                widget.onStopSelected(station);
-              },
-              onFavoriteToggle: () => widget.onFavoriteToggle(station),
-              onTrackingToggle: () {
-                final isTracking = _stationTrackingStatus[station.id] ?? false;
-                if (isTracking) {
-                  _stopStationTracking(station);
-                } else {
-                  _startStationTracking(station);
-                }
-              },
-            ),
-            if (isSelected)
-              Padding(
-                padding: const EdgeInsets.only(left: 12, top: 8, bottom: 16),
-                child: SizedBox(
-                  height: 300,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (isLoading)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: CircularProgressIndicator(),
-                          ),
-                        )
-                      else if (error != null)
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              children: [
-                                Icon(Icons.error_outline,
-                                    size: 32, color: Colors.red[300]),
-                                const SizedBox(height: 8),
-                                Text(error,
-                                    style: TextStyle(color: Colors.red[700])),
-                                TextButton(
-                                  onPressed: () =>
-                                      _loadStationArrivals(station),
-                                  child: const Text('다시 시도'),
-                                ),
-                              ],
+                },
+              ),
+              if (isSelected)
+                Padding(
+                  padding: const EdgeInsets.only(left: 12, top: 8, bottom: 16),
+                  child: SizedBox(
+                    height: 300,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isLoading)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: CircularProgressIndicator(),
                             ),
-                          ),
-                        )
-                      else if (stationArrivals.isEmpty)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Text('도착 예정 버스가 없습니다'),
-                          ),
-                        )
-                      else
-                        Expanded(
-                          child: Scrollbar(
-                            thickness: 6.0,
-                            radius: const Radius.circular(10),
-                            child: ListView.builder(
-                              physics: const BouncingScrollPhysics(),
-                              padding: EdgeInsets.zero,
-                              itemCount: stationArrivals.length,
-                              itemBuilder: (context, idx) {
-                                final busArrival = stationArrivals[idx];
-                                return UnifiedBusDetailWidget(
-                                  busArrival: busArrival,
-                                  stationName: station.name,
-                                  stationId: station.id,
-                                  isCompact: true,
-                                  onTap: () => showUnifiedBusDetailModal(
-                                    context,
-                                    busArrival,
-                                    station.id,
-                                    station.name,
+                          )
+                        else if (error != null)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.error_outline,
+                                      size: 32, color: colorScheme.error),
+                                  const SizedBox(height: 8),
+                                  Text(error,
+                                      style:
+                                          TextStyle(color: colorScheme.error)),
+                                  TextButton(
+                                    onPressed: () =>
+                                        _loadStationArrivals(station),
+                                    child: const Text('다시 시도'),
                                   ),
-                                );
-                              },
+                                ],
+                              ),
+                            ),
+                          )
+                        else if (stationArrivals.isEmpty)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Text('도착 예정 버스가 없습니다',
+                                  style:
+                                      TextStyle(color: colorScheme.onSurface)),
+                            ),
+                          )
+                        else
+                          Expanded(
+                            child: Scrollbar(
+                              thickness: 6.0,
+                              radius: const Radius.circular(10),
+                              child: ListView.builder(
+                                physics: const BouncingScrollPhysics(),
+                                padding: EdgeInsets.zero,
+                                itemCount: stationArrivals.length,
+                                itemBuilder: (context, idx) {
+                                  final busArrival = stationArrivals[idx];
+                                  return UnifiedBusDetailWidget(
+                                    busArrival: busArrival,
+                                    stationName: station.name,
+                                    stationId: station.id,
+                                    isCompact: true,
+                                    onTap: () => showUnifiedBusDetailModal(
+                                      context,
+                                      busArrival,
+                                      station.stationId ?? station.id,
+                                      station.name,
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            if (index < widget.favoriteStops.length - 1)
-              const Divider(height: 24),
-          ],
-        );
-      },
+              if (index < widget.favoriteStops.length - 1)
+                const Divider(height: 24),
+            ],
+          );
+        },
+      ),
     );
   }
 
   void _showFavoriteAlarmModal(
       BuildContext context, BusStop station, BusArrival busArrival) {
     int selectedAlarmTime = 3;
+    final colorScheme = Theme.of(context).colorScheme;
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -288,9 +312,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
+                  Text(
                     '알람 설정',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurface,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Row(
@@ -366,6 +394,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   void _showBusDetailModal(
       BuildContext context, BusStop station, BusArrival busArrival) {
     final alarmService = Provider.of<AlarmService>(context, listen: false);
+    final colorScheme = Theme.of(context).colorScheme;
 
     showModalBottomSheet(
       context: context,
@@ -395,7 +424,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         height: 4,
                         width: 40,
                         decoration: BoxDecoration(
-                          color: Colors.grey[300],
+                          color: colorScheme.onSurfaceVariant.withOpacity(0.4),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -409,15 +438,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               children: [
                                 Text(
                                   '${busArrival.routeNo}번 버스',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       fontSize: 20,
-                                      fontWeight: FontWeight.bold),
+                                      fontWeight: FontWeight.bold,
+                                      color: colorScheme.onSurface),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
                                   '${station.name} → ${busArrival.direction}',
                                   style: TextStyle(
-                                      fontSize: 14, color: Colors.grey[800]),
+                                      fontSize: 14,
+                                      color: colorScheme.onSurfaceVariant),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ],
@@ -483,11 +514,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               // const SizedBox(height: 16),
 
                               // 다음 버스 정보 섹션 헤더
-                              const Text(
+                              Text(
                                 '다음 버스 정보',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
+                                  color: colorScheme.onSurface,
                                 ),
                               ),
                               const SizedBox(height: 12),
@@ -499,7 +531,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
-                                    side: BorderSide(color: Colors.grey[200]!),
+                                    side: BorderSide(
+                                        color: colorScheme.outline
+                                            .withOpacity(0.3)),
                                   ),
                                   child: InkWell(
                                     onTap: () {
@@ -534,7 +568,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                                       fontSize: 18,
                                                       fontWeight:
                                                           FontWeight.bold,
-                                                      color: Colors.blue[600],
+                                                      color:
+                                                          colorScheme.primary,
                                                     ),
                                                   ),
                                                   const SizedBox(width: 4),
@@ -546,8 +581,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                                         vertical: 2,
                                                       ),
                                                       decoration: BoxDecoration(
-                                                        color:
-                                                            Colors.green[100],
+                                                        color: colorScheme
+                                                            .tertiaryContainer,
                                                         borderRadius:
                                                             BorderRadius
                                                                 .circular(4),
@@ -556,8 +591,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                                         '저상',
                                                         style: TextStyle(
                                                           fontSize: 10,
-                                                          color:
-                                                              Colors.green[700],
+                                                          color: colorScheme
+                                                              .onTertiaryContainer,
                                                         ),
                                                       ),
                                                     ),
@@ -568,14 +603,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                                 bus.currentStation,
                                                 style: TextStyle(
                                                   fontSize: 13,
-                                                  color: Colors.grey[600],
+                                                  color: colorScheme
+                                                      .onSurfaceVariant,
                                                 ),
                                               ),
                                               Text(
                                                 bus.remainingStops.toString(),
                                                 style: TextStyle(
                                                   fontSize: 12,
-                                                  color: Colors.grey[500],
+                                                  color: colorScheme
+                                                      .onSurfaceVariant
+                                                      .withOpacity(0.7),
                                                 ),
                                               ),
                                             ],
@@ -590,7 +628,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                                 '도착예정',
                                                 style: TextStyle(
                                                   fontSize: 12,
-                                                  color: Colors.grey[600],
+                                                  color: colorScheme
+                                                      .onSurfaceVariant,
                                                 ),
                                               ),
                                               Text(
@@ -601,8 +640,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                                   color:
                                                       bus.getRemainingMinutes() <=
                                                               3
-                                                          ? Colors.red
-                                                          : Colors.blue[600],
+                                                          ? colorScheme.error
+                                                          : colorScheme.primary,
                                                 ),
                                               ),
                                             ],

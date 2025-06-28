@@ -4,12 +4,15 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
+import '../models/bus_stop.dart';
 import '../services/alarm_service.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 import '../services/alarm_manager.dart';
 import '../utils/tts_switcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 /// 통합된 버스 상세정보 위젯
 /// 홈스크린과 즐겨찾기에서 공통으로 사용
@@ -775,7 +778,9 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: Colors.green[100],
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .tertiaryContainer,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text('저상',
@@ -783,7 +788,9 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                                           .textTheme
                                           .labelSmall
                                           ?.copyWith(
-                                              color: Colors.green[700],
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onTertiaryContainer,
                                               fontWeight: FontWeight.w500)),
                                 ),
                             ],
@@ -841,13 +848,31 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                           hasAlarm
                               ? Icons.notifications_off
                               : Icons.notifications_active,
-                          color: Colors.white),
+                          color: _currentBus.isOutOfService
+                              ? Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withOpacity(0.38)
+                              : (hasAlarm
+                                  ? Theme.of(context).colorScheme.onError
+                                  : Theme.of(context).colorScheme.onPrimary)),
                       label: Text(hasAlarm ? '승차 알람 해제' : '승차 알람 설정',
                           style: Theme.of(context)
                               .textTheme
                               .labelLarge
                               ?.copyWith(
-                                  color: Colors.white,
+                                  color: _currentBus.isOutOfService
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withOpacity(0.38)
+                                      : (hasAlarm
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .onError
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onPrimary),
                                   fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _currentBus.isOutOfService
@@ -906,7 +931,7 @@ void showUnifiedBusDetailModal(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     backgroundColor: Theme.of(context).colorScheme.surface,
-    barrierColor: Colors.black54,
+    barrierColor: Theme.of(context).colorScheme.scrim.withOpacity(0.54),
     builder: (context) {
       return DraggableScrollableSheet(
         initialChildSize: 0.6,
@@ -1040,7 +1065,9 @@ void showUnifiedBusDetailModal(
                                                         horizontal: 6,
                                                         vertical: 2),
                                                 decoration: BoxDecoration(
-                                                  color: Colors.green[100],
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .tertiaryContainer,
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),

@@ -186,16 +186,21 @@ class _AlarmScreenState extends State<AlarmScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
     return Consumer<SettingsService>(
       builder: (context, settingsService, child) {
         return Scaffold(
+          backgroundColor: colorScheme.surface,
           body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(child: CircularProgressIndicator(color: colorScheme.primary))
               : CustomScrollView(
                   slivers: [
                     SliverToBoxAdapter(
                       child: Container(
-                        padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(24),
+                          color: colorScheme.surface,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -210,7 +215,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                   ),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.add),
+                                  icon: Icon(Icons.add, color: colorScheme.primary),
                                   onPressed: _addAutoAlarm,
                                 ),
                               ],
@@ -232,7 +237,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                     const SizedBox(height: 8),
                                     Row(
                                       children: [
-                                        const Icon(Icons.volume_down),
+                                        Icon(Icons.volume_down, color: colorScheme.onSurfaceVariant),
                                         Expanded(
                                           child: Slider(
                                             value:
@@ -250,7 +255,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                             },
                                           ),
                                         ),
-                                        const Icon(Icons.volume_up),
+                                        Icon(Icons.volume_up, color: colorScheme.onSurfaceVariant),
                                       ],
                                     ),
                                     const SizedBox(height: 16),
@@ -263,7 +268,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                               '출퇴근 시간이나 정기적으로 이용하는 버스에 대한 알림을 자동으로 설정하세요.',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: Colors.grey[600],
+                                color: colorScheme.onSurfaceVariant,
                               ),
                             ),
                             const SizedBox(height: 24),
@@ -283,16 +288,18 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                   onPressed: () {
                                     showModalBottomSheet(
                                       context: context,
+                                      backgroundColor: colorScheme.surface,
                                       builder: (context) => Container(
                                         padding: const EdgeInsets.all(16),
                                         child: Column(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            const Text(
+                                            Text(
                                               '알람음 선택',
                                               style: TextStyle(
                                                 fontSize: 18,
                                                 fontWeight: FontWeight.bold,
+                                                color: colorScheme.onSurface,
                                               ),
                                             ),
                                             const SizedBox(height: 16),
@@ -306,14 +313,14 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                 leading: Icon(
                                                   sound.icon,
                                                   color: isSelected
-                                                      ? Colors.blue
-                                                      : Colors.grey,
+                                                      ? colorScheme.primary
+                                                      : colorScheme.onSurfaceVariant,
                                                 ),
-                                                title: Text(sound.name),
+                                                title: Text(sound.name, style: TextStyle(color: colorScheme.onSurface)),
                                                 trailing: isSelected
-                                                    ? const Icon(
+                                                    ? Icon(
                                                         Icons.check_circle,
-                                                        color: Colors.blue)
+                                                        color: colorScheme.primary)
                                                     : null,
                                                 onTap: () {
                                                   _settingsService
@@ -336,7 +343,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                       ),
                                     );
                                   },
-                                  icon: const Icon(Icons.volume_up),
+                                  icon: Icon(Icons.volume_up, color: colorScheme.primary),
                                   label: Text(
                                     AlarmSound.allSounds
                                         .firstWhere((s) =>
@@ -363,14 +370,14 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                     Icon(
                                       Icons.notifications_off,
                                       size: 64,
-                                      color: Colors.grey[400],
+                                      color: colorScheme.onSurfaceVariant,
                                     ),
                                     const SizedBox(height: 16),
                                     Text(
                                       '설정된 자동 알림이 없습니다',
                                       style: TextStyle(
                                         fontSize: 16,
-                                        color: Colors.grey[600],
+                                        color: colorScheme.onSurface,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
@@ -378,7 +385,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                       '상단의 "알림 추가" 버튼을 눌러 새 자동 알림을 추가하세요',
                                       style: TextStyle(
                                         fontSize: 14,
-                                        color: Colors.grey[500],
+                                        color: colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                   ],
@@ -391,6 +398,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                   final alarm = _autoAlarms[index];
                                   return Card(
                                     margin: const EdgeInsets.only(bottom: 12),
+                                    color: colorScheme.surface,
                                     child: Padding(
                                       padding: const EdgeInsets.all(16),
                                       child: Column(
@@ -400,10 +408,10 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                           Row(
                                             children: [
                                               Icon(
-                                                Icons.alarm,
-                                                color: alarm.isActive
-                                                    ? Colors.blue[700]
-                                                    : Colors.grey[400],
+                                              Icons.alarm,
+                                              color: alarm.isActive
+                                              ? colorScheme.primary
+                                              : colorScheme.onSurfaceVariant,
                                               ),
                                               const SizedBox(width: 8),
                                               Text(
@@ -412,8 +420,8 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                   fontSize: 18,
                                                   fontWeight: FontWeight.bold,
                                                   color: alarm.isActive
-                                                      ? Colors.black87
-                                                      : Colors.grey[500],
+                                                      ? colorScheme.onSurface
+                                                      : colorScheme.onSurfaceVariant,
                                                 ),
                                               ),
                                               const Spacer(),
@@ -430,14 +438,14 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                               Icon(
                                                 Icons.location_on,
                                                 size: 16,
-                                                color: Colors.grey[600],
+                                                color: colorScheme.onSurfaceVariant,
                                               ),
                                               const SizedBox(width: 4),
                                               Expanded(
                                                 child: Text(
                                                   alarm.stationName,
                                                   style: TextStyle(
-                                                    color: Colors.grey[800],
+                                                    color: colorScheme.onSurface,
                                                   ),
                                                 ),
                                               ),
@@ -449,13 +457,13 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                               Icon(
                                                 Icons.directions_bus,
                                                 size: 16,
-                                                color: Colors.grey[600],
+                                                color: colorScheme.onSurfaceVariant,
                                               ),
                                               const SizedBox(width: 4),
                                               Text(
                                                 alarm.routeNo,
                                                 style: TextStyle(
-                                                  color: Colors.grey[800],
+                                                  color: colorScheme.onSurface,
                                                 ),
                                               ),
                                             ],
@@ -466,14 +474,14 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                               Icon(
                                                 Icons.repeat,
                                                 size: 16,
-                                                color: Colors.grey[600],
+                                                color: colorScheme.onSurfaceVariant,
                                               ),
                                               const SizedBox(width: 4),
                                               Text(
                                                 _getRepeatDaysText(alarm),
                                                 style: TextStyle(
                                                   fontSize: 12,
-                                                  color: Colors.grey[700],
+                                                  color: colorScheme.onSurfaceVariant,
                                                 ),
                                               ),
                                             ],
@@ -486,14 +494,14 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                 Icon(
                                                   Icons.event_busy,
                                                   size: 16,
-                                                  color: Colors.grey[600],
+                                                  color: colorScheme.onSurfaceVariant,
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
                                                   _getExcludeText(alarm),
                                                   style: TextStyle(
                                                     fontSize: 12,
-                                                    color: Colors.grey[700],
+                                                    color: colorScheme.onSurfaceVariant,
                                                   ),
                                                 ),
                                               ],
@@ -504,22 +512,17 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                 MainAxisAlignment.end,
                                             children: [
                                               TextButton.icon(
-                                                icon: const Icon(Icons.edit,
-                                                    size: 16),
-                                                label: const Text('수정'),
+                                                icon: Icon(Icons.edit, size: 16, color: colorScheme.primary),
+                                                label: Text('수정', style: TextStyle(color: colorScheme.primary)),
                                                 onPressed: () =>
                                                     _editAutoAlarm(index),
                                               ),
                                               const SizedBox(width: 8),
                                               TextButton.icon(
-                                                icon: const Icon(Icons.delete,
-                                                    size: 16),
-                                                label: const Text('삭제'),
+                                                icon: Icon(Icons.delete, size: 16, color: colorScheme.error),
+                                                label: Text('삭제', style: TextStyle(color: colorScheme.error)),
                                                 onPressed: () =>
                                                     _deleteAutoAlarm(index),
-                                                style: TextButton.styleFrom(
-                                                  foregroundColor: Colors.red,
-                                                ),
                                               ),
                                             ],
                                           ),
@@ -807,8 +810,14 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
         title: Text(widget.autoAlarm == null ? '자동 알림 추가' : '자동 알림 수정'),
         actions: [
           TextButton(
@@ -827,8 +836,9 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
             const SizedBox(height: 8),
             Card(
               elevation: 0,
+              color: colorScheme.surface,
               shape: RoundedRectangleBorder(
-                side: BorderSide(color: Colors.grey.shade300),
+                side: BorderSide(color: colorScheme.outline),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ListTile(
@@ -842,7 +852,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                       fontFamily: 'monospace'),
                   textAlign: TextAlign.center,
                 ),
-                trailing: const Icon(Icons.edit_outlined, color: Colors.blue),
+                trailing: Icon(Icons.edit_outlined, color: colorScheme.primary),
                 onTap: _selectTime,
               ),
             ),
@@ -863,13 +873,13 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                     height: 38,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: isSelected ? Colors.blue : Colors.grey[200],
+                      color: isSelected ? colorScheme.primary : colorScheme.surfaceContainerHighest,
                     ),
                     alignment: Alignment.center,
                     child: Text(
                       _weekdays[index],
                       style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.black87,
+                        color: isSelected ? colorScheme.onPrimary : colorScheme.onSurface,
                         fontWeight:
                             isSelected ? FontWeight.bold : FontWeight.normal,
                       ),
@@ -924,8 +934,10 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
             TextField(
               controller: _stationController,
               readOnly: true,
+              style: TextStyle(color: colorScheme.onSurface),
               decoration: InputDecoration(
                 hintText: 'SearchScreen에서 정류장을 선택하세요',
+                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                 border:
                     OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 contentPadding:
@@ -940,14 +952,16 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
               controller: _routeController,
               readOnly: true,
               enabled: false,
+              style: TextStyle(color: colorScheme.onSurface),
               decoration: InputDecoration(
                 hintText: '아래 노선 목록에서 선택하세요',
+                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                 border:
                     OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
                 fillColor:
-                    _selectedRouteId != null ? Colors.blue.shade50 : null,
+                    _selectedRouteId != null ? colorScheme.primaryContainer.withValues(alpha: 0.3) : null,
                 filled: _selectedRouteId != null,
               ),
             ),
@@ -961,16 +975,16 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 12),
-                  const Text('노선 목록',
+                  Text('노선 목록',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: Colors.blue,
+                        color: colorScheme.primary,
                       )),
                   const SizedBox(height: 8),
                   Container(
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
+                      border: Border.all(color: colorScheme.outline),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     height: _routeOptions.length > 4 ? 200 : null, // 높이 제한
@@ -981,17 +995,17 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                           : const NeverScrollableScrollPhysics(),
                       itemCount: _routeOptions.length,
                       separatorBuilder: (context, index) =>
-                          Divider(height: 1, color: Colors.grey.shade300),
+                          Divider(height: 1, color: colorScheme.outline),
                       itemBuilder: (context, index) {
                         final route = _routeOptions[index];
                         final isSelected = _selectedRouteId == route['id'];
                         return ListTile(
-                          title: Text(route['routeNo']!),
+                          title: Text(route['routeNo']!, style: TextStyle(color: colorScheme.onSurface)),
                           selected: isSelected,
-                          selectedTileColor: Colors.blue.shade50,
+                          selectedTileColor: colorScheme.primaryContainer.withValues(alpha: 0.3),
                           dense: true,
                           visualDensity: VisualDensity.compact,
-                          textColor: isSelected ? Colors.blue.shade700 : null,
+                          textColor: isSelected ? colorScheme.primary : colorScheme.onSurface,
                           onTap: () =>
                               _selectRoute(route['id']!, route['routeNo']!),
                         );
@@ -1008,13 +1022,13 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
               '버스 도착 정보를 알림과 음성으로 알려드립니다',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey[600],
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 16),
             Container(
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
+                border: Border.all(color: colorScheme.outline),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -1022,14 +1036,14 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                   ListTile(
                     leading: Icon(
                       Icons.volume_up,
-                      color: _useTTS ? Colors.blue : Colors.grey,
+                      color: _useTTS ? colorScheme.primary : colorScheme.onSurfaceVariant,
                     ),
-                    title: const Text('음성 알림'),
+                    title: Text('음성 알림', style: TextStyle(color: colorScheme.onSurface)),
                     subtitle: Text(
                       '버스 도착 정보를 음성으로 알려드립니다',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: colorScheme.onSurfaceVariant,
                       ),
                     ),
                     trailing: Switch(
@@ -1045,7 +1059,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                         '예시: "대구 101번 버스가 3분 후에 도착합니다"',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey[600],
+                          color: colorScheme.onSurfaceVariant,
                           fontStyle: FontStyle.italic,
                         ),
                       ),

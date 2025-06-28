@@ -789,8 +789,10 @@ class _BusCardState extends State<BusCard> {
                           Expanded(
                             child: Text(
                               '${widget.busArrival.routeNo}번 버스 - ${widget.stationName ?? "정류장 정보 없음"}',
-                              style: const TextStyle(
-                                  fontSize: 18, color: Colors.grey),
+                              style: TextStyle(
+                                  fontSize: 18,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface),
                               overflow: TextOverflow.ellipsis,
                               maxLines: 1,
                             ),
@@ -867,7 +869,10 @@ class _BusCardState extends State<BusCard> {
                     Expanded(
                       child: Text(
                         currentStationText,
-                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                        style: TextStyle(
+                            fontSize: 14,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant),
                         textAlign: TextAlign.right,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -891,8 +896,11 @@ class _BusCardState extends State<BusCard> {
                       children: [
                         Text(
                           firstBus.isOutOfService ? '버스 상태' : '도착예정',
-                          style:
-                              const TextStyle(fontSize: 14, color: Colors.grey),
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant),
                         ),
                         Text(
                           arrivalTimeText,
@@ -911,7 +919,10 @@ class _BusCardState extends State<BusCard> {
                           Text(
                             '($currentStationText)',
                             style: TextStyle(
-                                fontSize: 12, color: Colors.grey[600]),
+                                fontSize: 12,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant),
                           ),
                       ],
                     ),
@@ -919,17 +930,22 @@ class _BusCardState extends State<BusCard> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('다음 버스',
-                              style:
-                                  TextStyle(fontSize: 14, color: Colors.grey)),
+                          Text('다음 버스',
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant)),
                           Text(
                             widget.busArrival.busInfoList[1].isOutOfService
                                 ? '운행종료'
                                 : '${widget.busArrival.busInfoList[1].getRemainingMinutes()}분',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
-                              color: Colors.grey,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
                             ),
                           ),
                         ],

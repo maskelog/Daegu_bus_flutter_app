@@ -70,12 +70,12 @@ class AppColorScheme {
   static const Color onTertiaryContainerDark = Color(0xFFFFDDAE);
 
   static const Color surfaceDark = Color(0xFF131316);
-  static const Color onSurfaceDark = Color(0xFFE5E1E6);
+  static const Color onSurfaceDark = Color(0xFFFFFFFF); // 더 강한 흰색으로 변경
   static const Color surfaceVariantDark = Color(0xFF47464F);
   static const Color onSurfaceVariantDark = Color(0xFFC8C5D0);
 
   static const Color backgroundDark = Color(0xFF131316);
-  static const Color onBackgroundDark = Color(0xFFE5E1E6);
+  static const Color onBackgroundDark = Color(0xFFFFFFFF); // 더 강한 흰색으로 변경
 
   // Light ColorScheme
   static const ColorScheme lightColorScheme = ColorScheme.light(
@@ -382,7 +382,7 @@ class AppTheme {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: AppColorScheme.lightColorScheme.surfaceContainerHighest
-          .withOpacity(0.4),
+          .withValues(alpha: 0.4),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
@@ -459,7 +459,7 @@ class AppTheme {
     ),
     inputDecorationTheme: lightTheme.inputDecorationTheme.copyWith(
       fillColor: AppColorScheme.darkColorScheme.surfaceContainerHighest
-          .withOpacity(0.4),
+          .withValues(alpha: 0.4),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(

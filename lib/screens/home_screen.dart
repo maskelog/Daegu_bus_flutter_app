@@ -17,11 +17,6 @@ import 'favorites_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
-import 'package:daegu_bus_app/models/bus_info.dart';
-import 'package:daegu_bus_app/services/alarm_manager.dart';
-import 'package:daegu_bus_app/services/settings_service.dart';
-import 'package:daegu_bus_app/utils/tts_switcher.dart';
-import 'package:flutter/services.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -31,7 +26,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _currentIndex = 2;
+  int _currentIndex = 0;
   final TextEditingController _searchController = TextEditingController();
   bool _isLoading = true;
   bool _isLoadingNearby = false;
@@ -381,209 +376,82 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
 
-          // 검색 필드 (Material 3 스타일)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withOpacity(0.4),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: colorScheme.outline.withOpacity(0.2),
-                    width: 1,
-                  ),
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => SearchScreen(
-                            favoriteStops: _favoriteStops,
-                          ),
-                        ),
-                      );
-                      if (result != null) {
-                        if (result is BusStop) {
-                          setState(() => _selectedStop = result);
-                          _loadBusArrivals();
-                        }
-                      }
-                    },
+          // 검색 필드 (Material 3 스타일) - 홈 탭에서만 표시
+          if (_currentIndex == 0)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withOpacity(0.4),
                     borderRadius: BorderRadius.circular(16),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 16),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.search,
-                            color: colorScheme.primary,
-                            size: 24,
+                    border: Border.all(
+                      color: colorScheme.outline.withOpacity(0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SearchScreen(
+                              favoriteStops: _favoriteStops,
+                            ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              "정류장 이름 또는 번호 검색 (예: 동대구역, 2001)",
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
+                        );
+                        if (result != null) {
+                          if (result is BusStop) {
+                            setState(() => _selectedStop = result);
+                            _loadBusArrivals();
+                          }
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 16),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.search,
+                              color: colorScheme.primary,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                "정류장 이름 또는 번호 검색 (예: 동대구역, 2001)",
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
 
-          // 활성 알람 패널
-          Consumer<AlarmService>(
-            builder: (context, alarmService, child) {
-              return alarmService.alarms.isNotEmpty
-                  ? SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: ActiveAlarmPanel(alarms: alarmService.alarms),
-                      ),
-                    )
-                  : const SliverToBoxAdapter(child: SizedBox.shrink());
-            },
-          ),
-
-          // 탭 선택기 (Material 3 스타일)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.all(4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Material(
-                        color: _currentIndex == 0
-                            ? colorScheme.primaryContainer
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        child: InkWell(
-                          onTap: () => setState(() => _currentIndex = 0),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.favorite,
-                                  size: 18,
-                                  color: _currentIndex == 0
-                                      ? colorScheme.onPrimaryContainer
-                                      : colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '즐겨찾기',
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: _currentIndex == 0
-                                        ? colorScheme.onPrimaryContainer
-                                        : colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+          // 활성 알람 패널 - 홈 탭에서만 표시
+          if (_currentIndex == 0)
+            Consumer<AlarmService>(
+              builder: (context, alarmService, child) {
+                return alarmService.activeAlarms.isNotEmpty
+                    ? const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: ActiveAlarmPanel(),
                         ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Material(
-                        color: _currentIndex == 1
-                            ? colorScheme.primaryContainer
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        child: InkWell(
-                          onTap: () => setState(() => _currentIndex = 1),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.location_on,
-                                  size: 18,
-                                  color: _currentIndex == 1
-                                      ? colorScheme.onPrimaryContainer
-                                      : colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '주변정류장',
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: _currentIndex == 1
-                                        ? colorScheme.onPrimaryContainer
-                                        : colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Material(
-                        color: _currentIndex == 2
-                            ? colorScheme.primaryContainer
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        child: InkWell(
-                          onTap: () => setState(() => _currentIndex = 2),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.directions_bus,
-                                  size: 18,
-                                  color: _currentIndex == 2
-                                      ? colorScheme.onPrimaryContainer
-                                      : colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '실시간 도착',
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: _currentIndex == 2
-                                        ? colorScheme.onPrimaryContainer
-                                        : colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                      )
+                    : const SliverToBoxAdapter(child: SizedBox.shrink());
+              },
             ),
-          ),
 
           // 내용
           if (_isLoading)
@@ -676,29 +544,40 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTabContent() {
+  List<Widget> _buildTabContent() {
     final colorScheme = Theme.of(context).colorScheme;
     switch (_currentIndex) {
-      case 0:
-        return Container(
-            color: colorScheme.surface, child: _buildRouteMapTab());
-      case 1:
-        return Container(
-            color: colorScheme.surface, child: _buildFavoritesTab());
-      case 2:
-        return Container(color: colorScheme.surface, child: _buildNearbyTab());
-      case 3:
-        return Container(color: colorScheme.surface, child: _buildAlarmTab());
-      case 4:
-        return Container(
-            color: colorScheme.surface, child: _buildSettingsTab());
+      case 0: // 홈 탭 - 즐겨찾기와 주변정류장 실시간 도착 정보 표시
+        return [
+          SliverFillRemaining(
+              child: Container(
+                  color: colorScheme.surface, child: _buildNearbyTab()))
+        ];
+      case 1: // 노선도 탭
+        return [
+          SliverFillRemaining(
+              child: Container(
+                  color: colorScheme.surface, child: _buildRouteMapTab()))
+        ];
+      case 2: // 알람 탭
+        return [
+          SliverFillRemaining(
+              child: Container(
+                  color: colorScheme.surface, child: _buildAlarmTab()))
+        ];
+      case 3: // 즐겨찾기 탭
+        return [
+          SliverFillRemaining(
+              child: Container(
+                  color: colorScheme.surface, child: _buildFavoritesTab()))
+        ];
       default:
-        return Container(color: colorScheme.surface, child: _buildNearbyTab());
+        return [
+          SliverFillRemaining(
+              child: Container(
+                  color: colorScheme.surface, child: _buildNearbyTab()))
+        ];
     }
-  }
-
-  Widget _buildSettingsTab() {
-    return const SafeArea(top: true, bottom: false, child: SettingsScreen());
   }
 
   Widget _buildNearbyTab() {
@@ -709,93 +588,41 @@ class _HomeScreenState extends State<HomeScreen> {
         onRefresh: _initializeData,
         child: CustomScrollView(
           slivers: [
-            const SliverToBoxAdapter(child: ActiveAlarmPanel()),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    color: Colors.grey[100],
-                  ),
-                  child: TextField(
-                    readOnly: true,
-                    onTap: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => SearchScreen(
-                                  favoriteStops: _favoriteStops,
-                                )),
-                      );
-                      if (result != null) {
-                        if (result is BusStop) {
-                          setState(() => _selectedStop = result);
-                          _loadBusArrivals();
-                        } else if (result is List<BusStop>) {
-                          setState(() {
-                            _favoriteStops.clear();
-                            _favoriteStops.addAll(result);
-                          });
-                        }
-                      }
-                      await _loadFavoriteStops();
-                    },
-                    decoration: InputDecoration(
-                      hintText: '정류장 이름 또는 번호 검색 (예: 동대구역, 2001)',
-                      prefixIcon: Icon(Icons.search, color: Colors.blue[700]),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                          vertical: 16, horizontal: 16),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            _buildStopSelectionList('주변 정류장', _nearbyStops, _isLoadingNearby),
             _buildStopSelectionList('즐겨찾는 정류장', _favoriteStops, false),
-            if (_selectedStop != null)
+            _buildStopSelectionList(
+                '주변 정류장', _getFilteredNearbyStops(), _isLoadingNearby),
+            if (_busArrivals.isNotEmpty && _selectedStop != null)
               SliverToBoxAdapter(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(
-                      vertical: 8.0, horizontal: 16.0),
-                  padding: const EdgeInsets.all(12.0),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.grey.withOpacity(0.1), blurRadius: 4),
-                    ],
-                  ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
+                      Text(
+                        '${_selectedStop!.name} 실시간 도착 정보',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
+                      ),
                       IconButton(
+                        onPressed: () => _toggleFavorite(_selectedStop!),
                         icon: Icon(
                           _isStopFavorite(_selectedStop!)
                               ? Icons.star
                               : Icons.star_border,
                           color: _isStopFavorite(_selectedStop!)
                               ? Colors.amber
-                              : Colors.grey,
-                          size: 24,
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                        onPressed: () => _toggleFavorite(_selectedStop!),
                         tooltip: _isStopFavorite(_selectedStop!)
-                            ? '즐겨찾기 제거'
-                            : '즐겨찾기 추가',
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _selectedStop!.name,
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                            ? '즐겨찾기에서 제거'
+                            : '즐겨찾기에 추가',
                       ),
                     ],
                   ),
@@ -847,8 +674,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: () => showUnifiedBusDetailModal(
                         context,
                         arrival,
-                        _selectedStop!.id,
-                        _selectedStop!.name,
+                        _selectedStop?.stationId ?? _selectedStop?.id ?? '',
+                        _selectedStop?.name ?? '',
                       ),
                     );
                   },
@@ -901,589 +728,6 @@ class _HomeScreenState extends State<HomeScreen> {
         : '${(distance / 1000).toStringAsFixed(1)}km';
   }
 
-  Widget _buildBusDetailCard(BusInfo busInfo, {required bool isFirst}) {
-    final remainingMinutes = busInfo.getRemainingMinutes();
-    String arrivalTimeText;
-    Color arrivalTextColor;
-
-    if (busInfo.isOutOfService) {
-      arrivalTimeText = '운행종료';
-      arrivalTextColor = Colors.grey;
-    } else if (remainingMinutes <= 0) {
-      arrivalTimeText = '곧 도착';
-      arrivalTextColor = Colors.red;
-    } else {
-      arrivalTimeText = '$remainingMinutes분';
-      arrivalTextColor = remainingMinutes <= 3
-          ? Colors.red
-          : (Colors.blue[600] ?? Colors.blue);
-    }
-
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: isFirst ? Colors.blue.shade200 : Colors.grey.shade200,
-          width: isFirst ? 2 : 1,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 버스 타입 표시
-            Row(
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color:
-                        isFirst ? Colors.blue.shade100 : Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    isFirst ? '이번 버스' : '다음 버스',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color:
-                          isFirst ? Colors.blue.shade700 : Colors.grey.shade700,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                if (busInfo.isLowFloor)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade100,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '저상',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.green.shade700,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            // 메인 정보
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '현재 위치',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        busInfo.currentStation,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        busInfo.remainingStops,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // 도착 시간
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '도착 예정',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      arrivalTimeText,
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: arrivalTextColor,
-                      ),
-                    ),
-                    if (!busInfo.isOutOfService && remainingMinutes > 0)
-                      Text(
-                        busInfo.estimatedTime,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCompactBusInfo(BusInfo busInfo) {
-    final remainingMinutes = busInfo.getRemainingMinutes();
-    String arrivalTimeText;
-    Color arrivalTextColor;
-
-    if (busInfo.isOutOfService) {
-      arrivalTimeText = '운행종료';
-      arrivalTextColor = Colors.grey;
-    } else if (remainingMinutes <= 0) {
-      arrivalTimeText = '곧 도착';
-      arrivalTextColor = Colors.red;
-    } else {
-      arrivalTimeText = '$remainingMinutes분';
-      arrivalTextColor =
-          remainingMinutes <= 3 ? Colors.red : Colors.blue.shade600;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  busInfo.currentStation,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  busInfo.remainingStops,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                arrivalTimeText,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: arrivalTextColor,
-                ),
-              ),
-              if (busInfo.isLowFloor)
-                Container(
-                  margin: const EdgeInsets.only(top: 2),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade100,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  child: Text(
-                    '저상',
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: Colors.green.shade700,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showBusDetailModal(BusArrival busArrival) {
-    final alarmService = Provider.of<AlarmService>(context, listen: false);
-    final hasActiveAlarm = _selectedStop != null &&
-        alarmService.hasAlarm(
-            busArrival.routeNo, _selectedStop!.name, busArrival.routeId);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (modalContext) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return DraggableScrollableSheet(
-              initialChildSize: 0.5,
-              minChildSize: 0.5,
-              maxChildSize: 0.85,
-              expand: false,
-              builder: (context, scrollController) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      // 드래그 핸들
-                      Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        height: 4,
-                        width: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      // 헤더 정보
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${busArrival.routeNo}번 버스',
-                                  style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (_selectedStop != null)
-                                  Text(
-                                    '${_selectedStop!.name} → ${busArrival.direction}',
-                                    style: TextStyle(
-                                        fontSize: 14, color: Colors.grey[800]),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => Navigator.pop(modalContext),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: ListView(
-                          controller: scrollController,
-                          padding: EdgeInsets.zero,
-                          children: [
-                            // 첫 번째 버스 카드
-                            if (busArrival.busInfoList.isNotEmpty)
-                              _buildDetailedBusCard(
-                                  busArrival.busInfoList.first,
-                                  busArrival.routeNo,
-                                  isFirst: true),
-                            // 다음 버스 정보 안내 (다음 버스가 있는 경우만)
-                            if (busArrival.busInfoList.length > 1) ...[
-                              const SizedBox(height: 12),
-                              const Text(
-                                '다음 버스 정보',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              ...busArrival.busInfoList.skip(1).map(
-                                    (bus) => _buildDetailedBusCard(
-                                        bus, busArrival.routeNo,
-                                        isFirst: false),
-                                  ),
-                            ],
-                            const SizedBox(height: 20),
-                          ],
-                        ),
-                      ),
-                      // 하단 버튼 영역
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () async {
-                              Navigator.pop(modalContext); // 모달 닫기
-                              await _handleBoardingAlarm(
-                                  busArrival, modalContext);
-                            },
-                            icon: Icon(
-                              hasActiveAlarm
-                                  ? Icons.notifications_off
-                                  : Icons.notifications_active,
-                            ),
-                            label: Text(
-                              hasActiveAlarm ? '승차 알람 해제' : '승차 알람 설정',
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              backgroundColor:
-                                  hasActiveAlarm ? Colors.red[100] : null,
-                              foregroundColor:
-                                  hasActiveAlarm ? Colors.red[700] : null,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildDetailedBusCard(dynamic busInfo, String routeNo,
-      {required bool isFirst}) {
-    final remainingMinutes = busInfo.getRemainingMinutes();
-    String arrivalTimeText;
-    Color arrivalTextColor;
-
-    if (busInfo.isOutOfService) {
-      arrivalTimeText = '운행종료';
-      arrivalTextColor = Colors.grey;
-    } else if (remainingMinutes <= 0) {
-      arrivalTimeText = '곧 도착';
-      arrivalTextColor = Colors.red;
-    } else {
-      arrivalTimeText = '$remainingMinutes분';
-      arrivalTextColor = remainingMinutes <= 3
-          ? Colors.red
-          : (Colors.blue[600] ?? Colors.blue);
-    }
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: isFirst ? 2 : 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: isFirst ? Colors.blue[200]! : Colors.grey[200]!,
-          width: isFirst ? 2 : 1,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 버스 번호와 상태 표시
-            Row(
-              children: [
-                Text(
-                  routeNo,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: isFirst ? Colors.blue[700] : Colors.grey[700],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (busInfo.isLowFloor)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green[100],
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '저상',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.green[700],
-                      ),
-                    ),
-                  ),
-                const Spacer(),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isFirst ? Colors.blue[50] : Colors.grey[50],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    isFirst ? '이번 버스' : '다음 버스',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isFirst ? Colors.blue[700] : Colors.grey[600],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // 메인 정보
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '현재 위치',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        busInfo.currentStation,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        busInfo.remainingStops,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // 도착 시간
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '도착예정',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      arrivalTimeText,
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: arrivalTextColor,
-                      ),
-                    ),
-                    if (!busInfo.isOutOfService && remainingMinutes > 0)
-                      Text(
-                        busInfo.estimatedTime,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBusDetailRow(BusInfo busInfo, {required bool isFirst}) {
-    final remainingMinutes = busInfo.getRemainingMinutes();
-    String arrivalTimeText;
-    Color arrivalTextColor;
-    if (busInfo.isOutOfService) {
-      arrivalTimeText = '운행종료';
-      arrivalTextColor = Colors.grey;
-    } else if (remainingMinutes <= 0) {
-      arrivalTimeText = '곧 도착';
-      arrivalTextColor = Colors.red;
-    } else {
-      arrivalTimeText = '$remainingMinutes분';
-      arrivalTextColor =
-          remainingMinutes <= 3 ? Colors.red : Theme.of(context).primaryColor;
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(isFirst ? '이번 버스' : '다음 버스',
-            style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[600])),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(busInfo.currentStation,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
-                  Text(busInfo.remainingStops,
-                      style: TextStyle(fontSize: 13, color: Colors.grey[700])),
-                ],
-              ),
-            ),
-            const SizedBox(width: 16),
-            Text(arrivalTimeText,
-                style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: arrivalTextColor)),
-          ],
-        ),
-      ],
-    );
-  }
-
   void _setupPeriodicRefresh() {
     _refreshTimer?.cancel();
     _refreshTimer = _selectedStop != null
@@ -1492,137 +736,187 @@ class _HomeScreenState extends State<HomeScreen> {
         : null;
   }
 
-  Future<void> _startNativeTracking(
-      String busNo, String stationName, String routeId) async {
-    try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
-      await platform.invokeMethod('startBusTrackingService', {
-        'busNo': busNo,
-        'stationName': stationName,
-        'routeId': routeId,
-      });
-      log('🔔 ✅ 네이티브 추적 시작 요청 완료');
-    } catch (e) {
-      log('❌ [ERROR] 네이티브 추적 시작 실패: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> _stopSpecificNativeTracking(
-      String busNo, String stationName, String routeId) async {
-    try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
-      await platform.invokeMethod('stopSpecificTracking', {
-        'busNo': busNo,
-        'routeId': routeId,
-        'stationName': stationName,
-      });
-      log('🔔 ✅ 네이티브 특정 추적 중지 요청 완료');
-    } catch (e) {
-      log('❌ [ERROR] 네이티브 특정 추적 중지 실패: $e');
-    }
-  }
-
-  Future<void> _handleBoardingAlarm(
-      BusArrival busArrival, BuildContext modalContext) async {
-    if (_selectedStop == null || busArrival.busInfoList.isEmpty) return;
-    final alarmService = Provider.of<AlarmService>(context, listen: false);
-    final firstBus = busArrival.busInfoList.first;
-    final routeId = busArrival.routeId;
-    final stationId = _selectedStop!.id;
-    final wincId = _selectedStop!.wincId ?? '';
-    final busNo = busArrival.routeNo;
-    final stationName = _selectedStop!.name;
-    final remainingMinutes = firstBus.getRemainingMinutes();
-    final hasAlarm = alarmService.hasAlarm(busNo, stationName, routeId);
-    Navigator.pop(modalContext);
-    try {
-      if (hasAlarm) {
-        await _stopSpecificNativeTracking(busNo, stationName, routeId);
-        await AlarmManager.cancelAlarm(
-            busNo: busNo, stationName: stationName, routeId: routeId);
-        await alarmService.cancelAlarmByRoute(busNo, stationName, routeId);
-        await TtsSwitcher.stopTtsTracking(busNo);
-        await alarmService.refreshAlarms();
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('승차 알람이 취소되었습니다.')));
-      } else {
-        if (remainingMinutes <= 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('이미 도착했거나 운행이 종료된 버스입니다.')));
-          return;
-        }
-        for (var alarm in [...alarmService.activeAlarms]) {
-          if (alarm.stationName == stationName) {
-            await alarmService.cancelAlarmByRoute(
-                alarm.busNo, alarm.stationName, alarm.routeId);
-            await TtsSwitcher.stopTtsTracking(alarm.busNo);
-          }
-        }
-        await AlarmManager.addAlarm(
-            busNo: busNo,
-            stationName: stationName,
-            routeId: routeId,
-            wincId: wincId);
-        await _startNativeTracking(busNo, stationName, routeId);
-        bool success = await alarmService.setOneTimeAlarm(
-          busNo,
-          stationName,
-          remainingMinutes,
-          routeId: routeId,
-          useTTS: true,
-          isImmediateAlarm: true,
-          currentStation: firstBus.currentStation,
-        );
-        if (success) {
-          await alarmService.startBusMonitoringService(
-              stationId: stationId,
-              stationName: stationName,
-              routeId: routeId,
-              busNo: busNo);
-          final settings = Provider.of<SettingsService>(context, listen: false);
-          if (settings.useTts) {
-            TtsSwitcher.startTtsTracking(
-                routeId: routeId,
-                stationId: stationId,
-                busNo: busNo,
-                stationName: stationName,
-                remainingMinutes: remainingMinutes);
-          }
-          await alarmService.refreshAlarms();
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('승차 알람이 설정되었습니다.')));
-        } else {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('승차 알람 설정에 실패했습니다.')));
-        }
-      }
-    } catch (e) {
-      log('알람 처리 중 오류: $e');
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('알람 처리 중 오류가 발생했습니다: $e')));
-    }
-  }
-
   int _getBottomNavIndex() {
     switch (_currentIndex) {
-      case 0:
+      case 0: // 홈
         return 0;
-      case 1:
+      case 1: // 노선도
         return 1;
-      case 2:
+      case 2: // 알람
         return 2;
-      case 3:
+      case 3: // 즐겨찾기
         return 3;
-      case 4:
-        return 4;
       default:
-        return 2;
+        return 0;
     }
   }
 
   void _navigateToScreen(int index) {
     setState(() => _currentIndex = index);
+  }
+
+  Widget _buildStopSelectionList(
+      String title, List<BusStop> stops, bool isLoading) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isFavoriteList = title.contains('즐겨찾는');
+
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white
+                        : Colors.black87,
+                    fontSize: 18,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            if (isLoading)
+              Container(
+                height: 80,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                ),
+                child: const Center(child: CircularProgressIndicator()),
+              )
+            else if (stops.isEmpty)
+              Container(
+                height: 80,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        title.contains('즐겨찾는')
+                            ? Icons.star_border
+                            : Icons.location_off,
+                        color: colorScheme.onSurfaceVariant,
+                        size: 24,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        title.contains('즐겨찾는')
+                            ? '즐겨찾는 정류장이 없습니다.\n정류장을 선택하고 별표를 눌러 추가하세요.'
+                            : '주변 정류장을 찾을 수 없습니다.\n위치 권한을 확인해주세요.',
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              SizedBox(
+                height: 90,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: stops.length,
+                  itemBuilder: (context, index) {
+                    final stop = stops[index];
+                    return Container(
+                      width: 160,
+                      margin: const EdgeInsets.only(right: 8),
+                      child: Card(
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: InkWell(
+                          onTap: () {
+                            setState(() => _selectedStop = stop);
+                            _loadBusArrivals();
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.location_on,
+                                      size: 14,
+                                      color: colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        stop.name,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                              color: Theme.of(context)
+                                                          .brightness ==
+                                                      Brightness.dark
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                            ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                if (!isFavoriteList) ...[
+                                  if (stop.distance != null) ...[
+                                    Text(
+                                      _formatDistance(stop.distance),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color:
+                                                Theme.of(context).brightness ==
+                                                        Brightness.dark
+                                                    ? Colors.white70
+                                                    : Colors.black54,
+                                            fontSize: 11,
+                                          ),
+                                    ),
+                                  ],
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<BusStop> _getFilteredNearbyStops() {
+    // 즐겨찾기에 있는 정류장 ID들을 Set으로 만들어 빠른 검색
+    final favoriteStopIds = _favoriteStops.map((stop) => stop.id).toSet();
+
+    // 주변 정류장에서 즐겨찾기에 있는 정류장들을 제외
+    return _nearbyStops
+        .where((stop) => !favoriteStopIds.contains(stop.id))
+        .toList();
   }
 }
 
@@ -1650,9 +944,11 @@ class StopCard extends StatelessWidget {
       child: Card(
         elevation: 1, // elevation 축소
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10), // 둥근 모서리 축소
+          borderRadius: BorderRadius.circular(10),
           side: BorderSide(
-              color: isSelected ? Colors.blue.shade300 : Colors.grey.shade200,
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outline.withOpacity(0.5),
               width: isSelected ? 2 : 1),
         ),
         child: InkWell(
@@ -1667,9 +963,11 @@ class StopCard extends StatelessWidget {
                 Text(
                   stop.name,
                   style: TextStyle(
-                    fontSize: 14, // 폰트 크기 축소 (16->14)
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isSelected ? Colors.blue.shade700 : Colors.black87,
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurface,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -1682,7 +980,8 @@ class StopCard extends StatelessWidget {
                     child: Text(
                       distanceText!,
                       style: TextStyle(
-                          color: Colors.grey[600], fontSize: 11), // 폰트 크기 축소
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 11),
                     ),
                   ),
                 const SizedBox(height: 2), // 높이 축소
