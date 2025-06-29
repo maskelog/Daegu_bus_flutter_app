@@ -21,17 +21,23 @@ class StationItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: isSelected ? Colors.blue.shade300 : Colors.grey.shade200,
+          color: isSelected
+              ? colorScheme.primary
+              : colorScheme.outline.withOpacity(0.3),
           width: isSelected ? 2 : 1,
         ),
       ),
-      color: isSelected ? Colors.blue.shade50 : Colors.grey.shade50,
+      color: isSelected
+          ? colorScheme.primaryContainer.withOpacity(0.3)
+          : colorScheme.surfaceContainerHighest.withOpacity(0.3),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
@@ -46,7 +52,7 @@ class StationItem extends StatelessWidget {
                   // 위치 아이콘
                   Icon(
                     Icons.location_on,
-                    color: Colors.grey.shade600,
+                    color: colorScheme.primary,
                     size: 20,
                   ),
                   const SizedBox(width: 8),
@@ -55,7 +61,7 @@ class StationItem extends StatelessWidget {
                     Text(
                       station.wincId!,
                       style: TextStyle(
-                        color: Colors.grey.shade600,
+                        color: colorScheme.onSurfaceVariant,
                         fontSize: 14,
                       ),
                     ),
@@ -65,7 +71,9 @@ class StationItem extends StatelessWidget {
                     IconButton(
                       icon: Icon(
                         station.isFavorite ? Icons.star : Icons.star_border,
-                        color: station.isFavorite ? Colors.amber : Colors.grey,
+                        color: station.isFavorite
+                            ? Colors.amber
+                            : colorScheme.onSurfaceVariant,
                         size: 24,
                       ),
                       padding: EdgeInsets.zero,
@@ -77,7 +85,9 @@ class StationItem extends StatelessWidget {
                     IconButton(
                       icon: Icon(
                         isTracking ? Icons.visibility : Icons.visibility_off,
-                        color: isTracking ? Colors.green : Colors.grey,
+                        color: isTracking
+                            ? colorScheme.tertiary
+                            : colorScheme.onSurfaceVariant,
                         size: 24,
                       ),
                       padding: EdgeInsets.zero,
@@ -95,7 +105,8 @@ class StationItem extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: isSelected ? Colors.blue.shade700 : Colors.black87,
+                  color:
+                      isSelected ? colorScheme.primary : colorScheme.onSurface,
                 ),
               ),
             ],

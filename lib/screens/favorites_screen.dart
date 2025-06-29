@@ -365,7 +365,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                     SnackBar(
                                       content: Text(
                                           '${busArrival.routeNo}번 도착 알림 설정에 실패했습니다'),
-                                      backgroundColor: Colors.red[700],
+                                      backgroundColor: colorScheme.error,
                                       duration: const Duration(seconds: 2),
                                       behavior: SnackBarBehavior.floating,
                                     ),
@@ -724,7 +724,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                     SnackBar(
                                       content: Text(
                                           '${busArrival.routeNo}번 도착 알림 취소에 실패했습니다'),
-                                      backgroundColor: Colors.red[700],
+                                      backgroundColor: colorScheme.error,
                                       duration: const Duration(seconds: 2),
                                       behavior: SnackBarBehavior.floating,
                                     ),
@@ -745,10 +745,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             ),
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              backgroundColor:
-                                  hasActiveAlarm ? Colors.red[100] : null,
-                              foregroundColor:
-                                  hasActiveAlarm ? Colors.red[700] : null,
+                              backgroundColor: hasActiveAlarm
+                                  ? colorScheme.errorContainer
+                                  : null,
+                              foregroundColor: hasActiveAlarm
+                                  ? colorScheme.onErrorContainer
+                                  : null,
                             ),
                           ),
                         ),
@@ -789,7 +791,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('정류장 추적 시작 실패: ${e.message}'),
-            backgroundColor: Colors.redAccent,
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
           ),
         );
       }
@@ -818,7 +820,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('정류장 추적 중지 실패: ${e.message}'),
-            backgroundColor: Colors.redAccent,
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
           ),
         );
       }

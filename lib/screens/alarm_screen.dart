@@ -230,11 +230,12 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
+                                    Text(
                                       '알람 볼륨',
                                       style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w500,
+                                        color: colorScheme.onSurface,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
@@ -284,11 +285,12 @@ class _AlarmScreenState extends State<AlarmScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text(
+                                Text(
                                   '알람음',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
+                                    color: colorScheme.onSurface,
                                   ),
                                 ),
                                 TextButton.icon(
@@ -362,6 +364,8 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                             s.id ==
                                             _settingsService.alarmSoundId)
                                         .name,
+                                    style:
+                                        TextStyle(color: colorScheme.primary),
                                   ),
                                 ),
                               ],

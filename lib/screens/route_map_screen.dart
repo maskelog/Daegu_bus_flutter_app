@@ -96,7 +96,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('\'$query\'에 대한 검색 결과가 없습니다.$suggestion'),
-                backgroundColor: Colors.orange[400],
+                backgroundColor:
+                    Theme.of(context).colorScheme.tertiaryContainer,
                 duration: const Duration(seconds: 3),
               ),
             );
@@ -115,7 +116,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('노선 검색 중 오류가 발생했습니다: $e'),
-              backgroundColor: Colors.red[400],
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
               duration: const Duration(seconds: 3),
             ),
           );
@@ -251,7 +252,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Column(
@@ -261,7 +262,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
-                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                color:
+                    colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
               ),
               child: TextField(
                 controller: _searchController,
@@ -278,7 +280,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                       const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
-                          icon: Icon(Icons.clear, color: colorScheme.onSurfaceVariant),
+                          icon: Icon(Icons.clear,
+                              color: colorScheme.onSurfaceVariant),
                           onPressed: () {
                             _searchController.clear();
                             _searchRoutes('');
@@ -340,9 +343,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   Widget _buildContent() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator(color: colorScheme.primary));
+      return Center(
+          child: CircularProgressIndicator(color: colorScheme.primary));
     }
 
     if (_errorMessage != null) {
@@ -372,7 +376,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           children: [
             CircularProgressIndicator(color: colorScheme.primary),
             const SizedBox(height: 16),
-            Text('노선을 검색하는 중...', style: TextStyle(color: colorScheme.onSurface)),
+            Text('노선을 검색하는 중...',
+                style: TextStyle(color: colorScheme.onSurface)),
           ],
         ),
       );
@@ -421,21 +426,25 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                         children: [
                           Text(
                             _getRouteEndpoints(route),
-                            style: TextStyle(fontWeight: FontWeight.w500, color: colorScheme.onSurface),
+                            style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                color: colorScheme.onSurface),
                           ),
                           if (route.routeDescription != null &&
                               route.routeDescription!.isNotEmpty)
                             Text(
                               route.routeDescription!,
                               style: TextStyle(
-                                  fontSize: 12, color: colorScheme.onSurfaceVariant),
+                                  fontSize: 12,
+                                  color: colorScheme.onSurfaceVariant),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                         ],
                       ),
                     ),
-                    Icon(Icons.arrow_forward_ios, size: 16, color: colorScheme.onSurfaceVariant),
+                    Icon(Icons.arrow_forward_ios,
+                        size: 16, color: colorScheme.onSurfaceVariant),
                   ],
                 ),
               ),
@@ -449,7 +458,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.directions_bus, size: 64, color: colorScheme.onSurfaceVariant),
+          Icon(Icons.directions_bus,
+              size: 64, color: colorScheme.onSurfaceVariant),
           const SizedBox(height: 24),
           Text(
             _searchController.text.isEmpty ? '버스 노선번호를 검색하세요' : '검색 결과가 없습니다',
@@ -468,7 +478,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   Widget _buildRouteStationList() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     if (_routeStations.isEmpty) {
       debugPrint('노선 정보가 없습니다. 선택된 노선: ${_selectedRoute?.routeNo}');
       return Center(
@@ -509,7 +519,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                 child: Text(
                   _selectedRoute!.routeNo,
                   style: TextStyle(
-                      color: colorScheme.onPrimary, fontWeight: FontWeight.bold),
+                      color: colorScheme.onPrimary,
+                      fontWeight: FontWeight.bold),
                 ),
               ),
               const SizedBox(width: 12),
@@ -521,13 +532,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                       _routeStations.isNotEmpty
                           ? '${_routeStations.first.stationName} → ${_routeStations.last.stationName}'
                           : '기점/종점 정보 없음',
-                      style: TextStyle(fontWeight: FontWeight.w500, color: colorScheme.onSurface),
+                      style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: colorScheme.onSurface),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       '정류장 ${_routeStations.length}개',
-                      style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                      style: TextStyle(
+                          fontSize: 12, color: colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -565,8 +579,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                         width: 24,
                         height: 60,
                         child: CustomPaint(
-                          painter:
-                              RouteLinePainter(isStart: isStart, isEnd: isEnd, colorScheme: colorScheme),
+                          painter: RouteLinePainter(
+                              isStart: isStart,
+                              isEnd: isEnd,
+                              colorScheme: colorScheme),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -578,10 +594,13 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: isStart
-                                  ? colorScheme.primaryContainer.withValues(alpha: 0.3)
+                                  ? colorScheme.primaryContainer
+                                      .withValues(alpha: 0.3)
                                   : isEnd
-                                      ? colorScheme.errorContainer.withValues(alpha: 0.3)
-                                      : colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                                      ? colorScheme.errorContainer
+                                          .withValues(alpha: 0.3)
+                                      : colorScheme.surfaceContainerHighest
+                                          .withValues(alpha: 0.3),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: isStart
@@ -601,14 +620,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: colorScheme.surfaceContainerHighest,
+                                        color:
+                                            colorScheme.surfaceContainerHighest,
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
                                         station.stationId,
                                         style: TextStyle(
                                             fontSize: 10,
-                                            color: colorScheme.onSurfaceVariant),
+                                            color:
+                                                colorScheme.onSurfaceVariant),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -625,7 +646,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                                           '기점',
                                           style: TextStyle(
                                               fontSize: 12,
-                                              color: colorScheme.onPrimaryContainer,
+                                              color: colorScheme
+                                                  .onPrimaryContainer,
                                               fontWeight: FontWeight.bold),
                                         ),
                                       ),
@@ -642,7 +664,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                                           '종점',
                                           style: TextStyle(
                                               fontSize: 12,
-                                              color: colorScheme.onErrorContainer,
+                                              color:
+                                                  colorScheme.onErrorContainer,
                                               fontWeight: FontWeight.bold),
                                         ),
                                       ),
@@ -685,7 +708,8 @@ class RouteLinePainter extends CustomPainter {
   final bool isEnd;
   final ColorScheme colorScheme;
 
-  RouteLinePainter({required this.isStart, required this.isEnd, required this.colorScheme});
+  RouteLinePainter(
+      {required this.isStart, required this.isEnd, required this.colorScheme});
 
   @override
   void paint(Canvas canvas, Size size) {

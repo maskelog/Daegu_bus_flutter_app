@@ -250,16 +250,26 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: const Text('정류장 검색'),
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
+        title: Text(
+          '정류장 검색',
+          style: TextStyle(color: colorScheme.onSurface),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
           onPressed: () {
             // 즐겨찾기 변경 사항을 호출자에게 알리기 위해 favoriteStops를 반환
             Navigator.of(context).pop(_favoriteStops);
           },
         ),
+        elevation: 0,
+        surfaceTintColor: colorScheme.surfaceTint,
       ),
       body: Column(
         children: [
@@ -268,12 +278,16 @@ class _SearchScreenState extends State<SearchScreen> {
             child: TextField(
               controller: _searchController,
               autofocus: true,
+              style: TextStyle(color: colorScheme.onSurface),
               decoration: InputDecoration(
                 hintText: '정류장 이름을 입력하세요',
-                prefixIcon: const Icon(Icons.search),
+                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                prefixIcon:
+                    Icon(Icons.search, color: colorScheme.onSurfaceVariant),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear),
+                        icon: Icon(Icons.clear,
+                            color: colorScheme.onSurfaceVariant),
                         onPressed: () {
                           _searchController.clear();
                           _searchStations('');
@@ -282,7 +296,18 @@ class _SearchScreenState extends State<SearchScreen> {
                     : null,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: colorScheme.outline),
                 ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: colorScheme.outline),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                ),
+                filled: true,
+                fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
                 contentPadding: const EdgeInsets.symmetric(
                   vertical: 16,
                   horizontal: 16,
@@ -299,6 +324,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildSearchContent() {
+    final colorScheme = Theme.of(context).colorScheme;
+
     if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (_errorMessage != null) {
       return Center(
@@ -307,7 +334,7 @@ class _SearchScreenState extends State<SearchScreen> {
           child: Text(
             _errorMessage!,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.red[700]),
+            style: TextStyle(color: colorScheme.error),
           ),
         ),
       );
@@ -317,13 +344,14 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search, size: 64, color: Colors.grey[400]),
+            Icon(Icons.search, size: 64, color: colorScheme.onSurfaceVariant),
             const SizedBox(height: 16),
             Text('정류장 이름을 입력하여 검색하세요',
-                style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                style: TextStyle(fontSize: 16, color: colorScheme.onSurface)),
             const SizedBox(height: 8),
-            const Text('예: 대구역, 동대구역, 현풍시외버스터미널',
-                style: TextStyle(fontSize: 14, color: Colors.grey)),
+            Text('예: 대구역, 동대구역, 현풍시외버스터미널',
+                style: TextStyle(
+                    fontSize: 14, color: colorScheme.onSurfaceVariant)),
           ],
         ),
       );
@@ -333,13 +361,15 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+            Icon(Icons.search_off,
+                size: 64, color: colorScheme.onSurfaceVariant),
             const SizedBox(height: 16),
             Text('\'${_searchController.text}\' 검색 결과가 없습니다',
-                style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                style: TextStyle(fontSize: 16, color: colorScheme.onSurface)),
             const SizedBox(height: 8),
-            const Text('다른 정류장 이름으로 검색해보세요',
-                style: TextStyle(fontSize: 14, color: Colors.grey)),
+            Text('다른 정류장 이름으로 검색해보세요',
+                style: TextStyle(
+                    fontSize: 14, color: colorScheme.onSurfaceVariant)),
           ],
         ),
       );
@@ -348,6 +378,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildSearchResults() {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return CustomScrollView(
       slivers: [
         SliverPadding(
@@ -395,6 +427,10 @@ class _SearchScreenState extends State<SearchScreen> {
                                         isFavorite: _isStopFavorite(station));
                                     Navigator.of(context).pop(updatedStation);
                                   },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: colorScheme.primary,
+                                    foregroundColor: colorScheme.onPrimary,
+                                  ),
                                   child: const Text('이 정류장 선택하기'),
                                 ),
                               ],
@@ -429,14 +465,18 @@ class _SearchScreenState extends State<SearchScreen> {
                                   },
                                   child: Text(
                                     '+ ${_stationArrivals[station.id]!.length - 3}개 더 보기',
-                                    style: TextStyle(color: Colors.blue[700]),
+                                    style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary),
                                   ),
                                 ),
                               ),
                           ],
                         ),
                       ),
-                    if (index < _searchResults.length - 1) const Divider(),
+                    if (index < _searchResults.length - 1)
+                      Divider(color: colorScheme.outline.withOpacity(0.2)),
                   ],
                 );
               },
