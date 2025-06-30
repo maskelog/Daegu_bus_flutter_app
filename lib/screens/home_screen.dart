@@ -59,7 +59,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onAlarmChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _initializeData() async {
@@ -172,7 +174,9 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } finally {
-      if (mounted) setState(() => _isLoadingNearby = false);
+      if (mounted) {
+        setState(() => _isLoadingNearby = false);
+      }
     }
   }
 
@@ -228,7 +232,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _favoriteStops.any((s) => s.id == stop.id);
 
   Future<void> _loadBusArrivals() async {
-    if (_nearbyStops.isEmpty && _favoriteStops.isEmpty) return;
+    if (_nearbyStops.isEmpty && _favoriteStops.isEmpty) {
+      return;
+    }
     if (_selectedStop == null) {
       debugPrint('❌ 선택된 정류장이 없음');
       return;
@@ -303,12 +309,15 @@ class _HomeScreenState extends State<HomeScreen> {
             final stationId = stop.stationId ?? stop.id;
             if (stationId.isNotEmpty) {
               final arrivals = await ApiService.getStationInfo(stationId);
-              if (mounted) setState(() => _stationArrivals[stop.id] = arrivals);
+              if (mounted) {
+                setState(() => _stationArrivals[stop.id] = arrivals);
+              }
             }
           } catch (e) {
             debugPrint('${stop.id} 백그라운드 로딩 오류: $e');
-            if (mounted)
+            if (mounted) {
               setState(() => _stationArrivals[stop.id] = <BusArrival>[]);
+            }
           }
         }));
         await Future.delayed(const Duration(milliseconds: 50));
@@ -352,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      colorScheme.primary.withOpacity(0.05),
+                      colorScheme.primary.withAlpha(5),
                       colorScheme.surface,
                     ],
                   ),
@@ -369,7 +378,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         builder: (context) => const SettingsScreen()),
                   );
                 },
-                icon: const Icon(Icons.settings_outlined),
+                icon:
+                    Icon(Icons.settings_outlined, color: colorScheme.onSurface),
                 tooltip: '설정',
               ),
               const SizedBox(width: 8),
@@ -383,10 +393,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withOpacity(0.4),
+                    color: colorScheme.surfaceContainerHighest.withAlpha(40),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: colorScheme.outline.withOpacity(0.2),
+                      color: colorScheme.outline.withAlpha(20),
                       width: 1,
                     ),
                   ),
@@ -782,7 +792,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 80,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  color: colorScheme.surfaceContainerHighest.withAlpha(30),
                 ),
                 child: const Center(child: CircularProgressIndicator()),
               )
@@ -791,7 +801,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 80,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  color: colorScheme.surfaceContainerHighest.withAlpha(30),
                 ),
                 child: Center(
                   child: Column(
@@ -948,7 +958,7 @@ class StopCard extends StatelessWidget {
           side: BorderSide(
               color: isSelected
                   ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.outline.withOpacity(0.5),
+                  : Theme.of(context).colorScheme.outline.withAlpha(50),
               width: isSelected ? 2 : 1),
         ),
         child: InkWell(

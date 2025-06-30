@@ -4,18 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
-import '../models/bus_stop.dart';
 import '../services/alarm_service.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 import '../services/alarm_manager.dart';
 import '../utils/tts_switcher.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 
 /// 통합된 버스 상세정보 위젯
-/// 홈스크린과 즐겨찾기에서 공통으로 사용
 class UnifiedBusDetailWidget extends StatefulWidget {
   final BusArrival busArrival;
   final String stationId;
@@ -393,7 +389,8 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color:
+          Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(76),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
@@ -423,11 +420,11 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Card(
         elevation: 0,
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        color: colorScheme.surfaceContainerHighest.withAlpha(76),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: colorScheme.outline.withOpacity(0.2),
+            color: colorScheme.outline.withAlpha(51),
             width: 1,
           ),
         ),
@@ -493,7 +490,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                                 border: Border.all(
                                   color: hasAlarm
                                       ? colorScheme.primary
-                                      : colorScheme.outline.withOpacity(0.5),
+                                      : colorScheme.outline.withAlpha(128),
                                   width: 1.5,
                                 ),
                                 borderRadius: BorderRadius.circular(20),
@@ -560,7 +557,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: colorScheme.tertiaryContainer.withOpacity(0.3),
+                      color: colorScheme.tertiaryContainer.withAlpha(76),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -856,7 +853,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                               ? Theme.of(context)
                                   .colorScheme
                                   .onSurface
-                                  .withOpacity(0.38)
+                                  .withAlpha(97)
                               : (hasAlarm
                                   ? Theme.of(context).colorScheme.onError
                                   : Theme.of(context).colorScheme.onPrimary)),
@@ -869,7 +866,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                                       ? Theme.of(context)
                                           .colorScheme
                                           .onSurface
-                                          .withOpacity(0.38)
+                                          .withAlpha(97)
                                       : (hasAlarm
                                           ? Theme.of(context)
                                               .colorScheme
@@ -883,7 +880,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                             ? Theme.of(context)
                                 .colorScheme
                                 .onSurface
-                                .withOpacity(0.12)
+                                .withAlpha(31)
                             : (hasAlarm
                                 ? Theme.of(context).colorScheme.error
                                 : Theme.of(context).colorScheme.primary),
@@ -935,7 +932,7 @@ void showUnifiedBusDetailModal(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     backgroundColor: Theme.of(context).colorScheme.surface,
-    barrierColor: Theme.of(context).colorScheme.scrim.withOpacity(0.54),
+    barrierColor: Theme.of(context).colorScheme.scrim.withAlpha(138),
     builder: (context) {
       return DraggableScrollableSheet(
         initialChildSize: 0.6,
@@ -954,10 +951,8 @@ void showUnifiedBusDetailModal(
                     height: 5,
                     width: 40,
                     decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.3),
+                      color:
+                          Theme.of(context).colorScheme.onSurface.withAlpha(76),
                       borderRadius: BorderRadius.circular(2.5),
                     ),
                   ),

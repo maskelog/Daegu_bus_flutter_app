@@ -307,7 +307,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   borderSide: BorderSide(color: colorScheme.primary, width: 2),
                 ),
                 filled: true,
-                fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                fillColor: colorScheme.surfaceContainerHighest.withAlpha(30),
                 contentPadding: const EdgeInsets.symmetric(
                   vertical: 16,
                   horizontal: 16,
@@ -476,7 +476,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         ),
                       ),
                     if (index < _searchResults.length - 1)
-                      Divider(color: colorScheme.outline.withOpacity(0.2)),
+                      Divider(color: colorScheme.outline.withAlpha(20)),
                   ],
                 );
               },

@@ -68,6 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               '설정',
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
               ),
             ),
             backgroundColor: colorScheme.surface,
