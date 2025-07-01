@@ -484,11 +484,13 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                     // 1. 전체 자동알람 작업 취소
                     workManager.cancelAllWorkByTag("autoAlarmTask")
                     
-                    // 2. 특정 버스에 대한 자동알람 작업 취소 (태그 기반)
-                    workManager.cancelAllWorkByTag("autoAlarm_$busNo")
-                    workManager.cancelAllWorkByTag("autoAlarm_$routeId")
+                    // 2.1. alarmId를 사용하여 특정 WorkManager 작업 취소
+                    trackingInfo?.alarmId?.let { alarmId ->
+                        workManager.cancelAllWorkByTag("autoAlarmScheduling_${alarmId}")
+                        Log.d(TAG, "✅ 특정 자동알람 WorkManager 작업 취소 완료: autoAlarmScheduling_${alarmId}")
+                    }
                     
-                    // 3. 모든 대기 중인 작업 취소
+                    // 3. 모든 대기 중인 작업 취소 (백업)
                     workManager.cancelAllWork()
                     
                     Log.d(TAG, "✅ 자동알람 WorkManager 작업 취소 완료: $busNo ($routeId)")
@@ -686,10 +688,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         var lastTtsAnnouncedMinutes: Int? = null,
         var lastTtsAnnouncedStation: String? = null,
         // [추가] 자동알람 플래그 - 자동알람인 경우 버스가 지나가도 계속 추적
-        var isAutoAlarm: Boolean = false
+        var isAutoAlarm: Boolean = false,
+        var alarmId: Int? = null
     )
 
-    private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false) {
+    private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false, alarmId: Int? = null) {
         serviceScope.launch {
             var realStationId = stationId
             if (stationId.length < 10 || !stationId.startsWith("7")) {
@@ -697,11 +700,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 realStationId = busApiService.getStationIdFromBsId(stationId) ?: stationId
                 Log.d(TAG, "stationId 변환: $stationId → $realStationId")
             }
-            startTrackingInternal(routeId, realStationId, stationName, busNo, isAutoAlarm)
+            startTrackingInternal(routeId, realStationId, stationName, busNo, isAutoAlarm, alarmId)
         }
     }
 
-    private fun startTrackingInternal(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false) {
+    private fun startTrackingInternal(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false, alarmId: Int? = null) {
         if (monitoringJobs.containsKey(routeId)) {
             Log.d(TAG, "Tracking already active for route $routeId")
             // 이미 추적 중인 경우 추적 정보만 업데이트
@@ -710,6 +713,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 existingInfo.busNo = busNo
                 existingInfo.stationName = stationName
                 existingInfo.stationId = stationId
+                existingInfo.alarmId = alarmId
                 Log.d(TAG, "✅ 기존 추적 정보 업데이트: $routeId, $busNo, $stationName")
                 // 즉시 버스 정보 업데이트
                 updateBusInfo(routeId, stationId, stationName)
@@ -718,7 +722,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
 
         Log.i(TAG, "Starting tracking for route $routeId ($busNo) at station $stationName ($stationId)")
-        val trackingInfo = TrackingInfo(routeId, stationName, busNo, stationId = stationId, isAutoAlarm = isAutoAlarm)
+        val trackingInfo = TrackingInfo(routeId, stationName, busNo, stationId = stationId, isAutoAlarm = isAutoAlarm, alarmId = alarmId)
         activeTrackings[routeId] = trackingInfo
 
         monitoringJobs[routeId] = serviceScope.launch {

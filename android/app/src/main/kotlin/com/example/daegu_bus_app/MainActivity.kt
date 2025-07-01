@@ -131,7 +131,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         if (busAlertService != null) {
                             // Call stopTrackingForRoute, which handles notification update/cancellation internally.
                             // The 'true' for cancelNotification ensures it tries to affect notifications.
-                            busAlertService?.stopTrackingForRoute(routeId, stationName, busNo, true)
+                            busAlertService?.stopTrackingForRoute(routeId, busNo, stationName, true)
                             Log.i(TAG, "BusAlertService.stopTrackingForRoute 호출 완료: $routeId")
                         } else {
                             // BusAlertService가 null인 경우, 서비스에 인텐트를 보내 중지 시도
@@ -151,6 +151,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             val stopIntent = Intent(this, BusAlertService::class.java).apply {
                                 action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
                                 putExtra("routeId", routeId) // routeId is primary key for tracking
+                                putExtra("busNo", busNo)
+                                putExtra("stationName", stationName)
                             }
                             startService(stopIntent)
                             Log.i(TAG, "특정 노선 추적 중지 인텐트 전송 완료 (서비스 null, 백업)")
@@ -191,6 +193,11 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 "forceStopTracking" -> {
                     try {
                         Log.i(TAG, "Flutter에서 강제 전체 추적 중지 요청 받음")
+                        // WorkManager의 모든 작업 취소
+                        val workManager = androidx.work.WorkManager.getInstance(applicationContext)
+                        workManager.cancelAllWork()
+                        Log.i(TAG, "WorkManager의 모든 작업 취소 완료")
+
                         // Call the comprehensive stopTracking method in BusAlertService
                         busAlertService?.stopTracking()
                         Log.i(TAG, "BusAlertService.stopTracking() 호출 완료")

@@ -31,14 +31,16 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
     
     private fun handleAutoAlarmTask(): Result {
         try {
+            val alarmId = inputData.getInt("alarmId", 0) // alarmId 추가
             val busNo = inputData.getString("busNo") ?: return Result.failure()
             val stationName = inputData.getString("stationName") ?: return Result.failure()
             val routeId = inputData.getString("routeId") ?: return Result.failure()
             val stationId = inputData.getString("stationId") ?: return Result.failure()
             val useTTS = inputData.getBoolean("useTTS", true)
-            
-            Log.d(TAG, "자동 알람 작업 처리: $busNo 번 버스, $stationName")
-            
+            val isAutoAlarm = true // 자동 알람임을 명시
+
+            Log.d(TAG, "자동 알람 작업 처리: $busNo 번 버스, $stationName, alarmId: $alarmId")
+
             // TTS 서비스 시작
             if (useTTS) {
                 val ttsIntent = Intent(applicationContext, TTSService::class.java).apply {
@@ -48,29 +50,31 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
                     putExtra("routeId", routeId)
                     putExtra("stationId", stationId)
                 }
-                
+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     applicationContext.startForegroundService(ttsIntent)
                 } else {
                     applicationContext.startService(ttsIntent)
                 }
             }
-            
+
             // 버스 알림 서비스 시작
             val busIntent = Intent(applicationContext, BusAlertService::class.java).apply {
-                action = "START_BUS_MONITORING"
+                action = BusAlertService.ACTION_START_TRACKING_FOREGROUND // 포그라운드 서비스 시작 액션 사용
                 putExtra("busNo", busNo)
                 putExtra("stationName", stationName)
                 putExtra("routeId", routeId)
                 putExtra("stationId", stationId)
+                putExtra("isAutoAlarm", isAutoAlarm) // isAutoAlarm 플래그 전달
+                putExtra("alarmId", alarmId) // alarmId 전달
             }
-            
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 applicationContext.startForegroundService(busIntent)
             } else {
                 applicationContext.startService(busIntent)
             }
-            
+
             return Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "자동 알람 작업 처리 오류", e)

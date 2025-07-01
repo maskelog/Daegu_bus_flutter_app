@@ -856,8 +856,7 @@ class AlarmService extends ChangeNotifier {
     }
     try {
       final now = DateTime.now();
-      final id =
-          "${alarm.routeNo}_${alarm.stationName}_${alarm.routeId}".hashCode;
+      final String uniqueAlarmId = "auto_alarm_${alarm.id}";
       final initialDelay = scheduledTime.difference(now);
 
       // 너무 먼 미래의 알람은 최대 3일로 제한
@@ -870,8 +869,8 @@ class AlarmService extends ChangeNotifier {
 
       // 기존 작업 취소 확인 (WorkManager 작업만 취소)
       try {
-        await Workmanager().cancelByUniqueName('autoAlarm_$id');
-        logMessage('기존 자동 알람 작업 취소 완료, ID: $id');
+        await Workmanager().cancelByUniqueName(uniqueAlarmId);
+        logMessage('기존 자동 알람 작업 취소 완료, ID: $uniqueAlarmId');
       } catch (e) {
         logMessage('기존 작업 취소 오류 (무시): $e', level: LogLevel.warning);
       }
@@ -884,7 +883,7 @@ class AlarmService extends ChangeNotifier {
 
       // 네이티브 AlarmManager 스케줄링 요청
       await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
-        'alarmId': id,
+        'alarmId': uniqueAlarmId.hashCode, // WorkManager ID는 Int여야 하므로 hashCode 사용
         'busNo': alarm.routeNo,
         'stationName': alarm.stationName,
         'routeId': alarm.routeId,
@@ -902,9 +901,9 @@ class AlarmService extends ChangeNotifier {
       // SharedPreferences에 작업 등록 정보 저장 (검증용)
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
-          'last_scheduled_alarm_$id',
+          'last_scheduled_alarm_$uniqueAlarmId',
           jsonEncode({
-            'workId': 'native_alarm_$id', // 네이티브 알람임을 표시
+            'workId': 'native_alarm_$uniqueAlarmId', // 네이티브 알람임을 표시
             'busNo': alarm.routeNo,
             'stationName': alarm.stationName,
             'scheduledTime': scheduledTime.toIso8601String(),
@@ -912,11 +911,11 @@ class AlarmService extends ChangeNotifier {
           }));
 
       logMessage(
-          '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: native_alarm_$id');
+          '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: native_alarm_$uniqueAlarmId');
 
       // 30초 후 백업 알람 등록 (즉시 실행되지 않은 경우만)
       if (executionDelay.inSeconds > 30) {
-        _scheduleBackupAlarm(alarm, id, scheduledTime);
+        _scheduleBackupAlarm(alarm, uniqueAlarmId.hashCode, scheduledTime);
         logMessage(
             '✅ 백업 알람 등록: ${alarm.routeNo}번, ${executionDelay.inMinutes}분 후 실행',
             level: LogLevel.info);
