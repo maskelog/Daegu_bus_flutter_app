@@ -187,3 +187,4 @@ CUserssh953*
 *.stackdump
 flutter_*.log
 *.crash
+.gemini/settings.json
