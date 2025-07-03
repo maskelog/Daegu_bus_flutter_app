@@ -266,7 +266,7 @@ class NotificationHandler(private val context: Context) {
 
      // --- Alert Notification ---
 
-     fun sendAlertNotification(routeId: String, busNo: String, stationName: String) {
+     fun sendAlertNotification(routeId: String, busNo: String, stationName: String, isAutoAlarm: Boolean = false) {
         val notificationId = ALERT_NOTIFICATION_ID_BASE + routeId.hashCode()
         val contentText = "$busNo 번 버스가 $stationName 정류장에 곧 도착합니다."
         Log.d(TAG, "Sending ALERT notification: $contentText (ID: $notificationId)")
@@ -283,6 +283,7 @@ class NotificationHandler(private val context: Context) {
              putExtra("busNo", busNo)
              putExtra("stationName", stationName)
              putExtra("notificationId", notificationId)
+             if (isAutoAlarm) putExtra("isAutoAlarm", true) // 자동알람이면 플래그 추가
          }
          val cancelPendingIntent = PendingIntent.getService(
              context, notificationId + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -539,7 +540,8 @@ class NotificationHandler(private val context: Context) {
          stationName: String,
          remainingMinutes: Int,
          currentStation: String?,
-         routeId: String?
+         routeId: String?,
+         isAutoAlarm: Boolean = false // 자동알람 여부 추가
      ): Notification {
          val title = if (remainingMinutes <= 0) {
              "${busNo}번 버스 도착" // 더 간결하게
@@ -568,6 +570,7 @@ class NotificationHandler(private val context: Context) {
              putExtra("notificationId", id)     // 이 알림의 ID
              putExtra("busNo", busNo)           // UI 업데이트를 위해 추가
              putExtra("stationName", stationName) // UI 업데이트를 위해 추가
+             if (isAutoAlarm) putExtra("isAutoAlarm", true) // 자동알람이면 플래그 추가
          }
          val cancelPendingIntent = PendingIntent.getService(
              context, id + 1000, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE // requestCode 충돌 방지

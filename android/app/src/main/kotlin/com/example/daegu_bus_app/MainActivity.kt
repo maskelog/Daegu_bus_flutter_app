@@ -819,6 +819,59 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.error("SCHEDULE_ERROR", "Failed to schedule native alarm", e.message)
                     }
                 }
+                "stopStationTracking" -> {
+                    try {
+                        Log.i(TAG, "StationTrackingService 중지 요청 받음")
+                        val intent = Intent(this, StationTrackingService::class.java).apply {
+                            action = StationTrackingService.ACTION_STOP_TRACKING
+                        }
+                        startService(intent)
+                        Log.i(TAG, "StationTrackingService 중지 명령 전송 완료")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "StationTrackingService 중지 오류: ${e.message}", e)
+                        result.error("SERVICE_ERROR", "StationTrackingService 중지 중 오류 발생: ${e.message}", null)
+                    }
+                }
+                "stopAutoAlarm" -> {
+                    val busNo = call.argument<String>("busNo") ?: ""
+                    val stationName = call.argument<String>("stationName") ?: ""
+                    val routeId = call.argument<String>("routeId") ?: ""
+                    
+                    try {
+                        Log.i(TAG, "자동알람 중지 요청 (stopAutoAlarm): Bus=$busNo, Station=$stationName, Route=$routeId")
+                        
+                        // 1. BusAlertService에 자동알람 중지 인텐트 전송
+                        val stopAutoAlarmIntent = Intent(this, BusAlertService::class.java).apply {
+                            action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+                            putExtra("routeId", routeId)
+                            putExtra("busNo", busNo)
+                            putExtra("stationName", stationName)
+                            putExtra("isAutoAlarm", true)
+                        }
+                        startService(stopAutoAlarmIntent)
+                        Log.i(TAG, "✅ BusAlertService 자동알람 중지 인텐트 전송 완료")
+                        
+                        // 2. Flutter 측에 자동알람 중지 완료 이벤트 전송
+                        try {
+                            val autoAlarmCancelData = mapOf(
+                                "busNo" to busNo,
+                                "stationName" to stationName,
+                                "routeId" to routeId,
+                                "isAutoAlarm" to true
+                            )
+                            _methodChannel?.invokeMethod("onAutoAlarmStopped", autoAlarmCancelData)
+                            Log.i(TAG, "✅ Flutter 측에 자동알람 중지 이벤트 전송 완료")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Flutter 측 자동알람 중지 이벤트 전송 오류: ${e.message}")
+                        }
+                        
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 자동알람 중지 오류: ${e.message}", e)
+                        result.error("STOP_AUTO_ALARM_ERROR", "자동알람 중지 실패: ${e.message}", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -1306,47 +1359,54 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 "stopStationTracking" -> {
                     try {
                         Log.i(TAG, "StationTrackingService 중지 요청 받음")
-
-                        // 알림 취소 시도 (추가 보호 조치)
-                        try {
-                            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                            notificationManager.cancel(StationTrackingService.STATION_TRACKING_NOTIFICATION_ID)
-                            Log.d(TAG, "MainActivity에서 정류장 추적 알림 취소 시도")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "MainActivity에서 알림 취소 중 오류: ${e.message}")
-                        }
-
-                        // 서비스 중지 Intent 생성
                         val intent = Intent(this, StationTrackingService::class.java).apply {
                             action = StationTrackingService.ACTION_STOP_TRACKING
                         }
-
-                        // 서비스 중지 요청 - 일반 startService 사용
-                        try {
-                            // 알림 먼저 취소
-                            val notificationManager = NotificationManagerCompat.from(context)
-                            notificationManager.cancel(StationTrackingService.STATION_TRACKING_NOTIFICATION_ID)
-                            Log.i(TAG, "StationTrackingService 알림 취소 완료")
-
-                            // 서비스 중지 요청
-                            startService(intent)
-                            Log.i(TAG, "StationTrackingService 중지 요청 (startService)")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "StationTrackingService 중지 중 오류: ${e.message}")
-                        }
-
-                        // 추가 보호 조치: 서비스 직접 중지 시도
-                        try {
-                            stopService(Intent(this, StationTrackingService::class.java))
-                            Log.i(TAG, "StationTrackingService stopService 시도")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "stopService 시도 중 오류: ${e.message}")
-                        }
-
+                        startService(intent)
+                        Log.i(TAG, "StationTrackingService 중지 명령 전송 완료")
                         result.success(true)
                     } catch (e: Exception) {
                         Log.e(TAG, "StationTrackingService 중지 오류: ${e.message}", e)
                         result.error("SERVICE_ERROR", "StationTrackingService 중지 중 오류 발생: ${e.message}", null)
+                    }
+                }
+                "stopAutoAlarm" -> {
+                    val busNo = call.argument<String>("busNo") ?: ""
+                    val stationName = call.argument<String>("stationName") ?: ""
+                    val routeId = call.argument<String>("routeId") ?: ""
+                    
+                    try {
+                        Log.i(TAG, "자동알람 중지 요청 (stopAutoAlarm): Bus=$busNo, Station=$stationName, Route=$routeId")
+                        
+                        // 1. BusAlertService에 자동알람 중지 인텐트 전송
+                        val stopAutoAlarmIntent = Intent(this, BusAlertService::class.java).apply {
+                            action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+                            putExtra("routeId", routeId)
+                            putExtra("busNo", busNo)
+                            putExtra("stationName", stationName)
+                            putExtra("isAutoAlarm", true)
+                        }
+                        startService(stopAutoAlarmIntent)
+                        Log.i(TAG, "✅ BusAlertService 자동알람 중지 인텐트 전송 완료")
+                        
+                        // 2. Flutter 측에 자동알람 중지 완료 이벤트 전송
+                        try {
+                            val autoAlarmCancelData = mapOf(
+                                "busNo" to busNo,
+                                "stationName" to stationName,
+                                "routeId" to routeId,
+                                "isAutoAlarm" to true
+                            )
+                            _methodChannel?.invokeMethod("onAutoAlarmStopped", autoAlarmCancelData)
+                            Log.i(TAG, "✅ Flutter 측에 자동알람 중지 이벤트 전송 완료")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Flutter 측 자동알람 중지 이벤트 전송 오류: ${e.message}")
+                        }
+                        
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 자동알람 중지 오류: ${e.message}", e)
+                        result.error("STOP_AUTO_ALARM_ERROR", "자동알람 중지 실패: ${e.message}", null)
                     }
                 }
                 else -> result.notImplemented()
@@ -1733,6 +1793,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             val intentFilter = IntentFilter().apply {
                 addAction("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
                 addAction("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                addAction("com.example.daegu_bus_app.STOP_AUTO_ALARM") // 자동알람 중지 액션 추가
                 // 필요하다면 다른 액션도 추가
             }
             // Android 버전에 따른 리시버 등록 방식 분기 (Exported/Not Exported)
@@ -1783,6 +1844,26 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         // Flutter 측에 모든 알림 취소 이벤트 전송
                         _methodChannel?.invokeMethod("onAllAlarmsCanceled", mapOf("source" to "notification"))
                         Log.i(TAG, "Flutter 측에 모든 알람 취소 알림 전송 완료")
+                    }
+                    "com.example.daegu_bus_app.STOP_AUTO_ALARM" -> {
+                        val routeId = intent.getStringExtra("routeId") ?: ""
+                        val busNo = intent.getStringExtra("busNo") ?: ""
+                        val stationName = intent.getStringExtra("stationName") ?: ""
+
+                        Log.i(TAG, "자동알람 중지 브로드캐스트 수신: Bus=$busNo, Route=$routeId, Station=$stationName")
+
+                        // Flutter 측에 자동알람 중지 이벤트 전송
+                        try {
+                            val autoAlarmCancelData = mapOf(
+                                "busNo" to busNo,
+                                "stationName" to stationName,
+                                "routeId" to routeId
+                            )
+                            _methodChannel?.invokeMethod("stopAutoAlarmFromBroadcast", autoAlarmCancelData)
+                            Log.i(TAG, "✅ Flutter 측에 자동알람 중지 이벤트 전송 완료")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Flutter 측 자동알람 중지 이벤트 전송 오류: ${e.message}")
+                        }
                     }
                 }
             } catch (e: Exception) {

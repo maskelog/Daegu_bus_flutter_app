@@ -257,12 +257,33 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             val busNo = intent.getStringExtra("busNo")
             val stationName = intent.getStringExtra("stationName")
             val notificationId = intent.getIntExtra("notificationId", -1)
+            val isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
 
             if (routeId != null && busNo != null && stationName != null) {
-                Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName, notificationId=$notificationId")
-
-                // 개선된 stopSpecificTracking 메서드 호출
-                stopSpecificTracking(routeId, busNo, stationName)
+                Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName, notificationId=$notificationId, isAutoAlarm=$isAutoAlarm")
+                
+                // 📌 자동알람인 경우 Flutter 측에 명시적으로 중지 요청
+                if (isAutoAlarm) {
+                    Log.d(TAG, "🔔 자동알람 중지 요청: Flutter 측 stopAutoAlarm 호출")
+                    
+                    // 자동알람 전용 브로드캐스트 전송
+                    try {
+                        val autoAlarmIntent = Intent("com.example.daegu_bus_app.STOP_AUTO_ALARM")
+                        autoAlarmIntent.putExtra("busNo", busNo)
+                        autoAlarmIntent.putExtra("stationName", stationName)
+                        autoAlarmIntent.putExtra("routeId", routeId)
+                        autoAlarmIntent.flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
+                        sendBroadcast(autoAlarmIntent)
+                        Log.d(TAG, "✅ 자동알람 중지 브로드캐스트 전송 완료")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 자동알람 중지 브로드캐스트 전송 실패: ${e.message}")
+                    }
+                }
+                
+                // 📌 중요: 노티피케이션에서 온 모든 종료 요청은 리스트에서 삭제하지 않고 TTS만 중지
+                // 알람 리스트는 사용자가 앱에서 명시적으로 삭제할 때만 제거되어야 함
+                stopSpecificTracking(routeId, busNo, stationName, shouldRemoveFromList = false)
+                Log.d(TAG, "노티피케이션 종료: 알람 리스트 유지, TTS만 중지 ($busNo)")
             } else {
                 Log.e(TAG, "Missing data for ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName")
                 stopTrackingIfIdle()
@@ -282,10 +303,9 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
                 // Flutter 측에 알림 취소 이벤트 전송 시도
                 try {
-                    val context = applicationContext
-                    val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
-                    intent.putExtra("notificationId", notificationId)
-                    context.sendBroadcast(intent)
+                    val cancelIntent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
+                    cancelIntent.putExtra("notificationId", notificationId)
+                    sendBroadcast(cancelIntent)
                     Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $notificationId")
                 } catch (e: Exception) {
                     Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
@@ -463,7 +483,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 }
 
 // 특정 버스 추적 중지
-    private fun stopSpecificTracking(routeId: String, busNo: String, stationName: String) {
+    private fun stopSpecificTracking(routeId: String, busNo: String, stationName: String, shouldRemoveFromList: Boolean = true) {
         Log.d(TAG, "🔔 특정 추적 중지 시작: routeId=$routeId, busNo=$busNo, stationName=$stationName")
 
         if (!isServiceActive) {
@@ -505,16 +525,26 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 Log.d(TAG, "✅ 자동알람 상태 초기화 완료")
             }
 
-            // 1. 낙관적 업데이트
-            Log.d(TAG, "🔔 1단계: 즉시 상태 변경")
-            monitoredRoutes.remove(routeId)
+            // 1. 추적 작업 및 상태 정리 (알람 리스트는 shouldRemoveFromList에 따라 결정)
+            Log.d(TAG, "🔔 1단계: 추적 작업 중지 (리스트 삭제: $shouldRemoveFromList)")
+            
+            // 모니터링 작업은 항상 중지
             monitoringJobs[routeId]?.cancel()
             monitoringJobs.remove(routeId)
-            activeTrackings.remove(routeId)
+            
+            // 상태 정리는 항상 수행
             arrivingSoonNotified.remove(routeId)
             hasNotifiedTts.remove(routeId)
             hasNotifiedArrival.remove(routeId)
-            Log.d(TAG, "✅ 추적 데이터 제거 완료: $routeId")
+            
+            // 📌 중요: 알람 리스트는 shouldRemoveFromList가 true일 때만 삭제
+            if (shouldRemoveFromList) {
+                monitoredRoutes.remove(routeId)
+                activeTrackings.remove(routeId)
+                Log.d(TAG, "✅ 알람 리스트에서 완전 삭제: $routeId")
+            } else {
+                Log.d(TAG, "✅ 알람 리스트 유지: $routeId (TTS만 중지)")
+            }
 
             // 2. 알림 취소
             Log.d(TAG, "🔔 2단계: 알림 취소")
@@ -562,14 +592,13 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             if (isAutoAlarmTracking) {
                 // 자동알람 전용 취소 이벤트 전송
                 try {
-                    val context = applicationContext
-                    val intent = Intent("com.example.daegu_bus_app.AUTO_ALARM_CANCELLED").apply {
+                    val cancelAutoAlarmIntent = Intent("com.example.daegu_bus_app.AUTO_ALARM_CANCELLED").apply {
                         putExtra("busNo", busNo)
                         putExtra("routeId", routeId)
                         putExtra("stationName", stationName)
                         flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
                     }
-                    context.sendBroadcast(intent)
+                    sendBroadcast(cancelAutoAlarmIntent)
                     Log.d(TAG, "✅ 자동알람 취소 이벤트 브로드캐스트 전송: $busNo")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ 자동알람 취소 이벤트 전송 오류: ${e.message}")
@@ -581,11 +610,17 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             stopTTSServiceTracking(routeId)
             Log.d(TAG, "✅ TTS 추적 중지: $routeId")
 
-            // 5. 서비스 상태 확인
-            Log.d(TAG, "🔔 4단계: 서비스 상태 확인 (남은 추적: ${activeTrackings.size}개)")
-            checkAndStopServiceIfNeeded()
+            // 5. 서비스 상태 확인 (shouldRemoveFromList가 true이고 모든 추적이 끝났을 때만 서비스 중지)
+            if (shouldRemoveFromList) {
+                Log.d(TAG, "🔔 4단계: 서비스 상태 확인 (남은 추적: ${activeTrackings.size}개)")
+                checkAndStopServiceIfNeeded()
+            } else {
+                Log.d(TAG, "🔔 4단계: 알람 리스트 유지 모드 - 서비스 계속 실행")
+                // 알람이 리스트에 남아있으므로 포그라운드 알림 업데이트
+                updateForegroundNotification()
+            }
 
-            Log.d(TAG, "✅ 특정 추적 중지 완료: $routeId (자동알람: $isAutoAlarmTracking)")
+            Log.d(TAG, "✅ 특정 추적 중지 완료: $routeId (자동알람: $isAutoAlarmTracking, 리스트삭제: $shouldRemoveFromList)")
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ 특정 추적 중지 중 오류 발생: ${e.message}", e)
@@ -828,8 +863,13 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                         if (currentInfo != null) {
                             currentInfo.consecutiveErrors++
                             if (currentInfo.consecutiveErrors >= 3) {
-                                Log.e(TAG, "Stopping tracking for $routeId due to errors.")
-                                notificationHandler.sendErrorNotification(routeId, currentInfo.busNo, currentInfo.stationName, "정보 조회 실패")
+                                if (!currentInfo.isAutoAlarm) {
+                                    Log.e(TAG, "Stopping tracking for $routeId due to errors.")
+                                    notificationHandler.sendErrorNotification(routeId, currentInfo.busNo, currentInfo.stationName, "정보 조회 실패")
+                                    stopTrackingForRoute(routeId, cancelNotification = true)
+                                } else {
+                                    Log.w(TAG, "⚠️ 자동 알람 ($routeId) 연속 오류 발생. 다음 버스 추적을 위해 서비스 유지.")
+                                }
                             }
                         }
                         updateForegroundNotification()
@@ -838,9 +878,15 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 }
                 Log.i(TAG, "Tracking loop finished for route $routeId")
             } finally {
-                if (activeTrackings.containsKey(routeId)) {
-                    Log.w(TAG, "Tracker coroutine for $routeId ended unexpectedly (scope cancellation?). Triggering cleanup.")
-                    stopTrackingForRoute(routeId, cancelNotification = true)
+                // 자동 알람이 아닌 경우에만 정리 로직 실행
+                val currentTrackingInfo = activeTrackings[routeId]
+                if (currentTrackingInfo != null && !currentTrackingInfo.isAutoAlarm) {
+                    if (activeTrackings.containsKey(routeId)) {
+                        Log.w(TAG, "Tracker coroutine for $routeId ended unexpectedly (scope cancellation?). Triggering cleanup.")
+                        stopTrackingForRoute(routeId, cancelNotification = true)
+                    }
+                } else if (currentTrackingInfo?.isAutoAlarm == true) {
+                    Log.d(TAG, "자동 알람 ($routeId) 코루틴 종료. 다음 버스 추적을 위해 서비스 유지.")
                 }
             }
         }
@@ -1646,9 +1692,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             // 5. Flutter 측에 알림 취소 이벤트 전송 시도
             try {
-                val context = applicationContext
-                val intent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
-                context.sendBroadcast(intent)
+                val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                sendBroadcast(allCancelIntent)
                 Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
             } catch (e: Exception) {
                 Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
@@ -1725,15 +1770,14 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
                 // 4. Flutter 측에 알림 취소 이벤트 전송 시도
                 try {
-                    val context = applicationContext
-                    val intent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
-                    context.sendBroadcast(intent)
+                    val stopTrackingIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                    sendBroadcast(stopTrackingIntent)
                     Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송 (stopTracking)")
 
                     // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
                     try {
-                        if (context is MainActivity) {
-                            context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                        if (applicationContext is MainActivity) {
+                            (applicationContext as MainActivity)._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
                             Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료 (stopTracking)")
                         }
                     } catch (ex: Exception) {
@@ -1818,21 +1862,20 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
     private fun sendCancellationBroadcast(busNo: String, routeId: String, stationName: String) {
         try {
-            val intent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED").apply {
+            val cancellationIntent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED").apply {
                 putExtra("busNo", busNo)
                 putExtra("routeId", routeId)
                 putExtra("stationName", stationName)
                 putExtra("source", "native_service")
                 flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
             }
-            sendBroadcast(intent)
+            sendBroadcast(cancellationIntent)
             Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $busNo, $routeId, $stationName")
 
             // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
             try {
-                val context = applicationContext
-                if (context is MainActivity) {
-                    context._methodChannel?.invokeMethod("onAlarmCanceledFromNotification", mapOf(
+                if (applicationContext is MainActivity) {
+                    (applicationContext as MainActivity)._methodChannel?.invokeMethod("onAlarmCanceledFromNotification", mapOf(
                         "busNo" to busNo,
                         "routeId" to routeId,
                         "stationName" to stationName
@@ -1849,17 +1892,16 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
     private fun sendAllCancellationBroadcast() {
         try {
-            val intent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED").apply {
+            val allCancelBroadcast = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED").apply {
                 flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
             }
-            sendBroadcast(intent)
+            sendBroadcast(allCancelBroadcast)
             Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
 
             // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
             try {
-                val context = applicationContext
-                if (context is MainActivity) {
-                    context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                if (applicationContext is MainActivity) {
+                    (applicationContext as MainActivity)._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
                     Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료")
                 }
             } catch (e: Exception) {
@@ -2611,7 +2653,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     }
 
     fun stopBusTracking(busNo: String, stationName: String, routeId: String) {
-        stopSpecificTracking(routeId, busNo, stationName)
+        stopSpecificTracking(routeId, busNo, stationName, shouldRemoveFromList = true)
     }
 }
 

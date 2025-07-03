@@ -33,6 +33,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     private var remainingMinutes: Int = 0
     private var isTracking = false
     private var lastSpokenTime = 0L
+    private var lastAnnouncedMinutes: Int = -1 // 마지막으로 알린 분
     private val SPEAK_INTERVAL = 30000L // 30초마다 말하기
     private var ttsVolume: Float = 1.0f
 
@@ -78,6 +79,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 routeId = intent.getStringExtra("routeId") ?: ""
                 stationId = intent.getStringExtra("stationId") ?: ""
                 remainingMinutes = intent.getIntExtra("remainingMinutes", remainingMinutes)
+                lastAnnouncedMinutes = -1 // Reset for new tracking session
 
                 // 이어폰 전용 모드 & 이어폰 미연결 시 TTS 실행 금지
                 val audioOutputMode = getAudioOutputMode()
@@ -103,6 +105,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 routeId = intent.getStringExtra("routeId") ?: ""
                 stationId = intent.getStringExtra("stationId") ?: ""
                 remainingMinutes = intent.getIntExtra("remainingMinutes", remainingMinutes)
+                lastAnnouncedMinutes = -1 // Reset for new tracking session
                 val isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
                 val customMessage = intent.getStringExtra("ttsMessage")
                 val isBackup = intent.getBooleanExtra("isBackup", false)
@@ -232,10 +235,6 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         if (isAutoAlarmMode || singleExecutionMode) {
             Log.d(TAG, "🔊 자동알람/단일실행 모드: 반복 TTS 없음")
             speakBusAlert(forceSpeaker = true)
-            // 발화 후 즉시 서비스 종료 (배터리 절약)
-            Handler(Looper.getMainLooper()).postDelayed({
-                stopSelf()
-            }, 3000) // 3초 후 종료
             return
         }
 
@@ -324,6 +323,14 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             return
         }
         lastSpokenTime = currentTime
+
+        // remainingMinutes가 변경되었을 때만 발화
+        val currentRemainingMinutes = remainingMinutes // 현재 remainingMinutes 값
+        if (currentRemainingMinutes == lastAnnouncedMinutes && customMessage.isNullOrEmpty()) {
+            Log.d(TAG, "⏱️ remainingMinutes가 변경되지 않아 TTS 발화 무시: $currentRemainingMinutes 분")
+            return
+        }
+        lastAnnouncedMinutes = currentRemainingMinutes // 마지막으로 알린 분 업데이트
 
         // 스피커 사용 여부 결정
         val useSpeaker = forceSpeaker || getAudioOutputMode() == OUTPUT_MODE_SPEAKER
@@ -429,15 +436,17 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             speakBusAlert(forceSpeaker = true, customMessage = customMessage)
 
             // TTS 발화 완료 후 서비스 종료 (배터리 절약)
-            Handler(Looper.getMainLooper()).postDelayed({
-                Log.d(TAG, "🔊 자동알람 TTS 완료, 서비스 종료")
-                stopSelf()
-            }, 5000) // 5초 후 종료 (발화 완료 대기)
+            // 자동 알람은 사용자가 중지할 때까지 지속되어야 하므로 stopSelf() 호출 제거
+            // Handler(Looper.getMainLooper()).postDelayed({
+            //     Log.d(TAG, "🔊 자동알람 TTS 완료, 서비스 종료")
+            //     stopSelf()
+            // }, 5000) // 5초 후 종료 (발화 완료 대기)
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ 자동알람 TTS 처리 오류: ${e.message}", e)
             // 오류 발생 시에도 서비스 종료
-            stopSelf()
+            // 자동 알람은 사용자가 중지할 때까지 지속되어야 하므로 stopSelf() 호출 제거
+            // stopSelf()
         }
     }
 }

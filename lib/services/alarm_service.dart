@@ -74,8 +74,10 @@ class AlarmService extends ChangeNotifier {
 
   List<alarm_model.AlarmData> get activeAlarms {
     final allAlarms = <alarm_model.AlarmData>{};
-    allAlarms.addAll(_activeAlarms.values);
-    allAlarms.addAll(_autoAlarms);
+    allAlarms.addAll(
+        _activeAlarms.values.where((alarm) => !alarm.isAutoAlarm)); // 일반 알람만 추가
+    allAlarms.addAll(
+        _autoAlarms.where((alarm) => alarm.isAutoAlarm)); // 활성화된 자동 알람만 추가
     return allAlarms.toList();
   }
 
@@ -162,6 +164,33 @@ class AlarmService extends ChangeNotifier {
             await _saveAlarms();
             logMessage('✅ 모든 알람 취소 완료 (네이티브 이벤트에 의해)', level: LogLevel.info);
             notifyListeners();
+          }
+
+          return true;
+        case 'stopAutoAlarmFromBroadcast':
+          // 자동알람 중지 브로드캐스트 수신 처리
+          final Map<String, dynamic> args =
+              Map<String, dynamic>.from(call.arguments);
+          final String busNo = args['busNo'] ?? '';
+          final String stationName = args['stationName'] ?? '';
+          final String routeId = args['routeId'] ?? '';
+
+          logMessage(
+              '🔔 네이티브에서 자동알람 중지 브로드캐스트 수신: $busNo, $stationName, $routeId',
+              level: LogLevel.info);
+
+          // stopAutoAlarm 메서드 호출
+          try {
+            final result = await stopAutoAlarm(busNo, stationName, routeId);
+            if (result) {
+              logMessage('✅ 자동알람 중지 완료 (브로드캐스트에 의해): $busNo번',
+                  level: LogLevel.info);
+            } else {
+              logMessage('❌ 자동알람 중지 실패 (브로드캐스트에 의해): $busNo번',
+                  level: LogLevel.error);
+            }
+          } catch (e) {
+            logMessage('❌ 자동알람 중지 처리 오류: $e', level: LogLevel.error);
           }
 
           return true;
@@ -807,27 +836,6 @@ class AlarmService extends ChangeNotifier {
               }
             }
           }
-
-          // 버스가 도착했거나 사라진 경우 알람 종료
-          if (remainingMinutes <= 0) {
-            logMessage('✅ 버스 도착으로 인한 자동 알람 종료: ${alarm.routeNo}번',
-                level: LogLevel.info);
-
-            // 마지막 TTS 발화
-            if (alarm.useTTS) {
-              await SimpleTTSHelper.speakBusAlert(
-                busNo: alarm.routeNo,
-                stationName: alarm.stationName,
-                remainingMinutes: 0,
-                currentStation: currentStation,
-                isAutoAlarm: true,
-              );
-            }
-
-            timer.cancel();
-            await stopBusMonitoringService();
-            await _notificationService.cancelOngoingTracking();
-          }
         } catch (e) {
           logMessage('❌ 자동 알람 업데이트 오류: $e', level: LogLevel.error);
         }
@@ -883,7 +891,8 @@ class AlarmService extends ChangeNotifier {
 
       // 네이티브 AlarmManager 스케줄링 요청
       await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
-        'alarmId': uniqueAlarmId.hashCode, // WorkManager ID는 Int여야 하므로 hashCode 사용
+        'alarmId':
+            uniqueAlarmId.hashCode, // WorkManager ID는 Int여야 하므로 hashCode 사용
         'busNo': alarm.routeNo,
         'stationName': alarm.stationName,
         'routeId': alarm.routeId,
@@ -1514,13 +1523,30 @@ class AlarmService extends ChangeNotifier {
 
     try {
       // --- Perform Flutter state update immediately ---
-      final removedAlarm = _activeAlarms.remove(alarmKey);
-      if (removedAlarm != null) {
-        logMessage('[$alarmKey] Flutter activeAlarms 목록에서 즉시 제거',
+      final alarmToDeactivate = _activeAlarms[alarmKey];
+
+      if (alarmToDeactivate != null) {
+        // 알람을 비활성화 상태로 변경
+        _activeAlarms[alarmKey] =
+            alarmToDeactivate.copyWith(isAutoAlarm: false);
+        logMessage(
+            '[${alarmToDeactivate.busNo}] Flutter activeAlarms 목록에서 비활성화',
             level: LogLevel.debug);
       } else {
         logMessage('⚠️ 취소 요청한 알람($alarmKey)이 Flutter 활성 알람 목록에 없음 (취소 전).',
             level: LogLevel.warning);
+      }
+
+      // 자동 알람 목록에서도 비활성화 (혹은 제거)
+      final autoAlarmIndex = _autoAlarms.indexWhere((alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId);
+      if (autoAlarmIndex != -1) {
+        _autoAlarms[autoAlarmIndex] =
+            _autoAlarms[autoAlarmIndex].copyWith(isAutoAlarm: false);
+        logMessage('[$busNo] Flutter autoAlarms 목록에서 비활성화',
+            level: LogLevel.debug);
       }
 
       _cachedBusInfo.remove(cacheKey);
@@ -1530,24 +1556,29 @@ class AlarmService extends ChangeNotifier {
       if (_trackedRouteId == routeId) {
         _trackedRouteId = null;
         logMessage('추적 Route ID 즉시 초기화됨 (취소된 알람과 일치)', level: LogLevel.debug);
-        if (_activeAlarms.isEmpty) {
+        if (_activeAlarms.values.where((alarm) => alarm.isAutoAlarm).isEmpty) {
+          // 활성 자동 알람이 없는 경우
           _isInTrackingMode = false;
           shouldForceStopNative = true; // Last tracked alarm removed
-          logMessage('추적 모드 즉시 비활성화 (활성 알람 없음)', level: LogLevel.debug);
+          logMessage('추적 모드 즉시 비활성화 (활성 자동 알람 없음)', level: LogLevel.debug);
         } else {
           _isInTrackingMode = true;
-          logMessage('다른 활성 알람 존재, 추적 모드 유지', level: LogLevel.debug);
+          logMessage('다른 활성 자동 알람 존재, 추적 모드 유지', level: LogLevel.debug);
           // Decide if we need to start tracking the next alarm? For now, no.
         }
-      } else if (_activeAlarms.isEmpty) {
+      } else if (_activeAlarms.values
+          .where((alarm) => alarm.isAutoAlarm)
+          .isEmpty) {
+        // 활성 자동 알람이 없는 경우
         // If the cancelled alarm wasn't the tracked one, but it was the *last* one
         _isInTrackingMode = false;
         _trackedRouteId = null;
         shouldForceStopNative = true; // Last alarm overall removed
-        logMessage('마지막 활성 알람 취소됨, 추적 모드 비활성화', level: LogLevel.debug);
+        logMessage('마지막 활성 자동 알람 취소됨, 추적 모드 비활성화', level: LogLevel.debug);
       }
 
       await _saveAlarms(); // Persist the removal immediately
+      await _saveAutoAlarms(); // 자동 알람 상태도 저장
       notifyListeners(); // Update UI immediately
       logMessage('[$alarmKey] Flutter 상태 즉시 업데이트 및 리스너 알림 완료',
           level: LogLevel.debug);
