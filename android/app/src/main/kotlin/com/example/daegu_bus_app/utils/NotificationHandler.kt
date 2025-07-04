@@ -472,18 +472,46 @@ class NotificationHandler(private val context: Context) {
      fun cancelAllNotifications() {
          Log.d(TAG, "Request to cancel ALL notifications")
          try {
-             // 1. 즉시 모든 노티피케이션 취소 (최우선)
+             // 1. 즉시 모든 노티피케이션 취소 (최우선) - 개별 ID까지 강제 취소
              try {
                  val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                 systemNotificationManager.cancelAll()
+                 
+                 // 개별 알림 ID들 강제 취소 (여러 번 시도)
+                 for (attempt in 1..3) {
+                     systemNotificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                     systemNotificationManager.cancel(ARRIVING_SOON_NOTIFICATION_ID)
+                     
+                     // 동적으로 생성된 알림 ID들도 취소 (범위 기반)
+                     for (i in ALERT_NOTIFICATION_ID_BASE..(ALERT_NOTIFICATION_ID_BASE + 1000)) {
+                         systemNotificationManager.cancel(i)
+                     }
+                     
+                     // 전체 취소
+                     systemNotificationManager.cancelAll()
+                     
+                     if (attempt < 3) {
+                         Thread.sleep(100) // 짧은 지연 후 재시도
+                     }
+                 }
+                 
                  Log.d(TAG, "즉시 모든 노티피케이션 취소 완료 (cancelAllNotifications)")
              } catch (e: Exception) {
                  Log.e(TAG, "즉시 모든 노티피케이션 취소 오류: ${e.message}")
              }
 
-             // 2. NotificationManagerCompat으로도 취소
+             // 2. NotificationManagerCompat으로도 취소 (이중 보장)
              try {
                  val notificationManager = NotificationManagerCompat.from(context)
+                 
+                 // 개별 ID 취소 후 전체 취소
+                 notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                 notificationManager.cancel(ARRIVING_SOON_NOTIFICATION_ID)
+                 
+                 // 동적 ID 범위 취소
+                 for (i in ALERT_NOTIFICATION_ID_BASE..(ALERT_NOTIFICATION_ID_BASE + 1000)) {
+                     notificationManager.cancel(i)
+                 }
+                 
                  notificationManager.cancelAll()
                  Log.d(TAG, "NotificationManagerCompat으로 모든 노티피케이션 취소 완료")
              } catch (e: Exception) {
@@ -516,16 +544,46 @@ class NotificationHandler(private val context: Context) {
                  Log.e(TAG, "Flutter 메서드 채널 전송 오류 (cancelAllNotifications): ${e.message}")
              }
 
-             // 6. 지연된 추가 노티피케이션 취소 (백업)
+             // 6. 지연된 추가 노티피케이션 취소 (백업) - 더 강력하게
              Handler(Looper.getMainLooper()).postDelayed({
                  try {
                      val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                     
+                     // 개별 ID들 다시 한번 강제 취소
+                     systemNotificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                     systemNotificationManager.cancel(ARRIVING_SOON_NOTIFICATION_ID)
+                     
+                     // 범위 기반 재취소
+                     for (i in ALERT_NOTIFICATION_ID_BASE..(ALERT_NOTIFICATION_ID_BASE + 1000)) {
+                         systemNotificationManager.cancel(i)
+                     }
+                     
                      systemNotificationManager.cancelAll()
                      Log.d(TAG, "지연된 모든 노티피케이션 취소 완료 (cancelAllNotifications)")
                  } catch (e: Exception) {
                      Log.e(TAG, "지연된 모든 노티피케이션 취소 오류: ${e.message}")
                  }
+                 
+                 // NotificationManagerCompat로도 다시 한번 취소
+                 try {
+                     val notificationManager = NotificationManagerCompat.from(context)
+                     notificationManager.cancelAll()
+                     Log.d(TAG, "지연된 NotificationManagerCompat 취소 완료")
+                 } catch (e: Exception) {
+                     Log.e(TAG, "지연된 NotificationManagerCompat 취소 오류: ${e.message}")
+                 }
              }, 500)
+
+             // 7. 추가 지연 취소 (2초 후 최종 정리)
+             Handler(Looper.getMainLooper()).postDelayed({
+                 try {
+                     val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                     systemNotificationManager.cancelAll()
+                     Log.d(TAG, "최종 지연된 모든 노티피케이션 취소 완료")
+                 } catch (e: Exception) {
+                     Log.e(TAG, "최종 지연된 노티피케이션 취소 오류: ${e.message}")
+                 }
+             }, 2000)
 
          } catch (e: Exception) {
              Log.e(TAG, "Error cancelling all notifications: ${e.message}", e)

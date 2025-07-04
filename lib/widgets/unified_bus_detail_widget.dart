@@ -9,7 +9,7 @@ import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 import '../services/alarm_manager.dart';
-import '../utils/tts_switcher.dart';
+import '../utils/simple_tts_helper.dart';
 
 /// 통합된 버스 상세정보 위젯
 class UnifiedBusDetailWidget extends StatefulWidget {
@@ -123,19 +123,43 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
 
   Future<void> _toggleAlarm() async {
     try {
+      // UI 즉시 반응 보장 (버튼 클릭 피드백)
+      if (mounted) {
+        setState(() {
+          // 버튼 클릭 즉시 UI 업데이트
+        });
+        debugPrint('✅ 버튼 클릭 즉시 UI 업데이트');
+      }
+
       final alarmService = Provider.of<AlarmService>(context, listen: false);
       final hasAlarm = alarmService.hasAlarm(
         widget.busArrival.routeNo,
         widget.stationName,
         widget.busArrival.routeId,
       );
+
+      debugPrint(
+          '🔔 알람 토글: hasAlarm=$hasAlarm, 버스=${widget.busArrival.routeNo}번');
+
       if (hasAlarm) {
         await _cancelAlarm();
       } else {
         await _setAlarm();
       }
-    } catch (e) {
+
+      // 토글 작업 완료 후 최종 UI 업데이트
       if (mounted) {
+        setState(() {
+          // 토글 작업 완료 후 UI 업데이트
+        });
+        debugPrint('✅ 알람 토글 완료 후 UI 업데이트');
+      }
+    } catch (e) {
+      debugPrint('❌ 알람 토글 중 오류: $e');
+      if (mounted) {
+        setState(() {
+          // 오류 발생 시에도 UI 업데이트
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('알람 처리 중 오류가 발생했습니다: $e')),
         );
@@ -153,11 +177,19 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
         '🔔 알람 취소 시작: ${widget.busArrival.routeNo}번 버스, ${widget.stationName}');
 
     try {
-      // 1. 네이티브 추적 중지 (가장 먼저)
+      // 1. 즉시 UI 업데이트 (가장 먼저 - 사용자 피드백)
+      if (mounted) {
+        setState(() {
+          // 즉시 UI 변경으로 사용자 피드백 제공
+        });
+        debugPrint('✅ 즉시 UI 업데이트 (사용자 피드백)');
+      }
+
+      // 2. 네이티브 추적 중지
       await _stopNativeTracking();
       debugPrint('✅ 네이티브 추적 중지 완료');
 
-      // 2. AlarmManager에서 알람 제거
+      // 3. AlarmManager에서 알람 제거
       await AlarmManager.cancelAlarm(
         busNo: widget.busArrival.routeNo,
         stationName: widget.stationName,
@@ -165,7 +197,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
       );
       debugPrint('✅ AlarmManager 알람 취소 완료');
 
-      // 3. AlarmService에서 알람 제거
+      // 4. AlarmService에서 알람 제거
       final success = await alarmService.cancelAlarmByRoute(
         widget.busArrival.routeNo,
         widget.stationName,
@@ -173,50 +205,93 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
       );
       debugPrint('✅ AlarmService 알람 취소 ${success ? '성공' : '실패'}');
 
-      // 4. 모든 알림 취소
+      // 4-1. 알람 상태 재확인 및 로깅
+      final hasAlarmAfterCancel = alarmService.hasAlarm(
+        widget.busArrival.routeNo,
+        widget.stationName,
+        widget.busArrival.routeId,
+      );
+      debugPrint('✅ 알람 취소 후 hasAlarm 상태: $hasAlarmAfterCancel');
+      debugPrint('✅ 전체 활성 알람 수: ${alarmService.activeAlarms.length}개');
+
+      // 5. 강제로 AlarmService notifyListeners 호출 확인
+      if (mounted) {
+        // Consumer가 확실히 리빌드되도록 추가 프레임에서 처리
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              // Consumer 리빌드 강제
+            });
+            debugPrint('✅ Consumer 리빌드 강제 실행');
+          }
+        });
+      }
+
+      // 6. 모든 알림 취소
       await notificationService.cancelOngoingTracking();
       debugPrint('✅ 모든 알림 취소 완료');
 
-      // 5. TTS 추적 중지
-      await TtsSwitcher.stopTtsTracking(widget.busArrival.routeNo);
+      // 7. TTS 추적 중지
+      await SimpleTTSHelper.stop();
       debugPrint('✅ TTS 추적 중지 완료');
 
-      // 6. 버스 모니터링 서비스 중지
+      // 8. 버스 모니터링 서비스 중지
       await alarmService.stopBusMonitoringService();
       debugPrint('✅ 버스 모니터링 서비스 중지 완료');
 
-      // 7. 알람 목록 새로고침
+      // 9. 알람 목록 새로고침
       await alarmService.refreshAlarms();
       debugPrint('✅ 알람 목록 새로고침 완료');
 
-      // 8. 추가 안전장치: 1초 후 다시 한번 정리
-      Future.delayed(const Duration(seconds: 1), () async {
+      // 10. 최종 UI 업데이트 (모든 작업 완료 후)
+      if (mounted) {
+        setState(() {
+          // 최종 상태 업데이트
+        });
+        debugPrint('✅ 최종 UI 상태 업데이트 완료');
+      }
+
+      // 11. 사용자에게 완료 메시지 표시
+      if (mounted) {
+        ScaffoldMessenger.of(currentContext).showSnackBar(
+          const SnackBar(content: Text('승차 알람이 해제되었습니다')),
+        );
+      }
+
+      // 12. 추가 안전장치: 500ms 후 다시 한번 UI 업데이트
+      Future.delayed(const Duration(milliseconds: 500), () async {
         try {
           await notificationService.cancelOngoingTracking();
           await _stopNativeTracking();
           debugPrint('✅ 지연 정리 작업 완료');
+
+          // 지연 후에도 UI 업데이트 보장
+          if (mounted) {
+            setState(() {
+              // 지연된 상태 정리 완료
+            });
+            debugPrint('✅ 지연된 UI 업데이트 완료');
+          }
         } catch (e) {
           debugPrint('⚠️ 지연 정리 작업 오류: $e');
+          // 오류 발생 시에도 UI 업데이트
+          if (mounted) {
+            setState(() {
+              // 오류 발생 후에도 UI 업데이트
+            });
+          }
         }
       });
-
-      // 9. UI 업데이트
-      setState(() {});
-
-      if (mounted) {
-        ScaffoldMessenger.of(currentContext).showSnackBar(
-          const SnackBar(content: Text('승차 알람이 취소되었습니다')),
-        );
-      }
 
       debugPrint('✅ 모든 알람 취소 작업 완료');
     } catch (e) {
       debugPrint('❌ 알람 취소 중 오류: $e');
-      // 오류가 발생해도 UI는 업데이트
-      setState(() {});
       if (mounted) {
+        setState(() {
+          // 오류 발생 시에도 UI 업데이트 보장
+        });
         ScaffoldMessenger.of(currentContext).showSnackBar(
-          SnackBar(content: Text('알람 취소 중 일부 오류가 발생했습니다: $e')),
+          SnackBar(content: Text('알람 취소 중 오류가 발생했습니다: $e')),
         );
       }
     }
@@ -241,7 +316,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
           alarm.busNo != widget.busArrival.routeNo) {
         await alarmService.cancelAlarmByRoute(
             alarm.busNo, alarm.stationName, alarm.routeId);
-        await TtsSwitcher.stopTtsTracking(alarm.busNo);
+        await SimpleTTSHelper.stop();
       }
     }
 
@@ -280,27 +355,17 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
       final settings =
           Provider.of<SettingsService>(currentContext, listen: false);
       if (settings.useTts) {
-        final ttsSwitcher = TtsSwitcher();
-        await ttsSwitcher.initialize();
-        final headphoneConnected = await ttsSwitcher.isHeadphoneConnected();
-        if (settings.speakerMode == SettingsService.speakerModeHeadset) {
-          if (headphoneConnected) {
-            await TtsSwitcher.startTtsTracking(
-              routeId: widget.busArrival.routeId,
-              stationId: widget.stationId,
-              busNo: widget.busArrival.routeNo,
-              stationName: widget.stationName,
-              remainingMinutes: _remainingTime,
-            );
-          }
-        } else {
-          await TtsSwitcher.startTtsTracking(
-            routeId: widget.busArrival.routeId,
-            stationId: widget.stationId,
-            busNo: widget.busArrival.routeNo,
-            stationName: widget.stationName,
-            remainingMinutes: _remainingTime,
+        await SimpleTTSHelper.initialize();
+
+        // 설정에 따른 TTS 발화
+        try {
+          await SimpleTTSHelper.speak(
+            "${widget.busArrival.routeNo}번 버스 알람이 설정되었습니다. $_remainingTime분 후 도착 예정입니다.",
+            earphoneOnly:
+                settings.speakerMode == SettingsService.speakerModeHeadset,
           );
+        } catch (e) {
+          debugPrint('TTS 발화 오류: $e');
         }
       }
 
@@ -313,7 +378,23 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
       );
 
       await alarmService.refreshAlarms();
-      setState(() {});
+
+      // UI 즉시 업데이트 및 Consumer 리빌드 강제
+      if (mounted) {
+        setState(() {
+          // 알람 설정 완료 후 UI 업데이트
+        });
+
+        // Consumer가 확실히 리빌드되도록 추가 프레임에서 처리
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              // Consumer 리빌드 강제
+            });
+            debugPrint('✅ 알람 설정 후 Consumer 리빌드 강제 실행');
+          }
+        });
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(currentContext).showSnackBar(
@@ -325,7 +406,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
 
   Future<void> _startNativeTracking() async {
     try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
       await platform.invokeMethod('startBusTrackingService', {
         'busNo': widget.busArrival.routeNo,
         'stationName': widget.stationName,
@@ -339,41 +420,55 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
 
   Future<void> _stopNativeTracking() async {
     try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
 
-      // 1. 특정 추적 중지
-      await platform.invokeMethod('stopSpecificTracking', {
-        'busNo': widget.busArrival.routeNo,
-        'routeId': widget.busArrival.routeId,
-        'stationName': widget.stationName,
-      });
-      debugPrint('✅ 특정 네이티브 추적 중지: ${widget.busArrival.routeNo}번');
+      // 1. 특정 노선 추적 중지 요청
+      try {
+        await platform.invokeMethod('stopSpecificTracking', {
+          'busNo': widget.busArrival.routeNo,
+          'routeId': widget.busArrival.routeId,
+          'stationName': widget.stationName,
+        });
+        debugPrint('✅ 특정 네이티브 추적 중지: ${widget.busArrival.routeNo}번');
+      } catch (e) {
+        debugPrint('⚠️ 특정 추적 중지 실패 (무시): $e');
+      }
 
-      // 2. 모든 추적 중지 (백업)
-      await platform.invokeMethod('stopBusTrackingService');
-      debugPrint('✅ 모든 네이티브 추적 중지');
+      // 2. 진행 중인 추적 알림 취소
+      try {
+        await platform.invokeMethod('cancelOngoingTracking');
+        debugPrint('✅ 진행 중인 추적 취소');
+      } catch (e) {
+        debugPrint('⚠️ 진행 중인 추적 취소 실패 (무시): $e');
+      }
 
-      // 3. 진행 중인 추적 취소
-      await platform.invokeMethod('cancelOngoingTracking');
-      debugPrint('✅ 진행 중인 추적 취소');
+      // 3. 모든 알림 강제 취소 (가장 확실한 방법)
+      try {
+        await platform.invokeMethod('cancelAllNotifications');
+        debugPrint('✅ 모든 알림 강제 취소');
+      } catch (e) {
+        debugPrint('⚠️ 모든 알림 강제 취소 실패 (무시): $e');
+      }
 
-      // 4. 특정 알림 취소
-      await platform.invokeMethod('cancelNotification', {
-        'id': 1001, // ONGOING_NOTIFICATION_ID
-      });
-      debugPrint('✅ 특정 알림 취소');
+      // 4. Android에 특정 알람 취소 알림 (NotificationHelper.kt 동기화)
+      try {
+        await platform.invokeMethod('cancelAlarmNotification', {
+          'busNo': widget.busArrival.routeNo,
+          'routeId': widget.busArrival.routeId,
+          'stationName': widget.stationName,
+        });
+        debugPrint('✅ Android에 알람 취소 알림 전송');
+      } catch (e) {
+        debugPrint('⚠️ 알람 취소 알림 실패 (무시): $e');
+      }
 
-      // 5. Android에 특정 알람 취소 알림 (NotificationHelper.kt 동기화)
-      await platform.invokeMethod('cancelAlarmNotification', {
-        'busNo': widget.busArrival.routeNo,
-        'routeId': widget.busArrival.routeId,
-        'stationName': widget.stationName,
-      });
-      debugPrint('✅ Android에 알람 취소 알림 전송');
-
-      // 6. 강제 전체 추적 중지 (최종 안전장치)
-      await platform.invokeMethod('forceStopTracking');
-      debugPrint('✅ 강제 네이티브 추적 중지');
+      // 5. 강제 전체 추적 중지 (최종 안전장치)
+      try {
+        await platform.invokeMethod('forceStopTracking');
+        debugPrint('✅ 강제 네이티브 추적 중지');
+      } catch (e) {
+        debugPrint('⚠️ 강제 추적 중지 실패 (무시): $e');
+      }
     } catch (e) {
       debugPrint('❌ 네이티브 추적 중지 실패: $e');
     }
@@ -475,6 +570,21 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
                           widget.stationName,
                           widget.busArrival.routeId,
                         );
+
+                        // 디버깅: 컴팩트 뷰 알람 상태 변경 감지 로그 (상세)
+                        final compactAlarmKey =
+                            "${widget.busArrival.routeNo}_${widget.stationName}_${widget.busArrival.routeId}";
+                        debugPrint(
+                            '🔄 컴팩트 Consumer 리빌드: ${widget.busArrival.routeNo}번, hasAlarm=$hasAlarm, alarmKey=$compactAlarmKey');
+
+                        // 컴팩트 뷰 알람 상태 상세 정보 로깅
+                        if (hasAlarm) {
+                          debugPrint(
+                              '📱 컴팩트 뷰 - 알람 활성: ${widget.busArrival.routeNo}번');
+                        } else {
+                          debugPrint(
+                              '📱 컴팩트 뷰 - 알람 비활성: ${widget.busArrival.routeNo}번');
+                        }
 
                         return Material(
                           color: hasAlarm
@@ -711,6 +821,19 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget> {
       builder: (context, alarmService, child) {
         final hasAlarm = alarmService.hasAlarm(widget.busArrival.routeNo,
             widget.stationName, widget.busArrival.routeId);
+
+        // 디버깅: 알람 상태 변경 감지 로그 (상세)
+        final alarmKey =
+            "${widget.busArrival.routeNo}_${widget.stationName}_${widget.busArrival.routeId}";
+        debugPrint(
+            '🔄 Consumer 리빌드: ${widget.busArrival.routeNo}번, hasAlarm=$hasAlarm, activeAlarms=${alarmService.activeAlarms.length}개, alarmKey=$alarmKey');
+
+        // 알람 상태 상세 정보 로깅
+        if (hasAlarm) {
+          debugPrint('📋 알람 활성: ${widget.busArrival.routeNo}번 버스');
+        } else {
+          debugPrint('📋 알람 비활성: ${widget.busArrival.routeNo}번 버스');
+        }
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
           elevation: 2,

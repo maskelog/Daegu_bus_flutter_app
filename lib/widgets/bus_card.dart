@@ -527,7 +527,7 @@ class _BusCardState extends State<BusCard> {
 
         DateTime arrivalTime =
             DateTime.now().add(Duration(minutes: remainingTime));
-        logMessage('� Busch 예상 도착 시간: $arrivalTime', level: LogLevel.debug);
+        logMessage('🚌 예상 도착 시간: $arrivalTime', level: LogLevel.debug);
 
         setState(() {});
         await AlarmManager.addAlarm(
@@ -1179,7 +1179,7 @@ class _BusCardState extends State<BusCard> {
 
   Future<void> _stopSpecificNativeTracking() async {
     try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
       await platform.invokeMethod('stopSpecificTracking', {
         'busNo': widget.busArrival.routeNo,
         'routeId': widget.busArrival.routeId,
@@ -1193,7 +1193,7 @@ class _BusCardState extends State<BusCard> {
 
   Future<void> _startNativeTracking() async {
     try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
       await platform.invokeMethod('startBusTrackingService', {
         'busNo': widget.busArrival.routeNo,
         'stationName': widget.stationName ?? '정류장 정보 없음',

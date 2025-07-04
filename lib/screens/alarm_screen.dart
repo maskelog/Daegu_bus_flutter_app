@@ -9,6 +9,7 @@ import '../models/auto_alarm.dart';
 import '../services/alarm_service.dart';
 import '../services/settings_service.dart';
 import 'search_screen.dart';
+import 'settings_screen.dart';
 import '../main.dart' show logMessage, LogLevel;
 
 class AlarmScreen extends StatefulWidget {
@@ -72,10 +73,10 @@ class _AlarmScreenState extends State<AlarmScreen> {
 
       final List<String> alarms = _autoAlarms.map((alarm) {
         final json = alarm.toJson();
-        logMessage('📝 알람 데이터 변환:');
-        logMessage('  - 버스: ${alarm.routeNo}번');
-        logMessage('  - 정류장: ${alarm.stationName}');
+        logMessage('📝 알람 데이터 변환: ${alarm.routeNo}번 버스');
+        logMessage('  - ID: ${alarm.id}');
         logMessage('  - 시간: ${alarm.hour}:${alarm.minute}');
+        logMessage('  - 정류장: ${alarm.stationName} (${alarm.stationId})');
         logMessage(
             '  - 반복: ${alarm.repeatDays.map((d) => _weekdays[d - 1]).join(", ")}');
         return jsonEncode(json);
@@ -100,7 +101,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
       MaterialPageRoute(builder: (context) => const SearchScreen()),
     );
 
-    // 첫 번째 비동기 갭 이후에 mounted 체크 추가
     if (!mounted) return;
 
     if (result != null && result is BusStop) {
@@ -115,7 +115,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
         ),
       );
 
-      // 두 번째 비동기 갭 이후에 다시 mounted 체크 추가
       if (!mounted) return;
 
       if (alarmResult != null && alarmResult is AutoAlarm) {
@@ -138,7 +137,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
       ),
     );
 
-    // 비동기 갭 이후에 mounted 체크 추가
     if (!mounted) return;
 
     if (result != null && result is AutoAlarm) {
@@ -193,385 +191,437 @@ class _AlarmScreenState extends State<AlarmScreen> {
       builder: (context, settingsService, child) {
         return Scaffold(
           backgroundColor: colorScheme.surface,
-          body: _isLoading
-              ? Center(
-                  child: CircularProgressIndicator(color: colorScheme.primary))
-              : CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: Container(
-                        padding: const EdgeInsets.all(24),
-                        color: colorScheme.surface,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  '버스 알람',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: colorScheme.onSurface,
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.add,
-                                      color: colorScheme.primary),
-                                  onPressed: _addAutoAlarm,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            // 자동 알람 볼륨 설정 추가
-                            Consumer<SettingsService>(
-                              builder: (context, settingsService, child) {
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '알람 볼륨',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w500,
-                                        color: colorScheme.onSurface,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Icon(Icons.volume_down,
-                                            color:
-                                                colorScheme.onSurfaceVariant),
-                                        Expanded(
-                                          child: Slider(
-                                            value:
-                                                settingsService.autoAlarmVolume,
-                                            min: SettingsService
-                                                .minAutoAlarmVolume,
-                                            max: SettingsService
-                                                .maxAutoAlarmVolume,
-                                            divisions: 10,
-                                            label:
-                                                '${(settingsService.autoAlarmVolume * 100).round()}%',
-                                            onChanged: (value) {
-                                              settingsService
-                                                  .updateAutoAlarmVolume(value);
-                                            },
-                                          ),
-                                        ),
-                                        Icon(Icons.volume_up,
-                                            color:
-                                                colorScheme.onSurfaceVariant),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 16),
-                                  ],
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              '출퇴근 시간이나 정기적으로 이용하는 버스에 대한 알림을 자동으로 설정하세요.',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-
-                            // 알람음 설정을 간단한 선택으로 변경
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  '알람음',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: colorScheme.onSurface,
-                                  ),
-                                ),
-                                TextButton.icon(
-                                  onPressed: () {
-                                    showModalBottomSheet(
-                                      context: context,
-                                      backgroundColor: colorScheme.surface,
-                                      builder: (context) => Container(
-                                        padding: const EdgeInsets.all(16),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              '알람음 선택',
-                                              style: TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                                color: colorScheme.onSurface,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 16),
-                                            ...AlarmSound.allSounds
-                                                .map((sound) {
-                                              final isSelected =
-                                                  _settingsService
-                                                          .alarmSoundId ==
-                                                      sound.id;
-                                              return ListTile(
-                                                leading: Icon(
-                                                  sound.icon,
-                                                  color: isSelected
-                                                      ? colorScheme.primary
-                                                      : colorScheme
-                                                          .onSurfaceVariant,
-                                                ),
-                                                title: Text(sound.name,
-                                                    style: TextStyle(
-                                                        color: colorScheme
-                                                            .onSurface)),
-                                                trailing: isSelected
-                                                    ? Icon(Icons.check_circle,
-                                                        color:
-                                                            colorScheme.primary)
-                                                    : null,
-                                                onTap: () {
-                                                  _settingsService
-                                                      .setAlarmSound(sound.id);
-                                                  Navigator.pop(context);
-                                                  ScaffoldMessenger.of(context)
-                                                      .showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                          '알람음이 "${sound.name}"으로 변경되었습니다'),
-                                                      duration: const Duration(
-                                                          seconds: 2),
-                                                    ),
-                                                  );
-                                                },
-                                              );
-                                            }),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  icon: Icon(Icons.volume_up,
-                                      color: colorScheme.primary),
-                                  label: Text(
-                                    AlarmSound.allSounds
-                                        .firstWhere((s) =>
-                                            s.id ==
-                                            _settingsService.alarmSoundId)
-                                        .name,
-                                    style:
-                                        TextStyle(color: colorScheme.primary),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-                          ],
-                        ),
+          body: Column(
+            children: [
+              // 설정 버튼
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton.filledTonal(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) => const SettingsScreen()),
+                          );
+                        },
+                        icon: Icon(Icons.settings_outlined,
+                            color: colorScheme.onSurface),
+                        tooltip: '설정',
                       ),
-                    ),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: _autoAlarms.isEmpty
-                          ? SliverToBoxAdapter(
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.notifications_off,
-                                      size: 64,
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      '설정된 자동 알림이 없습니다',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        color: colorScheme.onSurface,
+                    ],
+                  ),
+                ),
+              ),
+              // 메인 콘텐츠
+              Expanded(
+                child: _isLoading
+                    ? Center(
+                        child: CircularProgressIndicator(
+                            color: colorScheme.primary))
+                    : CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: Container(
+                              padding: const EdgeInsets.all(24),
+                              color: colorScheme.surface,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        '버스 알람',
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: colorScheme.onSurface,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      '상단의 "알림 추가" 버튼을 눌러 새 자동 알림을 추가하세요',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: colorScheme.onSurfaceVariant,
+                                      IconButton(
+                                        icon: Icon(Icons.add,
+                                            color: colorScheme.primary),
+                                        onPressed: _addAutoAlarm,
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          : SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) {
-                                  final alarm = _autoAlarms[index];
-                                  return Card(
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    color: colorScheme.surface,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Column(
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  // 자동 알람 볼륨 설정 추가
+                                  Consumer<SettingsService>(
+                                    builder: (context, settingsService, child) {
+                                      return Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.alarm,
-                                                color: alarm.isActive
-                                                    ? colorScheme.primary
-                                                    : colorScheme
-                                                        .onSurfaceVariant,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                '${alarm.hour.toString().padLeft(2, '0')}:${alarm.minute.toString().padLeft(2, '0')}',
-                                                style: TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: alarm.isActive
-                                                      ? colorScheme.onSurface
-                                                      : colorScheme
-                                                          .onSurfaceVariant,
-                                                ),
-                                              ),
-                                              const Spacer(),
-                                              Switch(
-                                                value: alarm.isActive,
-                                                onChanged: (_) =>
-                                                    _toggleAutoAlarm(index),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.location_on,
-                                                size: 16,
-                                                color: colorScheme
-                                                    .onSurfaceVariant,
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Expanded(
-                                                child: Text(
-                                                  alarm.stationName,
-                                                  style: TextStyle(
-                                                    color:
-                                                        colorScheme.onSurface,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.directions_bus,
-                                                size: 16,
-                                                color: colorScheme
-                                                    .onSurfaceVariant,
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                alarm.routeNo,
-                                                style: TextStyle(
-                                                  color: colorScheme.onSurface,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Row(
-                                            children: [
-                                              Icon(
-                                                Icons.repeat,
-                                                size: 16,
-                                                color: colorScheme
-                                                    .onSurfaceVariant,
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                _getRepeatDaysText(alarm),
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          if (alarm.excludeHolidays ||
-                                              alarm.excludeWeekends)
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.event_busy,
-                                                  size: 16,
-                                                  color: colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  _getExcludeText(alarm),
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: colorScheme
-                                                        .onSurfaceVariant,
-                                                  ),
-                                                ),
-                                              ],
+                                          Text(
+                                            '알람 볼륨',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w500,
+                                              color: colorScheme.onSurface,
                                             ),
-                                          const SizedBox(height: 12),
+                                          ),
+                                          const SizedBox(height: 8),
                                           Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.end,
                                             children: [
-                                              TextButton.icon(
-                                                icon: Icon(Icons.edit,
-                                                    size: 16,
-                                                    color: colorScheme.primary),
-                                                label: Text('수정',
-                                                    style: TextStyle(
-                                                        color: colorScheme
-                                                            .primary)),
-                                                onPressed: () =>
-                                                    _editAutoAlarm(index),
+                                              Icon(Icons.volume_down,
+                                                  color: colorScheme
+                                                      .onSurfaceVariant),
+                                              Expanded(
+                                                child: Slider(
+                                                  value: settingsService
+                                                      .autoAlarmVolume,
+                                                  min: SettingsService
+                                                      .minAutoAlarmVolume,
+                                                  max: SettingsService
+                                                      .maxAutoAlarmVolume,
+                                                  divisions: 10,
+                                                  label:
+                                                      '${(settingsService.autoAlarmVolume * 100).round()}%',
+                                                  onChanged: (value) {
+                                                    settingsService
+                                                        .updateAutoAlarmVolume(
+                                                            value);
+                                                  },
+                                                ),
                                               ),
-                                              const SizedBox(width: 8),
-                                              TextButton.icon(
-                                                icon: Icon(Icons.delete,
-                                                    size: 16,
-                                                    color: colorScheme.error),
-                                                label: Text('삭제',
-                                                    style: TextStyle(
-                                                        color:
-                                                            colorScheme.error)),
-                                                onPressed: () =>
-                                                    _deleteAutoAlarm(index),
-                                              ),
+                                              Icon(Icons.volume_up,
+                                                  color: colorScheme
+                                                      .onSurfaceVariant),
                                             ],
+                                          ),
+                                          const SizedBox(height: 16),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: 24),
+                                  Text(
+                                    '출퇴근 시간이나 정기적으로 이용하는 버스에 대한 알림을 자동으로 설정하세요.',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  // 알람음 설정
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        '알람음',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: colorScheme.onSurface,
+                                        ),
+                                      ),
+                                      TextButton.icon(
+                                        onPressed: () {
+                                          showModalBottomSheet(
+                                            context: context,
+                                            backgroundColor:
+                                                colorScheme.surface,
+                                            builder: (context) => Container(
+                                              padding: const EdgeInsets.all(16),
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    '알람음 선택',
+                                                    style: TextStyle(
+                                                      fontSize: 18,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color:
+                                                          colorScheme.onSurface,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 16),
+                                                  ...AlarmSound.allSounds
+                                                      .map((sound) {
+                                                    final isSelected =
+                                                        _settingsService
+                                                                .alarmSoundId ==
+                                                            sound.id;
+                                                    return ListTile(
+                                                      leading: Icon(
+                                                        sound.icon,
+                                                        color: isSelected
+                                                            ? colorScheme
+                                                                .primary
+                                                            : colorScheme
+                                                                .onSurfaceVariant,
+                                                      ),
+                                                      title: Text(sound.name,
+                                                          style: TextStyle(
+                                                              color: colorScheme
+                                                                  .onSurface)),
+                                                      trailing: isSelected
+                                                          ? Icon(
+                                                              Icons
+                                                                  .check_circle,
+                                                              color: colorScheme
+                                                                  .primary)
+                                                          : null,
+                                                      onTap: () {
+                                                        _settingsService
+                                                            .setAlarmSound(
+                                                                sound.id);
+                                                        Navigator.pop(context);
+                                                        ScaffoldMessenger.of(
+                                                                context)
+                                                            .showSnackBar(
+                                                          SnackBar(
+                                                            content: Text(
+                                                                '알람음이 "${sound.name}"으로 변경되었습니다'),
+                                                            duration:
+                                                                const Duration(
+                                                                    seconds: 2),
+                                                          ),
+                                                        );
+                                                      },
+                                                    );
+                                                  }),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        icon: Icon(Icons.volume_up,
+                                            color: colorScheme.primary),
+                                        label: Text(
+                                          AlarmSound.allSounds
+                                              .firstWhere((s) =>
+                                                  s.id ==
+                                                  _settingsService.alarmSoundId)
+                                              .name,
+                                          style: TextStyle(
+                                              color: colorScheme.primary),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 24),
+                                ],
+                              ),
+                            ),
+                          ),
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            sliver: _autoAlarms.isEmpty
+                                ? SliverToBoxAdapter(
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.notifications_off,
+                                            size: 64,
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            '설정된 자동 알림이 없습니다',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              color: colorScheme.onSurface,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            '상단의 "알림 추가" 버튼을 눌러 새 자동 알림을 추가하세요',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color:
+                                                  colorScheme.onSurfaceVariant,
+                                            ),
                                           ),
                                         ],
                                       ),
                                     ),
-                                  );
-                                },
-                                childCount: _autoAlarms.length,
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
+                                  )
+                                : SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, index) {
+                                        final alarm = _autoAlarms[index];
+                                        return Card(
+                                          margin:
+                                              const EdgeInsets.only(bottom: 12),
+                                          color: colorScheme.surface,
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(16),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.alarm,
+                                                      color: alarm.isActive
+                                                          ? colorScheme.primary
+                                                          : colorScheme
+                                                              .onSurfaceVariant,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      '${alarm.hour.toString().padLeft(2, '0')}:${alarm.minute.toString().padLeft(2, '0')}',
+                                                      style: TextStyle(
+                                                        fontSize: 18,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: alarm.isActive
+                                                            ? colorScheme
+                                                                .onSurface
+                                                            : colorScheme
+                                                                .onSurfaceVariant,
+                                                      ),
+                                                    ),
+                                                    const Spacer(),
+                                                    Switch(
+                                                      value: alarm.isActive,
+                                                      onChanged: (_) =>
+                                                          _toggleAutoAlarm(
+                                                              index),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.location_on,
+                                                      size: 16,
+                                                      color: colorScheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Expanded(
+                                                      child: Text(
+                                                        alarm.stationName,
+                                                        style: TextStyle(
+                                                          color: colorScheme
+                                                              .onSurface,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.directions_bus,
+                                                      size: 16,
+                                                      color: colorScheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      alarm.routeNo,
+                                                      style: TextStyle(
+                                                        color: colorScheme
+                                                            .onSurface,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.repeat,
+                                                      size: 16,
+                                                      color: colorScheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      _getRepeatDaysText(alarm),
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: colorScheme
+                                                            .onSurfaceVariant,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 8),
+                                                if (alarm.excludeHolidays ||
+                                                    alarm.excludeWeekends)
+                                                  Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.event_busy,
+                                                        size: 16,
+                                                        color: colorScheme
+                                                            .onSurfaceVariant,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        _getExcludeText(alarm),
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: colorScheme
+                                                              .onSurfaceVariant,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                const SizedBox(height: 12),
+                                                Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.end,
+                                                  children: [
+                                                    TextButton.icon(
+                                                      icon: Icon(Icons.edit,
+                                                          size: 16,
+                                                          color: colorScheme
+                                                              .primary),
+                                                      label: Text('수정',
+                                                          style: TextStyle(
+                                                              color: colorScheme
+                                                                  .primary)),
+                                                      onPressed: () =>
+                                                          _editAutoAlarm(index),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    TextButton.icon(
+                                                      icon: Icon(Icons.delete,
+                                                          size: 16,
+                                                          color: colorScheme
+                                                              .error),
+                                                      label: Text('삭제',
+                                                          style: TextStyle(
+                                                              color: colorScheme
+                                                                  .error)),
+                                                      onPressed: () =>
+                                                          _deleteAutoAlarm(
+                                                              index),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      childCount: _autoAlarms.length,
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -659,10 +709,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
           id: alarm.stationId, name: alarm.stationName, isFavorite: false);
       _selectedRouteId = alarm.routeId;
       _selectedRouteNo = alarm.routeNo;
-      _loadRouteOptions().then((_) {
-        // 노선이 하나 이상 있으면 자동으로 첫 번째 노선 선택 대신,
-        // 모든 노선 목록을 표시하도록 하고 팝업은 표시하지 않음
-      });
+      _loadRouteOptions();
     } else {
       final now = DateTime.now();
       _hour = now.hour;
@@ -671,10 +718,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       if (widget.selectedStation != null) {
         _selectedStation = widget.selectedStation;
         _stationController.text = _selectedStation!.name;
-        _loadRouteOptions().then((_) {
-          // 노선이 하나 이상 있으면 자동으로 첫 번째 노선 선택 대신,
-          // 모든 노선 목록을 표시하도록 하고 팝업은 표시하지 않음
-        });
+        _loadRouteOptions();
       }
     }
   }
@@ -693,23 +737,12 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
 
     try {
       final stationId = _selectedStation!.id;
-      debugPrint('정류장 ID: $stationId 에 대한 버스 정보 로드 시작');
       final arrivals = await ApiService.getStationInfo(stationId);
-      debugPrint('정류장 정보 로드 완료: ${arrivals.length}개 버스 노선 발견');
 
-      // 각 노선 정보 로깅
-      for (var arrival in arrivals) {
-        debugPrint('노선 정보: ${arrival.routeNo} (ID: ${arrival.routeId})');
-      }
-
-      // routeNo를 키로 사용하여 중복 제거 (routeId가 비어있기 때문)
       final uniqueRoutes = <String, Map<String, String>>{};
       for (var arrival in arrivals) {
-        // routeNo를 키로 사용
         uniqueRoutes[arrival.routeNo] = {
-          'id': arrival.routeId.isEmpty
-              ? arrival.routeNo
-              : arrival.routeId, // 빈 ID면 routeNo를 ID로 사용
+          'id': arrival.routeId.isEmpty ? arrival.routeNo : arrival.routeId,
           'routeNo': arrival.routeNo,
         };
       }
@@ -719,15 +752,8 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
           _routeOptions = uniqueRoutes.values.toList();
           _isLoadingRoutes = false;
         });
-        debugPrint('노선 옵션 설정 완료: ${_routeOptions.length}개 고유 노선');
-
-        // 노선 목록 출력
-        for (var route in _routeOptions) {
-          debugPrint('노선 옵션: ${route['routeNo']} (ID: ${route['id']})');
-        }
       }
     } catch (e) {
-      debugPrint('노선 정보 로드 오류: $e');
       if (mounted) {
         setState(() {
           _routeOptions = [];
@@ -749,7 +775,6 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       _routeController.text = routeNo;
     });
 
-    // 선택 피드백 제공
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('$routeNo 노선이 선택되었습니다'),
@@ -757,90 +782,6 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
         backgroundColor: Colors.green[700],
       ),
     );
-  }
-
-  void _toggleDay(int day) {
-    if (!mounted) return;
-
-    setState(() {
-      if (_repeatDays.contains(day)) {
-        _repeatDays.remove(day);
-      } else {
-        _repeatDays.add(day);
-      }
-    });
-  }
-
-  void _save() {
-    // Validate essential fields before saving
-    if (_selectedStation == null || _selectedStation!.id.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('정류장을 먼저 선택해주세요.')),
-      );
-      return;
-    }
-    if (_selectedRouteId == null ||
-        _selectedRouteId!.isEmpty ||
-        _selectedRouteNo == null ||
-        _selectedRouteNo!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('노선을 먼저 선택해주세요.')),
-      );
-      return;
-    }
-    if (_repeatDays.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('최소 하나 이상의 반복 요일을 선택해주세요.')),
-      );
-      return;
-    }
-    // Add checks for hour and minute if necessary (though TimePickerSpinner likely handles this)
-    if (_hour < 0 || _hour > 23 || _minute < 0 || _minute > 59) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('유효하지 않은 시간입니다.')),
-      );
-      return;
-    }
-
-    // Create the AutoAlarm object only after validation passes
-    final alarm = AutoAlarm(
-      id: widget.autoAlarm?.id ??
-          DateTime.now().millisecondsSinceEpoch.toString(),
-      hour: _hour,
-      minute: _minute,
-      stationId: _selectedStation!.id, // Ensured not null by validation
-      stationName: _selectedStation!.name, // Ensured not null by validation
-      routeId: _selectedRouteId!, // Ensured not null or empty by validation
-      routeNo: _selectedRouteNo!, // Ensured not null or empty by validation
-      repeatDays: _repeatDays, // Ensured not empty by validation
-      excludeWeekends: _excludeWeekends,
-      excludeHolidays: _excludeHolidays,
-      isActive: widget.autoAlarm?.isActive ?? true,
-      useTTS: _useTTS,
-    );
-
-    Navigator.pop(context, alarm);
-  }
-
-  Future<void> _selectTime() async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: _hour, minute: _minute),
-      initialEntryMode: TimePickerEntryMode.input,
-      builder: (BuildContext context, Widget? child) {
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null && (picked.hour != _hour || picked.minute != _minute)) {
-      if (!mounted) return;
-      setState(() {
-        _hour = picked.hour;
-        _minute = picked.minute;
-      });
-    }
   }
 
   @override
@@ -851,13 +792,16 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
     return Scaffold(
       backgroundColor: colorScheme.surface,
       appBar: AppBar(
+        title: Text(
+          widget.autoAlarm == null ? '자동 알림 추가' : '자동 알림 편집',
+          style: TextStyle(color: colorScheme.onSurface),
+        ),
         backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        title: Text(widget.autoAlarm == null ? '자동 알림 추가' : '자동 알림 수정'),
+        elevation: 0,
         actions: [
           TextButton(
-            onPressed: _save,
-            child: const Text('저장'),
+            onPressed: _saveAlarm,
+            child: Text('저장', style: TextStyle(color: colorScheme.primary)),
           ),
         ],
       ),
@@ -872,70 +816,89 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                     fontWeight: FontWeight.bold,
                     color: colorScheme.onSurface)),
             const SizedBox(height: 8),
-            Card(
-              elevation: 0,
-              color: colorScheme.surface,
-              shape: RoundedRectangleBorder(
-                side: BorderSide(color: colorScheme.outline),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                title: Text(
-                  '${_hour.toString().padLeft(2, '0')}:${_minute.toString().padLeft(2, '0')}',
-                  style: TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'monospace',
-                      color: colorScheme.onSurface),
-                  textAlign: TextAlign.center,
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: colorScheme.outline),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: _hour,
+                        items: List.generate(24, (index) {
+                          return DropdownMenuItem(
+                            value: index,
+                            child: Text('${index.toString().padLeft(2, '0')}시',
+                                style: TextStyle(color: colorScheme.onSurface)),
+                          );
+                        }),
+                        onChanged: (value) =>
+                            setState(() => _hour = value ?? _hour),
+                        isExpanded: true,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                    ),
+                  ),
                 ),
-                trailing: Icon(Icons.edit_outlined, color: colorScheme.primary),
-                onTap: _selectTime,
-              ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: colorScheme.outline),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: _minute,
+                        items: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
+                            .map((minute) {
+                          return DropdownMenuItem(
+                            value: minute,
+                            child: Text('${minute.toString().padLeft(2, '0')}분',
+                                style: TextStyle(color: colorScheme.onSurface)),
+                          );
+                        }).toList(),
+                        onChanged: (value) =>
+                            setState(() => _minute = value ?? _minute),
+                        isExpanded: true,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
-            Text('반복',
+            Text('반복 요일',
                 style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: colorScheme.onSurface)),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            Wrap(
+              spacing: 8,
               children: List.generate(7, (index) {
-                final day = index + 1;
-                final isSelected = _repeatDays.contains(day);
-                return InkWell(
-                  onTap: () => _toggleDay(day),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isSelected
-                          ? colorScheme.primary
-                          : colorScheme.surfaceContainerHighest,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      _weekdays[index],
-                      style: TextStyle(
-                        color: isSelected
-                            ? colorScheme.onPrimary
-                            : colorScheme.onSurface,
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                  ),
+                final isSelected = _repeatDays.contains(index + 1);
+                return FilterChip(
+                  label: Text(_weekdays[index]),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _repeatDays.add(index + 1);
+                      } else {
+                        _repeatDays.remove(index + 1);
+                      }
+                    });
+                  },
                 );
               }),
             ),
-            const SizedBox(height: 8),
-            Row(
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
               children: [
                 TextButton(
                   onPressed: () =>
@@ -1048,7 +1011,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                       border: Border.all(color: colorScheme.outline),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    height: _routeOptions.length > 4 ? 200 : null, // 높이 제한
+                    height: _routeOptions.length > 4 ? 200 : null,
                     child: ListView.separated(
                       shrinkWrap: true,
                       physics: _routeOptions.length > 4
@@ -1143,5 +1106,39 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
         ),
       ),
     );
+  }
+
+  void _saveAlarm() {
+    if (_selectedStation == null || _selectedRouteId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('정류장과 노선을 모두 선택해주세요')),
+      );
+      return;
+    }
+
+    if (_repeatDays.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('반복 요일을 하나 이상 선택해주세요')),
+      );
+      return;
+    }
+
+    final alarm = AutoAlarm(
+      id: widget.autoAlarm?.id ??
+          DateTime.now().millisecondsSinceEpoch.toString(),
+      routeNo: _selectedRouteNo!,
+      stationName: _selectedStation!.name,
+      stationId: _selectedStation!.id,
+      routeId: _selectedRouteId!,
+      hour: _hour,
+      minute: _minute,
+      repeatDays: _repeatDays,
+      excludeWeekends: _excludeWeekends,
+      excludeHolidays: _excludeHolidays,
+      useTTS: _useTTS,
+      isActive: true,
+    );
+
+    Navigator.pop(context, alarm);
   }
 }

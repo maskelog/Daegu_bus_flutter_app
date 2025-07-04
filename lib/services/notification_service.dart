@@ -95,21 +95,26 @@ class NotificationService extends ChangeNotifier {
   }
   // ===== [END: 실시간 자동 알람 갱신용 추가] =====
 
-  static final NotificationService _instance = NotificationService._internal();
-  factory NotificationService() => _instance;
+  static NotificationService? _instance;
+  static NotificationService get instance =>
+      _instance ??= NotificationService._internal();
+  factory NotificationService() => instance;
+
   NotificationService._internal();
 
   static const MethodChannel _channel =
-      MethodChannel('com.example.daegu_bus_app/notification');
+      MethodChannel('com.example.daegu_bus_app/bus_api');
   final SettingsService _settingsService = SettingsService();
 
   /// 알림 서비스 초기화
   Future<void> initialize() async {
     try {
-      await _channel.invokeMethod('initialize');
+      // 네이티브 initialize 호출 제거 (구현되지 않음)
+      // await _channel.invokeMethod('initialize');
       final prefs = await SharedPreferences.getInstance();
       final soundFileName = prefs.getString('alarm_sound_filename');
-      await setAlarmSound(soundFileName);
+      // setAlarmSound 네이티브 호출 제거 (구현되지 않음)
+      // await setAlarmSound(soundFileName);
     } on PlatformException catch (e) {
       debugPrint('🔔 알림 서비스 초기화 오류:  [31m${e.message} [0m');
     }
@@ -117,8 +122,9 @@ class NotificationService extends ChangeNotifier {
 
   Future<void> setAlarmSound(String? soundFileName) async {
     try {
-      await _channel.invokeMethod(
-          'setAlarmSound', {'soundFileName': soundFileName ?? ''});
+      // 네이티브 setAlarmSound 호출 제거 (구현되지 않음)
+      // await _channel.invokeMethod(
+      //     'setAlarmSound', {'soundFileName': soundFileName ?? ''});
     } on PlatformException catch (e) {
       debugPrint('🔔 네이티브 알람음 설정 오류: ${e.message}');
     }
@@ -154,30 +160,23 @@ class NotificationService extends ChangeNotifier {
         return false;
       }
 
-      // 1. TTS 시도 (설정 및 이어폰 연결 여부 확인)
+      // 1. TTS 시도 (설정 확인)
       if (_settingsService.useTts) {
-        final ttsSwitcher = TtsSwitcher();
-        await ttsSwitcher.initialize();
-        final headphoneConnected = await ttsSwitcher.isHeadphoneConnected();
-        if (headphoneConnected) {
-          try {
-            await SimpleTTSHelper.initialize();
-            // 시스템 볼륨 최대화 요청
-            await SimpleTTSHelper.setVolume(1.0);
-            // 스피커 모드 강제 설정
-            await SimpleTTSHelper.setAudioOutputMode(1);
-            if (remainingMinutes <= 0) {
-              await SimpleTTSHelper.speak(
-                  "$busNo번 버스가 $stationName 정류장에 곧 도착합니다.");
-            } else {
-              await SimpleTTSHelper.speak(
-                  "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.");
-            }
-          } catch (e) {
-            debugPrint('🔊 자동 알람 TTS 실행 오류: $e');
+        try {
+          await SimpleTTSHelper.initialize();
+          // 시스템 볼륨 최대화 요청
+          await SimpleTTSHelper.setVolume(1.0);
+          // 스피커 모드 강제 설정
+          await SimpleTTSHelper.setAudioOutputMode(1);
+          if (remainingMinutes <= 0) {
+            await SimpleTTSHelper.speak(
+                "$busNo번 버스가 $stationName 정류장에 곧 도착합니다.");
+          } else {
+            await SimpleTTSHelper.speak(
+                "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.");
           }
-        } else {
-          debugPrint('🎧 이어폰 미연결 - 자동 알람 TTS 건너뜀');
+        } catch (e) {
+          debugPrint('🔊 자동 알람 TTS 실행 오류: $e');
         }
       } else {
         debugPrint('🔇 자동 알람 TTS 비활성화 - 음성 알림 건너뜀');
@@ -280,21 +279,14 @@ class NotificationService extends ChangeNotifier {
 
       debugPrint('🚨 버스 도착 임박 알림 표시: $busNo');
 
-      // TTS 알림 - 설정 및 이어폰 연결 여부 확인
+      // TTS 알림 - 설정 확인
       if (_settingsService.useTts) {
-        final ttsSwitcher = TtsSwitcher();
-        await ttsSwitcher.initialize();
-        final shouldUse = await ttsSwitcher.shouldUseNativeTts();
-        if (shouldUse) {
-          try {
-            await SimpleTTSHelper.speak(
-                "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
-            debugPrint('TTS 실행 요청: $busNo, $stationName');
-          } catch (e) {
-            debugPrint('🔊 자동 알람 TTS 실행 오류: $e');
-          }
-        } else {
-          debugPrint('🔇 이어폰 미연결 또는 TTS 모드 비허용 - TTS 건너뜀');
+        try {
+          await SimpleTTSHelper.speak(
+              "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.");
+          debugPrint('TTS 실행 요청: $busNo, $stationName');
+        } catch (e) {
+          debugPrint('🔊 자동 알람 TTS 실행 오류: $e');
         }
       } else {
         debugPrint('🔇 TTS 비활성화 상태: 음성 알림 건너뜀');
@@ -340,8 +332,14 @@ class NotificationService extends ChangeNotifier {
       logMessage('✅ 자동 알람 업데이트 타이머 중지', level: LogLevel.debug);
 
       // 2. 기존 방식: 'cancelOngoingTracking' 메서드 호출
-      final bool result = await _channel.invokeMethod('cancelOngoingTracking');
-      logMessage('✅ 네이티브 cancelOngoingTracking 호출 완료', level: LogLevel.debug);
+      bool result = false;
+      try {
+        result = await _channel.invokeMethod('cancelOngoingTracking');
+        logMessage('✅ 네이티브 cancelOngoingTracking 호출 완료', level: LogLevel.debug);
+      } catch (e) {
+        logMessage('⚠️ 네이티브 cancelOngoingTracking 호출 실패 (무시): $e',
+            level: LogLevel.warning);
+      }
 
       // 3. 추가: 'stopStationTracking' 메서드 호출하여 정류장 추적 서비스도 확실하게 중지
       try {
@@ -386,7 +384,8 @@ class NotificationService extends ChangeNotifier {
         await _channel.invokeMethod('cancelAllNotifications');
         logMessage('✅ 모든 알림 강제 취소 완료', level: LogLevel.debug);
       } catch (e) {
-        logMessage('⚠️ 모든 알림 강제 취소 오류: ${e.toString()}', level: LogLevel.error);
+        logMessage('⚠️ 모든 알림 강제 취소 오류 (무시): ${e.toString()}',
+            level: LogLevel.warning);
       }
 
       logMessage('✅ 모든 지속적인 추적 알림 취소 완료', level: LogLevel.info);
@@ -403,11 +402,17 @@ class NotificationService extends ChangeNotifier {
   /// 모든 알림 취소 메소드
   Future<bool> cancelAllNotifications() async {
     try {
-      final bool result = await _channel.invokeMethod('cancelAllNotifications');
-      debugPrint('🔔 모든 알림 취소');
-      return result;
-    } on PlatformException catch (e) {
-      debugPrint('🔔 모든 알림 취소 오류: ${e.message}');
+      try {
+        final bool result =
+            await _channel.invokeMethod('cancelAllNotifications');
+        debugPrint('🔔 모든 알림 취소');
+        return result;
+      } catch (e) {
+        debugPrint('🔔 모든 알림 취소 오류 (무시): ${e.toString()}');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('🔔 모든 알림 취소 중 예외 발생: ${e.toString()}');
       return false;
     }
   }

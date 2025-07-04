@@ -87,9 +87,34 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
       ),
     );
     if (confirmed == true) {
-      // Android에 모든 알람 취소 알림 (NotificationHelper.kt 동기화)
-      await _notifyAndroidAllAlarmsCancelled();
-      await alarmService.stopAllTracking();
+      try {
+        // Android에 모든 알람 취소 알림 (NotificationHelper.kt 동기화)
+        await _notifyAndroidAllAlarmsCancelled();
+        await alarmService.stopAllTracking();
+
+        // UI 즉시 업데이트 보장
+        if (mounted) {
+          setState(() {
+            // 강제 UI 업데이트
+          });
+        }
+
+        // 성공 메시지 표시
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('모든 알람이 취소되었습니다.')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            // 오류 발생 시에도 UI 업데이트
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('알람 취소 중 오류가 발생했습니다.')),
+          );
+        }
+      }
     }
   }
 
@@ -287,7 +312,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
 
   Future<void> _notifyAndroidAllAlarmsCancelled() async {
     try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
       await platform.invokeMethod('forceStopTracking');
       debugPrint('✅ Android에 모든 알람 취소 알림 전송');
     } catch (e) {
@@ -297,7 +322,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
 
   Future<void> _notifyAndroidSpecificAlarmCancelled(AlarmData alarm) async {
     try {
-      const platform = MethodChannel('com.example.daegu_bus_app/notification');
+      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
       await platform.invokeMethod('cancelAlarmNotification', {
         'busNo': alarm.busNo,
         'routeId': alarm.routeId,
@@ -318,8 +343,25 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
       await context
           .read<AlarmService>()
           .cancelAlarmByRoute(alarm.busNo, alarm.stationName, alarm.routeId);
-    } catch (_) {
+
+      // UI 즉시 업데이트 보장
       if (mounted) {
+        setState(() {
+          // 강제 UI 업데이트
+        });
+      }
+
+      // 성공 메시지 표시
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          // 오류 발생 시에도 UI 업데이트
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('알람 취소 중 오류가 발생했습니다.')),
         );

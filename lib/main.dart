@@ -520,7 +520,7 @@ void callbackDispatcher() {
 
 /// Android에서 온 이벤트를 처리하기 위한 MethodChannel 핸들러 설정
 void _setupMethodChannelHandlers() {
-  const platform = MethodChannel('com.example.daegu_bus_app/notification');
+  const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
 
   platform.setMethodCallHandler((call) async {
     try {

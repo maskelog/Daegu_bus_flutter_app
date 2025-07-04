@@ -205,7 +205,7 @@ Future<void> _showLocalNotification(int id, String busNo, String stationName,
   try {
     // 로컬 알림 대신 MethodChannel을 사용하여 네이티브 알림 표시
     const MethodChannel channel =
-        MethodChannel('com.example.daegu_bus_app/notification');
+        MethodChannel('com.example.daegu_bus_app/bus_api');
     final int safeNotificationId = id.abs() % 2147483647;
 
     // 네이티브 메서드 호출
@@ -328,7 +328,7 @@ Future<bool> _handleAutoAlarmTask({
     // MethodChannel을 통한 알림 시도
     try {
       const MethodChannel channel =
-          MethodChannel('com.example.daegu_bus_app/notification');
+          MethodChannel('com.example.daegu_bus_app/bus_api');
       final int safeNotificationId = alarmId.abs() % 2147483647;
 
       await channel.invokeMethod('showNotification', {

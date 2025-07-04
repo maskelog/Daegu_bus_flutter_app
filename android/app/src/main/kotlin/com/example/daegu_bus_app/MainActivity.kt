@@ -62,6 +62,7 @@ import com.example.daegu_bus_app.services.TTSService
 import com.example.daegu_bus_app.services.StationTrackingService
 import com.example.daegu_bus_app.utils.DatabaseHelper
 import com.example.daegu_bus_app.utils.NotificationHelper
+import com.example.daegu_bus_app.utils.NotificationHandler
 import kotlinx.coroutines.runBlocking
 import android.os.PowerManager
 import android.provider.Settings
@@ -80,6 +81,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private lateinit var busApiService: BusApiService
     private var busAlertService: BusAlertService? = null
     private lateinit var notificationHelper: NotificationHelper
+    private lateinit var notificationHandler: NotificationHandler
 
     // Make _methodChannel public for BusAlertService access
     var _methodChannel: MethodChannel? = null
@@ -872,91 +874,94 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.error("STOP_AUTO_ALARM_ERROR", "자동알람 중지 실패: ${e.message}", null)
                     }
                 }
-                else -> result.notImplemented()
-            }
-        }
-
-        // Consolidated NOTIFICATION_CHANNEL handler
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "startBusTrackingService" -> {
-                    val args = call.arguments as? Map<String, Any>
-                    if (args != null) {
-                        val busNo = args["busNo"] as? String
-                        val stationName = args["stationName"] as? String
-                        val routeId = args["routeId"] as? String
-                        if (busNo != null && stationName != null && routeId != null) {
-                            busAlertService?.startBusTracking(busNo, stationName, routeId)
-                            result.success(true)
-                        } else {
-                            result.error("INVALID_ARGUMENTS", "필수 인자가 누락되었습니다.", null)
+                "cancelOngoingTracking" -> {
+                    try {
+                        Log.i(TAG, "Flutter에서 진행 중 추적 취소 요청 받음")
+                        busAlertService?.cancelOngoingTracking()
+                        notificationHandler.cancelOngoingTrackingNotification()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "진행 중 추적 취소 오류: ${e.message}", e)
+                        result.error("CANCEL_ERROR", "진행 중 추적 취소 실패: ${e.message}", null)
+                    }
+                }
+                "cancelAllNotifications" -> {
+                    try {
+                        Log.i(TAG, "Flutter에서 모든 알림 취소 요청 받음")
+                        // 1. BusAlertService에서 모든 추적 중지
+                        busAlertService?.stopTracking()
+                        
+                        // 2. NotificationHandler를 통한 모든 알림 취소
+                        notificationHandler.cancelAllNotifications()
+                        
+                        // 3. 포그라운드 알림 취소
+                        busAlertService?.cancelOngoingTracking()
+                        
+                        // 4. Flutter 측에 모든 알람 취소 이벤트 전송
+                        try {
+                            _methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                            Log.i(TAG, "Flutter 측에 모든 알람 취소 알림 전송 완료")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Flutter 측에 모든 알람 취소 알림 전송 오류: ${e.message}")
                         }
-                    } else {
-                        result.error("INVALID_ARGUMENTS", "인자가 없습니다.", null)
+                        
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "모든 알림 취소 오류: ${e.message}", e)
+                        result.error("CANCEL_ALL_ERROR", "모든 알림 취소 실패: ${e.message}", null)
                     }
                 }
                 "stopSpecificTracking" -> {
-                    val args = call.arguments as? Map<String, Any>
-                    if (args != null) {
-                        val busNo = args["busNo"] as? String
-                        val stationName = args["stationName"] as? String
-                        val routeId = args["routeId"] as? String
-                        if (busNo != null && stationName != null && routeId != null) {
-                            busAlertService?.stopBusTracking(busNo, stationName, routeId)
-                            result.success(true)
-                        } else {
-                            result.error("INVALID_ARGUMENTS", "필수 인자가 누락되었습니다.", null)
-                        }
-                    } else {
-                        result.error("INVALID_ARGUMENTS", "인자가 없습니다.", null)
-                    }
-                }
-                "stopBusTrackingService" -> {
-                    Log.d(TAG, "Flutter에서 버스 추적 서비스 중지 요청")
-                    stopBusTrackingService()
-                    result.success(true)
-                }
-                "initialize" -> {
                     try {
-                        busAlertService?.initialize()
-                        result.success("Notification Service Initialized")
+                        val busNo = call.argument<String>("busNo") ?: ""
+                        val routeId = call.argument<String>("routeId") ?: ""
+                        val stationName = call.argument<String>("stationName") ?: ""
+                        
+                        Log.i(TAG, "Flutter에서 특정 추적 중지 요청: Bus=$busNo, Route=$routeId, Station=$stationName")
+                        
+                        // BusAlertService에서 특정 추적 중지
+                        if (busAlertService != null) {
+                            busAlertService?.stopTrackingForRoute(routeId, busNo, stationName, true)
+                            Log.i(TAG, "BusAlertService 특정 추적 중지 완료: $routeId")
+                        } else {
+                            // 서비스가 null인 경우 인텐트로 중지 요청
+                            val stopIntent = Intent(this, BusAlertService::class.java).apply {
+                                action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+                                putExtra("routeId", routeId)
+                                putExtra("busNo", busNo)
+                                putExtra("stationName", stationName)
+                            }
+                            startService(stopIntent)
+                            Log.i(TAG, "특정 추적 중지 인텐트 전송 완료")
+                        }
+                        
+                        // NotificationHandler를 통한 특정 알림 취소
+                        try {
+                            notificationHandler.cancelNotification(routeId.hashCode())
+                            Log.i(TAG, "NotificationHandler 특정 알림 취소 완료")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "NotificationHandler 특정 알림 취소 오류: ${e.message}")
+                        }
+                        
+                        // Flutter 측에 특정 알람 취소 이벤트 전송
+                        try {
+                            val alarmCancelData = mapOf(
+                                "busNo" to busNo,
+                                "routeId" to routeId,
+                                "stationName" to stationName
+                            )
+                            _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
+                            Log.i(TAG, "Flutter 측에 특정 알람 취소 알림 전송 완료")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Flutter 특정 알람 취소 알림 전송 오류: ${e.message}")
+                        }
+                        
+                        result.success(true)
                     } catch (e: Exception) {
-                        result.error("INIT_ERROR", "Notification Service 초기화 실패", e.message)
+                        Log.e(TAG, "특정 추적 중지 오류: ${e.message}", e)
+                        result.error("STOP_SPECIFIC_ERROR", "특정 추적 중지 실패: ${e.message}", null)
                     }
                 }
-                "setAlarmSound" -> {
-                    val soundFileName = call.argument<String>("soundFileName")
-                    if (soundFileName != null) {
-                        notificationHelper.setAlarmSound(soundFileName)
-                        result.success(true)
-                    } else {
-                        result.error("INVALID_ARGUMENT", "사운드 파일 이름이 없습니다.", null)
-                    }
-                }
-                "cancelNotification" -> {
-                    val id = call.argument<Int>("id")
-                    if (id != null) {
-                        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                        notificationManager.cancel(id)
-                        result.success(true)
-                    } else {
-                        result.error("INVALID_ARGUMENT", "ID가 없습니다.", null)
-                    }
-                }
-                "cancelOngoingTracking" -> {
-                     try {
-                        busAlertService?.cancelOngoingTracking()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("CANCEL_ERROR", "지속적인 추적 취소 실패", e.message)
-                    }
-                }
-                else -> result.notImplemented()
-            }
-        }
-        
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
                 "speakTTS" -> {
                     val message = call.argument<String>("message") ?: ""
                     val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false
@@ -1436,6 +1441,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             busApiService = BusApiService(this)
             audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
             notificationHelper = NotificationHelper(this)
+            notificationHandler = NotificationHandler(this)
 
             // Create Notification Channel for Alarms
             createAlarmNotificationChannel()

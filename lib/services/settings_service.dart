@@ -11,14 +11,16 @@ enum NotificationDisplayMode {
 }
 
 class SettingsService extends ChangeNotifier {
-  static const String _alarmSoundKey = 'alarm_sound_id';
+  static const String _alarmSoundKey = 'alarm_sound';
+  static const String _autoAlarmKey = 'use_auto_alarm';
+  static const String _autoAlarmVolumeKey = 'auto_alarm_volume';
+  static const String _useTtsKey = 'use_tts';
+  static const String _isDarkModeKey = 'is_dark_mode';
+  static const String _themeColorKey = 'theme_color';
   static const String _kThemeModeKey = 'theme_mode';
-  static const String _kUseTtsKey = 'use_tts';
   static const String _kVibrateKey = 'vibrate';
   static const String _kSpeakerModeKey = 'speaker_mode';
   static const String _notificationDisplayModeKey = 'notificationDisplayMode';
-  static const String _kAutoAlarmVolumeKey = 'auto_alarm_volume';
-  static const String _kUseAutoAlarmKey = 'use_auto_alarm';
 
   // 스피커 모드 상수
   static const int speakerModeHeadset = 0; // 이어폰 전용
@@ -30,22 +32,25 @@ class SettingsService extends ChangeNotifier {
   static const double minAutoAlarmVolume = 0.0; // 최소 볼륨
   static const double maxAutoAlarmVolume = 1.0; // 최대 볼륨
 
+  late SharedPreferences _prefs;
+  String _alarmSound = 'tts_allarm';
+  bool _useAutoAlarm = true;
+  double _autoAlarmVolume = 0.7;
+  bool _useTts = true;
+  bool _isDarkMode = false;
+  final String _themeColor = 'blue';
+
+  // 네이티브와 통신을 위한 채널 정의
   static const MethodChannel _channel =
-      MethodChannel('com.example.daegu_bus_app/notification');
+      MethodChannel('com.example.daegu_bus_app/bus_api');
 
   // 싱글톤 패턴
   static final SettingsService _instance = SettingsService._internal();
   factory SettingsService() => _instance;
   SettingsService._internal();
 
-  String _alarmSoundId = AlarmSound.ttsAlarm.id;
-  bool _isLoading = true;
-  double _autoAlarmVolume = defaultAutoAlarmVolume;
-
   ThemeMode _themeMode = ThemeMode.system;
-  bool _useTts = true;
   bool _vibrate = true;
-  bool _useAutoAlarm = true; // 자동 알람 사용 여부 (기본값: 사용)
   int _speakerMode = speakerModeHeadset; // 스피커 모드 변수 (기본값: 이어폰 전용)
 
   // MethodChannel 추가
@@ -56,68 +61,52 @@ class SettingsService extends ChangeNotifier {
   NotificationDisplayMode _notificationDisplayMode =
       NotificationDisplayMode.alarmedOnly; // 기본값
 
-  late SharedPreferences _prefs;
-
   // Getters
-  String get alarmSoundId => _alarmSoundId;
-  AlarmSound get selectedAlarmSound => AlarmSound.findById(_alarmSoundId);
-  bool get isLoading => _isLoading;
-  ThemeMode get themeMode => _themeMode;
+  String get alarmSound => _alarmSound;
+  String get alarmSoundId => _alarmSound; // 기존 코드 호환성을 위해 추가
+  AlarmSound get selectedAlarmSound =>
+      AlarmSound.findById(_alarmSound); // 선택된 알람음 객체 반환
+  bool get isLoading => false; // 간단한 구현 (필요시 로딩 상태 관리 추가 가능)
+  bool get useAutoAlarm => _useAutoAlarm;
+  double get autoAlarmVolume => _autoAlarmVolume;
   bool get useTts => _useTts;
   bool get vibrate => _vibrate;
-  bool get useAutoAlarm => _useAutoAlarm;
   int get speakerMode => _speakerMode;
-  double get autoAlarmVolume => _autoAlarmVolume;
+  ThemeMode get themeMode => _themeMode;
   NotificationDisplayMode get notificationDisplayMode =>
       _notificationDisplayMode;
 
-  bool get isDarkMode => _themeMode == ThemeMode.dark;
+  bool get isDarkMode => _isDarkMode;
 
   // 설정 초기화
   Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
-    _isLoading = true;
+    _isDarkMode = _prefs.getBool(_isDarkModeKey) ?? false;
+    _themeMode = _prefs.getString(_kThemeModeKey) == 'dark'
+        ? ThemeMode.dark
+        : ThemeMode.system;
+    _useTts = _prefs.getBool(_useTtsKey) ?? true;
+    _vibrate = _prefs.getBool(_kVibrateKey) ?? true;
+    _useAutoAlarm = _prefs.getBool(_autoAlarmKey) ?? true;
+    _speakerMode = _prefs.getInt(_kSpeakerModeKey) ?? speakerModeHeadset;
+    _autoAlarmVolume =
+        _prefs.getDouble(_autoAlarmVolumeKey) ?? defaultAutoAlarmVolume;
+    _notificationDisplayMode = NotificationDisplayMode
+        .values[_prefs.getInt(_notificationDisplayModeKey) ?? 0];
     notifyListeners();
-
-    try {
-      _alarmSoundId =
-          _prefs.getString(_alarmSoundKey) ?? AlarmSound.ttsAlarm.id;
-      await _updateNativeAlarmSound();
-      await _loadSettings();
-
-      // Load Notification Display Mode
-      final modeIndex = _prefs.getInt(_notificationDisplayModeKey) ??
-          NotificationDisplayMode.alarmedOnly.index;
-      _notificationDisplayMode = NotificationDisplayMode.values[modeIndex];
-
-      // 자동 알람 볼륨 로드
-      _autoAlarmVolume =
-          _prefs.getDouble(_kAutoAlarmVolumeKey) ?? defaultAutoAlarmVolume;
-    } catch (e) {
-      debugPrint('설정 초기화 오류: $e');
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
   }
 
   // 알람음 변경
-  Future<void> setAlarmSound(String soundId) async {
-    try {
-      await _prefs.setString(_alarmSoundKey, soundId);
-      _alarmSoundId = soundId;
-
-      await _updateNativeAlarmSound();
-      notifyListeners();
-    } catch (e) {
-      debugPrint('알람음 설정 오류: $e');
-    }
+  Future<void> setAlarmSound(String sound) async {
+    _alarmSound = sound;
+    await _prefs.setString(_alarmSoundKey, sound);
+    notifyListeners();
   }
 
   // 네이티브 코드에 알람음 설정 전달
   Future<void> _updateNativeAlarmSound() async {
     try {
-      final sound = selectedAlarmSound;
+      final sound = AlarmSound.findById(_alarmSound);
       await _channel.invokeMethod('setAlarmSound', {
         'filename': sound.filename,
         'soundId': sound.id,
@@ -129,73 +118,36 @@ class SettingsService extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadSettings() async {
-    try {
-      final themeModeString = _prefs.getString(_kThemeModeKey) ?? 'system';
-      _themeMode = _parseThemeMode(themeModeString);
-
-      _useTts = _prefs.getBool(_kUseTtsKey) ?? true;
-      _vibrate = _prefs.getBool(_kVibrateKey) ?? true;
-      _useAutoAlarm = _prefs.getBool(_kUseAutoAlarmKey) ?? true;
-      _speakerMode = _prefs.getInt(_kSpeakerModeKey) ??
-          speakerModeHeadset; // 스피커 모드 로드 (기본 이어폰 전용)
-
-      notifyListeners();
-    } catch (e) {
-      debugPrint('설정 로드 오류: $e');
-    }
-  }
-
   Future<void> updateThemeMode(ThemeMode mode) async {
     if (_themeMode == mode) return;
 
     _themeMode = mode;
-
-    try {
-      await _prefs.setString(_kThemeModeKey, _themeModeToString(mode));
-      notifyListeners();
-    } catch (e) {
-      debugPrint('테마 모드 저장 오류: $e');
-    }
+    await _prefs.setString(_kThemeModeKey, _themeModeToString(mode));
+    notifyListeners();
   }
 
   Future<void> updateUseTts(bool value) async {
     if (_useTts == value) return;
 
     _useTts = value;
-
-    try {
-      await _prefs.setBool(_kUseTtsKey, value);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('TTS 설정 저장 오류: $e');
-    }
+    await _prefs.setBool(_useTtsKey, value);
+    notifyListeners();
   }
 
   Future<void> updateVibrate(bool value) async {
     if (_vibrate == value) return;
 
     _vibrate = value;
-
-    try {
-      await _prefs.setBool(_kVibrateKey, value);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('진동 설정 저장 오류: $e');
-    }
+    await _prefs.setBool(_kVibrateKey, value);
+    notifyListeners();
   }
 
   Future<void> updateUseAutoAlarm(bool value) async {
     if (_useAutoAlarm == value) return;
 
     _useAutoAlarm = value;
-
-    try {
-      await _prefs.setBool(_kUseAutoAlarmKey, value);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('자동 알람 설정 저장 오류: $e');
-    }
+    await _prefs.setBool(_autoAlarmKey, value);
+    notifyListeners();
   }
 
   // 스피커 모드 업데이트 함수
@@ -209,22 +161,17 @@ class SettingsService extends ChangeNotifier {
         '🔊 스피커 모드 변경: $oldModeName -> $newModeName (값: $_speakerMode -> $mode)');
 
     _speakerMode = mode;
+    await _prefs.setInt(_kSpeakerModeKey, mode);
 
+    // 네이티브 코드에 설정 전달
     try {
-      await _prefs.setInt(_kSpeakerModeKey, mode);
-
-      // 네이티브 코드에 설정 전달
-      try {
-        await _ttsChannel.invokeMethod('setAudioOutputMode', {'mode': mode});
-        debugPrint('✅ 네이티브 TTS 출력 모드 설정 성공: $newModeName');
-      } catch (e) {
-        debugPrint('❌ 네이티브 TTS 출력 모드 설정 실패: $e');
-      }
-
-      notifyListeners();
+      await _ttsChannel.invokeMethod('setAudioOutputMode', {'mode': mode});
+      debugPrint('✅ 네이티브 TTS 출력 모드 설정 성공: $newModeName');
     } catch (e) {
-      debugPrint('❌ 스피커 모드 설정 저장 오류: $e');
+      debugPrint('❌ 네이티브 TTS 출력 모드 설정 실패: $e');
     }
+
+    notifyListeners();
   }
 
   // 테마 모드 문자열 변환 헬퍼 함수
@@ -282,23 +229,18 @@ class SettingsService extends ChangeNotifier {
     if (_autoAlarmVolume == volume) return;
 
     _autoAlarmVolume = volume.clamp(minAutoAlarmVolume, maxAutoAlarmVolume);
+    await _prefs.setDouble(_autoAlarmVolumeKey, _autoAlarmVolume);
 
+    // 네이티브 코드에 볼륨 설정 전달
     try {
-      await _prefs.setDouble(_kAutoAlarmVolumeKey, _autoAlarmVolume);
-
-      // 네이티브 코드에 볼륨 설정 전달
-      try {
-        await _ttsChannel
-            .invokeMethod('setAutoAlarmVolume', {'volume': _autoAlarmVolume});
-        debugPrint('🔊 자동 알람 볼륨 설정 성공: $_autoAlarmVolume');
-      } catch (e) {
-        debugPrint('❌ 자동 알람 볼륨 설정 오류: $e');
-      }
-
-      notifyListeners();
+      await _ttsChannel
+          .invokeMethod('setAutoAlarmVolume', {'volume': _autoAlarmVolume});
+      debugPrint('✅ 자동 알람 볼륨 설정 성공: $_autoAlarmVolume');
     } catch (e) {
-      debugPrint('자동 알람 볼륨 설정 저장 오류: $e');
+      debugPrint('❌ 자동 알람 볼륨 설정 오류: $e');
     }
+
+    notifyListeners();
   }
 
   // Optional: Method to notify native side about setting changes

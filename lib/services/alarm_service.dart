@@ -1477,13 +1477,30 @@ class AlarmService extends ChangeNotifier {
       logMessage('🐛 [DEBUG] 모든 추적 중지 요청: ${_activeAlarms.length}개');
 
       // 1. 네이티브 서비스 완전 중지
-      await _methodChannel?.invokeMethod('stopBusTrackingService');
+      try {
+        await _methodChannel?.invokeMethod('stopBusTrackingService');
+        logMessage('✅ stopBusTrackingService 호출 완료', level: LogLevel.debug);
+      } catch (e) {
+        logMessage('⚠️ stopBusTrackingService 실패 (무시): $e',
+            level: LogLevel.warning);
+      }
 
       // 2. TTS 추적 중지
-      await _methodChannel?.invokeMethod('stopTtsTracking');
+      try {
+        await _methodChannel?.invokeMethod('stopTtsTracking');
+        logMessage('✅ stopTtsTracking 호출 완료', level: LogLevel.debug);
+      } catch (e) {
+        logMessage('⚠️ stopTtsTracking 실패 (무시): $e', level: LogLevel.warning);
+      }
 
       // 3. 모든 알림 취소
-      await _notificationService.cancelAllNotifications();
+      try {
+        await _notificationService.cancelAllNotifications();
+        logMessage('✅ cancelAllNotifications 호출 완료', level: LogLevel.debug);
+      } catch (e) {
+        logMessage('⚠️ cancelAllNotifications 실패 (무시): $e',
+            level: LogLevel.warning);
+      }
 
       // 4. Flutter 측 상태 완전 정리
       _activeAlarms.clear();
@@ -1523,29 +1540,26 @@ class AlarmService extends ChangeNotifier {
 
     try {
       // --- Perform Flutter state update immediately ---
-      final alarmToDeactivate = _activeAlarms[alarmKey];
+      final alarmToRemove = _activeAlarms[alarmKey];
 
-      if (alarmToDeactivate != null) {
-        // 알람을 비활성화 상태로 변경
-        _activeAlarms[alarmKey] =
-            alarmToDeactivate.copyWith(isAutoAlarm: false);
-        logMessage(
-            '[${alarmToDeactivate.busNo}] Flutter activeAlarms 목록에서 비활성화',
+      if (alarmToRemove != null) {
+        // 알람을 완전히 제거
+        _activeAlarms.remove(alarmKey);
+        logMessage('[${alarmToRemove.busNo}] Flutter activeAlarms 목록에서 완전 제거',
             level: LogLevel.debug);
       } else {
         logMessage('⚠️ 취소 요청한 알람($alarmKey)이 Flutter 활성 알람 목록에 없음 (취소 전).',
             level: LogLevel.warning);
       }
 
-      // 자동 알람 목록에서도 비활성화 (혹은 제거)
+      // 자동 알람 목록에서도 제거
       final autoAlarmIndex = _autoAlarms.indexWhere((alarm) =>
           alarm.busNo == busNo &&
           alarm.stationName == stationName &&
           alarm.routeId == routeId);
       if (autoAlarmIndex != -1) {
-        _autoAlarms[autoAlarmIndex] =
-            _autoAlarms[autoAlarmIndex].copyWith(isAutoAlarm: false);
-        logMessage('[$busNo] Flutter autoAlarms 목록에서 비활성화',
+        _autoAlarms.removeAt(autoAlarmIndex);
+        logMessage('[$busNo] Flutter autoAlarms 목록에서 완전 제거',
             level: LogLevel.debug);
       }
 
@@ -1556,25 +1570,23 @@ class AlarmService extends ChangeNotifier {
       if (_trackedRouteId == routeId) {
         _trackedRouteId = null;
         logMessage('추적 Route ID 즉시 초기화됨 (취소된 알람과 일치)', level: LogLevel.debug);
-        if (_activeAlarms.values.where((alarm) => alarm.isAutoAlarm).isEmpty) {
-          // 활성 자동 알람이 없는 경우
+        if (_activeAlarms.isEmpty && _autoAlarms.isEmpty) {
+          // 모든 알람이 없는 경우
           _isInTrackingMode = false;
           shouldForceStopNative = true; // Last tracked alarm removed
-          logMessage('추적 모드 즉시 비활성화 (활성 자동 알람 없음)', level: LogLevel.debug);
+          logMessage('추적 모드 즉시 비활성화 (모든 알람 없음)', level: LogLevel.debug);
         } else {
           _isInTrackingMode = true;
-          logMessage('다른 활성 자동 알람 존재, 추적 모드 유지', level: LogLevel.debug);
+          logMessage('다른 활성 알람 존재, 추적 모드 유지', level: LogLevel.debug);
           // Decide if we need to start tracking the next alarm? For now, no.
         }
-      } else if (_activeAlarms.values
-          .where((alarm) => alarm.isAutoAlarm)
-          .isEmpty) {
-        // 활성 자동 알람이 없는 경우
+      } else if (_activeAlarms.isEmpty && _autoAlarms.isEmpty) {
+        // 모든 알람이 없는 경우
         // If the cancelled alarm wasn't the tracked one, but it was the *last* one
         _isInTrackingMode = false;
         _trackedRouteId = null;
         shouldForceStopNative = true; // Last alarm overall removed
-        logMessage('마지막 활성 자동 알람 취소됨, 추적 모드 비활성화', level: LogLevel.debug);
+        logMessage('마지막 알람 취소됨, 추적 모드 비활성화', level: LogLevel.debug);
       }
 
       await _saveAlarms(); // Persist the removal immediately
