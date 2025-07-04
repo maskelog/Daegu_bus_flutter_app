@@ -336,114 +336,89 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      body: CustomScrollView(
-        slivers: [
-          // Material 3 스타일 AppBar
-          SliverAppBar.large(
-            backgroundColor: colorScheme.surface,
-            surfaceTintColor: colorScheme.surfaceTint,
-            foregroundColor: colorScheme.onSurface,
-            elevation: 0,
-            pinned: true,
-            expandedHeight: 180,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
-              title: Text(
-                '대구버스',
-                style: theme.textTheme.headlineLarge?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      colorScheme.primary.withAlpha(5),
-                      colorScheme.surface,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            actions: [
-              // Material 3 스타일 설정 버튼
-              IconButton.filledTonal(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const SettingsScreen()),
-                  );
-                },
-                icon:
-                    Icon(Icons.settings_outlined, color: colorScheme.onSurface),
-                tooltip: '설정',
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
-
-          // 검색 필드 (Material 3 스타일) - 홈 탭에서만 표시
+      body: Column(
+        children: [
+          // 검색 필드와 설정 버튼을 같은 줄에 배치 - 홈 탭에서만 표시
           if (_currentIndex == 0)
-            SliverToBoxAdapter(
+            SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withAlpha(40),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: colorScheme.outline.withAlpha(20),
-                      width: 1,
-                    ),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () async {
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => SearchScreen(
-                              favoriteStops: _favoriteStops,
-                            ),
+                child: Row(
+                  children: [
+                    // 검색 필드
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color:
+                              colorScheme.surfaceContainerHighest.withAlpha(40),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: colorScheme.outline.withAlpha(20),
+                            width: 1,
                           ),
-                        );
-                        if (result != null) {
-                          if (result is BusStop) {
-                            setState(() => _selectedStop = result);
-                            _loadBusArrivals();
-                          }
-                        }
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 16),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.search,
-                              color: colorScheme.primary,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                "정류장 이름 또는 번호 검색 (예: 동대구역, 2001)",
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => SearchScreen(
+                                    favoriteStops: _favoriteStops,
+                                  ),
                                 ),
+                              );
+                              if (result != null) {
+                                if (result is BusStop) {
+                                  setState(() => _selectedStop = result);
+                                  _loadBusArrivals();
+                                }
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(16),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 16),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.search,
+                                    color: colorScheme.primary,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      "정류장 이름 또는 번호 검색 (예: 동대구역, 2001)",
+                                      style:
+                                          theme.textTheme.bodyMedium?.copyWith(
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    // 설정 버튼
+                    IconButton.filledTonal(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const SettingsScreen()),
+                        );
+                      },
+                      icon: Icon(Icons.settings_outlined,
+                          color: colorScheme.onSurface),
+                      tooltip: '설정',
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -453,65 +428,60 @@ class _HomeScreenState extends State<HomeScreen> {
             Consumer<AlarmService>(
               builder: (context, alarmService, child) {
                 return alarmService.activeAlarms.isNotEmpty
-                    ? const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 16),
-                          child: ActiveAlarmPanel(),
-                        ),
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: ActiveAlarmPanel(),
                       )
-                    : const SliverToBoxAdapter(child: SizedBox.shrink());
+                    : const SizedBox.shrink();
               },
             ),
 
           // 내용
-          if (_isLoading)
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(color: colorScheme.primary),
-                    const SizedBox(height: 16),
-                    Text(
-                      '데이터를 불러오는 중...',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+          Expanded(
+            child: _isLoading
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: colorScheme.primary),
+                        const SizedBox(height: 16),
+                        Text(
+                          '데이터를 불러오는 중...',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            )
-          else if (_errorMessage != null)
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: colorScheme.error,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _errorMessage!,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurface,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.tonal(
-                      onPressed: _initializeData,
-                      child: const Text('다시 시도'),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            ..._buildTabContent(),
+                  )
+                : _errorMessage != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              size: 64,
+                              color: colorScheme.error,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _errorMessage!,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurface,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton.tonal(
+                              onPressed: _initializeData,
+                              child: const Text('다시 시도'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _buildTabContent(),
+          ),
         ],
       ),
       // Material 3 스타일 NavigationBar
@@ -554,39 +524,21 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  List<Widget> _buildTabContent() {
+  Widget _buildTabContent() {
     final colorScheme = Theme.of(context).colorScheme;
     switch (_currentIndex) {
       case 0: // 홈 탭 - 즐겨찾기와 주변정류장 실시간 도착 정보 표시
-        return [
-          SliverFillRemaining(
-              child: Container(
-                  color: colorScheme.surface, child: _buildNearbyTab()))
-        ];
+        return Container(color: colorScheme.surface, child: _buildNearbyTab());
       case 1: // 노선도 탭
-        return [
-          SliverFillRemaining(
-              child: Container(
-                  color: colorScheme.surface, child: _buildRouteMapTab()))
-        ];
+        return Container(
+            color: colorScheme.surface, child: _buildRouteMapTab());
       case 2: // 알람 탭
-        return [
-          SliverFillRemaining(
-              child: Container(
-                  color: colorScheme.surface, child: _buildAlarmTab()))
-        ];
+        return Container(color: colorScheme.surface, child: _buildAlarmTab());
       case 3: // 즐겨찾기 탭
-        return [
-          SliverFillRemaining(
-              child: Container(
-                  color: colorScheme.surface, child: _buildFavoritesTab()))
-        ];
+        return Container(
+            color: colorScheme.surface, child: _buildFavoritesTab());
       default:
-        return [
-          SliverFillRemaining(
-              child: Container(
-                  color: colorScheme.surface, child: _buildNearbyTab()))
-        ];
+        return Container(color: colorScheme.surface, child: _buildNearbyTab());
     }
   }
 

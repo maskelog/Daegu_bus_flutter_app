@@ -5,6 +5,7 @@ import '../models/route_station.dart';
 import '../services/api_service.dart';
 import '../widgets/compact_bus_card.dart';
 import '../models/bus_arrival.dart';
+import 'settings_screen.dart';
 
 class RouteMapScreen extends StatefulWidget {
   const RouteMapScreen({super.key});
@@ -257,38 +258,63 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       backgroundColor: colorScheme.surface,
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color:
-                    colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-              ),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _searchRoutes,
-                decoration: InputDecoration(
-                  hintText: '버스 노선번호 검색 (예: 503, 급행1)',
-                  hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                  prefixIcon: Icon(Icons.search, color: colorScheme.primary),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // 검색 필드
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.4),
+                      ),
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _searchRoutes,
+                        decoration: InputDecoration(
+                          hintText: '버스 노선번호 검색 (예: 503, 급행1)',
+                          hintStyle:
+                              TextStyle(color: colorScheme.onSurfaceVariant),
+                          prefixIcon:
+                              Icon(Icons.search, color: colorScheme.primary),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              vertical: 16, horizontal: 16),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(Icons.clear,
+                                      color: colorScheme.onSurfaceVariant),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _searchRoutes('');
+                                  },
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
                   ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: Icon(Icons.clear,
-                              color: colorScheme.onSurfaceVariant),
-                          onPressed: () {
-                            _searchController.clear();
-                            _searchRoutes('');
-                          },
-                        )
-                      : null,
-                ),
+                  const SizedBox(width: 12),
+                  // 설정 버튼
+                  IconButton.filledTonal(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const SettingsScreen()),
+                      );
+                    },
+                    icon: Icon(Icons.settings_outlined,
+                        color: colorScheme.onSurface),
+                    tooltip: '설정',
+                  ),
+                ],
               ),
             ),
           ),

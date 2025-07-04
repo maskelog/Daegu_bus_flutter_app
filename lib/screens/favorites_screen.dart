@@ -11,6 +11,7 @@ import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
 import '../services/api_service.dart';
 import '../widgets/station_item.dart';
+import 'settings_screen.dart';
 
 class FavoritesScreen extends StatefulWidget {
   final List<BusStop> favoriteStops;
@@ -138,157 +139,196 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    if (widget.favoriteStops.isEmpty) {
-      return Container(
-        color: colorScheme.surface,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.star_border,
-                  size: 64, color: colorScheme.onSurfaceVariant),
-              const SizedBox(height: 16),
-              Text(
-                '즐겨찾는 정류장이 없습니다',
-                style: TextStyle(fontSize: 16, color: colorScheme.onSurface),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '정류장 검색 후 별표 아이콘을 눌러 추가하세요',
-                style: TextStyle(
-                    fontSize: 14, color: colorScheme.onSurfaceVariant),
-              ),
-            ],
+    return Column(
+      children: [
+        // 설정 버튼
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton.filledTonal(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const SettingsScreen()),
+                    );
+                  },
+                  icon: Icon(Icons.settings_outlined,
+                      color: colorScheme.onSurface),
+                  tooltip: '설정',
+                ),
+              ],
+            ),
           ),
         ),
-      );
-    }
-
-    return Container(
-      color: colorScheme.surface,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: widget.favoriteStops.length,
-        itemBuilder: (context, index) {
-          final station = widget.favoriteStops[index];
-          final isSelected = _selectedStop?.id == station.id;
-          final stationArrivals = _stationArrivals[station.id] ?? [];
-          final isLoading = _isLoadingMap[station.id] ?? false;
-          final error = _errorMap[station.id];
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              StationItem(
-                station: station,
-                isSelected: isSelected,
-                isTracking: _stationTrackingStatus[station.id] ?? false,
-                onTap: () {
-                  setState(() {
-                    if (_selectedStop?.id == station.id) {
-                      _selectedStop = null;
-                    } else {
-                      _selectedStop = station;
-                      if (stationArrivals.isEmpty && !isLoading) {
-                        _loadStationArrivals(station);
-                      }
-                    }
-                  });
-                  widget.onStopSelected(station);
-                },
-                onFavoriteToggle: () => widget.onFavoriteToggle(station),
-                onTrackingToggle: () {
-                  final isTracking =
-                      _stationTrackingStatus[station.id] ?? false;
-                  if (isTracking) {
-                    _stopStationTracking(station);
-                  } else {
-                    _startStationTracking(station);
-                  }
-                },
-              ),
-              if (isSelected)
-                Padding(
-                  padding: const EdgeInsets.only(left: 12, top: 8, bottom: 16),
-                  child: SizedBox(
-                    height: 300,
+        // 메인 콘텐츠
+        Expanded(
+          child: Container(
+            color: colorScheme.surface,
+            child: widget.favoriteStops.isEmpty
+                ? Center(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (isLoading)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        else if (error != null)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                children: [
-                                  Icon(Icons.error_outline,
-                                      size: 32, color: colorScheme.error),
-                                  const SizedBox(height: 8),
-                                  Text(error,
-                                      style:
-                                          TextStyle(color: colorScheme.error)),
-                                  TextButton(
-                                    onPressed: () =>
-                                        _loadStationArrivals(station),
-                                    child: const Text('다시 시도'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        else if (stationArrivals.isEmpty)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Text('도착 예정 버스가 없습니다',
-                                  style:
-                                      TextStyle(color: colorScheme.onSurface)),
-                            ),
-                          )
-                        else
-                          Expanded(
-                            child: Scrollbar(
-                              thickness: 6.0,
-                              radius: const Radius.circular(10),
-                              child: ListView.builder(
-                                physics: const BouncingScrollPhysics(),
-                                padding: EdgeInsets.zero,
-                                itemCount: stationArrivals.length,
-                                itemBuilder: (context, idx) {
-                                  final busArrival = stationArrivals[idx];
-                                  return UnifiedBusDetailWidget(
-                                    busArrival: busArrival,
-                                    stationName: station.name,
-                                    stationId: station.id,
-                                    isCompact: true,
-                                    onTap: () => showUnifiedBusDetailModal(
-                                      context,
-                                      busArrival,
-                                      station.stationId ?? station.id,
-                                      station.name,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
+                        Icon(Icons.star_border,
+                            size: 64, color: colorScheme.onSurfaceVariant),
+                        const SizedBox(height: 16),
+                        Text(
+                          '즐겨찾는 정류장이 없습니다',
+                          style: TextStyle(
+                              fontSize: 16, color: colorScheme.onSurface),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '정류장 검색 후 별표 아이콘을 눌러 추가하세요',
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: colorScheme.onSurfaceVariant),
+                        ),
                       ],
                     ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: widget.favoriteStops.length,
+                    itemBuilder: (context, index) {
+                      final station = widget.favoriteStops[index];
+                      final isSelected = _selectedStop?.id == station.id;
+                      final stationArrivals =
+                          _stationArrivals[station.id] ?? [];
+                      final isLoading = _isLoadingMap[station.id] ?? false;
+                      final error = _errorMap[station.id];
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          StationItem(
+                            station: station,
+                            isSelected: isSelected,
+                            isTracking:
+                                _stationTrackingStatus[station.id] ?? false,
+                            onTap: () {
+                              setState(() {
+                                if (_selectedStop?.id == station.id) {
+                                  _selectedStop = null;
+                                } else {
+                                  _selectedStop = station;
+                                  if (stationArrivals.isEmpty && !isLoading) {
+                                    _loadStationArrivals(station);
+                                  }
+                                }
+                              });
+                              widget.onStopSelected(station);
+                            },
+                            onFavoriteToggle: () =>
+                                widget.onFavoriteToggle(station),
+                            onTrackingToggle: () {
+                              final isTracking =
+                                  _stationTrackingStatus[station.id] ?? false;
+                              if (isTracking) {
+                                _stopStationTracking(station);
+                              } else {
+                                _startStationTracking(station);
+                              }
+                            },
+                          ),
+                          if (isSelected)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                  left: 12, top: 8, bottom: 16),
+                              child: SizedBox(
+                                height: 300,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (isLoading)
+                                      const Center(
+                                        child: Padding(
+                                          padding: EdgeInsets.all(16.0),
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      )
+                                    else if (error != null)
+                                      Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(16.0),
+                                          child: Column(
+                                            children: [
+                                              Icon(Icons.error_outline,
+                                                  size: 32,
+                                                  color: colorScheme.error),
+                                              const SizedBox(height: 8),
+                                              Text(error,
+                                                  style: TextStyle(
+                                                      color:
+                                                          colorScheme.error)),
+                                              TextButton(
+                                                onPressed: () =>
+                                                    _loadStationArrivals(
+                                                        station),
+                                                child: const Text('다시 시도'),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      )
+                                    else if (stationArrivals.isEmpty)
+                                      Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(16.0),
+                                          child: Text('도착 예정 버스가 없습니다',
+                                              style: TextStyle(
+                                                  color:
+                                                      colorScheme.onSurface)),
+                                        ),
+                                      )
+                                    else
+                                      Expanded(
+                                        child: Scrollbar(
+                                          thickness: 6.0,
+                                          radius: const Radius.circular(10),
+                                          child: ListView.builder(
+                                            physics:
+                                                const BouncingScrollPhysics(),
+                                            padding: EdgeInsets.zero,
+                                            itemCount: stationArrivals.length,
+                                            itemBuilder: (context, idx) {
+                                              final busArrival =
+                                                  stationArrivals[idx];
+                                              return UnifiedBusDetailWidget(
+                                                busArrival: busArrival,
+                                                stationName: station.name,
+                                                stationId: station.id,
+                                                isCompact: true,
+                                                onTap: () =>
+                                                    showUnifiedBusDetailModal(
+                                                  context,
+                                                  busArrival,
+                                                  station.stationId ??
+                                                      station.id,
+                                                  station.name,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          if (index < widget.favoriteStops.length - 1)
+                            const Divider(height: 24),
+                        ],
+                      );
+                    },
                   ),
-                ),
-              if (index < widget.favoriteStops.length - 1)
-                const Divider(height: 24),
-            ],
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
   }
 
