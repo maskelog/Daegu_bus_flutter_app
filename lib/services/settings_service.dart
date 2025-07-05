@@ -33,7 +33,7 @@ class SettingsService extends ChangeNotifier {
   static const double maxAutoAlarmVolume = 1.0; // 최대 볼륨
 
   late SharedPreferences _prefs;
-  String _alarmSound = 'tts_allarm';
+  String _alarmSound = 'tts';
   bool _useAutoAlarm = true;
   double _autoAlarmVolume = 0.7;
   bool _useTts = true;
@@ -81,6 +81,7 @@ class SettingsService extends ChangeNotifier {
   // 설정 초기화
   Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
+    _alarmSound = _prefs.getString(_alarmSoundKey) ?? 'tts';
     _isDarkMode = _prefs.getBool(_isDarkModeKey) ?? false;
     _themeMode = _prefs.getString(_kThemeModeKey) == 'dark'
         ? ThemeMode.dark

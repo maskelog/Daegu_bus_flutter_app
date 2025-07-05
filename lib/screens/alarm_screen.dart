@@ -397,9 +397,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                         icon: Icon(Icons.volume_up,
                                             color: colorScheme.primary),
                                         label: Text(
-                                          AlarmSound.allSounds
-                                              .firstWhere((s) =>
-                                                  s.id ==
+                                          AlarmSound.findById(
                                                   _settingsService.alarmSoundId)
                                               .name,
                                           style: TextStyle(
