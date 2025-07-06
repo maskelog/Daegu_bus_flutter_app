@@ -72,7 +72,7 @@ class StationItem extends StatelessWidget {
                       icon: Icon(
                         station.isFavorite ? Icons.star : Icons.star_border,
                         color: station.isFavorite
-                            ? Colors.amber
+                            ? colorScheme.primary
                             : colorScheme.onSurfaceVariant,
                         size: 24,
                       ),

@@ -148,15 +148,32 @@ class _AlarmScreenState extends State<AlarmScreen> {
   }
 
   void _deleteAutoAlarm(int index) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('자동 알림 삭제'),
-        content: const Text('이 자동 알림 설정을 삭제하시겠습니까?'),
+        backgroundColor: colorScheme.surface,
+        title: Text(
+          '자동 알림 삭제',
+          style: theme.textTheme.headlineSmall?.copyWith(
+            color: colorScheme.onSurface,
+          ),
+        ),
+        content: Text(
+          '이 자동 알림 설정을 삭제하시겠습니까?',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
+            child: Text(
+              '취소',
+              style: TextStyle(color: colorScheme.primary),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -166,7 +183,10 @@ class _AlarmScreenState extends State<AlarmScreen> {
                 _saveAutoAlarms();
               });
             },
-            child: const Text('삭제', style: TextStyle(color: Colors.red)),
+            child: Text(
+              '삭제',
+              style: TextStyle(color: colorScheme.error),
+            ),
           ),
         ],
       ),

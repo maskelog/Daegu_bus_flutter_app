@@ -94,9 +94,12 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
               _buildTimeIndicator(
                   remainingMinutes, isArrivingSoon, isOutOfService),
             ] else
-              const Text(
+              Text(
                 '버스 정보를 불러올 수 없습니다',
-                style: TextStyle(fontSize: 16, color: Colors.red),
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
           ],
         ),
@@ -106,29 +109,37 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
 
   Widget _buildTimeIndicator(
       int remainingMinutes, bool isArrivingSoon, bool isOutOfService) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     String timeText;
     Color textColor;
+    Color backgroundColor;
 
     if (isOutOfService) {
       timeText = '운행 종료';
-      textColor = Colors.grey;
+      textColor = colorScheme.onSurfaceVariant;
+      backgroundColor = colorScheme.surfaceContainerHighest;
     } else if (remainingMinutes <= 0) {
       timeText = '곧 도착';
-      textColor = Colors.green;
+      textColor = colorScheme.primary;
+      backgroundColor = colorScheme.primaryContainer;
+    } else if (isArrivingSoon) {
+      timeText = '$remainingMinutes분 후 도착';
+      textColor = colorScheme.error;
+      backgroundColor = colorScheme.errorContainer;
     } else {
       timeText = '$remainingMinutes분 후 도착';
-      textColor = isArrivingSoon ? Colors.red : Colors.blue;
+      textColor = colorScheme.secondary;
+      backgroundColor = colorScheme.secondaryContainer;
     }
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       decoration: BoxDecoration(
-        color: Color.fromARGB(
-            26, textColor.r.toInt(), textColor.g.toInt(), textColor.b.toInt()),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Color.fromARGB(77, textColor.r.toInt(), textColor.g.toInt(),
-              textColor.b.toInt()),
+          color: textColor.withOpacity(0.3),
         ),
       ),
       child: Text(
@@ -145,23 +156,25 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
   Widget _buildMessageDisplay() {
     if (_message == null) return const SizedBox.shrink();
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: _isSuccess
-            ? const Color(0x1A008000) // Color.fromRGBO(0, 128, 0, 0.1)
-            : const Color(0x1AFF0000), // Color.fromRGBO(255, 0, 0, 0.1)
+            ? colorScheme.primaryContainer.withOpacity(0.3)
+            : colorScheme.errorContainer.withOpacity(0.3),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: _isSuccess
-              ? const Color(0x4D008000) // Color.fromRGBO(0, 128, 0, 0.3)
-              : const Color(0x4DFF0000), // Color.fromRGBO(255, 0, 0, 0.3)
+              ? colorScheme.primary.withOpacity(0.3)
+              : colorScheme.error.withOpacity(0.3),
         ),
       ),
       child: Text(
         _message!,
         style: TextStyle(
-          color: _isSuccess ? Colors.green[700] : Colors.red[700],
+          color: _isSuccess ? colorScheme.primary : colorScheme.error,
           fontWeight: FontWeight.w500,
         ),
         textAlign: TextAlign.center,

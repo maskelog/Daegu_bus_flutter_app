@@ -563,14 +563,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Text(
                         '${_selectedStop!.name} 실시간 도착 정보',
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).brightness ==
-                                          Brightness.dark
-                                      ? Colors.white
-                                      : Colors.black87,
-                                ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
                       ),
                       IconButton(
                         onPressed: () => _toggleFavorite(_selectedStop!),
@@ -579,7 +578,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? Icons.star
                               : Icons.star_border,
                           color: _isStopFavorite(_selectedStop!)
-                              ? Colors.amber
+                              ? Theme.of(context).colorScheme.primary
                               : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         tooltip: _isStopFavorite(_selectedStop!)

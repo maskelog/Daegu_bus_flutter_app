@@ -213,54 +213,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      child: Card(
-        elevation: 0,
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: colorScheme.outline.withOpacity(0.2),
-            width: 1,
-          ),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: colorScheme.outlineVariant,
+          width: 1,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 섹션 헤더
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      icon,
-                      size: 20,
-                      color: colorScheme.onPrimaryContainer,
-                    ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  color: colorScheme.primary,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
                   ),
-                  const SizedBox(width: 12),
-                  Text(
-                    title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.white
-                          : colorScheme.onSurface,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            // 섹션 내용
-            ...children,
-            const SizedBox(height: 8),
-          ],
-        ),
+          ),
+          ...children,
+        ],
       ),
     );
   }
@@ -268,7 +253,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildSwitchTile(
     BuildContext context, {
     required String title,
-    required String subtitle,
+    String? subtitle,
     required IconData icon,
     required bool value,
     required ValueChanged<bool> onChanged,
@@ -287,17 +272,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title,
         style: theme.textTheme.bodyLarge?.copyWith(
           fontWeight: FontWeight.w500,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : null,
+          color: colorScheme.onSurface,
         ),
       ),
-      subtitle: Text(
-        subtitle,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: colorScheme.onSurfaceVariant,
-        ),
-      ),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            )
+          : null,
       trailing: Switch(
         value: value,
         onChanged: onChanged,
@@ -325,9 +310,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         '알람 소리',
         style: theme.textTheme.bodyLarge?.copyWith(
           fontWeight: FontWeight.w500,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : null,
+          color: colorScheme.onSurface,
         ),
       ),
       subtitle: Text(
@@ -384,9 +367,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Text(
                   '버스 추적 시 알림에 표시할 버스 범위',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white70
-                        : colorScheme.onSurfaceVariant,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -434,9 +415,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text(
                 '음성 출력 모드',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white70
-                      : colorScheme.onSurfaceVariant,
+                  color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -559,9 +538,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             fontWeight: FontWeight.w500,
             color: isSelected
                 ? colorScheme.onPrimaryContainer
-                : (Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white
-                    : colorScheme.onSurface),
+                : colorScheme.onSurface,
           ),
         ),
         subtitle: subtitle != null
@@ -570,9 +547,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: isSelected
                       ? colorScheme.onPrimaryContainer.withOpacity(0.8)
-                      : (Theme.of(context).brightness == Brightness.dark
-                          ? Colors.white70
-                          : colorScheme.onSurfaceVariant),
+                      : colorScheme.onSurfaceVariant,
                 ),
               )
             : null,
@@ -602,6 +577,9 @@ class _AlarmSoundDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     // Get all sound options from AlarmSound class
     final allSounds = [
       AlarmSound.ttsAlarm,
@@ -610,12 +588,11 @@ class _AlarmSoundDialog extends StatelessWidget {
     ];
 
     return AlertDialog(
+      backgroundColor: colorScheme.surface,
       title: Text(
         '알람 소리 선택',
-        style: TextStyle(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : null,
+        style: theme.textTheme.headlineSmall?.copyWith(
+          color: colorScheme.onSurface,
         ),
       ),
       content: SingleChildScrollView(
@@ -626,14 +603,13 @@ class _AlarmSoundDialog extends StatelessWidget {
                 (sound) => RadioListTile<String>(
                   title: Text(
                     sound.name,
-                    style: TextStyle(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.white
-                          : null,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: colorScheme.onSurface,
                     ),
                   ),
                   value: sound.id,
                   groupValue: selectedId,
+                  activeColor: colorScheme.primary,
                   onChanged: (value) {
                     Navigator.of(context).pop(value);
                   },
@@ -648,9 +624,7 @@ class _AlarmSoundDialog extends StatelessWidget {
           child: Text(
             '취소',
             style: TextStyle(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white
-                  : null,
+              color: colorScheme.primary,
             ),
           ),
         ),
