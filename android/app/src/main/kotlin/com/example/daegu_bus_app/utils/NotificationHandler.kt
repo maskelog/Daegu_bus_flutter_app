@@ -39,9 +39,10 @@ class NotificationHandler(private val context: Context) {
         private const val ALERT_NOTIFICATION_ID_BASE = 1000 // Base for dynamic alert IDs
         const val ARRIVING_SOON_NOTIFICATION_ID = 2 // For arriving soon notifications
 
-        // Intent Actions (referenced by notifications)
-        // private const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_TRACKING"
-        private const val ACTION_CANCEL_NOTIFICATION = "com.example.daegu_bus_app.action.CANCEL_NOTIFICATION"
+        // Intent Actions (referenced by notifications) - BusAlertService와 통일
+        const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_TRACKING"
+        const val ACTION_STOP_SPECIFIC_ROUTE_TRACKING = "com.example.daegu_bus_app.action.STOP_SPECIFIC_ROUTE_TRACKING"
+        const val ACTION_CANCEL_NOTIFICATION = "com.example.daegu_bus_app.action.CANCEL_NOTIFICATION"
     }
 
      // --- Notification Channel Creation ---
@@ -256,11 +257,11 @@ class NotificationHandler(private val context: Context) {
 
     private fun createStopPendingIntent(): PendingIntent {
         val stopAllIntent = Intent(context, BusAlertService::class.java).apply {
-            action = BusAlertService.ACTION_STOP_TRACKING
+            action = ACTION_STOP_TRACKING // 통일된 ACTION 사용
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
         return PendingIntent.getService(
-            context, 1, stopAllIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            context, 9999, stopAllIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE // 고유한 requestCode
         )
     }
 
@@ -278,15 +279,17 @@ class NotificationHandler(private val context: Context) {
 
         // 수정: ACTION_STOP_SPECIFIC_ROUTE_TRACKING 사용하여 특정 알람만 해제
         val cancelIntent = Intent(context, BusAlertService::class.java).apply {
-             action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+             action = ACTION_STOP_SPECIFIC_ROUTE_TRACKING // 통일된 ACTION 사용
              putExtra("routeId", routeId)
              putExtra("busNo", busNo)
              putExtra("stationName", stationName)
              putExtra("notificationId", notificationId)
              if (isAutoAlarm) putExtra("isAutoAlarm", true) // 자동알람이면 플래그 추가
          }
+         // 고유한 requestCode 생성 (충돌 방지)
+         val uniqueCancelRequestCode = (notificationId * 2000) + (routeId?.hashCode() ?: 0).and(0xFFFF)
          val cancelPendingIntent = PendingIntent.getService(
-             context, notificationId + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+             context, uniqueCancelRequestCode, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
          )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID_ALERT)
@@ -340,19 +343,41 @@ class NotificationHandler(private val context: Context) {
      fun cancelNotification(id: Int) {
          Log.d(TAG, "Request to cancel notification ID: $id")
          try {
-             val notificationManager = NotificationManagerCompat.from(context)
-             notificationManager.cancel(id)
+             // 1. 강화된 즉시 취소 (이중 보장)
+             try {
+                 val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                 val notificationManagerCompat = NotificationManagerCompat.from(context)
+                 
+                 // 개별 ID 강제 취소 (여러 번 시도)
+                 for (attempt in 1..3) {
+                     systemNotificationManager.cancel(id)
+                     notificationManagerCompat.cancel(id)
+                     if (attempt < 3) {
+                         Thread.sleep(50) // 짧은 지연 후 재시도
+                     }
+                 }
+                 
+                 // 로그에서 보인 문제 ID들도 함께 취소
+                 val problematicIds = listOf(916311223, 954225315, 1, 10000, id)
+                 for (problematicId in problematicIds) {
+                     systemNotificationManager.cancel(problematicId)
+                     notificationManagerCompat.cancel(problematicId)
+                 }
+                 
+                 Log.d(TAG, "✅ 강화된 알림 취소 완료: ID=$id (+ ${problematicIds.size}개 추가 ID)")
+             } catch (e: Exception) {
+                 Log.e(TAG, "❌ 강화된 알림 취소 오류: ${e.message}")
+             }
 
              // 진행 중인 추적 알림인 경우 BusAlertService에도 알림
              if (id == ONGOING_NOTIFICATION_ID) {
-                 // 1. 즉시 노티피케이션 취소
+                 // 2. 모든 알림 강제 취소 (ONGOING_NOTIFICATION_ID인 경우)
                  try {
-                     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                     notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                     notificationManager.cancelAll()
-                     Log.d(TAG, "즉시 노티피케이션 취소 완료")
+                     val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                     systemNotificationManager.cancelAll()
+                     Log.d(TAG, "✅ 모든 알림 강제 취소 완료 (ONGOING)")
                  } catch (e: Exception) {
-                     Log.e(TAG, "즉시 노티피케이션 취소 오류: ${e.message}")
+                     Log.e(TAG, "❌ 모든 알림 강제 취소 오류: ${e.message}")
                  }
 
                  // 2. 서비스에 중지 요청 전송
@@ -372,14 +397,12 @@ class NotificationHandler(private val context: Context) {
                  context.sendBroadcast(allCancelIntent)
                  Log.d(TAG, "Sent ALL_TRACKING_CANCELLED broadcast")
 
-                 // 4. Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+                 // 4. Flutter 메서드 채널을 통해 직접 이벤트 전송 시도 (개선된 방법)
                  try {
-                     if (context is MainActivity) {
-                         context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
-                         Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료 (NotificationHandler)")
-                     }
+                     MainActivity.sendFlutterEvent("onAllAlarmsCanceled", null)
+                     Log.d(TAG, "✅ Flutter 메서드 채널로 모든 알람 취소 이벤트 전송 완료 (NotificationHandler)")
                  } catch (e: Exception) {
-                     Log.e(TAG, "Flutter 메서드 채널 전송 오류 (NotificationHandler): ${e.message}")
+                     Log.e(TAG, "❌ Flutter 메서드 채널 전송 오류 (NotificationHandler): ${e.message}")
                  }
 
                  // 5. 지연된 추가 노티피케이션 취소 (백업)
@@ -439,14 +462,12 @@ class NotificationHandler(private val context: Context) {
              context.sendBroadcast(allCancelIntent)
              Log.d(TAG, "Sent ALL_TRACKING_CANCELLED broadcast")
 
-             // 5. Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+             // 5. Flutter 메서드 채널을 통해 직접 이벤트 전송 시도 (개선된 방법)
              try {
-                 if (context is MainActivity) {
-                     context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
-                     Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료 (cancelOngoingTrackingNotification)")
-                 }
+                 MainActivity.sendFlutterEvent("onAllAlarmsCanceled", null)
+                 Log.d(TAG, "✅ Flutter 메서드 채널로 모든 알람 취소 이벤트 전송 완료 (cancelOngoingTrackingNotification)")
              } catch (e: Exception) {
-                 Log.e(TAG, "Flutter 메서드 채널 전송 오류 (cancelOngoingTrackingNotification): ${e.message}")
+                 Log.e(TAG, "❌ Flutter 메서드 채널 전송 오류 (cancelOngoingTrackingNotification): ${e.message}")
              }
 
              // 6. 지연된 추가 노티피케이션 취소 (백업)
@@ -534,14 +555,12 @@ class NotificationHandler(private val context: Context) {
              context.sendBroadcast(allCancelIntent)
              Log.d(TAG, "Sent ALL_TRACKING_CANCELLED broadcast")
 
-             // 5. Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+             // 5. Flutter 메서드 채널을 통해 직접 이벤트 전송 시도 (개선된 방법)
              try {
-                 if (context is MainActivity) {
-                     context._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
-                     Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료 (cancelAllNotifications)")
-                 }
+                 MainActivity.sendFlutterEvent("onAllAlarmsCanceled", null)
+                 Log.d(TAG, "✅ Flutter 메서드 채널로 모든 알람 취소 이벤트 전송 완료 (cancelAllNotifications)")
              } catch (e: Exception) {
-                 Log.e(TAG, "Flutter 메서드 채널 전송 오류 (cancelAllNotifications): ${e.message}")
+                 Log.e(TAG, "❌ Flutter 메서드 채널 전송 오류 (cancelAllNotifications): ${e.message}")
              }
 
              // 6. 지연된 추가 노티피케이션 취소 (백업) - 더 강력하게
@@ -621,17 +640,19 @@ class NotificationHandler(private val context: Context) {
              context, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
          ) else null
 
-         // "종료" 버튼 Intent (특정 알람 해제)
+         // "종료" 버튼 Intent (특정 알람 해제) - 고유한 requestCode 생성
          val cancelIntent = Intent(context, BusAlertService::class.java).apply {
-             action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+             action = ACTION_STOP_SPECIFIC_ROUTE_TRACKING // 통일된 ACTION 사용
              putExtra("routeId", routeId) // 이 알림의 routeId
              putExtra("notificationId", id)     // 이 알림의 ID
              putExtra("busNo", busNo)           // UI 업데이트를 위해 추가
              putExtra("stationName", stationName) // UI 업데이트를 위해 추가
              if (isAutoAlarm) putExtra("isAutoAlarm", true) // 자동알람이면 플래그 추가
          }
+         // 고유한 requestCode 생성 (충돌 방지): 알림 ID + 해시코드 조합
+         val uniqueRequestCode = (id * 1000) + (routeId?.hashCode() ?: 0).and(0xFFFF)
          val cancelPendingIntent = PendingIntent.getService(
-             context, id + 1000, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE // requestCode 충돌 방지
+             context, uniqueRequestCode, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
          )
 
          val builder = NotificationCompat.Builder(context, CHANNEL_ID_ALERT) // 도착 알림 채널 사용
@@ -681,8 +702,10 @@ class NotificationHandler(private val context: Context) {
              action = ACTION_CANCEL_NOTIFICATION
              putExtra("notificationId", ARRIVING_SOON_NOTIFICATION_ID)
          }
+         // 고유한 requestCode 생성
+         val arrivingSoonCancelRequestCode = ARRIVING_SOON_NOTIFICATION_ID + 3000
          val cancelPendingIntent = PendingIntent.getService(
-             context, ARRIVING_SOON_NOTIFICATION_ID + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+             context, arrivingSoonCancelRequestCode, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
          )
 
          val builder = NotificationCompat.Builder(context, CHANNEL_ID_ALERT)

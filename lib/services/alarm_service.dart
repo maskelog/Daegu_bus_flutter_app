@@ -72,6 +72,17 @@ class AlarmService extends ChangeNotifier {
   final Set<String> _processedNotifications = {};
   Timer? _refreshTimer;
 
+  // 자동 알람 제어 플래그
+  bool _autoAlarmEnabled = true;
+  final Set<String> _manuallyStoppedAlarms = <String>{};
+  final Map<String, DateTime> _manuallyStoppedTimestamps = <String, DateTime>{};
+
+  // 실행된 알람 추적 (중복 실행 방지)
+  final Map<String, DateTime> _executedAlarms = <String, DateTime>{};
+
+  // 중복 이벤트 방지를 위한 캐시
+  final Map<String, int> _processedEventTimestamps = <String, int>{};
+
   List<alarm_model.AlarmData> get activeAlarms {
     final allAlarms = <alarm_model.AlarmData>{};
     allAlarms.addAll(
@@ -106,9 +117,40 @@ class AlarmService extends ChangeNotifier {
           final String busNo = args['busNo'] ?? '';
           final String routeId = args['routeId'] ?? '';
           final String stationName = args['stationName'] ?? '';
+          final int? timestamp = args['timestamp'];
+
+          // 중복 이벤트 방지 체크
+          final String eventKey =
+              "${busNo}_${routeId}_${stationName}_cancellation";
+          if (timestamp != null &&
+              _processedEventTimestamps.containsKey(eventKey)) {
+            final lastTimestamp = _processedEventTimestamps[eventKey]!;
+            final timeDiff = timestamp - lastTimestamp;
+            if (timeDiff < 3000) {
+              // 3초 이내 중복 이벤트 무시
+              logMessage('⚠️ [중복방지] 이벤트 무시: $eventKey (${timeDiff}ms 전에 처리됨)',
+                  level: LogLevel.warning);
+              return true;
+            }
+          }
+
+          // 이벤트 시간 기록
+          if (timestamp != null) {
+            _processedEventTimestamps[eventKey] = timestamp;
+          }
+
+          // 오래된 이벤트 정리 (30초 이전)
+          final now = DateTime.now().millisecondsSinceEpoch;
+          final expiredKeys = _processedEventTimestamps.entries
+              .where((entry) => now - entry.value > 30000)
+              .map((entry) => entry.key)
+              .toList();
+          for (var key in expiredKeys) {
+            _processedEventTimestamps.remove(key);
+          }
 
           logMessage(
-              '🐛 [DEBUG] 네이티브에서 특정 알람 취소 이벤트 수신: $busNo, $stationName, $routeId',
+              '🔔 [노티피케이션] 네이티브에서 특정 알람 취소 이벤트 수신: $busNo번, $stationName, $routeId',
               level: LogLevel.info);
 
           // 즉시 Flutter 측 상태 동기화 (낙관적 업데이트)
@@ -116,6 +158,11 @@ class AlarmService extends ChangeNotifier {
           final removedAlarm = _activeAlarms.remove(alarmKey);
 
           if (removedAlarm != null) {
+            // 수동으로 중지된 알람으로 표시 (자동 알람 재시작 방지)
+            _manuallyStoppedAlarms.add(alarmKey);
+            _manuallyStoppedTimestamps[alarmKey] = DateTime.now();
+            logMessage('🚫 수동 중지 알람 추가: $alarmKey', level: LogLevel.info);
+
             // 캐시 정리
             final cacheKey = "${busNo}_$routeId";
             _cachedBusInfo.remove(cacheKey);
@@ -125,21 +172,23 @@ class AlarmService extends ChangeNotifier {
               _trackedRouteId = null;
               if (_activeAlarms.isEmpty) {
                 _isInTrackingMode = false;
+                logMessage('🛑 추적 모드 비활성화 (취소된 알람이 추적 중이던 알람)',
+                    level: LogLevel.info);
               }
             } else if (_activeAlarms.isEmpty) {
               _isInTrackingMode = false;
               _trackedRouteId = null;
+              logMessage('🛑 추적 모드 비활성화 (모든 알람 취소됨)', level: LogLevel.info);
             }
 
             // 상태 저장 및 UI 업데이트
             await _saveAlarms();
             notifyListeners();
 
-            logMessage('🐛 [DEBUG] ✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료: $alarmKey',
+            logMessage('✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료: $alarmKey',
                 level: LogLevel.info);
           } else {
-            logMessage(
-                '🐛 [DEBUG] ⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리만 수행',
+            logMessage('⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리만 수행',
                 level: LogLevel.warning);
 
             // 상태 정리
@@ -147,6 +196,7 @@ class AlarmService extends ChangeNotifier {
               _isInTrackingMode = false;
               _trackedRouteId = null;
               notifyListeners();
+              logMessage('🛑 추적 모드 비활성화 (상태 정리)', level: LogLevel.info);
             }
           }
 
@@ -157,6 +207,15 @@ class AlarmService extends ChangeNotifier {
 
           // 모든 활성 알람 제거
           if (_activeAlarms.isNotEmpty) {
+            // 모든 활성 알람을 수동 중지 목록에 추가
+            final now = DateTime.now();
+            for (var alarmKey in _activeAlarms.keys) {
+              _manuallyStoppedAlarms.add(alarmKey);
+              _manuallyStoppedTimestamps[alarmKey] = now;
+            }
+            logMessage('🚫 모든 알람을 수동 중지 목록에 추가: ${_activeAlarms.length}개',
+                level: LogLevel.info);
+
             _activeAlarms.clear();
             _cachedBusInfo.clear();
             _isInTrackingMode = false;
@@ -217,9 +276,14 @@ class AlarmService extends ChangeNotifier {
       _loadDataInBackground();
 
       _alarmCheckTimer?.cancel();
-      _alarmCheckTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _alarmCheckTimer = Timer.periodic(const Duration(seconds: 5), (_) {
         refreshAlarms();
-        _checkAutoAlarms(); // 자동 알람 체크 추가 (15초마다 정밀 체크)
+        _checkAutoAlarms(); // 자동 알람 체크 추가 (5초마다 정밀 체크)
+
+        // 디버깅: 현재 자동 알람 상태 출력 (30초마다)
+        if (_.tick % 6 == 0) {
+          _logAutoAlarmStatus();
+        }
       });
 
       logMessage('✅ AlarmService 초기화 시작 (데이터는 백그라운드 로딩)');
@@ -239,6 +303,91 @@ class AlarmService extends ChangeNotifier {
     _initialized = false;
     _alarmCheckTimer?.cancel();
     super.dispose();
+  }
+
+  // 자동 알람 일시 정지/재개 메서드
+  void pauseAutoAlarms() {
+    _autoAlarmEnabled = false;
+    logMessage('⏸️ 자동 알람 일시 정지', level: LogLevel.info);
+  }
+
+  void resumeAutoAlarms() {
+    _autoAlarmEnabled = true;
+    logMessage('▶️ 자동 알람 재개', level: LogLevel.info);
+  }
+
+  void clearManuallyStoppedAlarms() {
+    _manuallyStoppedAlarms.clear();
+    _manuallyStoppedTimestamps.clear();
+    logMessage('🧹 수동 중지 알람 목록 초기화', level: LogLevel.info);
+  }
+
+  void cleanupExecutedAlarms() {
+    final now = DateTime.now();
+    final cutoffTime = now.subtract(const Duration(hours: 2)); // 2시간 이전 기록 삭제
+
+    final keysToRemove = <String>[];
+    _executedAlarms.forEach((key, executionTime) {
+      if (executionTime.isBefore(cutoffTime)) {
+        keysToRemove.add(key);
+      }
+    });
+
+    for (var key in keysToRemove) {
+      _executedAlarms.remove(key);
+    }
+
+    if (keysToRemove.isNotEmpty) {
+      logMessage('🧹 실행 기록 정리: ${keysToRemove.length}개 제거',
+          level: LogLevel.debug);
+    }
+  }
+
+  // 디버깅용: 자동 알람 상태 로그 출력
+  void _logAutoAlarmStatus() {
+    try {
+      // 실행 기록 정리 (주기적으로)
+      cleanupExecutedAlarms();
+
+      final now = DateTime.now();
+      final weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+      logMessage(
+          '🕒 [자동알람 상태] 현재 시간: ${now.toString()} (${weekdays[now.weekday % 7]})');
+      logMessage('🕒 [자동알람 상태] 활성 자동 알람: ${_autoAlarms.length}개');
+      logMessage('🕒 [자동알람 상태] 자동 알람 활성화: $_autoAlarmEnabled');
+      logMessage('🕒 [자동알람 상태] 수동 중지된 알람: ${_manuallyStoppedAlarms.length}개');
+      logMessage('🕒 [자동알람 상태] 실행 기록: ${_executedAlarms.length}개');
+
+      for (var alarm in _autoAlarms) {
+        final timeUntilAlarm = alarm.scheduledTime.difference(now);
+        final repeatDaysStr =
+            alarm.repeatDays?.map((day) => weekdays[day % 7]).join(', ') ??
+                '없음';
+        logMessage(
+            '  - ${alarm.busNo}번 (${alarm.stationName}): 예정 시간 ${alarm.scheduledTime.toString()}, ${timeUntilAlarm.inMinutes}분 후, 반복: $repeatDaysStr');
+      }
+
+      if (_autoAlarms.isEmpty) {
+        logMessage('  - 설정된 자동 알람이 없습니다.');
+      }
+
+      if (_manuallyStoppedAlarms.isNotEmpty) {
+        logMessage('  - 수동 중지된 알람:');
+        for (var alarmKey in _manuallyStoppedAlarms) {
+          final stoppedTime = _manuallyStoppedTimestamps[alarmKey];
+          if (stoppedTime != null) {
+            final stoppedDate =
+                DateTime(stoppedTime.year, stoppedTime.month, stoppedTime.day);
+            final currentDate = DateTime(now.year, now.month, now.day);
+            final isToday = stoppedDate.isAtSameMomentAs(currentDate);
+            logMessage(
+                '    • $alarmKey (중지일: ${stoppedTime.month}/${stoppedTime.day}, ${isToday ? "오늘" : "과거"})');
+          }
+        }
+      }
+    } catch (e) {
+      logMessage('❌ 자동 알람 상태 로그 오류: $e', level: LogLevel.error);
+    }
   }
 
   Future<void> loadAlarms() async {
@@ -328,29 +477,48 @@ class AlarmService extends ChangeNotifier {
             continue;
           }
 
-          final alarm = alarm_model.AlarmData(
+          // AutoAlarm 객체 생성하여 올바른 다음 알람 시간 계산
+          final autoAlarm = AutoAlarm(
             id: data['id'] ??
                 '${data['routeNo']}_${data['stationName']}'.hashCode.toString(),
-            busNo: data['routeNo'] ?? '',
+            routeNo: data['routeNo'] ?? '',
             stationName: data['stationName'] ?? '',
-            remainingMinutes: 0,
+            stationId: data['stationId'] ?? '',
             routeId: data['routeId'] ?? '',
-            scheduledTime: DateTime(
-              DateTime.now().year,
-              DateTime.now().month,
-              DateTime.now().day,
-              data['hour'] ?? 0,
-              data['minute'] ?? 0,
-            ),
-            useTTS: data['useTTS'] ?? true,
-            isAutoAlarm: true, // 자동 알람으로 표시
+            hour: data['hour'] ?? 0,
+            minute: data['minute'] ?? 0,
             repeatDays: data['repeatDays'] != null
                 ? List<int>.from(data['repeatDays'])
                 : [],
+            excludeWeekends: data['excludeWeekends'] ?? false,
+            excludeHolidays: data['excludeHolidays'] ?? false,
+            useTTS: data['useTTS'] ?? true,
+            isActive: data['isActive'] ?? true,
+          );
+
+          // 다음 알람 시간 계산
+          final nextAlarmTime = autoAlarm.getNextAlarmTime();
+          if (nextAlarmTime == null) {
+            logMessage('⚠️ 자동 알람 다음 시간 계산 실패: ${autoAlarm.routeNo}',
+                level: LogLevel.warning);
+            continue;
+          }
+
+          final alarm = alarm_model.AlarmData(
+            id: autoAlarm.id,
+            busNo: autoAlarm.routeNo,
+            stationName: autoAlarm.stationName,
+            remainingMinutes: 0,
+            routeId: autoAlarm.routeId,
+            scheduledTime: nextAlarmTime, // 올바른 다음 알람 시간 사용
+            useTTS: autoAlarm.useTTS,
+            isAutoAlarm: true,
+            repeatDays: autoAlarm.repeatDays,
           );
 
           _autoAlarms.add(alarm);
-          logMessage('✅ 자동 알람 로드: ${alarm.busNo}, ${alarm.stationName}');
+          logMessage(
+              '✅ 자동 알람 로드: ${alarm.busNo}, ${alarm.stationName}, 다음 시간: ${nextAlarmTime.toString()}');
         } catch (e) {
           logMessage('❌ 자동 알람 파싱 오류: $e', level: LogLevel.error);
           continue;
@@ -683,13 +851,14 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  // 자동 알람 체크 메서드 수정 (Concurrent modification 오류 해결)
+  // 자동 알람 체크 메서드 수정 (올바른 시간 계산 및 실행)
   Future<void> _checkAutoAlarms() async {
     try {
       // 자동 알람 설정이 비활성화되어 있으면 실행하지 않음
       final settingsService = SettingsService();
-      if (!settingsService.useAutoAlarm) {
-        logMessage('⚠️ 자동 알람이 설정에서 비활성화되어 있습니다.', level: LogLevel.warning);
+      if (!settingsService.useAutoAlarm || !_autoAlarmEnabled) {
+        logMessage('⚠️ 자동 알람이 설정에서 비활성화되어 있거나 수동으로 중지되었습니다.',
+            level: LogLevel.warning);
         return;
       }
 
@@ -699,14 +868,83 @@ class AlarmService extends ChangeNotifier {
       final alarmsCopy = List<alarm_model.AlarmData>.from(_autoAlarms);
 
       for (var alarm in alarmsCopy) {
-        // 알람 시간이 정확히 지났는지 확인 (초 단위로 정밀 체크)
-        final timeUntilAlarm = alarm.scheduledTime.difference(now);
+        // 현재 시간과 알람 시간 비교 (정확한 시간 매칭 + 오차 허용)
+        final alarmTime = alarm.scheduledTime;
+        final timeDifference = alarmTime.difference(now);
 
-        // 알람 시간이 지났거나 30초 이내인 경우만 실행
-        if (timeUntilAlarm.inSeconds <= 30 &&
-            timeUntilAlarm.inSeconds >= -300) {
+        // 정확한 시간과 분 매칭 (초는 무시)
+        bool isTargetTime =
+            now.hour == alarmTime.hour && now.minute == alarmTime.minute;
+
+        // 알람 시간 범위 체크 (해당 분의 0~59초 내에 있는지)
+        bool isWithinMinute =
+            timeDifference.inSeconds >= -59 && timeDifference.inSeconds <= 0;
+
+        logMessage(
+            '🕒 알람 시간 체크: ${alarm.busNo}번 - 현재: ${now.hour}:${now.minute}:${now.second}, 알람: ${alarmTime.hour}:${alarmTime.minute}, 차이: ${timeDifference.inSeconds}초',
+            level: LogLevel.debug);
+
+        if (isTargetTime && isWithinMinute) {
+          final alarmKey =
+              "${alarm.busNo}_${alarm.stationName}_${alarm.routeId}";
+
+          // 중복 실행 방지 체크 (같은 분에 이미 실행되었는지 확인)
+          final executionKey =
+              "${alarmKey}_${alarmTime.hour}:${alarmTime.minute}";
+          if (_executedAlarms.containsKey(executionKey)) {
+            final lastExecution = _executedAlarms[executionKey]!;
+            final sameMinute = lastExecution.hour == now.hour &&
+                lastExecution.minute == now.minute;
+            if (sameMinute) {
+              logMessage(
+                  '⏭️ 알람 중복 실행 방지: ${alarm.busNo}번 - 이미 ${lastExecution.hour}:${lastExecution.minute}에 실행됨',
+                  level: LogLevel.warning);
+              continue;
+            }
+          }
+
           logMessage(
-              '⚡ 자동 알람 시간 임박: ${alarm.busNo}번, ${timeUntilAlarm.inSeconds}초 남음',
+              '✅ 알람 실행 조건 만족: ${alarm.busNo}번 - 시간: ${alarmTime.hour}:${alarmTime.minute}, 차이: ${timeDifference.inSeconds}초',
+              level: LogLevel.info);
+
+          // 수동으로 중지된 알람인지 확인 (다음날 자정에 자동 해제)
+          if (_manuallyStoppedAlarms.contains(alarmKey)) {
+            final stoppedTime = _manuallyStoppedTimestamps[alarmKey];
+            if (stoppedTime != null) {
+              // 중지된 날짜와 현재 날짜 비교
+              final stoppedDate = DateTime(
+                  stoppedTime.year, stoppedTime.month, stoppedTime.day);
+              final currentDate = DateTime(now.year, now.month, now.day);
+
+              if (currentDate.isAfter(stoppedDate)) {
+                // 다음날이 되면 수동 중지 목록에서 제거
+                _manuallyStoppedAlarms.remove(alarmKey);
+                _manuallyStoppedTimestamps.remove(alarmKey);
+                logMessage(
+                    '✅ 수동 중지 알람 자동 해제 (다음날 도래): ${alarm.busNo}번, ${alarm.stationName}',
+                    level: LogLevel.info);
+              } else {
+                logMessage(
+                    '⚠️ 자동 알람 스킵 (오늘 수동으로 중지됨): ${alarm.busNo}번, ${alarm.stationName}',
+                    level: LogLevel.warning);
+                continue;
+              }
+            } else {
+              // 타임스탬프가 없으면 목록에서 제거
+              _manuallyStoppedAlarms.remove(alarmKey);
+            }
+          }
+
+          // 이미 추적 중인 알람인지 확인
+          if (_activeAlarms.containsKey(alarmKey)) {
+            logMessage(
+                '⚠️ 자동 알람 스킵 (이미 추적 중): ${alarm.busNo}번, ${alarm.stationName}',
+                level: LogLevel.warning);
+            continue;
+          }
+
+          logMessage(
+              '⚡ 자동 알람 실행: ${alarm.busNo}번, 예정 시간: ${alarmTime.toString()}, 현재 시간: ${now.toString()}',
               level: LogLevel.info);
 
           // 올바른 stationId 가져오기 (DB 실패 시 매핑 사용)
@@ -741,20 +979,44 @@ class AlarmService extends ChangeNotifier {
             stationName: alarm.stationName,
             stationId: effectiveStationId, // 올바른 stationId 사용
             routeId: alarm.routeId,
-            hour: alarm.scheduledTime.hour,
-            minute: alarm.scheduledTime.minute,
-            repeatDays: [now.weekday], // 오늘 요일
+            hour: alarmTime.hour,
+            minute: alarmTime.minute,
+            repeatDays: (alarm.repeatDays?.isNotEmpty ?? false)
+                ? alarm.repeatDays!
+                : [now.weekday], // 반복 요일 사용
             useTTS: alarm.useTTS,
             isActive: true,
           );
 
+          // 실행 기록 저장 (중복 실행 방지)
+          _executedAlarms[executionKey] = now;
+
           // 즉시 실행하고 지속적인 모니터링 시작
           await _startContinuousAutoAlarm(autoAlarm);
 
-          // 알람 목록에서 제거 (이미 실행됨)
+          // 실행된 알람을 제거하고 다음 알람 스케줄링
           _autoAlarms.removeWhere((a) => a.id == alarm.id);
-          await _saveAutoAlarms();
 
+          // 다음 알람 시간 계산하여 다시 추가
+          final nextAlarmTime = autoAlarm.getNextAlarmTime();
+          if (nextAlarmTime != null) {
+            final nextAlarm = alarm_model.AlarmData(
+              id: alarm.id,
+              busNo: alarm.busNo,
+              stationName: alarm.stationName,
+              remainingMinutes: 0,
+              routeId: alarm.routeId,
+              scheduledTime: nextAlarmTime,
+              useTTS: alarm.useTTS,
+              isAutoAlarm: true,
+              repeatDays: alarm.repeatDays ?? [],
+            );
+            _autoAlarms.add(nextAlarm);
+            logMessage(
+                '✅ 다음 자동 알람 스케줄링: ${alarm.busNo}번, 다음 시간: ${nextAlarmTime.toString()}');
+          }
+
+          await _saveAutoAlarms();
           logMessage('✅ 자동 알람 실행 완료: ${alarm.busNo}번', level: LogLevel.info);
         }
       }
@@ -1214,6 +1476,12 @@ class AlarmService extends ChangeNotifier {
     try {
       logMessage('📋 자동 알람 중지 요청: $busNo번, $stationName', level: LogLevel.info);
 
+      // 수동 중지 알람 목록에 추가 (재시작 방지)
+      final alarmKey = "${busNo}_${stationName}_$routeId";
+      _manuallyStoppedAlarms.add(alarmKey);
+      _manuallyStoppedTimestamps[alarmKey] = DateTime.now();
+      logMessage('🚫 수동 중지 알람 추가: $alarmKey', level: LogLevel.info);
+
       // 새로고침 타이머 중지
       _refreshTimer?.cancel();
       _refreshTimer = null;
@@ -1231,7 +1499,6 @@ class AlarmService extends ChangeNotifier {
           alarm.routeId == routeId);
 
       // activeAlarms에서도 제거
-      final alarmKey = "${busNo}_${stationName}_$routeId";
       _activeAlarms.remove(alarmKey);
 
       await _saveAutoAlarms();
@@ -1989,6 +2256,7 @@ class AlarmService extends ChangeNotifier {
           scheduledTime: scheduledTime,
           useTTS: alarm.useTTS,
           isAutoAlarm: true,
+          repeatDays: alarm.repeatDays, // 반복 요일 정보 포함
         );
         _autoAlarms.add(alarmData);
         logMessage('  ✅ 알람 데이터 생성 완료');

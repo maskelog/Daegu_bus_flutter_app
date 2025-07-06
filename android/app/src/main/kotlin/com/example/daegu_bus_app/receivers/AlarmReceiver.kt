@@ -17,7 +17,6 @@ class AlarmReceiver : BroadcastReceiver() {
         Log.d(TAG, "🔔 알람 수신: $action")
 
         if (action == "com.example.daegu_bus_app.AUTO_ALARM") {
-            // 배터리 최적화된 자동알람 처리
             handleOptimizedAutoAlarm(context, intent)
         }
     }
@@ -114,12 +113,14 @@ class AlarmReceiver : BroadcastReceiver() {
             val minute = intent.getIntExtra("minute", 0)
             val repeatDays = intent.getIntArrayExtra("repeatDays") ?: return
 
+            Log.d(TAG, "🔄 다음 자동 알람 스케줄링 시작: ${busNo}번 버스, $hour:$minute, 반복 요일: ${repeatDays.joinToString(",")}")
+
             // 배터리 상태 확인 (간단한 체크)
             val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
             val batteryLevel = batteryManager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 100
 
-            // 배터리가 20% 미만이면 다음 알람 스케줄링 건너뛰기
-            if (batteryLevel < 20) {
+            // 배터리가 15% 미만이면 다음 알람 스케줄링 건너뛰기 (20%에서 15%로 완화)
+            if (batteryLevel < 15) {
                 Log.w(TAG, "⚠️ 배터리 부족 ($batteryLevel%), 다음 알람 스케줄링 건너뛰기")
                 return
             }
@@ -143,7 +144,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 .setInputData(inputData)
                 .setConstraints(
                     androidx.work.Constraints.Builder()
-                        .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                        .setRequiredNetworkType(androidx.work.NetworkType.NOT_REQUIRED) // 네트워크 요구사항 완화
                         .setRequiresBatteryNotLow(true) // 배터리 부족 시 실행 안함
                         .setRequiresStorageNotLow(true) // 저장공간 부족 시 실행 안함
                         .build()
@@ -153,6 +154,7 @@ class AlarmReceiver : BroadcastReceiver() {
                     30000L, // 30초 백오프
                     java.util.concurrent.TimeUnit.MILLISECONDS
                 )
+                .addTag("nextAutoAlarm_${alarmId}") // 태그 추가로 추적 가능
                 .build()
 
             workManager.enqueue(workRequest)

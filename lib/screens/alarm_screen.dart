@@ -696,7 +696,8 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
     if (widget.autoAlarm != null) {
       final alarm = widget.autoAlarm!;
       _hour = alarm.hour;
-      _minute = alarm.minute;
+      // 분 값을 5분 단위로 조정
+      _minute = (alarm.minute ~/ 5) * 5;
       _repeatDays = List.from(alarm.repeatDays);
       _excludeWeekends = alarm.excludeWeekends;
       _excludeHolidays = alarm.excludeHolidays;
@@ -711,7 +712,8 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
     } else {
       final now = DateTime.now();
       _hour = now.hour;
-      _minute = now.minute;
+      // 현재 분을 5분 단위로 조정
+      _minute = (now.minute ~/ 5) * 5;
       _repeatDays = [1, 2, 3, 4, 5];
       if (widget.selectedStation != null) {
         _selectedStation = widget.selectedStation;

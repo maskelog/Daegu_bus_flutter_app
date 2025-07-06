@@ -70,6 +70,23 @@ import android.os.Handler
 import android.os.Looper
 
 class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
+    companion object {
+        // 싱글톤 인스턴스
+        private var instance: MainActivity? = null
+        
+        fun getInstance(): MainActivity? = instance
+        
+        // 정적 메서드를 통한 Flutter 이벤트 전송
+        fun sendFlutterEvent(methodName: String, arguments: Any?) {
+            try {
+                instance?._methodChannel?.invokeMethod(methodName, arguments)
+                Log.d("MainActivity", "✅ Flutter 이벤트 전송 완료: $methodName")
+            } catch (e: Exception) {
+                Log.e("MainActivity", "❌ Flutter 이벤트 전송 실패: $methodName, ${e.message}")
+            }
+        }
+    }
+    
     private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
     private val NOTIFICATION_CHANNEL = "com.example.daegu_bus_app/notification"
     private val TTS_CHANNEL = "com.example.daegu_bus_app/tts"
@@ -119,8 +136,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         super.configureFlutterEngine(flutterEngine)
         GeneratedPluginRegistrant.registerWith(flutterEngine)
 
-        // BUS_API_CHANNEL 설정 (기존과 동일)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL).setMethodCallHandler { call, result ->
+        // BUS_API_CHANNEL 설정 (기존과 동일) - _methodChannel에 할당
+        _methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL)
+        _methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "cancelAlarmNotification" -> {
                     val routeId = call.argument<String>("routeId") ?: ""
@@ -1431,6 +1449,10 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             super.onCreate(savedInstanceState)
+            
+            // 싱글톤 인스턴스 설정
+            instance = this
+            
             Log.d("MainActivity", " MainActivity 생성")
 
             // 승차 완료 액션 처리
@@ -1589,6 +1611,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         try {
+            // 싱글톤 인스턴스 정리
+            instance = null
+            
             // TTS 종료
             if (::tts.isInitialized) {
                 try {

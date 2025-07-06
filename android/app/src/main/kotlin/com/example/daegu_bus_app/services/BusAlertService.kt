@@ -284,6 +284,19 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 // 알람 리스트는 사용자가 앱에서 명시적으로 삭제할 때만 제거되어야 함
                 stopSpecificTracking(routeId, busNo, stationName, shouldRemoveFromList = false)
                 Log.d(TAG, "노티피케이션 종료: 알람 리스트 유지, TTS만 중지 ($busNo)")
+                
+                // 📌 Flutter로 직접 메서드 채널을 통해 이벤트 전송
+                try {
+                    val alarmCancelData = mapOf(
+                        "busNo" to busNo,
+                        "routeId" to routeId,
+                        "stationName" to stationName
+                    )
+                    MainActivity.sendFlutterEvent("onAlarmCanceledFromNotification", alarmCancelData)
+                    Log.d(TAG, "✅ Flutter 메서드 채널로 알람 취소 이벤트 전송 완료")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Flutter 메서드 채널 이벤트 전송 실패: ${e.message}")
+                }
             } else {
                 Log.e(TAG, "Missing data for ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName")
                 stopTrackingIfIdle()
@@ -301,12 +314,22 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                     stopAllTracking()
                 }
 
-                // Flutter 측에 알림 취소 이벤트 전송 시도
+                // Flutter 측에 알림 취소 이벤트 전송 시도 (브로드캐스트 + 메서드 채널)
                 try {
                     val cancelIntent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
                     cancelIntent.putExtra("notificationId", notificationId)
                     sendBroadcast(cancelIntent)
                     Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $notificationId")
+                    
+                    // 메서드 채널을 통한 직접 이벤트 전송 (더 신뢰성 있음)
+                    if (notificationId == ONGOING_NOTIFICATION_ID) {
+                        MainActivity.sendFlutterEvent("onAllAlarmsCanceled", null)
+                        Log.d(TAG, "✅ Flutter 메서드 채널로 모든 알람 취소 이벤트 전송 완료")
+                    } else {
+                        val cancelData = mapOf("notificationId" to notificationId)
+                        MainActivity.sendFlutterEvent("onNotificationCanceled", cancelData)
+                        Log.d(TAG, "✅ Flutter 메서드 채널로 알림 취소 이벤트 전송 완료: $notificationId")
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
                 }
@@ -546,39 +569,75 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 Log.d(TAG, "✅ 알람 리스트 유지: $routeId (TTS만 중지)")
             }
 
-            // 2. 알림 취소
-            Log.d(TAG, "🔔 2단계: 알림 취소")
-            val notificationManager = NotificationManagerCompat.from(this)
+            // 2. 강화된 알림 취소
+            Log.d(TAG, "🔔 2단계: 강화된 알림 취소")
+            val notificationManagerCompat = NotificationManagerCompat.from(this)
+            val systemNotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             val specificNotificationId = generateNotificationId(routeId)
 
-            // 개별 알림 취소
+            // 개별 알림 취소 (이중 보장)
             try {
-                notificationManager.cancel(specificNotificationId)
+                notificationManagerCompat.cancel(specificNotificationId)
+                systemNotificationManager.cancel(specificNotificationId)
                 Log.d(TAG, "✅ 개별 알림 취소됨: ID=$specificNotificationId")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ 개별 알림 취소 실패: ID=$specificNotificationId, 오류=${e.message}")
             }
 
-            // 자동알람 전용 알림도 취소
+            // 자동알람 전용 알림도 취소 (이중 보장)
             if (isAutoAlarmTracking) {
                 try {
-                    notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
+                    notificationManagerCompat.cancel(AUTO_ALARM_NOTIFICATION_ID)
+                    systemNotificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
                     Log.d(TAG, "✅ 자동알람 전용 알림 취소됨: ID=$AUTO_ALARM_NOTIFICATION_ID")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ 자동알람 전용 알림 취소 실패: ${e.message}")
                 }
             }
 
+            // 강제 알림 취소 (로그에서 보인 모든 ID들)
+            try {
+                val forceIds = listOf(916311223, 954225315, 1, 10000, specificNotificationId, AUTO_ALARM_NOTIFICATION_ID, ONGOING_NOTIFICATION_ID)
+                for (id in forceIds) {
+                    systemNotificationManager.cancel(id)
+                }
+                Log.d(TAG, "✅ 강제 알림 취소 완료: ${forceIds.size}개 ID")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 강제 알림 취소 실패: ${e.message}")
+            }
+
             // 통합 알림 갱신 또는 취소
             if (activeTrackings.isEmpty()) {
                 try {
-                    notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                    Log.d(TAG, "✅ 통합 알림 취소됨: ID=$ONGOING_NOTIFICATION_ID")
+                    // 통합 알림 취소 (이중 보장)
+                    notificationManagerCompat.cancel(ONGOING_NOTIFICATION_ID)
+                    systemNotificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                    
+                    // 포그라운드 서비스 강제 중지
                     if (isInForeground) {
-                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        try {
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ stopForeground 실패, 재시도: ${e.message}")
+                            try {
+                                stopForeground(true) // 레거시 방법으로 재시도
+                            } catch (e2: Exception) {
+                                Log.e(TAG, "❌ stopForeground 완전 실패: ${e2.message}")
+                            }
+                        }
                         isInForeground = false
-                        Log.d(TAG, "✅ 포그라운드 서비스 중지")
+                        Log.d(TAG, "✅ 포그라운드 서비스 강제 중지")
                     }
+                    
+                    // 모든 알림 강제 취소 (최후 수단)
+                    try {
+                        systemNotificationManager.cancelAll()
+                        Log.d(TAG, "✅ 모든 알림 강제 취소 완료")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 모든 알림 강제 취소 실패: ${e.message}")
+                    }
+                    
+                    Log.d(TAG, "✅ 통합 알림 및 포그라운드 서비스 완전 정리")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ 통합 알림/포그라운드 중지 실패: ${e.message}")
                 }
@@ -1860,33 +1919,59 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
     }
 
+    // 중복 이벤트 방지를 위한 캐시
+    private val sentCancellationEvents = mutableSetOf<String>()
+    private val eventTimeouts = mutableMapOf<String, Long>()
+    
     private fun sendCancellationBroadcast(busNo: String, routeId: String, stationName: String) {
         try {
+            // 중복 이벤트 방지 키 생성
+            val eventKey = "${busNo}_${routeId}_${stationName}_cancellation"
+            val currentTime = System.currentTimeMillis()
+            
+            // 5초 이내 중복 이벤트 체크
+            val lastEventTime = eventTimeouts[eventKey] ?: 0
+            if (currentTime - lastEventTime < 5000) {
+                Log.d(TAG, "⚠️ 중복 취소 이벤트 방지: $eventKey (${currentTime - lastEventTime}ms 전에 전송됨)")
+                return
+            }
+            
+            // 이벤트 시간 기록
+            eventTimeouts[eventKey] = currentTime
+            sentCancellationEvents.add(eventKey)
+            
+            // 오래된 이벤트 정리 (30초 이전)
+            val expiredKeys = eventTimeouts.filter { currentTime - it.value > 30000 }.keys
+            for (key in expiredKeys) {
+                eventTimeouts.remove(key)
+                sentCancellationEvents.remove(key)
+            }
+
             val cancellationIntent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED").apply {
                 putExtra("busNo", busNo)
                 putExtra("routeId", routeId)
                 putExtra("stationName", stationName)
                 putExtra("source", "native_service")
+                putExtra("timestamp", currentTime) // 이벤트 시간 추가
                 flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
             }
             sendBroadcast(cancellationIntent)
-            Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $busNo, $routeId, $stationName")
+            Log.d(TAG, "✅ 알림 취소 이벤트 브로드캐스트 전송: $busNo, $routeId, $stationName")
 
-            // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+            // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도 (개선된 방법)
             try {
-                if (applicationContext is MainActivity) {
-                    (applicationContext as MainActivity)._methodChannel?.invokeMethod("onAlarmCanceledFromNotification", mapOf(
-                        "busNo" to busNo,
-                        "routeId" to routeId,
-                        "stationName" to stationName
-                    ))
-                    Log.d(TAG, "Flutter 메서드 채널로 알림 취소 이벤트 직접 전송 완료")
-                }
+                MainActivity.sendFlutterEvent("onAlarmCanceledFromNotification", mapOf(
+                    "busNo" to busNo,
+                    "routeId" to routeId,
+                    "stationName" to stationName,
+                    "timestamp" to currentTime
+                ))
+                Log.d(TAG, "✅ Flutter 메서드 채널로 알람 취소 이벤트 전송 완료")
             } catch (e: Exception) {
-                Log.e(TAG, "Flutter 메서드 채널 전송 오류: ${e.message}")
+                Log.e(TAG, "❌ Flutter 메서드 채널 전송 오류: ${e.message}")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
+            Log.e(TAG, "❌ 알림 취소 이벤트 전송 오류: ${e.message}")
         }
     }
 
