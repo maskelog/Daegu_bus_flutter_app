@@ -1654,7 +1654,7 @@ class AlarmService extends ChangeNotifier {
       await settingsService.initialize();
       final volume = settingsService.autoAlarmVolume;
 
-      // 알림 표시 (일반 알람 전용)
+      // 알림 표시 (일반 알람 전용 - 간단한 알림만)
       try {
         await _notificationService.showNotification(
           id: alarmId,
@@ -1664,9 +1664,9 @@ class AlarmService extends ChangeNotifier {
           currentStation: currentStation ?? '정보 없음',
           routeId: routeId,
           isAutoAlarm: false, // 일반 알람
-          isOngoing: true, // 지속적인 알림
+          isOngoing: false, // 간단한 일회성 알림 (진행중 추적 노티 비활성화)
         );
-        logMessage('✅ 일반 알람 알림 표시 완료: $busNo번', level: LogLevel.info);
+        logMessage('✅ 일반 알람 간단한 알림 표시 완료: $busNo번', level: LogLevel.info);
       } catch (e) {
         logMessage('❌ 일반 알람 알림 표시 오류: $e', level: LogLevel.error);
       }

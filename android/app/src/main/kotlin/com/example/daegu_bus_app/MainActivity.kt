@@ -731,64 +731,94 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
                     val currentStation = call.argument<String>("currentStation") ?: ""
                     val payload = call.argument<String>("payload")
+                    val isOngoing = call.argument<Boolean>("isOngoing") ?: false
+                    val isAutoAlarm = call.argument<Boolean>("isAutoAlarm") ?: false
+                    
                     try {
                         val routeId = call.argument<String>("routeId")
                         val allBusesSummary = call.argument<String>("allBusesSummary")
 
-                        // Build notification content
-                        val title = if (remainingMinutes <= 0) {
-                            "${busNo}번 버스 도착 알람"
-                        } else {
-                            "${busNo}번 버스 알람"
-                        }
-                        val contentText = if (remainingMinutes <= 0) {
-                            "${busNo}번 버스가 ${stationName} 정류장에 곧 도착합니다."
-                        } else {
-                            "${busNo}번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
-                        }
-                        val subText = if (currentStation.isNotEmpty()) "현재 위치: $currentStation" else null
+                        Log.d(TAG, "showNotification: ID=$id, Bus=$busNo, Station=$stationName, Remaining=$remainingMinutes, isOngoing=$isOngoing, isAutoAlarm=$isAutoAlarm")
 
-                        // Intent to open app
-                        val openAppIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                        }
-                        val pendingIntent = if (openAppIntent != null) PendingIntent.getActivity(
-                            this, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                        ) else null
-
-                        // Cancel action - 수정: 특정 알람만 해제하도록 변경
-                        val cancelIntent = Intent(this, BusAlertService::class.java).apply {
-                            if (routeId != null) {
-                                action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
-                                putExtra("routeId", routeId)
+                        if (isOngoing) {
+                            // 진행 중인 추적 알림 - BusAlertService 통해 처리
+                            Log.d(TAG, "진행 중인 추적 알림 - BusAlertService로 전달")
+                            val busIntent = Intent(this, BusAlertService::class.java).apply {
+                                action = if (isAutoAlarm) {
+                                    BusAlertService.ACTION_START_AUTO_ALARM_LIGHTWEIGHT
+                                } else {
+                                    BusAlertService.ACTION_SHOW_NOTIFICATION
+                                }
                                 putExtra("busNo", busNo)
                                 putExtra("stationName", stationName)
-                            } else {
-                                action = BusAlertService.ACTION_STOP_TRACKING
+                                putExtra("routeId", routeId)
+                                putExtra("remainingMinutes", remainingMinutes)
+                                putExtra("currentStation", currentStation)
+                                putExtra("isAutoAlarm", isAutoAlarm)
                             }
-                            putExtra("notificationId", id)
+                            startService(busIntent)
+                            Log.d(TAG, "✅ BusAlertService로 진행 중 추적 알림 요청 전송")
+                        } else {
+                            // 간단한 일회성 알림 - 직접 생성 (잠금화면 표시용)
+                            Log.d(TAG, "간단한 일회성 알림 직접 생성 (잠금화면 표시용)")
+                            
+                            // Build notification content
+                            val title = if (remainingMinutes <= 0) {
+                                "${busNo}번 버스 도착 알람"
+                            } else {
+                                "${busNo}번 버스 알람"
+                            }
+                            val contentText = if (remainingMinutes <= 0) {
+                                "${busNo}번 버스가 ${stationName} 정류장에 곧 도착합니다."
+                            } else {
+                                "${busNo}번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
+                            }
+                            val subText = if (currentStation.isNotEmpty()) "현재 위치: $currentStation" else null
+
+                            // Intent to open app
+                            val openAppIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                            }
+                            val pendingIntent = if (openAppIntent != null) PendingIntent.getActivity(
+                                this, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            ) else null
+
+                            // Cancel action - 간단한 알림 해제용
+                            val cancelIntent = Intent(this, BusAlertService::class.java).apply {
+                                action = BusAlertService.ACTION_CANCEL_NOTIFICATION
+                                putExtra("notificationId", id)
+                                putExtra("busNo", busNo)
+                                putExtra("stationName", stationName)
+                                putExtra("routeId", routeId)
+                            }
+                            val cancelPendingIntent = PendingIntent.getService(
+                                this, id + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            )
+
+                            // 잠금화면 표시를 위한 간단한 알림 생성
+                            val builder = NotificationCompat.Builder(this, ALARM_NOTIFICATION_CHANNEL_ID)
+                                .setContentTitle(title)
+                                .setContentText(contentText)
+                                .setSmallIcon(R.mipmap.ic_launcher)
+                                .setPriority(NotificationCompat.PRIORITY_HIGH) // 잠금화면 표시를 위해 HIGH 사용
+                                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // 잠금화면에서 공개
+                                .setColor(ContextCompat.getColor(this, R.color.alert_color))
+                                .setAutoCancel(true) // 터치 시 자동 삭제
+                                .setDefaults(NotificationCompat.DEFAULT_ALL) // 소리, 진동 포함
+                                .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
+                                .setOnlyAlertOnce(false) // 매번 알림음 재생
+                                .setShowWhen(true) // 시간 표시
+                                .setWhen(System.currentTimeMillis())
+                                
+                            if (pendingIntent != null) builder.setContentIntent(pendingIntent)
+                            if (subText != null) builder.setSubText(subText)
+
+                            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                            notificationManager.notify(id, builder.build())
+                            Log.d(TAG, "✅ 간단한 일회성 알림 표시 완료: ID=$id")
                         }
-                        val cancelPendingIntent = PendingIntent.getService(
-                            this, id + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                        )
-
-                        val builder = NotificationCompat.Builder(this, ALARM_NOTIFICATION_CHANNEL_ID)
-                            .setContentTitle(title)
-                            .setContentText(contentText)
-                            .setSmallIcon(R.mipmap.ic_launcher)
-                            .setPriority(NotificationCompat.PRIORITY_MAX)
-                            .setCategory(NotificationCompat.CATEGORY_ALARM)
-                            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                            .setColor(ContextCompat.getColor(this, R.color.alert_color))
-                            .setAutoCancel(true)
-                            .setDefaults(NotificationCompat.DEFAULT_ALL)
-                            .addAction(R.drawable.ic_cancel, "종료", cancelPendingIntent)
-                        if (pendingIntent != null) builder.setContentIntent(pendingIntent)
-                        if (subText != null) builder.setSubText(subText)
-
-                        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                        notificationManager.notify(id, builder.build())
-                        Log.d(TAG, "✅ showNotification: Notification shown for alarm ID: $id")
+                        
                         result.success(true)
                     } catch (e: Exception) {
                         Log.e(TAG, "알림 표시 오류: ${e.message}", e)
