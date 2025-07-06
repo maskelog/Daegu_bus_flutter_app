@@ -79,6 +79,7 @@ class BusAlertService : Service() {
         const val ACTION_START_AUTO_ALARM_LIGHTWEIGHT = "com.example.daegu_bus_app.action.START_AUTO_ALARM_LIGHTWEIGHT"
         const val ACTION_STOP_AUTO_ALARM = "com.example.daegu_bus_app.action.STOP_AUTO_ALARM"
         const val ACTION_SET_ALARM_SOUND = "com.example.daegu_bus_app.action.SET_ALARM_SOUND"
+        const val ACTION_SHOW_NOTIFICATION = "com.example.daegu_bus_app.action.SHOW_NOTIFICATION"
 
         // TTS Output Modes
         const val OUTPUT_MODE_HEADSET = 0  // 이어폰 전용 (현재 AUTO)
@@ -135,6 +136,11 @@ class BusAlertService : Service() {
     private var isAutoAlarmMode = false
     private var autoAlarmStartTime = 0L
     private val AUTO_ALARM_TIMEOUT_MS = 300000L // 5분 후 자동 종료
+    
+    // 추적 중지 후 재시작 방지를 위한 플래그
+    private var isManuallyStoppedByUser = false
+    private var lastManualStopTime = 0L
+    private val RESTART_PREVENTION_DURATION = 30000L // 30초간 재시작 방지
 
     // Simplified AudioFocusChangeListener
     private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -196,6 +202,20 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
     when (intent?.action) {
         ACTION_START_TRACKING -> {
+            // 🛑 사용자가 수동으로 중지한 직후인지 확인 (재시작 방지)
+            if (isManuallyStoppedByUser) {
+                val timeSinceStop = System.currentTimeMillis() - lastManualStopTime
+                if (timeSinceStop < RESTART_PREVENTION_DURATION) {
+                    Log.w(TAG, "⚠️ 사용자가 ${timeSinceStop/1000}초 전에 수동 중지했음 - 추적 시작 거부")
+                    return START_NOT_STICKY
+                } else {
+                    // 30초가 지났으면 플래그 해제
+                    isManuallyStoppedByUser = false
+                    lastManualStopTime = 0L
+                    Log.d(TAG, "✅ 재시작 방지 기간 만료 - 추적 시작 허용")
+                }
+            }
+
             val routeId = intent.getStringExtra("routeId")
             val stationId = intent.getStringExtra("stationId")
             val stationName = intent.getStringExtra("stationName")
@@ -211,7 +231,14 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             }
         }
         ACTION_STOP_TRACKING -> {
-            Log.i(TAG, "ACTION_STOP_TRACKING: Stopping all tracking.")
+            Log.i(TAG, "🛑 ACTION_STOP_TRACKING: 사용자가 '추적 중지' 버튼을 눌렀습니다!")
+
+            // 🛑 사용자가 수동으로 중지했음을 기록 (재시작 방지)
+            isManuallyStoppedByUser = true
+            lastManualStopTime = System.currentTimeMillis()
+            Log.w(TAG, "🛑🛑🛑 사용자 수동 중지 플래그 설정 - 30초간 모든 추적 재시작 차단! 🛑🛑🛑")
+            Log.w(TAG, "🛑 현재 활성 추적: ${activeTrackings.size}개, 모니터링 작업: ${monitoringJobs.size}개")
+            Log.w(TAG, "🛑 자동알람 모드: $isAutoAlarmMode, 포그라운드 상태: $isInForeground")
 
             // 포그라운드 서비스 즉시 중지
             if (isInForeground) {
@@ -346,6 +373,20 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             if (!isServiceActive && intent.action == ACTION_UPDATE_TRACKING) {
                 Log.w(TAG, "⚠️ 서비스 비활성화 상태에서 UPDATE_TRACKING 무시")
                 return START_NOT_STICKY
+            }
+
+            // 🛑 새로운 추적 시작인 경우만 재시작 방지 로직 적용 (UPDATE는 제외)
+            if (intent.action == ACTION_START_TRACKING_FOREGROUND && isManuallyStoppedByUser) {
+                val timeSinceStop = System.currentTimeMillis() - lastManualStopTime
+                if (timeSinceStop < RESTART_PREVENTION_DURATION) {
+                    Log.w(TAG, "⚠️ 사용자가 ${timeSinceStop/1000}초 전에 수동 중지했음 - 포그라운드 추적 시작 거부")
+                    return START_NOT_STICKY
+                } else {
+                    // 30초가 지났으면 플래그 해제
+                    isManuallyStoppedByUser = false
+                    lastManualStopTime = 0L
+                    Log.d(TAG, "✅ 재시작 방지 기간 만료 - 포그라운드 추적 시작 허용")
+                }
             }
 
             val busNo = intent.getStringExtra("busNo") ?: ""
@@ -483,6 +524,20 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             }
         }
         ACTION_START_AUTO_ALARM_LIGHTWEIGHT -> {
+            // 🛑 사용자가 수동으로 중지한 직후인지 확인 (재시작 방지)
+            if (isManuallyStoppedByUser) {
+                val timeSinceStop = System.currentTimeMillis() - lastManualStopTime
+                if (timeSinceStop < RESTART_PREVENTION_DURATION) {
+                    Log.w(TAG, "⚠️ 사용자가 ${timeSinceStop/1000}초 전에 수동 중지했음 - 자동 알람 시작 거부")
+                    return START_NOT_STICKY
+                } else {
+                    // 30초가 지났으면 플래그 해제
+                    isManuallyStoppedByUser = false
+                    lastManualStopTime = 0L
+                    Log.d(TAG, "✅ 재시작 방지 기간 만료 - 자동 알람 시작 허용")
+                }
+            }
+
             val busNo = intent.getStringExtra("busNo") ?: ""
             val stationName = intent.getStringExtra("stationName") ?: ""
             val remainingMinutes = intent.getIntExtra("remainingMinutes", -1)
@@ -2122,6 +2177,20 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "🔄 updateTrackingInfoFromFlutter 호출: $busNo, $stationName, ${remainingMinutes}분, 현재 위치: $currentStation")
 
         try {
+            // 🛑 사용자 수동 중지 플래그 확인 (재시작 방지)
+            if (isManuallyStoppedByUser) {
+                val timeSinceStop = System.currentTimeMillis() - lastManualStopTime
+                if (timeSinceStop < RESTART_PREVENTION_DURATION) {
+                    Log.w(TAG, "🛑 User manually stopped ${timeSinceStop / 1000}sec ago - rejecting updateTrackingInfoFromFlutter: $busNo")
+                    return
+                } else {
+                    // 30초가 지났으면 플래그 해제
+                    isManuallyStoppedByUser = false
+                    lastManualStopTime = 0L
+                    Log.i(TAG, "✅ Native restart prevention period expired - allowing updateTrackingInfoFromFlutter: $busNo")
+                }
+            }
+
             // 1. 추적 정보 업데이트 또는 생성
             val info = activeTrackings[routeId] ?: TrackingInfo(
                 routeId = routeId,
@@ -2292,51 +2361,64 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     private fun stopAllTracking() {
         Log.i(TAG, "📱 --- stopAllTracking 시작 ---")
 
-        if (!isServiceActive) {
-            Log.w(TAG, "서비스가 이미 비활성 상태입니다.")
-            return
-        }
-
         try {
+            // 🛑 서비스 활성화 플래그를 가장 먼저 비활성화 (새로운 요청 차단)
             isServiceActive = false
             Log.d(TAG, "✅ 서비스 비활성화 플래그 설정")
 
-            // 1. 모니터링 타이머 중지
+            // 🛑 사용자 수동 중지 플래그 강화 (이미 설정되어 있지만 재확인)
+            if (!isManuallyStoppedByUser) {
+                isManuallyStoppedByUser = true
+                lastManualStopTime = System.currentTimeMillis()
+            }
+            Log.w(TAG, "🛑 사용자 수동 중지 플래그 재확인: $isManuallyStoppedByUser")
+
+            // 1. 코루틴 스코프 취소로 모든 비동기 작업 강제 중지
+            try {
+                serviceScope.cancel()
+                Log.d(TAG, "✅ 서비스 코루틴 스코프 취소")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 서비스 코루틴 스코프 취소 오류: ${e.message}")
+            }
+
+            // 2. 모니터링 타이머 중지
             stopMonitoringTimer()
             Log.d(TAG, "✅ 모니터링 타이머 중지")
 
-            // 2. TTS 추적 중지
+            // 3. TTS 추적 완전 중지
             stopTtsTracking(forceStop = true)
             Log.d(TAG, "✅ TTS 추적 중지")
 
-            // 2.1. 자동 알람 WorkManager 작업 취소
+            // 4. 자동 알람 WorkManager 작업 강력 취소
             try {
                 val workManager = androidx.work.WorkManager.getInstance(this)
                 
-                // 1. 모든 자동알람 관련 태그 작업 취소
-                workManager.cancelAllWorkByTag("autoAlarmTask")
+                // 모든 대기 중인 작업 취소 (가장 강력한 방법)
+                workManager.cancelAllWork()
                 
-                // 2. 개별 버스별 자동알람 작업 취소
+                // 특정 태그별 취소
+                workManager.cancelAllWorkByTag("autoAlarmTask")
+                workManager.cancelAllWorkByTag("nextAutoAlarm")
+                
+                // 개별 버스별 자동알람 작업 취소
                 activeTrackings.values.forEach { tracking ->
                     if (tracking.isAutoAlarm) {
                         workManager.cancelAllWorkByTag("autoAlarm_${tracking.busNo}")
                         workManager.cancelAllWorkByTag("autoAlarm_${tracking.routeId}")
+                        workManager.cancelAllWorkByTag("nextAutoAlarm_${tracking.routeId}")
                     }
                 }
                 
-                // 3. 모든 대기 중인 작업 취소 (강력한 정리)
-                workManager.cancelAllWork()
-                
-                // 4. 자동알람 모드 비활성화
+                // 자동알람 모드 완전 비활성화
                 isAutoAlarmMode = false
                 autoAlarmStartTime = 0L
                 
-                Log.d(TAG, "✅ 자동 알람 WorkManager 작업 취소 완료")
+                Log.d(TAG, "✅ WorkManager 작업 강력 취소 완료")
             } catch (e: Exception) {
-                Log.e(TAG, "❌ 자동 알람 WorkManager 작업 취소 오류: ${e.message}")
+                Log.e(TAG, "❌ WorkManager 작업 취소 오류: ${e.message}")
             }
 
-            // 3. 개별 취소 이벤트 전송
+            // 5. 개별 취소 이벤트 전송
             Log.d(TAG, "📨 개별 취소 이벤트 전송 시작")
             val routesToCancel = monitoredRoutes.toMap()
             routesToCancel.forEach { (routeId, route) ->
@@ -2350,24 +2432,34 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 }
             }
 
-            // 4. 모든 취소 이벤트 전송
+            // 6. 모든 취소 이벤트 전송
             sendAllCancellationBroadcast()
             Log.d(TAG, "✅ 모든 취소 이벤트 전송")
 
-            // 5. 데이터 정리
-            Log.d(TAG, "🧭 데이터 정리 시작")
-            monitoringJobs.values.forEach { it.cancel() }
+            // 7. 데이터 강력 정리
+            Log.d(TAG, "🧭 데이터 강력 정리 시작")
+            monitoringJobs.values.forEach { 
+                try {
+                    it.cancel()
+                } catch (e: Exception) {
+                    Log.w(TAG, "모니터링 작업 취소 오류: ${e.message}")
+                }
+            }
             monitoringJobs.clear()
             activeTrackings.clear()
             monitoredRoutes.clear()
             cachedBusInfo.clear()
             arrivingSoonNotified.clear()
-            hasNotifiedTts.clear()
-            hasNotifiedArrival.clear()
+            try {
+                hasNotifiedTts.clear()
+                hasNotifiedArrival.clear()
+            } catch (e: Exception) {
+                Log.w(TAG, "TTS/Arrival 캐시 정리 오류: ${e.message}")
+            }
             Log.d(TAG, "✅ 모든 데이터 정리 완료")
 
-            // 6. 포그라운드 서비스 먼저 중지 (노티피케이션 제거를 위해)
-            Log.d(TAG, "🚀 포그라운드 서비스 중지 시작")
+            // 8. 포그라운드 서비스 강제 중지
+            Log.d(TAG, "🚀 포그라운드 서비스 강제 중지 시작")
             try {
                 if (isInForeground) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -2378,65 +2470,85 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 Log.e(TAG, "❌ 포그라운드 서비스 중지 오류: ${e.message}")
             }
 
-            // 7. 모든 알림 취소 (여러 방법으로 시도)
-            Log.d(TAG, "🔔 알림 취소 시작")
+            // 9. 모든 알림 강력 취소 (다단계 시도)
+            Log.d(TAG, "🔔 알림 강력 취소 시작")
             try {
-                // 7.1. NotificationManagerCompat으로 취소
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                // 9.1. 즉시 취소
+                notificationManager.cancelAll()
+                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
+                
+                // 9.2. NotificationManagerCompat으로도 취소
                 val notificationManagerCompat = NotificationManagerCompat.from(this)
                 notificationManagerCompat.cancelAll()
                 notificationManagerCompat.cancel(ONGOING_NOTIFICATION_ID)
-                notificationManagerCompat.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
-                Log.d(TAG, "✅ 모든 알림 취소 완료 (NotificationManagerCompat)")
+                notificationManagerCompat.cancel(AUTO_ALARM_NOTIFICATION_ID)
+                
+                Log.d(TAG, "✅ 즉시 알림 취소 완료")
 
-                // 7.2. NotificationManager로도 취소 (백업)
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancelAll()
-                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
-                Log.d(TAG, "✅ 모든 알림 취소 완료 (NotificationManager)")
-
-                // 7.3. 지연된 추가 취소 (백업)
-                Handler(Looper.getMainLooper()).postDelayed({
-                    try {
-                        notificationManager.cancelAll()
-                        notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                        notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
-                        Log.d(TAG, "✅ 지연된 알림 취소 완료")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ 지연된 알림 취소 오류: ${e.message}")
-                    }
-                }, 500)
+                // 9.3. 지연된 추가 취소 (3회 시도)
+                val handler = Handler(Looper.getMainLooper())
+                for (i in 1..3) {
+                    handler.postDelayed({
+                        try {
+                            notificationManager.cancelAll()
+                            notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+                            notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
+                            Log.d(TAG, "✅ 지연된 알림 취소 완료 ($i/3)")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ 지연된 알림 취소 오류 ($i/3): ${e.message}")
+                        }
+                    }, (i * 500).toLong())
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ 알림 취소 오류: ${e.message}")
             }
 
-            // 8. 서비스 중지
+            // 10. 인스턴스 및 서비스 완전 정리
             try {
+                instance = null
                 stopSelf()
-                Log.d(TAG, "✅ 서비스 중지 요청 완료")
+                Log.d(TAG, "✅ 서비스 인스턴스 정리 및 중지 요청 완료")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ 서비스 중지 오류: ${e.message}")
             }
 
-            Log.i(TAG, "✅ stopAllTracking 완료 - 모든 리소스 정리 완료")
+            Log.i(TAG, "✅✅✅ stopAllTracking 완료 - 강력한 정리 작업 완료! ✅✅✅")
+            Log.i(TAG, "✅ 사용자 수동 중지 상태: $isManuallyStoppedByUser")
+            Log.i(TAG, "✅ 서비스 활성 상태: $isServiceActive")
+            Log.i(TAG, "✅ 남은 추적: ${activeTrackings.size}개, 모니터링 작업: ${monitoringJobs.size}개")
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ stopAllTracking 중 오류 발생: ${e.message}", e)
             try {
-                Log.w(TAG, "⚠️ 오류 복구 시작: 최소한의 정리 작업 수행")
+                Log.w(TAG, "⚠️ 긴급 복구 시작: 최소한의 정리 작업 수행")
+                
+                // 긴급 정리
+                isServiceActive = false
+                isManuallyStoppedByUser = true
+                lastManualStopTime = System.currentTimeMillis()
+                
                 monitoringJobs.clear()
                 activeTrackings.clear()
                 monitoredRoutes.clear()
-                NotificationManagerCompat.from(this).cancelAll()
+                
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancelAll()
+                
                 if (isInForeground) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     isInForeground = false
                 }
+                
+                instance = null
                 stopSelf()
-                Log.w(TAG, "⚠️ 오류 복구 완료: 최소한의 정리 작업 완료")
+                
+                Log.w(TAG, "⚠️ 긴급 복구 완료")
             } catch (cleanupError: Exception) {
-                Log.e(TAG, "❌ 오류 복구 실패: ${cleanupError.message}")
+                Log.e(TAG, "❌ 긴급 복구 실패: ${cleanupError.message}")
             }
         }
     }

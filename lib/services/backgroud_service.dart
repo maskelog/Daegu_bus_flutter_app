@@ -747,6 +747,7 @@ Future<void> _speakBusInfo(
     remainingMinutes: mins,
     currentStation: bus.currentStation,
     remainingStops: remainingStops,
+    isAutoAlarm: true,
   );
 }
 

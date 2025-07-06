@@ -83,6 +83,11 @@ class AlarmService extends ChangeNotifier {
   // 중복 이벤트 방지를 위한 캐시
   final Map<String, int> _processedEventTimestamps = <String, int>{};
 
+  // 사용자 수동 중지 후 재시작 방지를 위한 플래그
+  bool _userManuallyStopped = false;
+  int _lastManualStopTime = 0;
+  static const int _restartPreventionDuration = 30000; // 30초간 재시작 방지
+
   List<alarm_model.AlarmData> get activeAlarms {
     final allAlarms = <alarm_model.AlarmData>{};
     allAlarms.addAll(
@@ -203,7 +208,22 @@ class AlarmService extends ChangeNotifier {
           return true; // Acknowledge event received
         case 'onAllAlarmsCanceled':
           // 모든 알람 취소 이벤트 처리
-          logMessage('🚌 네이티브에서 모든 알람 취소 이벤트 수신', level: LogLevel.info);
+          logMessage('🛑🛑🛑 네이티브에서 모든 알람 취소 이벤트 수신 - 사용자가 "추적 중지" 버튼을 눌렀습니다!',
+              level: LogLevel.warning);
+
+          // 🛑 사용자 수동 중지 플래그 설정 (30초간 자동 알람 재시작 방지)
+          _userManuallyStopped = true;
+          _lastManualStopTime = DateTime.now().millisecondsSinceEpoch;
+          logMessage('🛑 Flutter 측 수동 중지 플래그 설정 - 30초간 자동 알람 재시작 방지',
+              level: LogLevel.warning);
+
+          // 🛑 실시간 버스 업데이트 타이머 중지 (중요!)
+          try {
+            _notificationService.stopRealTimeBusUpdates();
+            logMessage('🛑 실시간 버스 업데이트 타이머 강제 중지 완료', level: LogLevel.info);
+          } catch (e) {
+            logMessage('❌ 실시간 버스 업데이트 타이머 중지 오류: $e', level: LogLevel.error);
+          }
 
           // 모든 활성 알람 제거
           if (_activeAlarms.isNotEmpty) {
@@ -1087,7 +1107,7 @@ class AlarmService extends ChangeNotifier {
                   stationName: alarm.stationName,
                   remainingMinutes: remainingMinutes,
                   currentStation: currentStation,
-                  isAutoAlarm: true,
+                  isAutoAlarm: true, // 🔊 자동 알람 플래그 전달 - 강제 스피커 모드
                 );
 
                 logMessage(
@@ -1201,6 +1221,24 @@ class AlarmService extends ChangeNotifier {
   // 즉시 실행 자동 알람 메서드 추가
   Future<void> _executeAutoAlarmImmediately(AutoAlarm alarm) async {
     try {
+      // 🛑 사용자가 수동으로 중지한 직후인지 확인 (재시작 방지)
+      if (_userManuallyStopped) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final timeSinceStop = now - _lastManualStopTime;
+        if (timeSinceStop < _restartPreventionDuration) {
+          logMessage(
+              '🛑 사용자가 ${(timeSinceStop / 1000).toInt()}초 전에 수동 중지했음 - 자동 알람 실행 거부: ${alarm.routeNo}번',
+              level: LogLevel.warning);
+          return;
+        } else {
+          // 30초가 지났으면 플래그 해제
+          _userManuallyStopped = false;
+          _lastManualStopTime = 0;
+          logMessage('✅ Flutter 재시작 방지 기간 만료 - 자동 알람 실행 허용: ${alarm.routeNo}번',
+              level: LogLevel.info);
+        }
+      }
+
       // 자동 알람 설정이 비활성화되어 있으면 실행하지 않음
       final settingsService = SettingsService();
       if (!settingsService.useAutoAlarm) {
@@ -1267,7 +1305,7 @@ class AlarmService extends ChangeNotifier {
             stationName: alarm.stationName,
             remainingMinutes: remainingMinutes,
             currentStation: currentStation,
-            isAutoAlarm: true, // 자동 알람 플래그 설정
+            isAutoAlarm: true, // 🔊 자동 알람 플래그 전달 - 강제 스피커 모드
           );
           logMessage('🔊 즉시 자동 알람 TTS 발화 완료 (강제 스피커 모드)', level: LogLevel.info);
         } catch (e) {
@@ -1456,7 +1494,8 @@ class AlarmService extends ChangeNotifier {
           busNo: busNo,
           stationName: stationName,
           remainingMinutes: remainingMinutes,
-          earphoneOnly: !isAutoAlarm, // 일반 알람은 이어폰 전용, 자동 알람은 설정된 모드 사용
+          earphoneOnly: !isAutoAlarm, // 일반 알람은 이어폰 전용, 자동 알람은 스피커 허용
+          isAutoAlarm: isAutoAlarm, // 🔊 자동 알람 플래그 전달
         );
       }
 
@@ -1654,7 +1693,7 @@ class AlarmService extends ChangeNotifier {
       await settingsService.initialize();
       final volume = settingsService.autoAlarmVolume;
 
-      // 알림 표시 (일반 알람 전용 - 간단한 알림만)
+      // 🔔 간단한 일회성 알림만 표시 (진행중 추적 알림 비활성화)
       try {
         await _notificationService.showNotification(
           id: alarmId,
@@ -1664,7 +1703,7 @@ class AlarmService extends ChangeNotifier {
           currentStation: currentStation ?? '정보 없음',
           routeId: routeId,
           isAutoAlarm: false, // 일반 알람
-          isOngoing: false, // 간단한 일회성 알림 (진행중 추적 노티 비활성화)
+          isOngoing: false, // 🔔 간단한 일회성 알림만 표시 (진행중 추적 노티 완전 비활성화)
         );
         logMessage('✅ 일반 알람 간단한 알림 표시 완료: $busNo번', level: LogLevel.info);
       } catch (e) {
@@ -1680,17 +1719,18 @@ class AlarmService extends ChangeNotifier {
           logMessage('🔊 일반 알람 TTS 발화 시도: $busNo번 버스, $remainingMinutes분 후',
               level: LogLevel.info);
 
-          // 사용자 설정에 따른 TTS 발화 (이어폰 우선, 없으면 스피커로 폴백)
+          // 🎧 일반 알람은 이어폰 연결 시에만 TTS 발화 (earphoneOnly: true)
           final success = await SimpleTTSHelper.speak(
             "$busNo번 버스가 $remainingMinutes분 후 도착 예정입니다.",
-            earphoneOnly: false, // 사용자 설정에 따라 자동 결정
+            earphoneOnly: true, // 🎧 일반 알람은 이어폰 전용 모드 - 이어폰 연결 시에만 TTS 발화
           );
 
           if (success) {
             logMessage('✅ 일반 알람 TTS 발화 완료 (볼륨: ${volume * 100}%)',
                 level: LogLevel.info);
           } else {
-            logMessage('❌ 일반 알람 TTS 발화 실패', level: LogLevel.error);
+            logMessage('❌ 일반 알람 TTS 발화 실패 (이어폰 미연결일 수 있음)',
+                level: LogLevel.warning);
           }
         } catch (e) {
           logMessage('❌ 일반 알람 TTS 발화 오류: $e', level: LogLevel.error);

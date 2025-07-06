@@ -92,6 +92,57 @@ class SimpleTTSHelper {
         return false;
       }
 
+      // 🔊 자동 알람의 경우 이어폰 연결 상태와 관계없이 발화 (earphoneOnly가 false이고 force가 true인 경우)
+      if (!earphoneOnly && force) {
+        logMessage('🔊 자동 알람 TTS: 이어폰 연결 상태 무시하고 발화 시도', level: LogLevel.info);
+
+        // TTS 발화 실행
+        _isSpeaking = true;
+        _addRecentMessage(message);
+
+        // 먼저 네이티브 TTS 시도 (스피커 포함)
+        try {
+          logMessage('🔊 네이티브 TTS 발화 시도 (스피커 모드): $message',
+              level: LogLevel.info);
+
+          final result = await _ttsChannel.invokeMethod('speakTTS', {
+            'message': message,
+            'isHeadphoneMode': false, // 스피커 모드 강제
+            'forceSpeaker': true, // 스피커 강제 사용
+            'volume': 1.0, // 최대 볼륨
+          });
+
+          logMessage('✅ 네이티브 TTS 발화 성공 (스피커): $result', level: LogLevel.info);
+          return true;
+        } catch (e) {
+          logMessage('❌ 네이티브 TTS 발화 실패, Flutter TTS로 폴백: $e',
+              level: LogLevel.warning);
+
+          // 네이티브 TTS 실패 시 Flutter TTS로 폴백
+          try {
+            if (_flutterTts == null) {
+              await initialize();
+            }
+
+            await _flutterTts?.setVolume(1.0); // 최대 볼륨
+            await _flutterTts?.setSpeechRate(0.5); // 적당한 속도
+            await _flutterTts?.speak(message);
+
+            logMessage('✅ Flutter TTS 폴백 발화 성공: $message',
+                level: LogLevel.info);
+            return true;
+          } catch (flutterError) {
+            logMessage('❌ Flutter TTS 폴백도 실패: $flutterError',
+                level: LogLevel.error);
+            _isSpeaking = false;
+            return false;
+          }
+        }
+      }
+
+      // 🎧 일반 알람 및 이어폰 전용 모드 (earphoneOnly가 true인 경우)
+      logMessage('🎧 이어폰 전용 모드 TTS 시도', level: LogLevel.info);
+
       // 현재 설정된 오디오 출력 모드 확인
       int currentMode = earphoneOnly ? 0 : await _getCurrentAudioMode();
       logMessage('🔊 현재 오디오 출력 모드: $currentMode (earphoneOnly: $earphoneOnly)',
@@ -102,14 +153,21 @@ class SimpleTTSHelper {
       logMessage('🎧 이어폰 연결 상태: ${isHeadphoneConnected ? "연결됨" : "연결 안됨"}',
           level: LogLevel.info);
 
+      // 🎧 일반 알람의 경우 이어폰이 연결되지 않았으면 TTS 발화 안함
+      if (earphoneOnly && !isHeadphoneConnected) {
+        logMessage('⚠️ 일반 알람: 이어폰이 연결되지 않아 TTS 발화를 건너뜁니다.',
+            level: LogLevel.warning);
+        _isSpeaking = false;
+        return false;
+      }
+
       // 출력 모드에 따른 처리
       switch (currentMode) {
         case 0: // 이어폰 전용
           if (!isHeadphoneConnected) {
-            logMessage('⚠️ 이어폰 전용 모드인데 이어폰이 연결되지 않았습니다. 스피커로 폴백합니다.',
+            logMessage('⚠️ 이어폰 전용 모드인데 이어폰이 연결되지 않았습니다.',
                 level: LogLevel.warning);
-            // 이어폰이 연결되지 않았으면 스피커로 폴백
-            return await _speakNative(message, force: false);
+            return false;
           }
           break;
         case 1: // 스피커 전용
@@ -117,10 +175,9 @@ class SimpleTTSHelper {
           break;
         case 2: // 자동 감지
           if (earphoneOnly && !isHeadphoneConnected) {
-            logMessage('⚠️ 이어폰 전용 요청인데 이어폰이 연결되지 않았습니다. 스피커로 폴백합니다.',
+            logMessage('⚠️ 이어폰 전용 요청인데 이어폰이 연결되지 않았습니다.',
                 level: LogLevel.warning);
-            // 이어폰이 연결되지 않았으면 스피커로 폴백
-            return await _speakNative(message, force: false);
+            return false;
           }
           break;
       }
@@ -144,6 +201,7 @@ class SimpleTTSHelper {
       }
     } catch (e) {
       logMessage('❌ TTS 발화 오류: $e', level: LogLevel.error);
+      _isSpeaking = false;
       return false;
     }
   }

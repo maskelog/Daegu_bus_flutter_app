@@ -608,8 +608,8 @@ class NotificationService extends ChangeNotifier {
     );
   }
 
-  // 실시간 버스 정보 업데이트 타이머 중지
-  void _stopRealTimeBusUpdates() {
+  // 실시간 버스 정보 업데이트 타이머 중지 (public으로 변경)
+  void stopRealTimeBusUpdates() {
     _busUpdateTimer?.cancel();
     _busUpdateTimer = null;
     _currentBusNo = null;
@@ -617,6 +617,11 @@ class NotificationService extends ChangeNotifier {
     _currentRouteId = null;
     _currentStationId = null;
     debugPrint('🚌 실시간 버스 정보 업데이트 타이머 중지');
+  }
+
+  // 내부용 별칭 (기존 코드 호환성 유지)
+  void _stopRealTimeBusUpdates() {
+    stopRealTimeBusUpdates();
   }
 
   /// 실시간 버스 추적 알림을 즉시 갱신 (패널 등에서 호출)
