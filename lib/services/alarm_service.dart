@@ -1671,21 +1671,29 @@ class AlarmService extends ChangeNotifier {
         logMessage('❌ 일반 알람 알림 표시 오류: $e', level: LogLevel.error);
       }
 
-      // TTS 알림 시작 (설정된 경우 - 일반 알람 -> 이어폰 전용)
+      // TTS 알림 시작 (설정된 경우 - 일반 알람)
       if (useTTS) {
         try {
           await SimpleTTSHelper.initialize();
           await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
 
-          // 이어폰 전용 모드로 TTS 발화
-          await SimpleTTSHelper.speak(
+          logMessage('🔊 일반 알람 TTS 발화 시도: $busNo번 버스, $remainingMinutes분 후',
+              level: LogLevel.info);
+
+          // 사용자 설정에 따른 TTS 발화 (이어폰 우선, 없으면 스피커로 폴백)
+          final success = await SimpleTTSHelper.speak(
             "$busNo번 버스가 $remainingMinutes분 후 도착 예정입니다.",
-            earphoneOnly: true, // 이어폰 전용 모드 명시
+            earphoneOnly: false, // 사용자 설정에 따라 자동 결정
           );
 
-          logMessage('🔊 일반 알람 TTS 발화 완료 (이어폰 전용 모드, 볼륨: ${volume * 100}%)');
+          if (success) {
+            logMessage('✅ 일반 알람 TTS 발화 완료 (볼륨: ${volume * 100}%)',
+                level: LogLevel.info);
+          } else {
+            logMessage('❌ 일반 알람 TTS 발화 실패', level: LogLevel.error);
+          }
         } catch (e) {
-          logMessage('🔊 일반 알람 TTS 발화 오료: $e', level: LogLevel.error);
+          logMessage('❌ 일반 알람 TTS 발화 오류: $e', level: LogLevel.error);
         }
       }
 

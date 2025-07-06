@@ -106,9 +106,10 @@ class SimpleTTSHelper {
       switch (currentMode) {
         case 0: // 이어폰 전용
           if (!isHeadphoneConnected) {
-            logMessage('⚠️ 이어폰 전용 모드인데 이어폰이 연결되지 않았습니다',
+            logMessage('⚠️ 이어폰 전용 모드인데 이어폰이 연결되지 않았습니다. 스피커로 폴백합니다.',
                 level: LogLevel.warning);
-            return false;
+            // 이어폰이 연결되지 않았으면 스피커로 폴백
+            return await _speakNative(message, force: false);
           }
           break;
         case 1: // 스피커 전용
@@ -116,9 +117,10 @@ class SimpleTTSHelper {
           break;
         case 2: // 자동 감지
           if (earphoneOnly && !isHeadphoneConnected) {
-            logMessage('⚠️ 이어폰 전용 요청인데 이어폰이 연결되지 않았습니다',
+            logMessage('⚠️ 이어폰 전용 요청인데 이어폰이 연결되지 않았습니다. 스피커로 폴백합니다.',
                 level: LogLevel.warning);
-            return false;
+            // 이어폰이 연결되지 않았으면 스피커로 폴백
+            return await _speakNative(message, force: false);
           }
           break;
       }
