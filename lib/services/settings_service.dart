@@ -10,6 +10,18 @@ enum NotificationDisplayMode {
   allBuses // 해당 정류장의 모든 버스
 }
 
+// 컬러 스키마 종류 정의
+enum ColorSchemeType {
+  blue,
+  green,
+  purple,
+  orange,
+  pink,
+  red,
+  teal,
+  indigo,
+}
+
 class SettingsService extends ChangeNotifier {
   static const String _alarmSoundKey = 'alarm_sound';
   static const String _autoAlarmKey = 'use_auto_alarm';
@@ -21,6 +33,7 @@ class SettingsService extends ChangeNotifier {
   static const String _kVibrateKey = 'vibrate';
   static const String _kSpeakerModeKey = 'speaker_mode';
   static const String _notificationDisplayModeKey = 'notificationDisplayMode';
+  static const String _colorSchemeKey = 'color_scheme';
 
   // 스피커 모드 상수
   static const int speakerModeHeadset = 0; // 이어폰 전용
@@ -39,6 +52,7 @@ class SettingsService extends ChangeNotifier {
   bool _useTts = true;
   bool _isDarkMode = false;
   final String _themeColor = 'blue';
+  ColorSchemeType _colorScheme = ColorSchemeType.blue;
 
   // 네이티브와 통신을 위한 채널 정의
   static const MethodChannel _channel =
@@ -75,6 +89,7 @@ class SettingsService extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   NotificationDisplayMode get notificationDisplayMode =>
       _notificationDisplayMode;
+  ColorSchemeType get colorScheme => _colorScheme;
 
   bool get isDarkMode => _isDarkMode;
 
@@ -83,9 +98,7 @@ class SettingsService extends ChangeNotifier {
     _prefs = await SharedPreferences.getInstance();
     _alarmSound = _prefs.getString(_alarmSoundKey) ?? 'tts';
     _isDarkMode = _prefs.getBool(_isDarkModeKey) ?? false;
-    _themeMode = _prefs.getString(_kThemeModeKey) == 'dark'
-        ? ThemeMode.dark
-        : ThemeMode.system;
+    _themeMode = _parseThemeMode(_prefs.getString(_kThemeModeKey) ?? 'system');
     _useTts = _prefs.getBool(_useTtsKey) ?? true;
     _vibrate = _prefs.getBool(_kVibrateKey) ?? true;
     _useAutoAlarm = _prefs.getBool(_autoAlarmKey) ?? true;
@@ -94,6 +107,7 @@ class SettingsService extends ChangeNotifier {
         _prefs.getDouble(_autoAlarmVolumeKey) ?? defaultAutoAlarmVolume;
     _notificationDisplayMode = NotificationDisplayMode
         .values[_prefs.getInt(_notificationDisplayModeKey) ?? 0];
+    _colorScheme = ColorSchemeType.values[_prefs.getInt(_colorSchemeKey) ?? 0];
     notifyListeners();
   }
 
@@ -257,4 +271,13 @@ class SettingsService extends ChangeNotifier {
 
   // 현재 스피커 모드가 자동 감지인지 확인
   bool get isAutoMode => _speakerMode == speakerModeAuto;
+
+  // 컬러 스키마 업데이트 메서드
+  Future<void> updateColorScheme(ColorSchemeType colorScheme) async {
+    if (_colorScheme != colorScheme) {
+      _colorScheme = colorScheme;
+      await _prefs.setInt(_colorSchemeKey, colorScheme.index);
+      notifyListeners();
+    }
+  }
 }

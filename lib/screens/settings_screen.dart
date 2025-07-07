@@ -179,6 +179,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.palette_outlined,
                     children: [
                       _buildThemeModeSelector(context, settingsService),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      _buildColorSchemeSelector(context, settingsService),
                     ],
                   ),
 
@@ -502,6 +504,133 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (value) {
             if (value != null) {
               settingsService.updateThemeMode(value);
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildColorSchemeSelector(
+      BuildContext context, SettingsService settingsService) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.palette_outlined,
+                size: 16,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '색상 테마',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        _buildRadioTile<ColorSchemeType>(
+          context,
+          title: '블루',
+          icon: Icons.palette_outlined,
+          value: ColorSchemeType.blue,
+          groupValue: settingsService.colorScheme,
+          onChanged: (value) {
+            if (value != null) {
+              settingsService.updateColorScheme(value);
+            }
+          },
+        ),
+        _buildRadioTile<ColorSchemeType>(
+          context,
+          title: '그린',
+          icon: Icons.palette_outlined,
+          value: ColorSchemeType.green,
+          groupValue: settingsService.colorScheme,
+          onChanged: (value) {
+            if (value != null) {
+              settingsService.updateColorScheme(value);
+            }
+          },
+        ),
+        _buildRadioTile<ColorSchemeType>(
+          context,
+          title: '퍼플',
+          icon: Icons.palette_outlined,
+          value: ColorSchemeType.purple,
+          groupValue: settingsService.colorScheme,
+          onChanged: (value) {
+            if (value != null) {
+              settingsService.updateColorScheme(value);
+            }
+          },
+        ),
+        _buildRadioTile<ColorSchemeType>(
+          context,
+          title: '오렌지',
+          icon: Icons.palette_outlined,
+          value: ColorSchemeType.orange,
+          groupValue: settingsService.colorScheme,
+          onChanged: (value) {
+            if (value != null) {
+              settingsService.updateColorScheme(value);
+            }
+          },
+        ),
+        _buildRadioTile<ColorSchemeType>(
+          context,
+          title: '핑크',
+          icon: Icons.palette_outlined,
+          value: ColorSchemeType.pink,
+          groupValue: settingsService.colorScheme,
+          onChanged: (value) {
+            if (value != null) {
+              settingsService.updateColorScheme(value);
+            }
+          },
+        ),
+        _buildRadioTile<ColorSchemeType>(
+          context,
+          title: '레드',
+          icon: Icons.palette_outlined,
+          value: ColorSchemeType.red,
+          groupValue: settingsService.colorScheme,
+          onChanged: (value) {
+            if (value != null) {
+              settingsService.updateColorScheme(value);
+            }
+          },
+        ),
+        _buildRadioTile<ColorSchemeType>(
+          context,
+          title: '틸',
+          icon: Icons.palette_outlined,
+          value: ColorSchemeType.teal,
+          groupValue: settingsService.colorScheme,
+          onChanged: (value) {
+            if (value != null) {
+              settingsService.updateColorScheme(value);
+            }
+          },
+        ),
+        _buildRadioTile<ColorSchemeType>(
+          context,
+          title: '인디고',
+          icon: Icons.palette_outlined,
+          value: ColorSchemeType.indigo,
+          groupValue: settingsService.colorScheme,
+          onChanged: (value) {
+            if (value != null) {
+              settingsService.updateColorScheme(value);
             }
           },
         ),

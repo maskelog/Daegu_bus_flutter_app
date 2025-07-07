@@ -132,6 +132,44 @@ class AppColorScheme {
 
 /// Material 3 테마 생성
 class AppTheme {
+  /// ColorSchemeType에 따른 컬러 스키마 생성
+  static ColorScheme getColorScheme(
+      ColorSchemeType type, Brightness brightness) {
+    Color seedColor;
+
+    switch (type) {
+      case ColorSchemeType.blue:
+        seedColor = const Color(0xFF2E5BFF);
+        break;
+      case ColorSchemeType.green:
+        seedColor = const Color(0xFF4CAF50);
+        break;
+      case ColorSchemeType.purple:
+        seedColor = const Color(0xFF9C27B0);
+        break;
+      case ColorSchemeType.orange:
+        seedColor = const Color(0xFFFF9800);
+        break;
+      case ColorSchemeType.pink:
+        seedColor = const Color(0xFFE91E63);
+        break;
+      case ColorSchemeType.red:
+        seedColor = const Color(0xFFF44336);
+        break;
+      case ColorSchemeType.teal:
+        seedColor = const Color(0xFF009688);
+        break;
+      case ColorSchemeType.indigo:
+        seedColor = const Color(0xFF3F51B5);
+        break;
+    }
+
+    return ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: brightness,
+    );
+  }
+
   static ThemeData lightTheme = ThemeData(
     useMaterial3: true,
     colorScheme: AppColorScheme.lightColorScheme,
@@ -619,14 +657,27 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final settingsService = Provider.of<SettingsService>(context);
-    return MaterialApp(
-      title: '대구버스',
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: settingsService.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: const HomeScreen(),
-      debugShowCheckedModeBanner: false,
+    return Consumer<SettingsService>(
+      builder: (context, settingsService, child) {
+        // 선택된 컬러 스키마로 테마 생성
+        final lightColorScheme = AppTheme.getColorScheme(
+          settingsService.colorScheme,
+          Brightness.light,
+        );
+        final darkColorScheme = AppTheme.getColorScheme(
+          settingsService.colorScheme,
+          Brightness.dark,
+        );
+
+        return MaterialApp(
+          title: '대구버스',
+          theme: AppTheme.lightTheme.copyWith(colorScheme: lightColorScheme),
+          darkTheme: AppTheme.darkTheme.copyWith(colorScheme: darkColorScheme),
+          themeMode: settingsService.themeMode,
+          home: const HomeScreen(),
+          debugShowCheckedModeBanner: false,
+        );
+      },
     );
   }
 }
