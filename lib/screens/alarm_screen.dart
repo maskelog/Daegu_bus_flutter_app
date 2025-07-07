@@ -799,7 +799,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       SnackBar(
         content: Text('$routeNo 노선이 선택되었습니다'),
         duration: const Duration(seconds: 1),
-        backgroundColor: Colors.green[700],
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       ),
     );
   }
@@ -843,6 +843,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                     decoration: BoxDecoration(
                       border: Border.all(color: colorScheme.outline),
                       borderRadius: BorderRadius.circular(8),
+                      color: colorScheme.surfaceContainerLowest,
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<int>(
@@ -858,6 +859,9 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                             setState(() => _hour = value ?? _hour),
                         isExpanded: true,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
+                        dropdownColor: colorScheme.surfaceContainer,
+                        iconEnabledColor: colorScheme.onSurfaceVariant,
+                        style: TextStyle(color: colorScheme.onSurface),
                       ),
                     ),
                   ),
@@ -868,6 +872,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                     decoration: BoxDecoration(
                       border: Border.all(color: colorScheme.outline),
                       borderRadius: BorderRadius.circular(8),
+                      color: colorScheme.surfaceContainerLowest,
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<int>(
@@ -884,6 +889,9 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                             setState(() => _minute = value ?? _minute),
                         isExpanded: true,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
+                        dropdownColor: colorScheme.surfaceContainer,
+                        iconEnabledColor: colorScheme.onSurfaceVariant,
+                        style: TextStyle(color: colorScheme.onSurface),
                       ),
                     ),
                   ),
@@ -902,7 +910,16 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
               children: List.generate(7, (index) {
                 final isSelected = _repeatDays.contains(index + 1);
                 return FilterChip(
-                  label: Text(_weekdays[index]),
+                  label: Text(
+                    _weekdays[index],
+                    style: TextStyle(
+                      color: isSelected
+                          ? colorScheme.onSecondaryContainer
+                          : colorScheme.onSurfaceVariant,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
                   selected: isSelected,
                   onSelected: (selected) {
                     setState(() {
@@ -913,6 +930,21 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                       }
                     });
                   },
+                  backgroundColor: colorScheme.surface,
+                  selectedColor: colorScheme.secondaryContainer,
+                  checkmarkColor: colorScheme.onSecondaryContainer,
+                  side: BorderSide(
+                    color: isSelected
+                        ? colorScheme.secondary
+                        : colorScheme.outline,
+                    width: isSelected ? 2 : 1,
+                  ),
+                  elevation: isSelected ? 2 : 0,
+                  shadowColor: colorScheme.shadow,
+                  surfaceTintColor: colorScheme.surfaceTint,
+                  showCheckmark: true,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.comfortable,
                 );
               }),
             ),
@@ -954,6 +986,14 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                   setState(() => _excludeWeekends = value ?? false),
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
+              activeColor: colorScheme.primary,
+              checkColor: colorScheme.onPrimary,
+              fillColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return colorScheme.primary;
+                }
+                return colorScheme.outline;
+              }),
             ),
             CheckboxListTile(
               title: Text('공휴일 제외',
@@ -963,6 +1003,14 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                   setState(() => _excludeHolidays = value ?? false),
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
+              activeColor: colorScheme.primary,
+              checkColor: colorScheme.onPrimary,
+              fillColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return colorScheme.primary;
+                }
+                return colorScheme.outline;
+              }),
             ),
             const SizedBox(height: 24),
             Text('정류장',
@@ -980,8 +1028,18 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                 hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                 border:
                     OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: colorScheme.outline),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                ),
+                filled: true,
+                fillColor: colorScheme.surfaceContainerLowest,
                 contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
             ),
             const SizedBox(height: 24),
@@ -995,25 +1053,47 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
               controller: _routeController,
               readOnly: true,
               enabled: false,
-              style: TextStyle(color: colorScheme.onSurface),
+              style: TextStyle(
+                color: _selectedRouteId != null
+                    ? colorScheme.onPrimaryContainer
+                    : colorScheme.onSurfaceVariant,
+              ),
               decoration: InputDecoration(
                 hintText: '아래 노선 목록에서 선택하세요',
                 hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                 border:
                     OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: _selectedRouteId != null
+                        ? colorScheme.primary
+                        : colorScheme.outline,
+                  ),
+                ),
+                disabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: _selectedRouteId != null
+                        ? colorScheme.primary
+                        : colorScheme.outline,
+                  ),
+                ),
+                filled: true,
                 fillColor: _selectedRouteId != null
                     ? colorScheme.primaryContainer.withValues(alpha: 0.3)
-                    : null,
-                filled: _selectedRouteId != null,
+                    : colorScheme.surfaceContainerLowest,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
             ),
             if (_isLoadingRoutes)
-              const Center(
-                  child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: CircularProgressIndicator())),
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: CircularProgressIndicator(color: colorScheme.primary),
+                ),
+              ),
             if (!_isLoadingRoutes && _routeOptions.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1030,6 +1110,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                     decoration: BoxDecoration(
                       border: Border.all(color: colorScheme.outline),
                       borderRadius: BorderRadius.circular(8),
+                      color: colorScheme.surfaceContainerLowest,
                     ),
                     height: _routeOptions.length > 4 ? 200 : null,
                     child: ListView.separated(
@@ -1039,21 +1120,24 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                           : const NeverScrollableScrollPhysics(),
                       itemCount: _routeOptions.length,
                       separatorBuilder: (context, index) =>
-                          Divider(height: 1, color: colorScheme.outline),
+                          Divider(height: 1, color: colorScheme.outlineVariant),
                       itemBuilder: (context, index) {
                         final route = _routeOptions[index];
                         final isSelected = _selectedRouteId == route['id'];
                         return ListTile(
                           title: Text(route['routeNo']!,
-                              style: TextStyle(color: colorScheme.onSurface)),
+                              style: TextStyle(
+                                color: isSelected
+                                    ? colorScheme.onPrimaryContainer
+                                    : colorScheme.onSurface,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                              )),
                           selected: isSelected,
-                          selectedTileColor: colorScheme.primaryContainer
-                              .withValues(alpha: 0.3),
+                          selectedTileColor: colorScheme.primaryContainer,
                           dense: true,
                           visualDensity: VisualDensity.compact,
-                          textColor: isSelected
-                              ? colorScheme.primary
-                              : colorScheme.onSurface,
                           onTap: () =>
                               _selectRoute(route['id']!, route['routeNo']!),
                         );
@@ -1081,6 +1165,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
               decoration: BoxDecoration(
                 border: Border.all(color: colorScheme.outline),
                 borderRadius: BorderRadius.circular(12),
+                color: colorScheme.surfaceContainerLowest,
               ),
               child: Column(
                 children: [
@@ -1103,6 +1188,10 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                     trailing: Switch(
                       value: _useTTS,
                       onChanged: (value) => setState(() => _useTTS = value),
+                      activeColor: colorScheme.primary,
+                      activeTrackColor: colorScheme.primaryContainer,
+                      inactiveThumbColor: colorScheme.outline,
+                      inactiveTrackColor: colorScheme.surfaceContainerHighest,
                     ),
                   ),
                   if (_useTTS)
