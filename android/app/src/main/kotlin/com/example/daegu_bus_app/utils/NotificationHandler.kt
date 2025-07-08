@@ -52,32 +52,40 @@ class NotificationHandler(private val context: Context) {
             try {
                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-                // Ongoing Channel (Low importance, silent)
+                // Ongoing Channel (Medium importance for lockscreen visibility)
                 val ongoingChannel = NotificationChannel(
                     CHANNEL_ID_ONGOING,
                     CHANNEL_NAME_ONGOING,
-                    NotificationManager.IMPORTANCE_LOW // Silent, minimal interruption
+                    NotificationManager.IMPORTANCE_DEFAULT // 잠금화면 표시를 위해 DEFAULT로 변경
                 ).apply {
                     description = "실시간 버스 추적 상태 알림"
                     enableVibration(false)
                     enableLights(false)
-                    setShowBadge(false)
-                    lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+                    setShowBadge(true) // 배지 표시 활성화
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC // 잠금화면에서 전체 내용 표시
+                    setBypassDnd(false) // 방해금지 모드에서는 조용히
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        setAllowBubbles(false) // 진행 중인 알림은 버블 비활성화
+                    }
                 }
 
-                // Alert Channel (High importance, sound/vibration)
+                // Alert Channel (Maximum importance for critical alerts)
                 val alertChannel = NotificationChannel(
                     CHANNEL_ID_ALERT,
                     CHANNEL_NAME_ALERT,
-                    NotificationManager.IMPORTANCE_HIGH // Alerting!
+                    NotificationManager.IMPORTANCE_MAX // 최고 우선순위로 변경
                 ).apply {
                     description = "버스 도착 임박 시 알림"
                     enableVibration(true)
-                    vibrationPattern = longArrayOf(0, 400, 200, 400)
+                    vibrationPattern = longArrayOf(0, 500, 200, 500, 200, 500) // 더 강력한 진동 패턴
                     lightColor = ContextCompat.getColor(context, R.color.tracking_color) // Use context
                     enableLights(true)
                     setShowBadge(true)
                     lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                    setBypassDnd(true) // 방해금지 모드에서도 표시
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        setAllowBubbles(true) // 버블 알림 허용
+                    }
                 }
 
                 // Error Channel (Default importance)
@@ -203,7 +211,7 @@ class NotificationHandler(private val context: Context) {
             .setContentTitle(title)
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_bus_notification)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_HIGH) // 높은 우선순위 유지
             .setStyle(inboxStyle)
             .setContentIntent(createPendingIntent())
             .setOngoing(true)
@@ -213,6 +221,9 @@ class NotificationHandler(private val context: Context) {
             .setWhen(System.currentTimeMillis())
             .setColor(ContextCompat.getColor(context, R.color.tracking_color))
             .setColorized(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // 잠금화면에서 전체 내용 표시
+            .setTimeoutAfter(0) // 자동 삭제 방지
+            .setLocalOnly(false) // 웨어러블 기기에도 표시
             .addAction(R.drawable.ic_stop_tracking, "추적 중지", createStopPendingIntent())
             .build()
 

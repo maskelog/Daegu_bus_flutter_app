@@ -800,7 +800,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 .setContentTitle(title)
                                 .setContentText(contentText)
                                 .setSmallIcon(R.mipmap.ic_launcher)
-                                .setPriority(NotificationCompat.PRIORITY_HIGH) // 잠금화면 표시를 위해 HIGH 사용
+                                .setPriority(NotificationCompat.PRIORITY_MAX) // 최고 우선순위로 변경
                                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // 잠금화면에서 공개
                                 .setColor(ContextCompat.getColor(this, R.color.alert_color))
@@ -810,6 +810,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 .setOnlyAlertOnce(false) // 매번 알림음 재생
                                 .setShowWhen(true) // 시간 표시
                                 .setWhen(System.currentTimeMillis())
+                                .setFullScreenIntent(pendingIntent, false) // 잠금화면에서 강력한 표시
+                                .setTimeoutAfter(0) // 자동 삭제되지 않도록 설정
+                                .setLocalOnly(false) // 웨어러블 기기에도 표시
                                 
                             if (pendingIntent != null) builder.setContentIntent(pendingIntent)
                             if (subText != null) builder.setSubText(subText)
@@ -1773,19 +1776,24 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "Bus Alarms"
             val descriptionText = "Notifications for scheduled bus alarms"
-            val importance = NotificationManager.IMPORTANCE_HIGH // 높은 우선순위
+            val importance = NotificationManager.IMPORTANCE_MAX // 최고 우선순위로 변경
             val channel = NotificationChannel(ALARM_NOTIFICATION_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
                 enableLights(true)
                 lightColor = Color.RED
                 enableVibration(true)
+                vibrationPattern = longArrayOf(0, 500, 200, 500) // 강력한 진동 패턴
                 setShowBadge(true) // 배지 표시
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC // 잠금화면에서 표시
                 setBypassDnd(true) // 방해금지 모드에서도 알림 표시
+                setSound(null, null) // 기본 소리 사용
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    setAllowBubbles(true) // 버블 알림 허용 (Android 10+)
+                }
             }
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
-            Log.d(TAG, "Alarm notification channel created with lockscreen support: $ALARM_NOTIFICATION_CHANNEL_ID")
+            Log.d(TAG, "Enhanced alarm notification channel created with maximum lockscreen visibility: $ALARM_NOTIFICATION_CHANNEL_ID")
         }
     }
 

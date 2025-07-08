@@ -1079,19 +1079,8 @@ class AlarmService extends ChangeNotifier {
           final remainingMinutes = cachedInfo?.remainingMinutes ?? 0;
           final currentStation = cachedInfo?.currentStation ?? '정보 업데이트 중';
 
-          // 알림 업데이트
-          final alarmId = getAlarmId(alarm.routeNo, alarm.stationName,
-              routeId: alarm.routeId);
-          await _notificationService.showNotification(
-            id: alarmId,
-            busNo: alarm.routeNo,
-            stationName: alarm.stationName,
-            remainingMinutes: remainingMinutes,
-            currentStation: currentStation,
-            routeId: alarm.routeId,
-            isAutoAlarm: true,
-            isOngoing: true, // 지속적인 알림
-          );
+          // 지속적인 알림도 BusAlertService에서 처리 - Flutter 중복 알림 제거
+          // BusAlertService가 이미 포그라운드 알림을 30초마다 업데이트함
 
           logMessage(
               '🔄 자동 알람 업데이트: ${alarm.routeNo}번, $remainingMinutes분 후, 현재: $currentStation',
@@ -1260,19 +1249,8 @@ class AlarmService extends ChangeNotifier {
       final remainingMinutes = cachedInfo?.remainingMinutes ?? 0;
       final currentStation = cachedInfo?.currentStation ?? '정보 업데이트 중';
 
-      // 알림 표시
-      final alarmId =
-          getAlarmId(alarm.routeNo, alarm.stationName, routeId: alarm.routeId);
-      await _notificationService.showNotification(
-        id: alarmId,
-        busNo: alarm.routeNo,
-        stationName: alarm.stationName,
-        remainingMinutes: remainingMinutes,
-        currentStation: currentStation,
-        routeId: alarm.routeId,
-        isAutoAlarm: true,
-        isOngoing: false, // 일회성 알림
-      );
+      // 자동 알람에서는 Flutter 알림 생략 - BusAlertService에서 처리
+      // Flutter 중복 알림 제거: BusAlertService가 포그라운드 알림을 처리함
 
       // 자동 알람 실행 시 activeAlarms에도 추가하여 UI에 표시
       final alarmData = alarm_model.AlarmData(
@@ -1392,22 +1370,9 @@ class AlarmService extends ChangeNotifier {
       logMessage('🔄 자동 알람 저장 시작...');
       final prefs = await SharedPreferences.getInstance();
       final List<String> alarms = _autoAlarms.map((alarm) {
-        // 현재 요일을 기준으로 반복 요일 설정
-        final now = DateTime.now();
-        List<int> repeatDays = [];
-
-        // 월요일부터 일요일까지 체크
-        for (int i = 1; i <= 7; i++) {
-          final checkDate = now.add(Duration(days: i - now.weekday));
-          if (checkDate.difference(alarm.scheduledTime).inDays % 7 == 0) {
-            repeatDays.add(i);
-          }
-        }
-
-        // 반복 요일이 없으면 기본값으로 평일 설정
-        if (repeatDays.isEmpty) {
-          repeatDays = [1, 2, 3, 4, 5];
-        }
+        // 🚨 중요: 사용자가 설정한 원본 repeatDays 보존 (절대 변경 금지)
+        List<int> repeatDays =
+            alarm.repeatDays ?? [1, 2, 3, 4, 5, 6, 7]; // 기본값은 매일
 
         // stationId 보정 - 정류장 이름 기반 매핑
         String effectiveStationId =
@@ -2122,23 +2087,10 @@ class AlarmService extends ChangeNotifier {
                 final alarmId = getAlarmId(alarm.routeNo, alarm.stationName,
                     routeId: alarm.routeId);
 
-                try {
-                  await _notificationService.showNotification(
-                    id: alarmId,
-                    busNo: alarm.routeNo,
-                    stationName: alarm.stationName,
-                    remainingMinutes: remainingMinutes,
-                    currentStation: currentStation,
-                    routeId: alarm.routeId,
-                    isAutoAlarm: true,
-                    isOngoing: true,
-                  );
-                  logMessage(
-                      '✅ 자동 알람 알림 업데이트: ${alarm.routeNo}번, $remainingMinutes분 후, $currentStation',
-                      level: LogLevel.debug);
-                } catch (e) {
-                  logMessage('❌ 자동 알람 알림 업데이트 오류: $e', level: LogLevel.error);
-                }
+                // 자동 알람에서 Flutter 알림 제거 - BusAlertService가 모든 알림 처리
+                logMessage(
+                    '✅ 자동 알람 정보 업데이트: ${alarm.routeNo}번, $remainingMinutes분 후, $currentStation',
+                    level: LogLevel.debug);
 
                 // ✅ 버스 모니터링 서비스 시작 (10분 이내일 때)
                 if (remainingMinutes <= 10 && remainingMinutes >= 0) {
