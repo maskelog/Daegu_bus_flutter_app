@@ -185,12 +185,18 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(fullAlarm.routeNo,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1),
             Text(fullAlarm.stationName,
-                style: const TextStyle(fontSize: 12),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1),
             const Spacer(),
@@ -203,7 +209,10 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                 ),
                 const SizedBox(width: 4),
                 Text(fullAlarm.getFormattedTime(),
-                    style: const TextStyle(fontSize: 14)),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    )),
               ],
             ),
             Text(
