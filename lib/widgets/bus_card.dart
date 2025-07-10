@@ -284,13 +284,9 @@ class _BusCardState extends State<BusCard> {
   }
 
   void _playAlarm() {
-    int alarmId = _alarmService.getAlarmId(
-      widget.busArrival.routeNo,
-      widget.stationName ?? '정류장 정보 없음',
-      routeId: widget.busArrival.routeId,
-    );
+    int notificationId = ("${widget.busArrival.routeNo}_${widget.stationName ?? '정류장 정보 없음'}_${widget.busArrival.routeId}").hashCode;
     _notificationService.showNotification(
-      id: alarmId,
+      id: notificationId,
       busNo: widget.busArrival.routeNo,
       stationName: widget.stationName ?? '정류장 정보 없음',
       remainingMinutes: 3,
@@ -308,11 +304,7 @@ class _BusCardState extends State<BusCard> {
 
     logMessage('🚌 다음 버스 알람 설정 - 사용할 routeId: $routeId', level: LogLevel.debug);
 
-    int alarmId = _alarmService.getAlarmId(
-      widget.busArrival.routeNo,
-      widget.stationName ?? '정류장 정보 없음',
-      routeId: routeId,
-    );
+    int notificationId = ("${widget.busArrival.routeNo}_${widget.stationName ?? '정류장 정보 없음'}_$routeId").hashCode;
 
     if (widget.stationName == null || widget.stationName!.isEmpty) {
       logMessage('🚌 정류장 정보가 없습니다. 알람을 설정할 수 없습니다.', level: LogLevel.error);
@@ -325,7 +317,7 @@ class _BusCardState extends State<BusCard> {
     }
 
     logMessage(
-      '🚌 다음 버스 알람 설정: ${widget.busArrival.routeNo}번 버스, $nextRemainingTime분 후 도착 예정, 알람ID: $alarmId',
+      '🚌 다음 버스 알람 설정: ${widget.busArrival.routeNo}번 버스, $nextRemainingTime분 후 도착 예정, 알람ID: $notificationId',
       level: LogLevel.debug,
     );
     logMessage('🚌 예상 도착 시간: $arrivalTime', level: LogLevel.debug);
@@ -514,14 +506,10 @@ class _BusCardState extends State<BusCard> {
           }
         }
 
-        int alarmId = _alarmService.getAlarmId(
-          widget.busArrival.routeNo,
-          widget.stationName ?? '정류장 정보 없음',
-          routeId: routeId,
-        );
+        int notificationId = ("${widget.busArrival.routeNo}_${widget.stationName ?? '정류장 정보 없음'}_$routeId").hashCode;
 
         logMessage(
-          '🚌 알람 설정 시작: ${widget.busArrival.routeNo}번 버스, ${widget.stationName}, 알람ID: $alarmId, stationId: $stationId',
+          '🚌 알람 설정 시작: ${widget.busArrival.routeNo}번 버스, ${widget.stationName}, 알람ID: $notificationId, stationId: $stationId',
           level: LogLevel.debug,
         );
 

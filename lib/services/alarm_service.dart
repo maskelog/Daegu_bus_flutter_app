@@ -296,12 +296,12 @@ class AlarmService extends ChangeNotifier {
       _loadDataInBackground();
 
       _alarmCheckTimer?.cancel();
-      _alarmCheckTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _alarmCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
         refreshAlarms();
         _checkAutoAlarms(); // 자동 알람 체크 추가 (5초마다 정밀 체크)
 
         // 디버깅: 현재 자동 알람 상태 출력 (30초마다)
-        if (_.tick % 6 == 0) {
+        if (timer.tick % 6 == 0) {
           _logAutoAlarmStatus();
         }
       });
@@ -1162,8 +1162,7 @@ class AlarmService extends ChangeNotifier {
 
       // 네이티브 AlarmManager 스케줄링 요청
       await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
-        'alarmId':
-            uniqueAlarmId.hashCode, // WorkManager ID는 Int여야 하므로 hashCode 사용
+        
         'busNo': alarm.routeNo,
         'stationName': alarm.stationName,
         'routeId': alarm.routeId,
@@ -1548,10 +1547,6 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  int getAlarmId(String busNo, String stationName, {String routeId = ''}) {
-    return ("${busNo}_${stationName}_$routeId").hashCode;
-  }
-
   bool hasAlarm(String busNo, String stationName, String routeId) {
     // 일반 승차 알람만 확인 (자동 알람 제외)
     final bool hasRegularAlarm = _activeAlarms.values.any((alarm) =>
@@ -1646,11 +1641,8 @@ class AlarmService extends ChangeNotifier {
         isAutoAlarm: false,
       );
 
-      // 알람 ID 생성
-      final alarmId = alarmData.getAlarmId();
-
-      // 알람 저장
-      _activeAlarms[alarmId.toString()] = alarmData;
+      // 알람 저장 (키는 알람의 고유 ID 문자열 사용)
+      _activeAlarms[alarmData.id] = alarmData;
       await _saveAlarms();
 
       // 설정된 알람 볼륨 가져오기
@@ -1660,8 +1652,9 @@ class AlarmService extends ChangeNotifier {
 
       // 🔔 간단한 일회성 알림만 표시 (진행중 추적 알림 비활성화)
       try {
+        // 알림 ID는 고유 ID의 해시코드를 사용
         await _notificationService.showNotification(
-          id: alarmId,
+          id: alarmData.id.hashCode,
           busNo: busNo,
           stationName: stationName,
           remainingMinutes: remainingMinutes,
@@ -2084,8 +2077,7 @@ class AlarmService extends ChangeNotifier {
                     level: LogLevel.info);
 
                 // ✅ 알림 업데이트
-                final alarmId = getAlarmId(alarm.routeNo, alarm.stationName,
-                    routeId: alarm.routeId);
+                
 
                 // 자동 알람에서 Flutter 알림 제거 - BusAlertService가 모든 알림 처리
                 logMessage(

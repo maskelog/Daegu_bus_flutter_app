@@ -253,10 +253,7 @@ class AutoAlarm {
     );
   }
 
-  /// 알람 ID 생성
-  int getAlarmId() {
-    return "$routeNo.$stationId.$hour.$minute.${repeatDays.join('')}".hashCode;
-  }
+  
 
   @override
   String toString() {

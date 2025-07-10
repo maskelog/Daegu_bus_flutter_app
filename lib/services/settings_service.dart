@@ -28,7 +28,6 @@ class SettingsService extends ChangeNotifier {
   static const String _autoAlarmVolumeKey = 'auto_alarm_volume';
   static const String _useTtsKey = 'use_tts';
   static const String _isDarkModeKey = 'is_dark_mode';
-  static const String _themeColorKey = 'theme_color';
   static const String _kThemeModeKey = 'theme_mode';
   static const String _kVibrateKey = 'vibrate';
   static const String _kSpeakerModeKey = 'speaker_mode';
@@ -51,12 +50,7 @@ class SettingsService extends ChangeNotifier {
   double _autoAlarmVolume = 0.7;
   bool _useTts = true;
   bool _isDarkMode = false;
-  final String _themeColor = 'blue';
   ColorSchemeType _colorScheme = ColorSchemeType.blue;
-
-  // 네이티브와 통신을 위한 채널 정의
-  static const MethodChannel _channel =
-      MethodChannel('com.example.daegu_bus_app/bus_api');
 
   // 싱글톤 패턴
   static final SettingsService _instance = SettingsService._internal();
@@ -116,21 +110,6 @@ class SettingsService extends ChangeNotifier {
     _alarmSound = sound;
     await _prefs.setString(_alarmSoundKey, sound);
     notifyListeners();
-  }
-
-  // 네이티브 코드에 알람음 설정 전달
-  Future<void> _updateNativeAlarmSound() async {
-    try {
-      final sound = AlarmSound.findById(_alarmSound);
-      await _channel.invokeMethod('setAlarmSound', {
-        'filename': sound.filename,
-        'soundId': sound.id,
-        'useTts': sound.useTts,
-      });
-      debugPrint('네이티브 알람음 설정 성공: ${sound.name}, TTS 사용: ${sound.useTts}');
-    } catch (e) {
-      debugPrint('네이티브 알람음 설정 오류: $e');
-    }
   }
 
   Future<void> updateThemeMode(ThemeMode mode) async {

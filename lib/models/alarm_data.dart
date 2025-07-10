@@ -116,11 +116,7 @@ class AlarmData {
     return DateFormat('HH:mm').format(scheduledTime);
   }
 
-  /// 알람 ID 생성 (해시코드 이용)
-  @Deprecated('Use id field instead')
-  int getAlarmId() {
-    return "${busNo}_${stationName}_$routeId".hashCode;
-  }
+  
 
   /// 알람이 현재 시간 이후인지 확인
   bool isFutureAlarm() {

@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:daegu_bus_app/models/alarm_data.dart';
 import 'package:daegu_bus_app/models/auto_alarm.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,57 +64,6 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
       }
       if (mounted) setState(() => _fullAutoAlarms = tempMap);
     } catch (_) {}
-  }
-
-  Future<void> _cancelAllAlarms(BuildContext context) async {
-    final alarmService = context.read<AlarmService>();
-    if (alarmService.activeAlarms.isEmpty) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('모든 알람 취소'),
-        content: Text(
-            '현재 설정된 ${alarmService.activeAlarms.length}개의 알람을 모두 취소하시겠습니까?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('아니요')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('예')),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      try {
-        // Android에 모든 알람 취소 알림 (NotificationHelper.kt 동기화)
-        await _notifyAndroidAllAlarmsCancelled();
-        await alarmService.stopAllTracking();
-
-        // UI 즉시 업데이트 보장
-        if (mounted) {
-          setState(() {
-            // 강제 UI 업데이트
-          });
-        }
-
-        // 성공 메시지 표시
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('모든 알람이 취소되었습니다.')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            // 오류 발생 시에도 UI 업데이트
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('알람 취소 중 오류가 발생했습니다.')),
-          );
-        }
-      }
-    }
   }
 
   @override
@@ -319,36 +267,11 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     );
   }
 
-  Future<void> _notifyAndroidAllAlarmsCancelled() async {
-    try {
-      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
-      await platform.invokeMethod('forceStopTracking');
-      debugPrint('✅ Android에 모든 알람 취소 알림 전송');
-    } catch (e) {
-      debugPrint('❌ Android 모든 알람 취소 알림 실패: $e');
-    }
-  }
-
-  Future<void> _notifyAndroidSpecificAlarmCancelled(AlarmData alarm) async {
-    try {
-      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
-      await platform.invokeMethod('cancelAlarmNotification', {
-        'busNo': alarm.busNo,
-        'routeId': alarm.routeId,
-        'stationName': alarm.stationName,
-      });
-      debugPrint('✅ Android에 특정 알람 취소 알림 전송: ${alarm.busNo}');
-    } catch (e) {
-      debugPrint('❌ Android 특정 알람 취소 알림 실패: $e');
-    }
-  }
-
   Future<void> _cancelSpecificAlarm(
       BuildContext context, AlarmData alarm) async {
-    try {
-      // Android에 특정 알람 취소 알림 (NotificationHelper.kt 동기화)
-      await _notifyAndroidSpecificAlarmCancelled(alarm);
+    if (!mounted) return; // Check mounted state at the beginning
 
+    try {
       await context
           .read<AlarmService>()
           .cancelAlarmByRoute(alarm.busNo, alarm.stationName, alarm.routeId);
@@ -358,23 +281,21 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         setState(() {
           // 강제 UI 업데이트
         });
-      }
-
-      // 성공 메시지 표시
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다.')),
-        );
+        if (mounted) { // Re-check mounted state before using context
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다.')),
+          );
+        }
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          // 오류 발생 시에도 UI 업데이트
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('알람 취소 중 오류가 발생했습니다.')),
-        );
-      }
+      if (!mounted) return;
+      setState(() {
+        // 오류 발생 시에도 UI 업데이트
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('알람 취소 중 오류가 발생했습니다.')),
+      );
     }
   }
 
@@ -397,8 +318,9 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
     if (days.isEmpty) return '반복 없음';
     if (days.length == 7) return '매일';
-    if (days.length == 5 && days.toSet().containsAll([1, 2, 3, 4, 5]))
+    if (days.length == 5 && days.toSet().containsAll([1, 2, 3, 4, 5])) {
       return '평일';
+    }
     if (days.length == 2 && days.toSet().containsAll([6, 7])) return '주말';
     return days.map((day) => weekdays[day - 1]).join(',');
   }

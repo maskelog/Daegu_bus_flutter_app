@@ -139,7 +139,7 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
         color: backgroundColor,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: textColor.withOpacity(0.3),
+          color: textColor.withAlpha(77),
         ),
       ),
       child: Text(
@@ -162,13 +162,13 @@ class _BusArrivalScreenState extends State<BusArrivalScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: _isSuccess
-            ? colorScheme.primaryContainer.withOpacity(0.3)
-            : colorScheme.errorContainer.withOpacity(0.3),
+            ? colorScheme.primaryContainer.withAlpha(77)
+            : colorScheme.errorContainer.withAlpha(77),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: _isSuccess
-              ? colorScheme.primary.withOpacity(0.3)
-              : colorScheme.error.withOpacity(0.3),
+              ? colorScheme.primary.withAlpha(77)
+              : colorScheme.error.withAlpha(77),
         ),
       ),
       child: Text(

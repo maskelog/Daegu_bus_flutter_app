@@ -400,11 +400,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
         }
       } else {
         if (remainingMinutes > 0) {
-          int alarmId = alarmService.getAlarmId(
-            widget.busArrival.routeNo,
-            widget.stationName!,
-            routeId: routeId,
-          );
+          int alarmNotificationId = ("${widget.busArrival.routeNo}_${widget.stationName!}_$routeId").hashCode;
 
           DateTime arrivalTime =
               DateTime.now().add(Duration(minutes: remainingMinutes));
@@ -413,7 +409,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
 
           // 알람 설정 디버그 로그
           logMessage("--- 알람 설정 시도 ---", level: LogLevel.debug);
-          logMessage("Alarm ID: $alarmId", level: LogLevel.debug);
+          logMessage("Alarm ID: $alarmNotificationId", level: LogLevel.debug);
           logMessage("Route No: ${widget.busArrival.routeNo}",
               level: LogLevel.debug);
           logMessage("Station Name: ${widget.stationName}",

@@ -202,10 +202,11 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_selectedStop?.id == stop.id) {
           _selectedStop =
               _favoriteStops.isNotEmpty ? _favoriteStops.first : null;
-          if (_selectedStop != null)
+          if (_selectedStop != null) {
             _loadBusArrivals();
-          else
+          } else {
             _busArrivals = [];
+          }
         }
         debugPrint('홈화면에서 즐겨찾기 제거: ${stop.name}');
       } else {
@@ -246,28 +247,31 @@ class _HomeScreenState extends State<HomeScreen> {
       final cachedData = _stationArrivals[_selectedStop!.id];
       if (cachedData != null && cachedData.isNotEmpty) {
         debugPrint('⚡ 캐시된 데이터 즉시 표시: ${cachedData.length}개 버스');
-        if (mounted)
+        if (mounted) {
           setState(() {
             _busArrivals = cachedData;
             _isLoading = false;
             _errorMessage = null;
           });
+        }
       } else {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _isLoading = true;
             _errorMessage = null;
           });
+        }
       }
       _loadSelectedStationData(busStationId);
       _loadOtherStationsInBackground();
     } catch (e) {
       debugPrint('❌ 버스 도착 정보 로딩 오류: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
         });
+      }
     }
   }
 
@@ -286,11 +290,12 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {
       debugPrint('❌ 선택된 정류장 데이터 로딩 오류: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
         });
+      }
     }
   }
 

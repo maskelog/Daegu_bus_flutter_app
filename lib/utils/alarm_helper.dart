@@ -114,9 +114,7 @@ class AlarmHelper {
     return success;
   }
 
-  static int getAlarmId(String busNo, String stationName) {
-    return (busNo + stationName).hashCode;
-  }
+  
 
   static Future<bool> cancelAlarm(int id) async {
     final prefs = await SharedPreferences.getInstance();

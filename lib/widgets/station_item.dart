@@ -31,13 +31,13 @@ class StationItem extends StatelessWidget {
         side: BorderSide(
           color: isSelected
               ? colorScheme.primary
-              : colorScheme.outline.withOpacity(0.3),
+              : colorScheme.outline.withAlpha(77),
           width: isSelected ? 2 : 1,
         ),
       ),
       color: isSelected
-          ? colorScheme.primaryContainer.withOpacity(0.3)
-          : colorScheme.surfaceContainerHighest.withOpacity(0.3),
+          ? colorScheme.primaryContainer.withAlpha(77)
+          : colorScheme.surfaceContainerHighest.withAlpha(77),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),

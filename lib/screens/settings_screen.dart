@@ -324,7 +324,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       trailing: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: colorScheme.secondaryContainer.withOpacity(0.3),
+          color: colorScheme.secondaryContainer.withAlpha(77),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(
@@ -655,7 +655,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: isSelected
-            ? colorScheme.primaryContainer.withOpacity(0.3)
+            ? colorScheme.primaryContainer.withAlpha(77)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
       ),
@@ -675,7 +675,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: isSelected
-                      ? colorScheme.onPrimaryContainer.withOpacity(0.8)
+                      ? colorScheme.onPrimaryContainer.withAlpha(204)
                       : colorScheme.onSurfaceVariant,
                 ),
               )

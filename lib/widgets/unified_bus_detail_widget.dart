@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
@@ -179,11 +178,10 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
       if (kDebugMode) {
         debugPrint('❌ 알람 토글 중 오류: $e');
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('알람 처리 중 오류가 발생했습니다: $e')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('알람 처리 중 오류가 발생했습니다: $e')),
+      );
     }
   }
 
@@ -226,6 +224,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
           }
         }
 
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('승차 알람이 해제되었습니다')),
         );
@@ -234,11 +233,10 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
       if (kDebugMode) {
         debugPrint('❌ 알람 취소 중 오류: $e');
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('알람 취소 중 오류가 발생했습니다: $e')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('알람 취소 중 오류가 발생했습니다: $e')),
+      );
     }
   }
 
@@ -279,50 +277,51 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
         currentStation: _currentBus.currentStation,
       );
 
+      if (!mounted) return;
+
       if (success) {
         if (kDebugMode) {
           debugPrint('✅ 알람 설정 성공');
         }
 
         // TTS 알림 (간단하게)
-        if (mounted) {
-          final settings = Provider.of<SettingsService>(context, listen: false);
-          if (settings.useTts) {
-            try {
-              await SimpleTTSHelper.speak(
-                "${widget.busArrival.routeNo}번 버스 알람이 설정되었습니다.",
-                earphoneOnly: true,
-              );
-            } catch (e) {
-              if (kDebugMode) {
-                debugPrint('⚠️ TTS 알림 오류: $e');
-              }
+        final settings = Provider.of<SettingsService>(context, listen: false);
+        if (!mounted) return;
+        if (settings.useTts) {
+          try {
+            await SimpleTTSHelper.speak(
+              "${widget.busArrival.routeNo}번 버스 알람이 설정되었습니다.",
+              earphoneOnly: true,
+            );
+          } catch (e) {
+            if (kDebugMode) {
+              debugPrint('⚠️ TTS 알림 오류: $e');
             }
           }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('승차 알람이 설정되었습니다')),
-          );
         }
+
+        if (!mounted) return;
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('승차 알람이 설정되었습니다')),
+        );
       } else {
         if (kDebugMode) {
           debugPrint('❌ 알람 설정 실패');
         }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('알람 설정에 실패했습니다')),
-          );
-        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('알람 설정에 실패했습니다')),
+        );
       }
     } catch (e) {
       if (kDebugMode) {
         debugPrint('❌ 알람 설정 중 오류: $e');
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('알람 설정 중 오류가 발생했습니다: $e')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('알람 설정 중 오류가 발생했습니다: $e')),
+      );
     }
   }
 
@@ -627,8 +626,9 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
   // 시간 포맷팅
   String _getFormattedTime() {
     if (_currentBus.isOutOfService) return '운행종료';
-    if (_currentBus.estimatedTime == '곧 도착' || _remainingTime == 0)
+    if (_currentBus.estimatedTime == '곧 도착' || _remainingTime == 0) {
       return '곧 도착';
+    }
     if (_remainingTime == 1) return '약 1분 후';
     if (_remainingTime > 1) return '약 $_remainingTime분 후';
 
@@ -813,18 +813,6 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
         );
       },
     );
-  }
-
-  Map<String, dynamic> _getArrivalInfo() {
-    return {
-      'busNumber': widget.busArrival.routeNo,
-      'stationName': widget.stationName,
-      'remainingMinutes': _remainingTime,
-      'currentStation': _currentBus.currentStation,
-      'routeId': widget.busArrival.routeId,
-      'isOutOfService': _currentBus.isOutOfService,
-      'isLowFloor': _currentBus.isLowFloor,
-    };
   }
 }
 

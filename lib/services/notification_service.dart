@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:daegu_bus_app/services/settings_service.dart';
-import 'package:daegu_bus_app/utils/tts_switcher.dart' show TtsSwitcher;
 import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 // import 'package:daegu_bus_app/utils/logger.dart'; // 존재하지 않는 파일
 
@@ -112,8 +111,7 @@ class NotificationService extends ChangeNotifier {
     try {
       // 네이티브 initialize 호출 제거 (구현되지 않음)
       // await _channel.invokeMethod('initialize');
-      final prefs = await SharedPreferences.getInstance();
-      final soundFileName = prefs.getString('alarm_sound_filename');
+      await SharedPreferences.getInstance();
       // setAlarmSound 네이티브 호출 제거 (구현되지 않음)
       // await setAlarmSound(soundFileName);
     } on PlatformException catch (e) {
