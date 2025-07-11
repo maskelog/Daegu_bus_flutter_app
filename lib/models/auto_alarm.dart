@@ -104,14 +104,19 @@ class AutoAlarm {
       parsedRepeatDays = [];
     }
 
+    DateTime? scheduledTime;
+    if (json['scheduledTime'] != null) {
+      scheduledTime = DateTime.parse(json['scheduledTime']);
+    }
+
     return AutoAlarm(
       id: json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
       routeNo: json['routeNo'] ?? '',
       stationName: json['stationName'] ?? '',
       stationId: json['stationId'] ?? '',
       routeId: json['routeId'] ?? '',
-      hour: json['hour'] ?? 8,
-      minute: json['minute'] ?? 0,
+      hour: scheduledTime?.hour ?? json['hour'] ?? 8,
+      minute: scheduledTime?.minute ?? json['minute'] ?? 0,
       repeatDays: parsedRepeatDays,
       excludeWeekends: json['excludeWeekends'] ?? false,
       excludeHolidays: json['excludeHolidays'] ?? false,
@@ -135,6 +140,7 @@ class AutoAlarm {
       'excludeHolidays': excludeHolidays,
       'isActive': isActive,
       'useTTS': useTTS,
+      'scheduledTime': getNextAlarmTime()?.toIso8601String(),
     };
   }
 

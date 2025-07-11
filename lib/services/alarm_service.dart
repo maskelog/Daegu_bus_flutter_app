@@ -491,6 +491,16 @@ class AlarmService extends ChangeNotifier {
         try {
           final Map<String, dynamic> data = jsonDecode(alarmJson);
 
+          // scheduledTime이 문자열이면 DateTime으로 변환
+          if (data['scheduledTime'] is String) {
+            data['scheduledTime'] = DateTime.parse(data['scheduledTime']);
+          }
+
+          // stationId가 없는 경우, stationName과 routeId로 찾아옴
+          if (data['stationId'] == null || data['stationId'].isEmpty) {
+            data['stationId'] = _getStationIdFromName(data['stationName'], data['routeId']);
+          }
+
           // 필수 필드 검증
           if (!_validateRequiredFields(data)) {
             logMessage('⚠️ 자동 알람 데이터 필수 필드 누락: $data', level: LogLevel.warning);
@@ -498,23 +508,7 @@ class AlarmService extends ChangeNotifier {
           }
 
           // AutoAlarm 객체 생성하여 올바른 다음 알람 시간 계산
-          final autoAlarm = AutoAlarm(
-            id: data['id'] ??
-                '${data['routeNo']}_${data['stationName']}'.hashCode.toString(),
-            routeNo: data['routeNo'] ?? '',
-            stationName: data['stationName'] ?? '',
-            stationId: data['stationId'] ?? '',
-            routeId: data['routeId'] ?? '',
-            hour: data['hour'] ?? 0,
-            minute: data['minute'] ?? 0,
-            repeatDays: data['repeatDays'] != null
-                ? List<int>.from(data['repeatDays'])
-                : [],
-            excludeWeekends: data['excludeWeekends'] ?? false,
-            excludeHolidays: data['excludeHolidays'] ?? false,
-            useTTS: data['useTTS'] ?? true,
-            isActive: data['isActive'] ?? true,
-          );
+          final autoAlarm = AutoAlarm.fromJson(data);
 
           // 다음 알람 시간 계산
           final nextAlarmTime = autoAlarm.getNextAlarmTime();
@@ -558,10 +552,14 @@ class AlarmService extends ChangeNotifier {
       'stationId',
       'routeId',
       'stationName',
-      'hour',
-      'minute',
       'repeatDays'
     ];
+    // scheduledTime 또는 hour/minute 중 하나는 필수
+    if (data['scheduledTime'] == null && (data['hour'] == null || data['minute'] == null)) {
+        logMessage('! 자동 알람 데이터 필수 필드 누락: scheduledTime 또는 hour/minute', level: LogLevel.error);
+        return false;
+    }
+
     final missingFields = requiredFields
         .where((field) =>
             data[field] == null ||
@@ -1369,48 +1367,30 @@ class AlarmService extends ChangeNotifier {
       logMessage('🔄 자동 알람 저장 시작...');
       final prefs = await SharedPreferences.getInstance();
       final List<String> alarms = _autoAlarms.map((alarm) {
-        // 🚨 중요: 사용자가 설정한 원본 repeatDays 보존 (절대 변경 금지)
-        List<int> repeatDays =
-            alarm.repeatDays ?? [1, 2, 3, 4, 5, 6, 7]; // 기본값은 매일
-
-        // stationId 보정 - 정류장 이름 기반 매핑
-        String effectiveStationId =
-            _getStationIdFromName(alarm.stationName, alarm.routeId);
-        logMessage(
-            '✅ 자동 알람 저장 시 stationId 보정: ${alarm.stationName} → $effectiveStationId',
-            level: LogLevel.debug);
-
         final autoAlarm = AutoAlarm(
-          id: alarm.id.toString(),
+          id: alarm.id,
           routeNo: alarm.busNo,
           stationName: alarm.stationName,
-          stationId: effectiveStationId, // 보정된 stationId 사용
+          stationId: _getStationIdFromName(alarm.stationName, alarm.routeId),
           routeId: alarm.routeId,
           hour: alarm.scheduledTime.hour,
           minute: alarm.scheduledTime.minute,
-          repeatDays: repeatDays,
+          repeatDays: alarm.repeatDays ?? [],
           useTTS: alarm.useTTS,
           isActive: true,
         );
 
         final json = autoAlarm.toJson();
+        // scheduledTime을 toIso8601String()으로 변환하여 저장
+        json['scheduledTime'] = alarm.scheduledTime.toIso8601String();
         final jsonString = jsonEncode(json);
 
         // 각 알람의 데이터 로깅
         logMessage('📝 알람 데이터 변환: ${alarm.busNo}번 버스');
         logMessage('  - ID: ${autoAlarm.id}');
         logMessage('  - 시간: ${autoAlarm.hour}:${autoAlarm.minute}');
-        logMessage(
-            '  - 정류장: ${autoAlarm.stationName} (${autoAlarm.stationId})');
-        logMessage('  - 반복: ${repeatDays.map((d) => [
-              '월',
-              '화',
-              '수',
-              '목',
-              '금',
-              '토',
-              '일'
-            ][d - 1]).join(", ")}');
+        logMessage('  - 정류장: ${autoAlarm.stationName} (${autoAlarm.stationId})');
+        logMessage('  - 반복: ${autoAlarm.repeatDays.map((d) => ['월', '화', '수', '목', '금', '토', '일'][d - 1]).join(", ")}');
         logMessage('  - JSON: $jsonString');
 
         return jsonString;
@@ -1430,16 +1410,8 @@ class AlarmService extends ChangeNotifier {
         final firstAlarm = jsonDecode(savedAlarms.first);
         logMessage('  - 첫 번째 알람 정보:');
         logMessage('    • 버스: ${firstAlarm['routeNo']}');
-        logMessage('    • 시간: ${firstAlarm['hour']}:${firstAlarm['minute']}');
-        logMessage('    • 반복: ${(firstAlarm['repeatDays'] as List).map((d) => [
-              '월',
-              '화',
-              '수',
-              '목',
-              '금',
-              '토',
-              '일'
-            ][d - 1]).join(", ")}');
+        logMessage('    • 시간: ${firstAlarm['scheduledTime']}');
+        logMessage('    • 반복: ${(firstAlarm['repeatDays'] as List).map((d) => ['월', '화', '수', '목', '금', '토', '일'][d - 1]).join(", ")}');
       }
     } catch (e) {
       logMessage('❌ 자동 알람 저장 오류: $e', level: LogLevel.error);
