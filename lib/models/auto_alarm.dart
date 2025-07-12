@@ -106,7 +106,11 @@ class AutoAlarm {
 
     DateTime? scheduledTime;
     if (json['scheduledTime'] != null) {
-      scheduledTime = DateTime.parse(json['scheduledTime']);
+      if (json['scheduledTime'] is String) {
+        scheduledTime = DateTime.parse(json['scheduledTime']);
+      } else if (json['scheduledTime'] is DateTime) {
+        scheduledTime = json['scheduledTime'];
+      }
     }
 
     return AutoAlarm(
@@ -258,8 +262,6 @@ class AutoAlarm {
       useTTS: useTTS ?? this.useTTS,
     );
   }
-
-  
 
   @override
   String toString() {
