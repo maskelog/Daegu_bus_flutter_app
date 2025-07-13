@@ -91,9 +91,11 @@ class AlarmService extends ChangeNotifier {
   List<alarm_model.AlarmData> get activeAlarms {
     final allAlarms = <alarm_model.AlarmData>{};
     allAlarms.addAll(
-        _activeAlarms.values.where((alarm) => !alarm.isAutoAlarm)); // 일반 알람만 추가
+      _activeAlarms.values.where((alarm) => !alarm.isAutoAlarm),
+    ); // 일반 알람만 추가
     allAlarms.addAll(
-        _autoAlarms.where((alarm) => alarm.isAutoAlarm)); // 활성화된 자동 알람만 추가
+      _autoAlarms.where((alarm) => alarm.isAutoAlarm),
+    ); // 활성화된 자동 알람만 추가
     return allAlarms.toList();
   }
 
@@ -103,8 +105,8 @@ class AlarmService extends ChangeNotifier {
   AlarmService({
     required NotificationService notificationService,
     required SettingsService settingsService,
-  })  : _notificationService = notificationService,
-        _settingsService = settingsService {
+  }) : _notificationService = notificationService,
+       _settingsService = settingsService {
     _setupMethodChannel();
   }
 
@@ -117,8 +119,9 @@ class AlarmService extends ChangeNotifier {
     try {
       switch (call.method) {
         case 'onAlarmCanceledFromNotification':
-          final Map<String, dynamic> args =
-              Map<String, dynamic>.from(call.arguments);
+          final Map<String, dynamic> args = Map<String, dynamic>.from(
+            call.arguments,
+          );
           final String busNo = args['busNo'] ?? '';
           final String routeId = args['routeId'] ?? '';
           final String stationName = args['stationName'] ?? '';
@@ -133,8 +136,10 @@ class AlarmService extends ChangeNotifier {
             final timeDiff = timestamp - lastTimestamp;
             if (timeDiff < 3000) {
               // 3초 이내 중복 이벤트 무시
-              logMessage('⚠️ [중복방지] 이벤트 무시: $eventKey (${timeDiff}ms 전에 처리됨)',
-                  level: LogLevel.warning);
+              logMessage(
+                '⚠️ [중복방지] 이벤트 무시: $eventKey (${timeDiff}ms 전에 처리됨)',
+                level: LogLevel.warning,
+              );
               return true;
             }
           }
@@ -146,17 +151,19 @@ class AlarmService extends ChangeNotifier {
 
           // 오래된 이벤트 정리 (30초 이전)
           final now = DateTime.now().millisecondsSinceEpoch;
-          final expiredKeys = _processedEventTimestamps.entries
-              .where((entry) => now - entry.value > 30000)
-              .map((entry) => entry.key)
-              .toList();
+          final expiredKeys =
+              _processedEventTimestamps.entries
+                  .where((entry) => now - entry.value > 30000)
+                  .map((entry) => entry.key)
+                  .toList();
           for (var key in expiredKeys) {
             _processedEventTimestamps.remove(key);
           }
 
           logMessage(
-              '🔔 [노티피케이션] 네이티브에서 특정 알람 취소 이벤트 수신: $busNo번, $stationName, $routeId',
-              level: LogLevel.info);
+            '🔔 [노티피케이션] 네이티브에서 특정 알람 취소 이벤트 수신: $busNo번, $stationName, $routeId',
+            level: LogLevel.info,
+          );
 
           // 즉시 Flutter 측 상태 동기화 (낙관적 업데이트)
           final String alarmKey = "${busNo}_${stationName}_$routeId";
@@ -177,8 +184,10 @@ class AlarmService extends ChangeNotifier {
               _trackedRouteId = null;
               if (_activeAlarms.isEmpty) {
                 _isInTrackingMode = false;
-                logMessage('🛑 추적 모드 비활성화 (취소된 알람이 추적 중이던 알람)',
-                    level: LogLevel.info);
+                logMessage(
+                  '🛑 추적 모드 비활성화 (취소된 알람이 추적 중이던 알람)',
+                  level: LogLevel.info,
+                );
               }
             } else if (_activeAlarms.isEmpty) {
               _isInTrackingMode = false;
@@ -190,11 +199,15 @@ class AlarmService extends ChangeNotifier {
             await _saveAlarms();
             notifyListeners();
 
-            logMessage('✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료: $alarmKey',
-                level: LogLevel.info);
+            logMessage(
+              '✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료: $alarmKey',
+              level: LogLevel.info,
+            );
           } else {
-            logMessage('⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리만 수행',
-                level: LogLevel.warning);
+            logMessage(
+              '⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리만 수행',
+              level: LogLevel.warning,
+            );
 
             // 상태 정리
             if (_activeAlarms.isEmpty && _isInTrackingMode) {
@@ -208,14 +221,18 @@ class AlarmService extends ChangeNotifier {
           return true; // Acknowledge event received
         case 'onAllAlarmsCanceled':
           // 모든 알람 취소 이벤트 처리
-          logMessage('🛑🛑🛑 네이티브에서 모든 알람 취소 이벤트 수신 - 사용자가 "추적 중지" 버튼을 눌렀습니다!',
-              level: LogLevel.warning);
+          logMessage(
+            '🛑🛑🛑 네이티브에서 모든 알람 취소 이벤트 수신 - 사용자가 "추적 중지" 버튼을 눌렀습니다!',
+            level: LogLevel.warning,
+          );
 
           // 🛑 사용자 수동 중지 플래그 설정 (30초간 자동 알람 재시작 방지)
           _userManuallyStopped = true;
           _lastManualStopTime = DateTime.now().millisecondsSinceEpoch;
-          logMessage('🛑 Flutter 측 수동 중지 플래그 설정 - 30초간 자동 알람 재시작 방지',
-              level: LogLevel.warning);
+          logMessage(
+            '🛑 Flutter 측 수동 중지 플래그 설정 - 30초간 자동 알람 재시작 방지',
+            level: LogLevel.warning,
+          );
 
           // 🛑 실시간 버스 업데이트 타이머 중지 (중요!)
           try {
@@ -233,8 +250,10 @@ class AlarmService extends ChangeNotifier {
               _manuallyStoppedAlarms.add(alarmKey);
               _manuallyStoppedTimestamps[alarmKey] = now;
             }
-            logMessage('🚫 모든 알람을 수동 중지 목록에 추가: ${_activeAlarms.length}개',
-                level: LogLevel.info);
+            logMessage(
+              '🚫 모든 알람을 수동 중지 목록에 추가: ${_activeAlarms.length}개',
+              level: LogLevel.info,
+            );
 
             _activeAlarms.clear();
             _cachedBusInfo.clear();
@@ -248,25 +267,31 @@ class AlarmService extends ChangeNotifier {
           return true;
         case 'stopAutoAlarmFromBroadcast':
           // 자동알람 중지 브로드캐스트 수신 처리
-          final Map<String, dynamic> args =
-              Map<String, dynamic>.from(call.arguments);
+          final Map<String, dynamic> args = Map<String, dynamic>.from(
+            call.arguments,
+          );
           final String busNo = args['busNo'] ?? '';
           final String stationName = args['stationName'] ?? '';
           final String routeId = args['routeId'] ?? '';
 
           logMessage(
-              '🔔 네이티브에서 자동알람 중지 브로드캐스트 수신: $busNo, $stationName, $routeId',
-              level: LogLevel.info);
+            '🔔 네이티브에서 자동알람 중지 브로드캐스트 수신: $busNo, $stationName, $routeId',
+            level: LogLevel.info,
+          );
 
           // stopAutoAlarm 메서드 호출
           try {
             final result = await stopAutoAlarm(busNo, stationName, routeId);
             if (result) {
-              logMessage('✅ 자동알람 중지 완료 (브로드캐스트에 의해): $busNo번',
-                  level: LogLevel.info);
+              logMessage(
+                '✅ 자동알람 중지 완료 (브로드캐스트에 의해): $busNo번',
+                level: LogLevel.info,
+              );
             } else {
-              logMessage('❌ 자동알람 중지 실패 (브로드캐스트에 의해): $busNo번',
-                  level: LogLevel.error);
+              logMessage(
+                '❌ 자동알람 중지 실패 (브로드캐스트에 의해): $busNo번',
+                level: LogLevel.error,
+              );
             }
           } catch (e) {
             logMessage('❌ 자동알람 중지 처리 오류: $e', level: LogLevel.error);
@@ -275,8 +300,10 @@ class AlarmService extends ChangeNotifier {
           return true;
         default:
           // Ensure other method calls are still handled if any exist
-          logMessage('Unhandled method call: ${call.method}',
-              level: LogLevel.warning);
+          logMessage(
+            'Unhandled method call: ${call.method}',
+            level: LogLevel.warning,
+          );
           return null;
       }
     } catch (e) {
@@ -358,8 +385,10 @@ class AlarmService extends ChangeNotifier {
     }
 
     if (keysToRemove.isNotEmpty) {
-      logMessage('🧹 실행 기록 정리: ${keysToRemove.length}개 제거',
-          level: LogLevel.debug);
+      logMessage(
+        '🧹 실행 기록 정리: ${keysToRemove.length}개 제거',
+        level: LogLevel.debug,
+      );
     }
   }
 
@@ -372,7 +401,8 @@ class AlarmService extends ChangeNotifier {
       final now = DateTime.now();
       final weekdays = ['일', '월', '화', '수', '목', '금', '토'];
       logMessage(
-          '🕒 [자동알람 상태] 현재 시간: ${now.toString()} (${weekdays[now.weekday % 7]})');
+        '🕒 [자동알람 상태] 현재 시간: ${now.toString()} (${weekdays[now.weekday % 7]})',
+      );
       logMessage('🕒 [자동알람 상태] 활성 자동 알람: ${_autoAlarms.length}개');
       logMessage('🕒 [자동알람 상태] 자동 알람 활성화: $_autoAlarmEnabled');
       logMessage('🕒 [자동알람 상태] 수동 중지된 알람: ${_manuallyStoppedAlarms.length}개');
@@ -382,9 +412,10 @@ class AlarmService extends ChangeNotifier {
         final timeUntilAlarm = alarm.scheduledTime.difference(now);
         final repeatDaysStr =
             alarm.repeatDays?.map((day) => weekdays[day % 7]).join(', ') ??
-                '없음';
+            '없음';
         logMessage(
-            '  - ${alarm.busNo}번 (${alarm.stationName}): 예정 시간 ${alarm.scheduledTime.toString()}, ${timeUntilAlarm.inMinutes}분 후, 반복: $repeatDaysStr');
+          '  - ${alarm.busNo}번 (${alarm.stationName}): 예정 시간 ${alarm.scheduledTime.toString()}, ${timeUntilAlarm.inMinutes}분 후, 반복: $repeatDaysStr',
+        );
       }
 
       if (_autoAlarms.isEmpty) {
@@ -396,12 +427,16 @@ class AlarmService extends ChangeNotifier {
         for (var alarmKey in _manuallyStoppedAlarms) {
           final stoppedTime = _manuallyStoppedTimestamps[alarmKey];
           if (stoppedTime != null) {
-            final stoppedDate =
-                DateTime(stoppedTime.year, stoppedTime.month, stoppedTime.day);
+            final stoppedDate = DateTime(
+              stoppedTime.year,
+              stoppedTime.month,
+              stoppedTime.day,
+            );
             final currentDate = DateTime(now.year, now.month, now.day);
             final isToday = stoppedDate.isAtSameMomentAs(currentDate);
             logMessage(
-                '    • $alarmKey (중지일: ${stoppedTime.month}/${stoppedTime.day}, ${isToday ? "오늘" : "과거"})');
+              '    • $alarmKey (중지일: ${stoppedTime.month}/${stoppedTime.day}, ${isToday ? "오늘" : "과거"})',
+            );
           }
         }
       }
@@ -418,15 +453,20 @@ class AlarmService extends ChangeNotifier {
           final rootIsolateToken = RootIsolateToken.instance;
           if (rootIsolateToken != null) {
             BackgroundIsolateBinaryMessenger.ensureInitialized(
-                rootIsolateToken);
+              rootIsolateToken,
+            );
             logMessage('✅ BackgroundIsolateBinaryMessenger 초기화 성공');
           } else {
-            logMessage('⚠️ RootIsolateToken이 null입니다. 메인 스레드에서 실행 중인지 확인하세요.',
-                level: LogLevel.warning);
+            logMessage(
+              '⚠️ RootIsolateToken이 null입니다. 메인 스레드에서 실행 중인지 확인하세요.',
+              level: LogLevel.warning,
+            );
           }
         } catch (e) {
-          logMessage('⚠️ BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
-              level: LogLevel.warning);
+          logMessage(
+            '⚠️ BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
+            level: LogLevel.warning,
+          );
         }
       }
 
@@ -468,16 +508,20 @@ class AlarmService extends ChangeNotifier {
           final rootIsolateToken = RootIsolateToken.instance;
           if (rootIsolateToken != null) {
             BackgroundIsolateBinaryMessenger.ensureInitialized(
-                rootIsolateToken);
+              rootIsolateToken,
+            );
             logMessage('✅ 자동 알람용 BackgroundIsolateBinaryMessenger 초기화 성공');
           } else {
-            logMessage('⚠️ 자동 알람 - RootIsolateToken이 null입니다',
-                level: LogLevel.warning);
+            logMessage(
+              '⚠️ 자동 알람 - RootIsolateToken이 null입니다',
+              level: LogLevel.warning,
+            );
           }
         } catch (e) {
           logMessage(
-              '⚠️ 자동 알람 BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
-              level: LogLevel.warning);
+            '⚠️ 자동 알람 BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
+            level: LogLevel.warning,
+          );
         }
       }
 
@@ -498,7 +542,10 @@ class AlarmService extends ChangeNotifier {
 
           // stationId가 없는 경우, stationName과 routeId로 찾아옴
           if (data['stationId'] == null || data['stationId'].isEmpty) {
-            data['stationId'] = _getStationIdFromName(data['stationName'], data['routeId']);
+            data['stationId'] = _getStationIdFromName(
+              data['stationName'],
+              data['routeId'],
+            );
           }
 
           // 필수 필드 검증
@@ -513,8 +560,10 @@ class AlarmService extends ChangeNotifier {
           // 다음 알람 시간 계산
           final nextAlarmTime = autoAlarm.getNextAlarmTime();
           if (nextAlarmTime == null) {
-            logMessage('⚠️ 자동 알람 다음 시간 계산 실패: ${autoAlarm.routeNo}',
-                level: LogLevel.warning);
+            logMessage(
+              '⚠️ 자동 알람 다음 시간 계산 실패: ${autoAlarm.routeNo}',
+              level: LogLevel.warning,
+            );
             continue;
           }
 
@@ -532,7 +581,8 @@ class AlarmService extends ChangeNotifier {
 
           _autoAlarms.add(alarm);
           logMessage(
-              '✅ 자동 알람 로드: ${alarm.busNo}, ${alarm.stationName}, 다음 시간: ${nextAlarmTime.toString()}');
+            '✅ 자동 알람 로드: ${alarm.busNo}, ${alarm.stationName}, 다음 시간: ${nextAlarmTime.toString()}',
+          );
         } catch (e) {
           logMessage('❌ 자동 알람 파싱 오류: $e', level: LogLevel.error);
           continue;
@@ -552,23 +602,32 @@ class AlarmService extends ChangeNotifier {
       'stationId',
       'routeId',
       'stationName',
-      'repeatDays'
+      'repeatDays',
     ];
     // scheduledTime 또는 hour/minute 중 하나는 필수
-    if (data['scheduledTime'] == null && (data['hour'] == null || data['minute'] == null)) {
-        logMessage('! 자동 알람 데이터 필수 필드 누락: scheduledTime 또는 hour/minute', level: LogLevel.error);
-        return false;
+    if (data['scheduledTime'] == null &&
+        (data['hour'] == null || data['minute'] == null)) {
+      logMessage(
+        '! 자동 알람 데이터 필수 필드 누락: scheduledTime 또는 hour/minute',
+        level: LogLevel.error,
+      );
+      return false;
     }
 
-    final missingFields = requiredFields
-        .where((field) =>
-            data[field] == null ||
-            (data[field] is String && data[field].isEmpty) ||
-            (data[field] is List && (data[field] as List).isEmpty))
-        .toList();
+    final missingFields =
+        requiredFields
+            .where(
+              (field) =>
+                  data[field] == null ||
+                  (data[field] is String && data[field].isEmpty) ||
+                  (data[field] is List && (data[field] as List).isEmpty),
+            )
+            .toList();
     if (missingFields.isNotEmpty) {
-      logMessage('! 자동 알람 데이터 필수 필드 누락: [31m${missingFields.join(", ")}[0m',
-          level: LogLevel.error);
+      logMessage(
+        '! 자동 알람 데이터 필수 필드 누락: [31m${missingFields.join(", ")}[0m',
+        level: LogLevel.error,
+      );
       return false;
     }
     return true;
@@ -593,11 +652,14 @@ class AlarmService extends ChangeNotifier {
       };
 
       await _methodChannel?.invokeMethod(
-          'startBusMonitoringService', arguments);
+        'startBusMonitoringService',
+        arguments,
+      );
       _isInTrackingMode = true;
       _trackedRouteId = effectiveRouteId;
       logMessage(
-          '\ud83d\ude8c \ubc84\uc2a4 \ucd94\uc801 \uc2dc\uc791: $_trackedRouteId');
+        '\ud83d\ude8c \ubc84\uc2a4 \ucd94\uc801 \uc2dc\uc791: $_trackedRouteId',
+      );
       notifyListeners();
       return true;
     } catch (e) {
@@ -614,8 +676,9 @@ class AlarmService extends ChangeNotifier {
 
       // 1. 메서드 채널을 통한 중지 시도
       try {
-        final result =
-            await _methodChannel?.invokeMethod('stopBusMonitoringService');
+        final result = await _methodChannel?.invokeMethod(
+          'stopBusMonitoringService',
+        );
         if (result == true) {
           stopSuccess = true;
           debugPrint('🚌 버스 모니터링 서비스 중지 성공 (result: $result)');
@@ -658,16 +721,14 @@ class AlarmService extends ChangeNotifier {
       _isInTrackingMode = false;
       _trackedRouteId = null;
       logMessage(
-          '\ud83d\ude8c \ubc84\uc2a4 \ucd94\uc801 \uc911\uc9c0: \ucd94\uc801 \uc544\uc774\ub514 \ucd08\uae30\ud654');
+        '\ud83d\ude8c \ubc84\uc2a4 \ucd94\uc801 \uc911\uc9c0: \ucd94\uc801 \uc544\uc774\ub514 \ucd08\uae30\ud654',
+      );
       notifyListeners();
 
       // 6. TTS로 알림 중지 알림
       try {
         // 이어폰 연결 시에만 TTS 발화
-        await SimpleTTSHelper.speak(
-          "버스 추적이 중지되었습니다.",
-          earphoneOnly: true,
-        );
+        await SimpleTTSHelper.speak("버스 추적이 중지되었습니다.", earphoneOnly: true);
       } catch (e) {
         debugPrint('🚌 TTS 알림 오류: $e');
       }
@@ -785,7 +846,10 @@ class AlarmService extends ChangeNotifier {
   }
 
   void removeFromCacheBeforeCancel(
-      String busNo, String stationName, String routeId) {
+    String busNo,
+    String stationName,
+    String routeId,
+  ) {
     final keysToRemove = <String>[];
     _activeAlarms.forEach((key, alarm) {
       if (alarm.busNo == busNo &&
@@ -802,10 +866,12 @@ class AlarmService extends ChangeNotifier {
     final cacheKey = "${busNo}_$routeId";
     _cachedBusInfo.remove(cacheKey);
 
-    _autoAlarms.removeWhere((alarm) =>
-        alarm.busNo == busNo &&
-        alarm.stationName == stationName &&
-        alarm.routeId == routeId);
+    _autoAlarms.removeWhere(
+      (alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId,
+    );
 
     notifyListeners();
   }
@@ -855,8 +921,10 @@ class AlarmService extends ChangeNotifier {
             return [];
           }
         } else {
-          logMessage('❌ 공휴일 API 응답 오류: ${response.statusCode}',
-              level: LogLevel.error);
+          logMessage(
+            '❌ 공휴일 API 응답 오류: ${response.statusCode}',
+            level: LogLevel.error,
+          );
           return [];
         }
       } catch (e) {
@@ -875,8 +943,10 @@ class AlarmService extends ChangeNotifier {
       // 자동 알람 설정이 비활성화되어 있으면 실행하지 않음
       final settingsService = SettingsService();
       if (!settingsService.useAutoAlarm || !_autoAlarmEnabled) {
-        logMessage('⚠️ 자동 알람이 설정에서 비활성화되어 있거나 수동으로 중지되었습니다.',
-            level: LogLevel.warning);
+        logMessage(
+          '⚠️ 자동 알람이 설정에서 비활성화되어 있거나 수동으로 중지되었습니다.',
+          level: LogLevel.warning,
+        );
         return;
       }
 
@@ -899,8 +969,9 @@ class AlarmService extends ChangeNotifier {
             timeDifference.inSeconds >= -59 && timeDifference.inSeconds <= 0;
 
         logMessage(
-            '🕒 알람 시간 체크: ${alarm.busNo}번 - 현재: ${now.hour}:${now.minute}:${now.second}, 알람: ${alarmTime.hour}:${alarmTime.minute}, 차이: ${timeDifference.inSeconds}초',
-            level: LogLevel.debug);
+          '🕒 알람 시간 체크: ${alarm.busNo}번 - 현재: ${now.hour}:${now.minute}:${now.second}, 알람: ${alarmTime.hour}:${alarmTime.minute}, 차이: ${timeDifference.inSeconds}초',
+          level: LogLevel.debug,
+        );
 
         if (isTargetTime && isWithinMinute) {
           final alarmKey =
@@ -911,19 +982,22 @@ class AlarmService extends ChangeNotifier {
               "${alarmKey}_${alarmTime.hour}:${alarmTime.minute}";
           if (_executedAlarms.containsKey(executionKey)) {
             final lastExecution = _executedAlarms[executionKey]!;
-            final sameMinute = lastExecution.hour == now.hour &&
+            final sameMinute =
+                lastExecution.hour == now.hour &&
                 lastExecution.minute == now.minute;
             if (sameMinute) {
               logMessage(
-                  '⏭️ 알람 중복 실행 방지: ${alarm.busNo}번 - 이미 ${lastExecution.hour}:${lastExecution.minute}에 실행됨',
-                  level: LogLevel.warning);
+                '⏭️ 알람 중복 실행 방지: ${alarm.busNo}번 - 이미 ${lastExecution.hour}:${lastExecution.minute}에 실행됨',
+                level: LogLevel.warning,
+              );
               continue;
             }
           }
 
           logMessage(
-              '✅ 알람 실행 조건 만족: ${alarm.busNo}번 - 시간: ${alarmTime.hour}:${alarmTime.minute}, 차이: ${timeDifference.inSeconds}초',
-              level: LogLevel.info);
+            '✅ 알람 실행 조건 만족: ${alarm.busNo}번 - 시간: ${alarmTime.hour}:${alarmTime.minute}, 차이: ${timeDifference.inSeconds}초',
+            level: LogLevel.info,
+          );
 
           // 수동으로 중지된 알람인지 확인 (다음날 자정에 자동 해제)
           if (_manuallyStoppedAlarms.contains(alarmKey)) {
@@ -931,7 +1005,10 @@ class AlarmService extends ChangeNotifier {
             if (stoppedTime != null) {
               // 중지된 날짜와 현재 날짜 비교
               final stoppedDate = DateTime(
-                  stoppedTime.year, stoppedTime.month, stoppedTime.day);
+                stoppedTime.year,
+                stoppedTime.month,
+                stoppedTime.day,
+              );
               final currentDate = DateTime(now.year, now.month, now.day);
 
               if (currentDate.isAfter(stoppedDate)) {
@@ -939,12 +1016,14 @@ class AlarmService extends ChangeNotifier {
                 _manuallyStoppedAlarms.remove(alarmKey);
                 _manuallyStoppedTimestamps.remove(alarmKey);
                 logMessage(
-                    '✅ 수동 중지 알람 자동 해제 (다음날 도래): ${alarm.busNo}번, ${alarm.stationName}',
-                    level: LogLevel.info);
+                  '✅ 수동 중지 알람 자동 해제 (다음날 도래): ${alarm.busNo}번, ${alarm.stationName}',
+                  level: LogLevel.info,
+                );
               } else {
                 logMessage(
-                    '⚠️ 자동 알람 스킵 (오늘 수동으로 중지됨): ${alarm.busNo}번, ${alarm.stationName}',
-                    level: LogLevel.warning);
+                  '⚠️ 자동 알람 스킵 (오늘 수동으로 중지됨): ${alarm.busNo}번, ${alarm.stationName}',
+                  level: LogLevel.warning,
+                );
                 continue;
               }
             } else {
@@ -956,38 +1035,46 @@ class AlarmService extends ChangeNotifier {
           // 이미 추적 중인 알람인지 확인
           if (_activeAlarms.containsKey(alarmKey)) {
             logMessage(
-                '⚠️ 자동 알람 스킵 (이미 추적 중): ${alarm.busNo}번, ${alarm.stationName}',
-                level: LogLevel.warning);
+              '⚠️ 자동 알람 스킵 (이미 추적 중): ${alarm.busNo}번, ${alarm.stationName}',
+              level: LogLevel.warning,
+            );
             continue;
           }
 
           logMessage(
-              '⚡ 자동 알람 실행: ${alarm.busNo}번, 예정 시간: ${alarmTime.toString()}, 현재 시간: ${now.toString()}',
-              level: LogLevel.info);
+            '⚡ 자동 알람 실행: ${alarm.busNo}번, 예정 시간: ${alarmTime.toString()}, 현재 시간: ${now.toString()}',
+            level: LogLevel.info,
+          );
 
           // 올바른 stationId 가져오기 (DB 실패 시 매핑 사용)
-          String effectiveStationId =
-              _getStationIdFromName(alarm.stationName, alarm.routeId);
+          String effectiveStationId = _getStationIdFromName(
+            alarm.stationName,
+            alarm.routeId,
+          );
 
           // DB를 통한 추가 보정 시도 (선택사항)
           try {
             final dbHelper = DatabaseHelper();
-            final resolvedStationId =
-                await dbHelper.getStationIdFromWincId(alarm.stationName);
+            final resolvedStationId = await dbHelper.getStationIdFromWincId(
+              alarm.stationName,
+            );
             if (resolvedStationId != null && resolvedStationId.isNotEmpty) {
               effectiveStationId = resolvedStationId;
               logMessage(
-                  '✅ 자동 알람 DB stationId 보정: ${alarm.stationName} → $effectiveStationId',
-                  level: LogLevel.debug);
+                '✅ 자동 알람 DB stationId 보정: ${alarm.stationName} → $effectiveStationId',
+                level: LogLevel.debug,
+              );
             } else {
               logMessage(
-                  '⚠️ DB stationId 보정 실패, 매핑값 사용: ${alarm.stationName} → $effectiveStationId',
-                  level: LogLevel.debug);
+                '⚠️ DB stationId 보정 실패, 매핑값 사용: ${alarm.stationName} → $effectiveStationId',
+                level: LogLevel.debug,
+              );
             }
           } catch (e) {
             logMessage(
-                '❌ DB stationId 보정 중 오류, 매핑값 사용: $e → $effectiveStationId',
-                level: LogLevel.warning);
+              '❌ DB stationId 보정 중 오류, 매핑값 사용: $e → $effectiveStationId',
+              level: LogLevel.warning,
+            );
           }
 
           // AutoAlarm 객체로 변환
@@ -999,9 +1086,10 @@ class AlarmService extends ChangeNotifier {
             routeId: alarm.routeId,
             hour: alarmTime.hour,
             minute: alarmTime.minute,
-            repeatDays: (alarm.repeatDays?.isNotEmpty ?? false)
-                ? alarm.repeatDays!
-                : [now.weekday], // 반복 요일 사용
+            repeatDays:
+                (alarm.repeatDays?.isNotEmpty ?? false)
+                    ? alarm.repeatDays!
+                    : [now.weekday], // 반복 요일 사용
             useTTS: alarm.useTTS,
             isActive: true,
           );
@@ -1031,7 +1119,8 @@ class AlarmService extends ChangeNotifier {
             );
             _autoAlarms.add(nextAlarm);
             logMessage(
-                '✅ 다음 자동 알람 스케줄링: ${alarm.busNo}번, 다음 시간: ${nextAlarmTime.toString()}');
+              '✅ 다음 자동 알람 스케줄링: ${alarm.busNo}번, 다음 시간: ${nextAlarmTime.toString()}',
+            );
           }
 
           await _saveAutoAlarms();
@@ -1046,8 +1135,10 @@ class AlarmService extends ChangeNotifier {
   // 지속적인 자동 알람 시작 메서드 추가
   Future<void> _startContinuousAutoAlarm(AutoAlarm alarm) async {
     try {
-      logMessage('⚡ 지속적인 자동 알람 시작: ${alarm.routeNo}번, ${alarm.stationName}',
-          level: LogLevel.info);
+      logMessage(
+        '⚡ 지속적인 자동 알람 시작: ${alarm.routeNo}번, ${alarm.stationName}',
+        level: LogLevel.info,
+      );
 
       // 버스 모니터링 서비스 시작
       await startBusMonitoringService(
@@ -1059,8 +1150,9 @@ class AlarmService extends ChangeNotifier {
 
       // 정기적인 업데이트 타이머 시작 (30초마다)
       _refreshTimer?.cancel();
-      _refreshTimer =
-          Timer.periodic(const Duration(seconds: 30), (timer) async {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 30), (
+        timer,
+      ) async {
         if (!_isInTrackingMode) {
           timer.cancel();
           return;
@@ -1081,8 +1173,9 @@ class AlarmService extends ChangeNotifier {
           // BusAlertService가 이미 포그라운드 알림을 30초마다 업데이트함
 
           logMessage(
-              '🔄 자동 알람 업데이트: ${alarm.routeNo}번, $remainingMinutes분 후, 현재: $currentStation',
-              level: LogLevel.info);
+            '🔄 자동 알람 업데이트: ${alarm.routeNo}번, $remainingMinutes분 후, 현재: $currentStation',
+            level: LogLevel.info,
+          );
 
           // TTS 발화 (1분마다)
           if (timer.tick % 2 == 0) {
@@ -1098,8 +1191,9 @@ class AlarmService extends ChangeNotifier {
                 );
 
                 logMessage(
-                    '🔊 자동 알람 TTS 반복 발화: ${alarm.routeNo}번, $remainingMinutes분 후',
-                    level: LogLevel.info);
+                  '🔊 자동 알람 TTS 반복 발화: ${alarm.routeNo}번, $remainingMinutes분 후',
+                  level: LogLevel.info,
+                );
               } catch (e) {
                 logMessage('❌ 자동 알람 TTS 반복 발화 오류: $e', level: LogLevel.error);
               }
@@ -1124,11 +1218,15 @@ class AlarmService extends ChangeNotifier {
   }
 
   Future<void> _scheduleAutoAlarm(
-      AutoAlarm alarm, DateTime scheduledTime) async {
+    AutoAlarm alarm,
+    DateTime scheduledTime,
+  ) async {
     // 필수 파라미터 검증
     if (!_validateRequiredFields(alarm.toJson())) {
-      logMessage('❌ 필수 파라미터 누락으로 자동 알람 예약 거부: ${alarm.toJson()}',
-          level: LogLevel.error);
+      logMessage(
+        '❌ 필수 파라미터 누락으로 자동 알람 예약 거부: ${alarm.toJson()}',
+        level: LogLevel.error,
+      );
       return;
     }
     try {
@@ -1160,7 +1258,6 @@ class AlarmService extends ChangeNotifier {
 
       // 네이티브 AlarmManager 스케줄링 요청
       await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
-        
         'busNo': alarm.routeNo,
         'stationName': alarm.stationName,
         'routeId': alarm.routeId,
@@ -1173,29 +1270,33 @@ class AlarmService extends ChangeNotifier {
       });
 
       logMessage(
-          '✅ 네이티브 AlarmManager 스케줄링 요청 완료: ${alarm.routeNo} at $scheduledTime, 즉시 실행: $isImmediate');
+        '✅ 네이티브 AlarmManager 스케줄링 요청 완료: ${alarm.routeNo} at $scheduledTime, 즉시 실행: $isImmediate',
+      );
 
       // SharedPreferences에 작업 등록 정보 저장 (검증용)
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
-          'last_scheduled_alarm_$uniqueAlarmId',
-          jsonEncode({
-            'workId': 'native_alarm_$uniqueAlarmId', // 네이티브 알람임을 표시
-            'busNo': alarm.routeNo,
-            'stationName': alarm.stationName,
-            'scheduledTime': scheduledTime.toIso8601String(),
-            'registeredAt': now.toIso8601String(),
-          }));
+        'last_scheduled_alarm_$uniqueAlarmId',
+        jsonEncode({
+          'workId': 'native_alarm_$uniqueAlarmId', // 네이티브 알람임을 표시
+          'busNo': alarm.routeNo,
+          'stationName': alarm.stationName,
+          'scheduledTime': scheduledTime.toIso8601String(),
+          'registeredAt': now.toIso8601String(),
+        }),
+      );
 
       logMessage(
-          '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: native_alarm_$uniqueAlarmId');
+        '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: native_alarm_$uniqueAlarmId',
+      );
 
       // 30초 후 백업 알람 등록 (즉시 실행되지 않은 경우만)
       if (executionDelay.inSeconds > 30) {
         _scheduleBackupAlarm(alarm, uniqueAlarmId.hashCode, scheduledTime);
         logMessage(
-            '✅ 백업 알람 등록: ${alarm.routeNo}번, ${executionDelay.inMinutes}분 후 실행',
-            level: LogLevel.info);
+          '✅ 백업 알람 등록: ${alarm.routeNo}번, ${executionDelay.inMinutes}분 후 실행',
+          level: LogLevel.info,
+        );
       }
     } catch (e) {
       logMessage('❌ 자동 알람 예약 오류: $e', level: LogLevel.error);
@@ -1213,28 +1314,35 @@ class AlarmService extends ChangeNotifier {
         final timeSinceStop = now - _lastManualStopTime;
         if (timeSinceStop < _restartPreventionDuration) {
           logMessage(
-              '🛑 사용자가 ${(timeSinceStop / 1000).toInt()}초 전에 수동 중지했음 - 자동 알람 실행 거부: ${alarm.routeNo}번',
-              level: LogLevel.warning);
+            '🛑 사용자가 ${(timeSinceStop / 1000).toInt()}초 전에 수동 중지했음 - 자동 알람 실행 거부: ${alarm.routeNo}번',
+            level: LogLevel.warning,
+          );
           return;
         } else {
           // 30초가 지났으면 플래그 해제
           _userManuallyStopped = false;
           _lastManualStopTime = 0;
-          logMessage('✅ Flutter 재시작 방지 기간 만료 - 자동 알람 실행 허용: ${alarm.routeNo}번',
-              level: LogLevel.info);
+          logMessage(
+            '✅ Flutter 재시작 방지 기간 만료 - 자동 알람 실행 허용: ${alarm.routeNo}번',
+            level: LogLevel.info,
+          );
         }
       }
 
       // 자동 알람 설정이 비활성화되어 있으면 실행하지 않음
       final settingsService = SettingsService();
       if (!settingsService.useAutoAlarm) {
-        logMessage('⚠️ 자동 알람이 설정에서 비활성화되어 있어 실행하지 않습니다: ${alarm.routeNo}번',
-            level: LogLevel.warning);
+        logMessage(
+          '⚠️ 자동 알람이 설정에서 비활성화되어 있어 실행하지 않습니다: ${alarm.routeNo}번',
+          level: LogLevel.warning,
+        );
         return;
       }
 
-      logMessage('⚡ 즉시 자동 알람 실행: ${alarm.routeNo}번, ${alarm.stationName}',
-          level: LogLevel.info);
+      logMessage(
+        '⚡ 즉시 자동 알람 실행: ${alarm.routeNo}번, ${alarm.stationName}',
+        level: LogLevel.info,
+      );
 
       // 실시간 버스 정보 가져오기
       await refreshAutoAlarmBusInfo(alarm);
@@ -1256,8 +1364,9 @@ class AlarmService extends ChangeNotifier {
         stationName: alarm.stationName,
         remainingMinutes: remainingMinutes,
         routeId: alarm.routeId,
-        scheduledTime: DateTime.now()
-            .add(Duration(minutes: remainingMinutes.clamp(0, 60))),
+        scheduledTime: DateTime.now().add(
+          Duration(minutes: remainingMinutes.clamp(0, 60)),
+        ),
         currentStation: currentStation,
         useTTS: alarm.useTTS,
         isAutoAlarm: true,
@@ -1269,8 +1378,9 @@ class AlarmService extends ChangeNotifier {
       await _saveAlarms();
 
       logMessage(
-          '✅ 자동 알람을 activeAlarms에 추가: ${alarm.routeNo}번 ($remainingMinutes분 후)',
-          level: LogLevel.info);
+        '✅ 자동 알람을 activeAlarms에 추가: ${alarm.routeNo}번 ($remainingMinutes분 후)',
+        level: LogLevel.info,
+      );
 
       // 즉시 실행 자동 알람에서는 TTS도 즉시 실행 (정확한 시간 보장)
       if (alarm.useTTS) {
@@ -1299,15 +1409,20 @@ class AlarmService extends ChangeNotifier {
 
   // 로컬 백업 알람 등록 함수
   Future<void> _scheduleLocalBackupAlarm(
-      AutoAlarm alarm, DateTime scheduledTime) async {
+    AutoAlarm alarm,
+    DateTime scheduledTime,
+  ) async {
     try {
-      logMessage('⏰ 로컬 백업 알람 등록 시도: ${alarm.routeNo}, ${alarm.stationName}',
-          level: LogLevel.debug);
+      logMessage(
+        '⏰ 로컬 백업 알람 등록 시도: ${alarm.routeNo}, ${alarm.stationName}',
+        level: LogLevel.debug,
+      );
 
       // TTS 및 알림으로 사용자에게 정보 제공
       try {
         await SimpleTTSHelper.speak(
-            "${alarm.routeNo}번 버스 자동 알람 예약에 문제가 발생했습니다. 앱을 다시 실행해 주세요.");
+          "${alarm.routeNo}번 버스 자동 알람 예약에 문제가 발생했습니다. 앱을 다시 실행해 주세요.",
+        );
       } catch (e) {
         logMessage('🔊 TTS 알림 실패: $e', level: LogLevel.error);
       }
@@ -1333,7 +1448,10 @@ class AlarmService extends ChangeNotifier {
 
   // 백업 알람 등록 함수 추가
   Future<void> _scheduleBackupAlarm(
-      AutoAlarm alarm, int id, DateTime scheduledTime) async {
+    AutoAlarm alarm,
+    int id,
+    DateTime scheduledTime,
+  ) async {
     try {
       final backupTime = scheduledTime.subtract(const Duration(minutes: 5));
       final now = DateTime.now();
@@ -1366,35 +1484,43 @@ class AlarmService extends ChangeNotifier {
     try {
       logMessage('🔄 자동 알람 저장 시작...');
       final prefs = await SharedPreferences.getInstance();
-      final List<String> alarms = _autoAlarms.map((alarm) {
-        final autoAlarm = AutoAlarm(
-          id: alarm.id,
-          routeNo: alarm.busNo,
-          stationName: alarm.stationName,
-          stationId: _getStationIdFromName(alarm.stationName, alarm.routeId),
-          routeId: alarm.routeId,
-          hour: alarm.scheduledTime.hour,
-          minute: alarm.scheduledTime.minute,
-          repeatDays: alarm.repeatDays ?? [],
-          useTTS: alarm.useTTS,
-          isActive: true,
-        );
+      final List<String> alarms =
+          _autoAlarms.map((alarm) {
+            final autoAlarm = AutoAlarm(
+              id: alarm.id,
+              routeNo: alarm.busNo,
+              stationName: alarm.stationName,
+              stationId: _getStationIdFromName(
+                alarm.stationName,
+                alarm.routeId,
+              ),
+              routeId: alarm.routeId,
+              hour: alarm.scheduledTime.hour,
+              minute: alarm.scheduledTime.minute,
+              repeatDays: alarm.repeatDays ?? [],
+              useTTS: alarm.useTTS,
+              isActive: true,
+            );
 
-        final json = autoAlarm.toJson();
-        // scheduledTime을 toIso8601String()으로 변환하여 저장
-        json['scheduledTime'] = alarm.scheduledTime.toIso8601String();
-        final jsonString = jsonEncode(json);
+            final json = autoAlarm.toJson();
+            // scheduledTime을 toIso8601String()으로 변환하여 저장
+            json['scheduledTime'] = alarm.scheduledTime.toIso8601String();
+            final jsonString = jsonEncode(json);
 
-        // 각 알람의 데이터 로깅
-        logMessage('📝 알람 데이터 변환: ${alarm.busNo}번 버스');
-        logMessage('  - ID: ${autoAlarm.id}');
-        logMessage('  - 시간: ${autoAlarm.hour}:${autoAlarm.minute}');
-        logMessage('  - 정류장: ${autoAlarm.stationName} (${autoAlarm.stationId})');
-        logMessage('  - 반복: ${autoAlarm.repeatDays.map((d) => ['월', '화', '수', '목', '금', '토', '일'][d - 1]).join(", ")}');
-        logMessage('  - JSON: $jsonString');
+            // 각 알람의 데이터 로깅
+            logMessage('📝 알람 데이터 변환: ${alarm.busNo}번 버스');
+            logMessage('  - ID: ${autoAlarm.id}');
+            logMessage('  - 시간: ${autoAlarm.hour}:${autoAlarm.minute}');
+            logMessage(
+              '  - 정류장: ${autoAlarm.stationName} (${autoAlarm.stationId})',
+            );
+            logMessage(
+              '  - 반복: ${autoAlarm.repeatDays.map((d) => ['월', '화', '수', '목', '금', '토', '일'][d - 1]).join(", ")}',
+            );
+            logMessage('  - JSON: $jsonString');
 
-        return jsonString;
-      }).toList();
+            return jsonString;
+          }).toList();
 
       // 저장 전 데이터 확인
       logMessage('📊 저장할 알람 수: ${alarms.length}개');
@@ -1411,7 +1537,9 @@ class AlarmService extends ChangeNotifier {
         logMessage('  - 첫 번째 알람 정보:');
         logMessage('    • 버스: ${firstAlarm['routeNo']}');
         logMessage('    • 시간: ${firstAlarm['scheduledTime']}');
-        logMessage('    • 반복: ${(firstAlarm['repeatDays'] as List).map((d) => ['월', '화', '수', '목', '금', '토', '일'][d - 1]).join(", ")}');
+        logMessage(
+          '    • 반복: ${(firstAlarm['repeatDays'] as List).map((d) => ['월', '화', '수', '목', '금', '토', '일'][d - 1]).join(", ")}',
+        );
       }
     } catch (e) {
       logMessage('❌ 자동 알람 저장 오류: $e', level: LogLevel.error);
@@ -1421,8 +1549,11 @@ class AlarmService extends ChangeNotifier {
 
   /// 알람 시작
   Future<void> startAlarm(
-      String busNo, String stationName, int remainingMinutes,
-      {bool isAutoAlarm = false}) async {
+    String busNo,
+    String stationName,
+    int remainingMinutes, {
+    bool isAutoAlarm = false,
+  }) async {
     try {
       // TTS 발화
       if (_useTTS) {
@@ -1447,7 +1578,10 @@ class AlarmService extends ChangeNotifier {
 
   /// 자동 알람 중지 메서드 추가
   Future<bool> stopAutoAlarm(
-      String busNo, String stationName, String routeId) async {
+    String busNo,
+    String stationName,
+    String routeId,
+  ) async {
     try {
       logMessage('📋 자동 알람 중지 요청: $busNo번, $stationName', level: LogLevel.info);
 
@@ -1468,10 +1602,12 @@ class AlarmService extends ChangeNotifier {
       await _notificationService.cancelOngoingTracking();
 
       // 자동 알람 목록에서 제거
-      _autoAlarms.removeWhere((alarm) =>
-          alarm.busNo == busNo &&
-          alarm.stationName == stationName &&
-          alarm.routeId == routeId);
+      _autoAlarms.removeWhere(
+        (alarm) =>
+            alarm.busNo == busNo &&
+            alarm.stationName == stationName &&
+            alarm.routeId == routeId,
+      );
 
       // activeAlarms에서도 제거
       _activeAlarms.remove(alarmKey);
@@ -1501,8 +1637,11 @@ class AlarmService extends ChangeNotifier {
   }
 
   /// 알람 해제
-  Future<void> stopAlarm(String busNo, String stationName,
-      {bool isAutoAlarm = false}) async {
+  Future<void> stopAlarm(
+    String busNo,
+    String stationName, {
+    bool isAutoAlarm = false,
+  }) async {
     try {
       // TTS로 알람 해제 안내
       if (_useTTS) {
@@ -1521,16 +1660,20 @@ class AlarmService extends ChangeNotifier {
 
   bool hasAlarm(String busNo, String stationName, String routeId) {
     // 일반 승차 알람만 확인 (자동 알람 제외)
-    final bool hasRegularAlarm = _activeAlarms.values.any((alarm) =>
-        alarm.busNo == busNo &&
-        alarm.stationName == stationName &&
-        alarm.routeId == routeId);
+    final bool hasRegularAlarm = _activeAlarms.values.any(
+      (alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId,
+    );
 
     // 자동 알람 여부 확인
-    final bool hasAutoAlarm = _autoAlarms.any((alarm) =>
-        alarm.busNo == busNo &&
-        alarm.stationName == stationName &&
-        alarm.routeId == routeId);
+    final bool hasAutoAlarm = _autoAlarms.any(
+      (alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId,
+    );
 
     // 추적 중인지 여부 확인
     final bool isTracking = isInTrackingMode;
@@ -1547,19 +1690,26 @@ class AlarmService extends ChangeNotifier {
   }
 
   bool hasAutoAlarm(String busNo, String stationName, String routeId) {
-    return _autoAlarms.any((alarm) =>
-        alarm.busNo == busNo &&
-        alarm.stationName == stationName &&
-        alarm.routeId == routeId);
+    return _autoAlarms.any(
+      (alarm) =>
+          alarm.busNo == busNo &&
+          alarm.stationName == stationName &&
+          alarm.routeId == routeId,
+    );
   }
 
   alarm_model.AlarmData? getAutoAlarm(
-      String busNo, String stationName, String routeId) {
+    String busNo,
+    String stationName,
+    String routeId,
+  ) {
     try {
-      return _autoAlarms.firstWhere((alarm) =>
-          alarm.busNo == busNo &&
-          alarm.stationName == stationName &&
-          alarm.routeId == routeId);
+      return _autoAlarms.firstWhere(
+        (alarm) =>
+            alarm.busNo == busNo &&
+            alarm.stationName == stationName &&
+            alarm.routeId == routeId,
+      );
     } catch (e) {
       debugPrint('자동 알람을 찾을 수 없음: $busNo, $stationName, $routeId');
       return null;
@@ -1567,18 +1717,25 @@ class AlarmService extends ChangeNotifier {
   }
 
   alarm_model.AlarmData? findAlarm(
-      String busNo, String stationName, String routeId) {
+    String busNo,
+    String stationName,
+    String routeId,
+  ) {
     try {
-      return _activeAlarms.values.firstWhere((alarm) =>
-          alarm.busNo == busNo &&
-          alarm.stationName == stationName &&
-          alarm.routeId == routeId);
-    } catch (e) {
-      try {
-        return _autoAlarms.firstWhere((alarm) =>
+      return _activeAlarms.values.firstWhere(
+        (alarm) =>
             alarm.busNo == busNo &&
             alarm.stationName == stationName &&
-            alarm.routeId == routeId);
+            alarm.routeId == routeId,
+      );
+    } catch (e) {
+      try {
+        return _autoAlarms.firstWhere(
+          (alarm) =>
+              alarm.busNo == busNo &&
+              alarm.stationName == stationName &&
+              alarm.routeId == routeId,
+        );
       } catch (e) {
         return null;
       }
@@ -1596,7 +1753,8 @@ class AlarmService extends ChangeNotifier {
   }) async {
     try {
       logMessage(
-          '🚌 일반 알람 설정 시작: $busNo번 버스, $stationName, $remainingMinutes분');
+        '🚌 일반 알람 설정 시작: $busNo번 버스, $stationName, $remainingMinutes분',
+      );
 
       final id = "${busNo}_${stationName}_$routeId";
 
@@ -1646,8 +1804,10 @@ class AlarmService extends ChangeNotifier {
           await SimpleTTSHelper.initialize();
           await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
 
-          logMessage('🔊 일반 알람 TTS 발화 시도: $busNo번 버스, $remainingMinutes분 후',
-              level: LogLevel.info);
+          logMessage(
+            '🔊 일반 알람 TTS 발화 시도: $busNo번 버스, $remainingMinutes분 후',
+            level: LogLevel.info,
+          );
 
           // 🎧 일반 알람은 이어폰 연결 시에만 TTS 발화 (earphoneOnly: true)
           final success = await SimpleTTSHelper.speak(
@@ -1656,11 +1816,15 @@ class AlarmService extends ChangeNotifier {
           );
 
           if (success) {
-            logMessage('✅ 일반 알람 TTS 발화 완료 (볼륨: ${volume * 100}%)',
-                level: LogLevel.info);
+            logMessage(
+              '✅ 일반 알람 TTS 발화 완료 (볼륨: ${volume * 100}%)',
+              level: LogLevel.info,
+            );
           } else {
-            logMessage('❌ 일반 알람 TTS 발화 실패 (이어폰 미연결일 수 있음)',
-                level: LogLevel.warning);
+            logMessage(
+              '❌ 일반 알람 TTS 발화 실패 (이어폰 미연결일 수 있음)',
+              level: LogLevel.warning,
+            );
           }
         } catch (e) {
           logMessage('❌ 일반 알람 TTS 발화 오류: $e', level: LogLevel.error);
@@ -1679,9 +1843,10 @@ class AlarmService extends ChangeNotifier {
   Future<void> _saveAlarms() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final List<String> alarms = _activeAlarms.values
-          .map((alarm) => jsonEncode(alarm.toJson()))
-          .toList();
+      final List<String> alarms =
+          _activeAlarms.values
+              .map((alarm) => jsonEncode(alarm.toJson()))
+              .toList();
       await prefs.setStringList('alarms', alarms);
       logMessage('✅ 알람 저장 완료: ${alarms.length}개');
     } catch (e) {
@@ -1726,8 +1891,10 @@ class AlarmService extends ChangeNotifier {
         await _methodChannel?.invokeMethod('stopBusTrackingService');
         logMessage('✅ stopBusTrackingService 호출 완료', level: LogLevel.debug);
       } catch (e) {
-        logMessage('⚠️ stopBusTrackingService 실패 (무시): $e',
-            level: LogLevel.warning);
+        logMessage(
+          '⚠️ stopBusTrackingService 실패 (무시): $e',
+          level: LogLevel.warning,
+        );
       }
 
       // 2. TTS 추적 중지
@@ -1743,8 +1910,10 @@ class AlarmService extends ChangeNotifier {
         await _notificationService.cancelAllNotifications();
         logMessage('✅ cancelAllNotifications 호출 완료', level: LogLevel.debug);
       } catch (e) {
-        logMessage('⚠️ cancelAllNotifications 실패 (무시): $e',
-            level: LogLevel.warning);
+        logMessage(
+          '⚠️ cancelAllNotifications 실패 (무시): $e',
+          level: LogLevel.warning,
+        );
       }
 
       // 4. Flutter 측 상태 완전 정리
@@ -1777,7 +1946,8 @@ class AlarmService extends ChangeNotifier {
     String routeId,
   ) async {
     logMessage(
-        '🚌 [Request] 알람 취소 요청: $busNo번 버스, $stationName, routeId: $routeId');
+      '🚌 [Request] 알람 취소 요청: $busNo번 버스, $stationName, routeId: $routeId',
+    );
 
     final String alarmKey = "${busNo}_${stationName}_$routeId";
     final String cacheKey = "${busNo}_$routeId";
@@ -1790,22 +1960,30 @@ class AlarmService extends ChangeNotifier {
       if (alarmToRemove != null) {
         // 알람을 완전히 제거
         _activeAlarms.remove(alarmKey);
-        logMessage('[${alarmToRemove.busNo}] Flutter activeAlarms 목록에서 완전 제거',
-            level: LogLevel.debug);
+        logMessage(
+          '[${alarmToRemove.busNo}] Flutter activeAlarms 목록에서 완전 제거',
+          level: LogLevel.debug,
+        );
       } else {
-        logMessage('⚠️ 취소 요청한 알람($alarmKey)이 Flutter 활성 알람 목록에 없음 (취소 전).',
-            level: LogLevel.warning);
+        logMessage(
+          '⚠️ 취소 요청한 알람($alarmKey)이 Flutter 활성 알람 목록에 없음 (취소 전).',
+          level: LogLevel.warning,
+        );
       }
 
       // 자동 알람 목록에서도 제거
-      final autoAlarmIndex = _autoAlarms.indexWhere((alarm) =>
-          alarm.busNo == busNo &&
-          alarm.stationName == stationName &&
-          alarm.routeId == routeId);
+      final autoAlarmIndex = _autoAlarms.indexWhere(
+        (alarm) =>
+            alarm.busNo == busNo &&
+            alarm.stationName == stationName &&
+            alarm.routeId == routeId,
+      );
       if (autoAlarmIndex != -1) {
         _autoAlarms.removeAt(autoAlarmIndex);
-        logMessage('[$busNo] Flutter autoAlarms 목록에서 완전 제거',
-            level: LogLevel.debug);
+        logMessage(
+          '[$busNo] Flutter autoAlarms 목록에서 완전 제거',
+          level: LogLevel.debug,
+        );
       }
 
       _cachedBusInfo.remove(cacheKey);
@@ -1837,8 +2015,10 @@ class AlarmService extends ChangeNotifier {
       await _saveAlarms(); // Persist the removal immediately
       await _saveAutoAlarms(); // 자동 알람 상태도 저장
       notifyListeners(); // Update UI immediately
-      logMessage('[$alarmKey] Flutter 상태 즉시 업데이트 및 리스너 알림 완료',
-          level: LogLevel.debug);
+      logMessage(
+        '[$alarmKey] Flutter 상태 즉시 업데이트 및 리스너 알림 완료',
+        level: LogLevel.debug,
+      );
       // --- End immediate Flutter state update ---
 
       // --- Send request to Native ---
@@ -1849,10 +2029,15 @@ class AlarmService extends ChangeNotifier {
           logMessage('✅ 네이티브 강제 전체 중지 요청 전송 완료', level: LogLevel.debug);
         } else {
           // If not the last alarm, just cancel the specific notification/route tracking
-          logMessage('다른 알람 존재, 네이티브 특정 알람($routeId) 취소 요청',
-              level: LogLevel.debug);
-          await _methodChannel?.invokeMethod('cancelAlarmNotification',
-              {'routeId': routeId, 'busNo': busNo, 'stationName': stationName});
+          logMessage(
+            '다른 알람 존재, 네이티브 특정 알람($routeId) 취소 요청',
+            level: LogLevel.debug,
+          );
+          await _methodChannel?.invokeMethod('cancelAlarmNotification', {
+            'routeId': routeId,
+            'busNo': busNo,
+            'stationName': stationName,
+          });
           logMessage('✅ 네이티브 특정 알람 취소 요청 전송 완료', level: LogLevel.debug);
         }
       } catch (nativeError) {
@@ -1877,8 +2062,9 @@ class AlarmService extends ChangeNotifier {
       }
 
       logMessage(
-          '🔄 자동 알람 버스 정보 업데이트 시작: [36m${alarm.routeNo}번, ${alarm.stationName}[0m',
-          level: LogLevel.debug);
+        '🔄 자동 알람 버스 정보 업데이트 시작: [36m${alarm.routeNo}번, ${alarm.stationName}[0m',
+        level: LogLevel.debug,
+      );
 
       // ✅ stationId 보정 로직 개선 (DB 실패 시 매핑 사용)
       String effectiveStationId = alarm.stationId;
@@ -1886,49 +2072,60 @@ class AlarmService extends ChangeNotifier {
           effectiveStationId.length < 10 ||
           !effectiveStationId.startsWith('7')) {
         // 먼저 매핑을 통해 stationId 가져오기
-        effectiveStationId =
-            _getStationIdFromName(alarm.stationName, alarm.routeId);
+        effectiveStationId = _getStationIdFromName(
+          alarm.stationName,
+          alarm.routeId,
+        );
 
         // DB를 통한 추가 보정 시도 (선택사항)
         try {
           final dbHelper = DatabaseHelper();
-          final resolvedStationId =
-              await dbHelper.getStationIdFromWincId(alarm.stationName);
+          final resolvedStationId = await dbHelper.getStationIdFromWincId(
+            alarm.stationName,
+          );
           if (resolvedStationId != null && resolvedStationId.isNotEmpty) {
             effectiveStationId = resolvedStationId;
             logMessage(
-                '✅ 자동 알람 DB stationId 보정: ${alarm.stationName} → $effectiveStationId',
-                level: LogLevel.debug);
+              '✅ 자동 알람 DB stationId 보정: ${alarm.stationName} → $effectiveStationId',
+              level: LogLevel.debug,
+            );
           } else {
             logMessage(
-                '⚠️ DB stationId 보정 실패, 매핑값 사용: ${alarm.stationName} → $effectiveStationId',
-                level: LogLevel.debug);
+              '⚠️ DB stationId 보정 실패, 매핑값 사용: ${alarm.stationName} → $effectiveStationId',
+              level: LogLevel.debug,
+            );
           }
         } catch (e) {
-          logMessage('❌ DB stationId 보정 중 오류, 매핑값 사용: $e → $effectiveStationId',
-              level: LogLevel.warning);
+          logMessage(
+            '❌ DB stationId 보정 중 오류, 매핑값 사용: $e → $effectiveStationId',
+            level: LogLevel.warning,
+          );
         }
 
         // 매핑도 실패한 경우에만 오류 처리
         if (effectiveStationId.isEmpty || effectiveStationId == alarm.routeId) {
-          logMessage('❌ stationId 보정 완전 실패: ${alarm.stationName}',
-              level: LogLevel.error);
+          logMessage(
+            '❌ stationId 보정 완전 실패: ${alarm.stationName}',
+            level: LogLevel.error,
+          );
           return false;
         }
       }
 
       // ✅ API 호출을 통한 버스 실시간 정보 가져오기
       try {
-        const methodChannel =
-            MethodChannel('com.example.daegu_bus_app/bus_api');
-        final result =
-            await methodChannel.invokeMethod('getBusArrivalByRouteId', {
-          'stationId': effectiveStationId,
-          'routeId': alarm.routeId,
-        });
+        const methodChannel = MethodChannel(
+          'com.example.daegu_bus_app/bus_api',
+        );
+        final result = await methodChannel.invokeMethod(
+          'getBusArrivalByRouteId',
+          {'stationId': effectiveStationId, 'routeId': alarm.routeId},
+        );
 
-        logMessage('🚌 [API 응답] 자동 알람 응답 수신: ${result?.runtimeType}',
-            level: LogLevel.debug);
+        logMessage(
+          '🚌 [API 응답] 자동 알람 응답 수신: ${result?.runtimeType}',
+          level: LogLevel.debug,
+        );
 
         if (result != null) {
           try {
@@ -1952,8 +2149,10 @@ class AlarmService extends ChangeNotifier {
               logMessage('🚌 [API 파싱] Map 형식 응답 처리', level: LogLevel.debug);
               parsedData = result;
             } else {
-              logMessage('❌ 지원되지 않는 응답 타입: ${result.runtimeType}',
-                  level: LogLevel.error);
+              logMessage(
+                '❌ 지원되지 않는 응답 타입: ${result.runtimeType}',
+                level: LogLevel.error,
+              );
               return false;
             }
 
@@ -1965,21 +2164,28 @@ class AlarmService extends ChangeNotifier {
               if (parsedData.containsKey('arrList')) {
                 arrivals = parsedData['arrList'] as List? ?? [];
                 logMessage(
-                    '🚌 [API 파싱] arrList에서 도착 정보 추출: ${arrivals.length}개',
-                    level: LogLevel.debug);
+                  '🚌 [API 파싱] arrList에서 도착 정보 추출: ${arrivals.length}개',
+                  level: LogLevel.debug,
+                );
               } else if (parsedData.containsKey('bus')) {
                 arrivals = parsedData['bus'] as List? ?? [];
-                logMessage('🚌 [API 파싱] bus에서 도착 정보 추출: ${arrivals.length}개',
-                    level: LogLevel.debug);
+                logMessage(
+                  '🚌 [API 파싱] bus에서 도착 정보 추출: ${arrivals.length}개',
+                  level: LogLevel.debug,
+                );
               } else {
-                logMessage('❌ 예상치 못한 Map 구조: ${parsedData.keys}',
-                    level: LogLevel.error);
+                logMessage(
+                  '❌ 예상치 못한 Map 구조: ${parsedData.keys}',
+                  level: LogLevel.error,
+                );
                 return false;
               }
             }
 
-            logMessage('🚌 [API 파싱] 파싱된 arrivals: ${arrivals.length}개 항목',
-                level: LogLevel.debug);
+            logMessage(
+              '🚌 [API 파싱] 파싱된 arrivals: ${arrivals.length}개 항목',
+              level: LogLevel.debug,
+            );
 
             if (arrivals.isNotEmpty) {
               // ✅ 버스 정보 추출 및 필터링
@@ -1997,8 +2203,9 @@ class AlarmService extends ChangeNotifier {
                     busInfo = bus;
                     found = true;
                     logMessage(
-                        '✅ 일치하는 노선 찾음: ${alarm.routeNo} (routeNo: $busRouteNo, routeId: $busRouteId)',
-                        level: LogLevel.debug);
+                      '✅ 일치하는 노선 찾음: ${alarm.routeNo} (routeNo: $busRouteNo, routeId: $busRouteId)',
+                      level: LogLevel.debug,
+                    );
                     break;
                   }
                 }
@@ -2008,28 +2215,34 @@ class AlarmService extends ChangeNotifier {
               if (!found && arrivals.isNotEmpty) {
                 busInfo = arrivals.first;
                 final routeNo = busInfo['routeNo']?.toString() ?? '정보 없음';
-                logMessage('⚠️ 일치하는 노선 없음, 첫 번째 항목 사용: $routeNo',
-                    level: LogLevel.warning);
+                logMessage(
+                  '⚠️ 일치하는 노선 없음, 첫 번째 항목 사용: $routeNo',
+                  level: LogLevel.warning,
+                );
               }
 
               if (busInfo != null) {
                 // ✅ 도착 정보 추출 - 다양한 필드명 지원
-                final estimatedTime = busInfo['arrState'] ??
+                final estimatedTime =
+                    busInfo['arrState'] ??
                     busInfo['estimatedTime'] ??
                     busInfo['도착예정소요시간'] ??
                     "정보 없음";
 
-                final currentStation = busInfo['bsNm'] ??
+                final currentStation =
+                    busInfo['bsNm'] ??
                     busInfo['currentStation'] ??
                     busInfo['현재정류소'] ??
                     '정보 없음';
 
-                final int remainingMinutes =
-                    _parseRemainingMinutes(estimatedTime);
+                final int remainingMinutes = _parseRemainingMinutes(
+                  estimatedTime,
+                );
 
                 logMessage(
-                    '🚌 [정보 추출] estimatedTime: $estimatedTime, currentStation: $currentStation, remainingMinutes: $remainingMinutes',
-                    level: LogLevel.debug);
+                  '🚌 [정보 추출] estimatedTime: $estimatedTime, currentStation: $currentStation, remainingMinutes: $remainingMinutes',
+                  level: LogLevel.debug,
+                );
 
                 // ✅ 캐시에 저장
                 final cachedInfo = CachedBusInfo(
@@ -2045,16 +2258,17 @@ class AlarmService extends ChangeNotifier {
                 _cachedBusInfo[key] = cachedInfo;
 
                 logMessage(
-                    '✅ 자동 알람 버스 정보 업데이트 완료: ${alarm.routeNo}번, $remainingMinutes분 후 도착, 위치: $currentStation',
-                    level: LogLevel.info);
+                  '✅ 자동 알람 버스 정보 업데이트 완료: ${alarm.routeNo}번, $remainingMinutes분 후 도착, 위치: $currentStation',
+                  level: LogLevel.info,
+                );
 
                 // ✅ 알림 업데이트
-                
 
                 // 자동 알람에서 Flutter 알림 제거 - BusAlertService가 모든 알림 처리
                 logMessage(
-                    '✅ 자동 알람 정보 업데이트: ${alarm.routeNo}번, $remainingMinutes분 후, $currentStation',
-                    level: LogLevel.debug);
+                  '✅ 자동 알람 정보 업데이트: ${alarm.routeNo}번, $remainingMinutes분 후, $currentStation',
+                  level: LogLevel.debug,
+                );
 
                 // ✅ 버스 모니터링 서비스 시작 (10분 이내일 때)
                 if (remainingMinutes <= 10 && remainingMinutes >= 0) {
@@ -2066,11 +2280,14 @@ class AlarmService extends ChangeNotifier {
                       stationName: alarm.stationName,
                     );
                     logMessage(
-                        '✅ 자동 알람 버스 모니터링 시작: ${alarm.routeNo}번 ($remainingMinutes분 후 도착)',
-                        level: LogLevel.info);
+                      '✅ 자동 알람 버스 모니터링 시작: ${alarm.routeNo}번 ($remainingMinutes분 후 도착)',
+                      level: LogLevel.info,
+                    );
                   } catch (e) {
-                    logMessage('❌ 자동 알람 버스 모니터링 시작 실패: $e',
-                        level: LogLevel.error);
+                    logMessage(
+                      '❌ 자동 알람 버스 모니터링 시작 실패: $e',
+                      level: LogLevel.error,
+                    );
                   }
                 }
 
@@ -2173,12 +2390,14 @@ class AlarmService extends ChangeNotifier {
           final rootIsolateToken = RootIsolateToken.instance;
           if (rootIsolateToken != null) {
             BackgroundIsolateBinaryMessenger.ensureInitialized(
-                rootIsolateToken);
+              rootIsolateToken,
+            );
           }
         } catch (e) {
           logMessage(
-              '⚠️ updateAutoAlarms - BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
-              level: LogLevel.warning);
+            '⚠️ updateAutoAlarms - BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
+            level: LogLevel.warning,
+          );
         }
       }
 
@@ -2196,8 +2415,10 @@ class AlarmService extends ChangeNotifier {
         final DateTime? scheduledTime = alarm.getNextAlarmTime();
 
         if (scheduledTime == null) {
-          logMessage('  ⚠️ 유효한 다음 알람 시간을 찾지 못함: ${alarm.routeNo}',
-              level: LogLevel.warning);
+          logMessage(
+            '  ⚠️ 유효한 다음 알람 시간을 찾지 못함: ${alarm.routeNo}',
+            level: LogLevel.warning,
+          );
           continue;
         }
 

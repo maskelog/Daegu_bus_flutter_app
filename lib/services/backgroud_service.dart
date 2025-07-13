@@ -27,20 +27,23 @@ void callbackDispatcher() {
 
       // alarmId가 문자열로 전달될 수 있으므로 안전하게 처리
       final dynamic rawAlarmId = inputData?['alarmId'];
-      final int alarmId = rawAlarmId is int
-          ? rawAlarmId
-          : (rawAlarmId is String ? int.tryParse(rawAlarmId) ?? 0 : 0);
+      final int alarmId =
+          rawAlarmId is int
+              ? rawAlarmId
+              : (rawAlarmId is String ? int.tryParse(rawAlarmId) ?? 0 : 0);
 
       final String stationId = inputData?['stationId'] ?? '';
 
       // remainingMinutes도 안전하게 처리
       final dynamic rawMinutes = inputData?['remainingMinutes'];
-      final int remainingMinutes = rawMinutes is int
-          ? rawMinutes
-          : (rawMinutes is String ? int.tryParse(rawMinutes) ?? 3 : 3);
+      final int remainingMinutes =
+          rawMinutes is int
+              ? rawMinutes
+              : (rawMinutes is String ? int.tryParse(rawMinutes) ?? 3 : 3);
 
       logMessage(
-          "📱 작업 파라미터: busNo=$busNo, stationName=$stationName, routeId=$routeId");
+        "📱 작업 파라미터: busNo=$busNo, stationName=$stationName, routeId=$routeId",
+      );
 
       try {
         // 자동 알람 초기화 작업 처리
@@ -94,7 +97,8 @@ Future<bool> _handleInitAutoAlarms({Map<String, dynamic>? inputData}) async {
   final isRetry = inputData?['isRetry'] ?? false;
 
   logMessage(
-      "🔄 자동 알람 초기화 시작 - 타임스탬프: $timestamp, 알람 수: $autoAlarmsCount, 재시도: $isRetry");
+    "🔄 자동 알람 초기화 시작 - 타임스탬프: $timestamp, 알람 수: $autoAlarmsCount, 재시도: $isRetry",
+  );
   const int maxRetries = 3;
   int retryCount = 0;
 
@@ -134,14 +138,16 @@ Future<bool> _handleInitAutoAlarms({Map<String, dynamic>? inputData}) async {
           // 알람이 활성화되어 있는지 확인
           if (!autoAlarm.isActive) {
             logMessage(
-                "⚠️ 비활성화된 알람 건너뜀: ${autoAlarm.routeNo} ${autoAlarm.stationName}");
+              "⚠️ 비활성화된 알람 건너뜀: ${autoAlarm.routeNo} ${autoAlarm.stationName}",
+            );
             continue;
           }
 
           // 오늘이 알람 요일인지 확인
           if (!_shouldProcessAlarm(autoAlarm, currentWeekday, isWeekend)) {
             logMessage(
-                "⚠️ 오늘은 알람 요일이 아님: ${autoAlarm.routeNo} ${autoAlarm.stationName}");
+              "⚠️ 오늘은 알람 요일이 아님: ${autoAlarm.routeNo} ${autoAlarm.stationName}",
+            );
             continue;
           }
 
@@ -149,7 +155,8 @@ Future<bool> _handleInitAutoAlarms({Map<String, dynamic>? inputData}) async {
           final scheduledTime = _calculateNextScheduledTime(autoAlarm, now);
           if (scheduledTime == null) {
             logMessage(
-                "⚠️ 유효한 알람 시간을 찾을 수 없음: ${autoAlarm.routeNo} ${autoAlarm.stationName}");
+              "⚠️ 유효한 알람 시간을 찾을 수 없음: ${autoAlarm.routeNo} ${autoAlarm.stationName}",
+            );
             continue;
           }
 
@@ -160,7 +167,8 @@ Future<bool> _handleInitAutoAlarms({Map<String, dynamic>? inputData}) async {
           // 알람 시간이 지금부터 1분 이내이고, 아직 시간이 지나지 않았을 경우만 즉시 실행
           if (timeUntilAlarm <= 1 && timeUntilAlarmSeconds >= 0) {
             logMessage(
-                "🔔 알람 시간이 1분 이내입니다. 즉시 실행: ${autoAlarm.routeNo} ${autoAlarm.stationName}, 남은 시간: $timeUntilAlarmSeconds초");
+              "🔔 알람 시간이 1분 이내입니다. 즉시 실행: ${autoAlarm.routeNo} ${autoAlarm.stationName}, 남은 시간: $timeUntilAlarmSeconds초",
+            );
 
             // 즉시 알람 실행
             await _handleAutoAlarmTask(
@@ -177,8 +185,10 @@ Future<bool> _handleInitAutoAlarms({Map<String, dynamic>? inputData}) async {
           }
 
           // 다음 알람 작업 등록
-          final success =
-              await _registerAutoAlarmTask(autoAlarm, scheduledTime);
+          final success = await _registerAutoAlarmTask(
+            autoAlarm,
+            scheduledTime,
+          );
           if (success) registeredCount++;
           processedCount++;
         } catch (e) {
@@ -187,7 +197,8 @@ Future<bool> _handleInitAutoAlarms({Map<String, dynamic>? inputData}) async {
       }
 
       logMessage(
-          "📊 자동 알람 초기화 완료: 처리 $processedCount개, 등록 $registeredCount개, 즉시실행 $immediateCount개");
+        "📊 자동 알람 초기화 완료: 처리 $processedCount개, 등록 $registeredCount개, 즉시실행 $immediateCount개",
+      );
       return registeredCount > 0 || immediateCount > 0;
     } catch (e) {
       retryCount++;
@@ -200,12 +211,18 @@ Future<bool> _handleInitAutoAlarms({Map<String, dynamic>? inputData}) async {
   return false;
 }
 
-Future<void> _showLocalNotification(int id, String busNo, String stationName,
-    int remainingMinutes, String routeId) async {
+Future<void> _showLocalNotification(
+  int id,
+  String busNo,
+  String stationName,
+  int remainingMinutes,
+  String routeId,
+) async {
   try {
     // 로컬 알림 대신 MethodChannel을 사용하여 네이티브 알림 표시
-    const MethodChannel channel =
-        MethodChannel('com.example.daegu_bus_app/bus_api');
+    const MethodChannel channel = MethodChannel(
+      'com.example.daegu_bus_app/bus_api',
+    );
     final int safeNotificationId = id.abs() % 2147483647;
 
     // 네이티브 메서드 호출
@@ -249,13 +266,16 @@ Future<bool> _handleAutoAlarmTask({
     if (alarmDataStr != null) {
       final alarmData = jsonDecode(alarmDataStr);
       final scheduledTime = DateTime.parse(
-          alarmData['scheduledTime'] ?? DateTime.now().toIso8601String());
+        alarmData['scheduledTime'] ?? DateTime.now().toIso8601String(),
+      );
       final now = DateTime.now();
       final difference = now.difference(scheduledTime).inMinutes;
 
       if (difference > 10) {
-        logMessage("⚠️ 예약된 알람 시간으로부터 10분이 지났습니다. 알람을 취소합니다.",
-            level: LogLevel.warning);
+        logMessage(
+          "⚠️ 예약된 알람 시간으로부터 10분이 지났습니다. 알람을 취소합니다.",
+          level: LogLevel.warning,
+        );
         return false;
       }
     }
@@ -271,8 +291,10 @@ Future<bool> _handleAutoAlarmTask({
 
     // 운행 시간 외 알람 실행 시 로그만 남기고 계속 진행
     if (hour < 5 || hour >= 23) {
-      logMessage("⚠️ 현재 버스 운행 시간이 아닙니다 (현재 시간: $hour시). 테스트 목적으로 계속 진행합니다.",
-          level: LogLevel.warning);
+      logMessage(
+        "⚠️ 현재 버스 운행 시간이 아닙니다 (현재 시간: $hour시). 테스트 목적으로 계속 진행합니다.",
+        level: LogLevel.warning,
+      );
     }
 
     try {
@@ -282,8 +304,10 @@ Future<bool> _handleAutoAlarmTask({
 
       while (busArrivalInfo == null && apiRetryCount < maxRetries) {
         try {
-          busArrivalInfo =
-              await BusApiService().getBusArrivalByRouteId(stationId, routeId);
+          busArrivalInfo = await BusApiService().getBusArrivalByRouteId(
+            stationId,
+            routeId,
+          );
           if (busArrivalInfo == null) {
             apiRetryCount++;
             logMessage("⚠️ 버스 정보 API 응답 없음. 재시도 #$apiRetryCount");
@@ -301,14 +325,17 @@ Future<bool> _handleAutoAlarmTask({
       if (busArrivalInfo != null && busArrivalInfo.bus.isNotEmpty) {
         final busInfo = busArrivalInfo.bus.first;
         currentStation = busInfo.currentStation;
-        final estimatedTimeStr =
-            busInfo.estimatedTime.replaceAll(RegExp(r'[^0-9]'), '');
+        final estimatedTimeStr = busInfo.estimatedTime.replaceAll(
+          RegExp(r'[^0-9]'),
+          '',
+        );
 
         // 도착 예정 시간이 유효한 경우에만 업데이트
         if (estimatedTimeStr.isNotEmpty) {
           actualRemainingMinutes = int.parse(estimatedTimeStr);
           logMessage(
-              "✅ 실시간 버스 정보 가져오기 성공: $busNo, 남은 시간: $actualRemainingMinutes분, 위치: $currentStation");
+            "✅ 실시간 버스 정보 가져오기 성공: $busNo, 남은 시간: $actualRemainingMinutes분, 위치: $currentStation",
+          );
         } else {
           logMessage("⚠️ 유효한 도착 시간 정보가 없습니다.", level: LogLevel.warning);
           actualRemainingMinutes = remainingMinutes; // 기본값 사용
@@ -327,8 +354,9 @@ Future<bool> _handleAutoAlarmTask({
 
     // MethodChannel을 통한 알림 시도
     try {
-      const MethodChannel channel =
-          MethodChannel('com.example.daegu_bus_app/bus_api');
+      const MethodChannel channel = MethodChannel(
+        'com.example.daegu_bus_app/bus_api',
+      );
       final int safeNotificationId = alarmId.abs() % 2147483647;
 
       await channel.invokeMethod('showNotification', {
@@ -344,7 +372,7 @@ Future<bool> _handleAutoAlarmTask({
         'notificationTime': DateTime.now().millisecondsSinceEpoch,
         'useTTS': false,
         'actions': ['cancel_alarm'],
-        'actionLabels': {'cancel_alarm': '알람 취소'}
+        'actionLabels': {'cancel_alarm': '알람 취소'},
       });
       logMessage("✅ 알림 표시 성공");
       notificationSent = true;
@@ -356,7 +384,12 @@ Future<bool> _handleAutoAlarmTask({
     if (!notificationSent) {
       try {
         await _showLocalNotification(
-            alarmId, busNo, stationName, actualRemainingMinutes, routeId);
+          alarmId,
+          busNo,
+          stationName,
+          actualRemainingMinutes,
+          routeId,
+        );
         logMessage("✅ 로컬 알림 표시 성공");
         notificationSent = true;
       } catch (e) {
@@ -374,7 +407,8 @@ Future<bool> _handleAutoAlarmTask({
         try {
           await SimpleTTSHelper.initialize();
           await SimpleTTSHelper.speak(
-              "$busNo번 버스가 약 $actualRemainingMinutes분 후 도착 예정입니다.");
+            "$busNo번 버스가 약 $actualRemainingMinutes분 후 도착 예정입니다.",
+          );
           logMessage("🔊 백업 TTS 발화 성공");
         } catch (fallbackError) {
           logMessage("🔊 백업 TTS 발화도 실패: $fallbackError", level: LogLevel.error);
@@ -403,7 +437,12 @@ Future<bool> _handleAutoAlarmTask({
     logMessage("❌ 자동 알람 작업 실행 오류: $e", level: LogLevel.error);
     try {
       await _showLocalNotification(
-          alarmId, busNo, stationName, remainingMinutes, routeId);
+        alarmId,
+        busNo,
+        stationName,
+        remainingMinutes,
+        routeId,
+      );
       logMessage("✅ 오류 발생 시 로컬 알림 표시 성공");
     } catch (e) {
       logMessage("❌ 오류 발생 시 로컬 알림 표시 실패: $e", level: LogLevel.error);
@@ -446,12 +485,15 @@ Future<bool> _handleTTSRepeatingTask({
 
       while (retryCount < maxRetries && info == null) {
         try {
-          info =
-              await BusApiService().getBusArrivalByRouteId(stationId, routeId);
+          info = await BusApiService().getBusArrivalByRouteId(
+            stationId,
+            routeId,
+          );
           if (info == null) {
             retryCount++;
             logMessage(
-                "⚠️ TTS 반복 작업 - 버스 정보 조회 실패 ($retryCount/$maxRetries) - 재시도 중");
+              "⚠️ TTS 반복 작업 - 버스 정보 조회 실패 ($retryCount/$maxRetries) - 재시도 중",
+            );
             await Future.delayed(const Duration(seconds: 2));
           }
         } catch (e) {
@@ -468,7 +510,8 @@ Future<bool> _handleTTSRepeatingTask({
       }
 
       logMessage(
-          "🐛 [DEBUG] TTS 반복 작업 - 버스 정보 조회 성공: ${info.bus.length}개 버스 정보 받음");
+        "🐛 [DEBUG] TTS 반복 작업 - 버스 정보 조회 성공: ${info.bus.length}개 버스 정보 받음",
+      );
       final busData = info.bus.first;
       // 여기서 models/bus_info.dart의 BusInfo로 변환
       final busInfoFromApi = BusInfo.fromBusInfoData(busData);
@@ -478,8 +521,10 @@ Future<bool> _handleTTSRepeatingTask({
 
       // 버스 정보 캐시에 업데이트할 필요가 있는 경우
       // BusArrival의 BusInfo로 변환해서 전달
-      final remainingTime = int.tryParse(
-              busInfoFromApi.estimatedTime.replaceAll(RegExp(r'[^0-9]'), '')) ??
+      final remainingTime =
+          int.tryParse(
+            busInfoFromApi.estimatedTime.replaceAll(RegExp(r'[^0-9]'), ''),
+          ) ??
           0;
 
       // AlarmService에 직접 정보 전달하지 않고 TTS 알람만 시작
@@ -531,8 +576,10 @@ DateTime? _calculateNextScheduledTime(AutoAlarm alarm, DateTime now) {
       now.difference(todayScheduledTime).inMinutes <= 1 &&
       now.difference(todayScheduledTime).inSeconds <= 60) {
     // 시간이 지난 지 1분 이내인 경우만 즉시 실행
-    logMessage('✅ 자동 알람 시간이 방금 지났습니다. 즉시 실행: ${todayScheduledTime.toString()}, '
-        '지난 시간: ${now.difference(todayScheduledTime).inSeconds}초');
+    logMessage(
+      '✅ 자동 알람 시간이 방금 지났습니다. 즉시 실행: ${todayScheduledTime.toString()}, '
+      '지난 시간: ${now.difference(todayScheduledTime).inSeconds}초',
+    );
     // 현재 시간에서 30초 후로 설정
     return now.add(const Duration(seconds: 30));
   }
@@ -560,7 +607,9 @@ DateTime? _calculateNextScheduledTime(AutoAlarm alarm, DateTime now) {
 }
 
 Future<bool> _registerAutoAlarmTask(
-    AutoAlarm alarm, DateTime scheduledTime) async {
+  AutoAlarm alarm,
+  DateTime scheduledTime,
+) async {
   try {
     final now = DateTime.now();
     final initialDelay = scheduledTime.difference(now);
@@ -568,7 +617,8 @@ Future<bool> _registerAutoAlarmTask(
     // 이미 시간이 지났거나 1분 이내인 경우 즉시 실행
     if (initialDelay.isNegative || initialDelay.inMinutes <= 1) {
       logMessage(
-          '🔔 알람 시간이 이미 지났거나 1분 이내입니다. 즉시 실행: ${alarm.routeNo}, ${alarm.stationName}');
+        '🔔 알람 시간이 이미 지났거나 1분 이내입니다. 즉시 실행: ${alarm.routeNo}, ${alarm.stationName}',
+      );
 
       // 즉시 알람 실행
       return await _executeAlarmDirectly(alarm);
@@ -632,7 +682,10 @@ Future<bool> _registerAutoAlarmTask(
 
 /// TTS로 알람 발화
 Future<void> _speakAlarm(
-    String busNo, String stationName, int remainingMinutes) async {
+  String busNo,
+  String stationName,
+  int remainingMinutes,
+) async {
   try {
     // TTS 엔진 초기화
     await SimpleTTSHelper.initialize();
@@ -661,8 +714,9 @@ Future<void> _speakAlarm(
 
     // 오류 발생 시 네이티브 TTS 직접 호출 시도
     try {
-      const MethodChannel channel =
-          MethodChannel('com.example.daegu_bus_app/tts');
+      const MethodChannel channel = MethodChannel(
+        'com.example.daegu_bus_app/tts',
+      );
       await channel.invokeMethod('speakTTS', {
         'message': "$busNo번 버스가 $stationName 정류장에 도착 예정입니다.",
         'isHeadphoneMode': false,
@@ -677,27 +731,34 @@ Future<void> _speakAlarm(
 }
 
 /// 메인 앱에서 알림을 표시할 수 있도록 SharedPreferences에 알람 정보 저장
-Future<void> _saveAlarmInfoForMainApp(int alarmId, String busNo,
-    String stationName, int remainingMinutes, String routeId, String stationId,
-    [String? currentStation]) async {
+Future<void> _saveAlarmInfoForMainApp(
+  int alarmId,
+  String busNo,
+  String stationName,
+  int remainingMinutes,
+  String routeId,
+  String stationId, [
+  String? currentStation,
+]) async {
   try {
     final prefs = await SharedPreferences.getInstance();
 
     // 알람 정보 저장
     await prefs.setString(
-        'last_auto_alarm_data',
-        jsonEncode({
-          'alarmId': alarmId,
-          'busNo': busNo,
-          'stationName': stationName,
-          'remainingMinutes': remainingMinutes,
-          'routeId': routeId,
-          'stationId': stationId,
-          'currentStation': currentStation,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-          'isAutoAlarm': true,
-          'hasRealTimeInfo': currentStation != null && currentStation.isNotEmpty
-        }));
+      'last_auto_alarm_data',
+      jsonEncode({
+        'alarmId': alarmId,
+        'busNo': busNo,
+        'stationName': stationName,
+        'remainingMinutes': remainingMinutes,
+        'routeId': routeId,
+        'stationId': stationId,
+        'currentStation': currentStation,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'isAutoAlarm': true,
+        'hasRealTimeInfo': currentStation != null && currentStation.isNotEmpty,
+      }),
+    );
 
     // 새 알람 플래그 설정
     await prefs.setBool('has_new_auto_alarm', true);
@@ -717,7 +778,7 @@ Future<void> _saveAlarmInfoForMainApp(int alarmId, String busNo,
       'busNo': busNo,
       'stationName': stationName,
       'executedAt': DateTime.now().toIso8601String(),
-      'success': true
+      'success': true,
     });
 
     await prefs.setString('auto_alarm_history', jsonEncode(alarmHistory));
@@ -728,7 +789,10 @@ Future<void> _saveAlarmInfoForMainApp(int alarmId, String busNo,
 }
 
 Future<void> _speakBusInfo(
-    BusInfo bus, String busNo, String stationName) async {
+  BusInfo bus,
+  String busNo,
+  String stationName,
+) async {
   final remainingTime = bus.estimatedTime;
 
   if (remainingTime == '운행종료' || remainingTime.contains('곧도착')) {
@@ -852,7 +916,8 @@ Future<void> _saveRegisteredAlarmInfo(
     await prefs.setString('registered_alarms', jsonEncode(registeredAlarms));
 
     logMessage(
-        '✅ 알람 등록 정보 저장 완료: ${alarm.routeNo}, ${scheduledTime.toString()}');
+      '✅ 알람 등록 정보 저장 완료: ${alarm.routeNo}, ${scheduledTime.toString()}',
+    );
   } catch (e) {
     logMessage('❌ 알람 등록 정보 저장 오류: $e', level: LogLevel.error);
   }
