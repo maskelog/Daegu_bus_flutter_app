@@ -105,8 +105,8 @@ class AlarmService extends ChangeNotifier {
   AlarmService({
     required NotificationService notificationService,
     required SettingsService settingsService,
-  }) : _notificationService = notificationService,
-       _settingsService = settingsService {
+  })  : _notificationService = notificationService,
+        _settingsService = settingsService {
     _setupMethodChannel();
   }
 
@@ -151,11 +151,10 @@ class AlarmService extends ChangeNotifier {
 
           // 오래된 이벤트 정리 (30초 이전)
           final now = DateTime.now().millisecondsSinceEpoch;
-          final expiredKeys =
-              _processedEventTimestamps.entries
-                  .where((entry) => now - entry.value > 30000)
-                  .map((entry) => entry.key)
-                  .toList();
+          final expiredKeys = _processedEventTimestamps.entries
+              .where((entry) => now - entry.value > 30000)
+              .map((entry) => entry.key)
+              .toList();
           for (var key in expiredKeys) {
             _processedEventTimestamps.remove(key);
           }
@@ -412,7 +411,7 @@ class AlarmService extends ChangeNotifier {
         final timeUntilAlarm = alarm.scheduledTime.difference(now);
         final repeatDaysStr =
             alarm.repeatDays?.map((day) => weekdays[day % 7]).join(', ') ??
-            '없음';
+                '없음';
         logMessage(
           '  - ${alarm.busNo}번 (${alarm.stationName}): 예정 시간 ${alarm.scheduledTime.toString()}, ${timeUntilAlarm.inMinutes}분 후, 반복: $repeatDaysStr',
         );
@@ -614,15 +613,14 @@ class AlarmService extends ChangeNotifier {
       return false;
     }
 
-    final missingFields =
-        requiredFields
-            .where(
-              (field) =>
-                  data[field] == null ||
-                  (data[field] is String && data[field].isEmpty) ||
-                  (data[field] is List && (data[field] as List).isEmpty),
-            )
-            .toList();
+    final missingFields = requiredFields
+        .where(
+          (field) =>
+              data[field] == null ||
+              (data[field] is String && data[field].isEmpty) ||
+              (data[field] is List && (data[field] as List).isEmpty),
+        )
+        .toList();
     if (missingFields.isNotEmpty) {
       logMessage(
         '! 자동 알람 데이터 필수 필드 누락: [31m${missingFields.join(", ")}[0m',
@@ -982,8 +980,7 @@ class AlarmService extends ChangeNotifier {
               "${alarmKey}_${alarmTime.hour}:${alarmTime.minute}";
           if (_executedAlarms.containsKey(executionKey)) {
             final lastExecution = _executedAlarms[executionKey]!;
-            final sameMinute =
-                lastExecution.hour == now.hour &&
+            final sameMinute = lastExecution.hour == now.hour &&
                 lastExecution.minute == now.minute;
             if (sameMinute) {
               logMessage(
@@ -1086,10 +1083,9 @@ class AlarmService extends ChangeNotifier {
             routeId: alarm.routeId,
             hour: alarmTime.hour,
             minute: alarmTime.minute,
-            repeatDays:
-                (alarm.repeatDays?.isNotEmpty ?? false)
-                    ? alarm.repeatDays!
-                    : [now.weekday], // 반복 요일 사용
+            repeatDays: (alarm.repeatDays?.isNotEmpty ?? false)
+                ? alarm.repeatDays!
+                : [now.weekday], // 반복 요일 사용
             useTTS: alarm.useTTS,
             isActive: true,
           );
@@ -1484,43 +1480,50 @@ class AlarmService extends ChangeNotifier {
     try {
       logMessage('🔄 자동 알람 저장 시작...');
       final prefs = await SharedPreferences.getInstance();
-      final List<String> alarms =
-          _autoAlarms.map((alarm) {
-            final autoAlarm = AutoAlarm(
-              id: alarm.id,
-              routeNo: alarm.busNo,
-              stationName: alarm.stationName,
-              stationId: _getStationIdFromName(
-                alarm.stationName,
-                alarm.routeId,
-              ),
-              routeId: alarm.routeId,
-              hour: alarm.scheduledTime.hour,
-              minute: alarm.scheduledTime.minute,
-              repeatDays: alarm.repeatDays ?? [],
-              useTTS: alarm.useTTS,
-              isActive: true,
-            );
+      final List<String> alarms = _autoAlarms.map((alarm) {
+        final autoAlarm = AutoAlarm(
+          id: alarm.id,
+          routeNo: alarm.busNo,
+          stationName: alarm.stationName,
+          stationId: _getStationIdFromName(
+            alarm.stationName,
+            alarm.routeId,
+          ),
+          routeId: alarm.routeId,
+          hour: alarm.scheduledTime.hour,
+          minute: alarm.scheduledTime.minute,
+          repeatDays: alarm.repeatDays ?? [],
+          useTTS: alarm.useTTS,
+          isActive: true,
+        );
 
-            final json = autoAlarm.toJson();
-            // scheduledTime을 toIso8601String()으로 변환하여 저장
-            json['scheduledTime'] = alarm.scheduledTime.toIso8601String();
-            final jsonString = jsonEncode(json);
+        final json = autoAlarm.toJson();
+        // scheduledTime을 toIso8601String()으로 변환하여 저장
+        json['scheduledTime'] = alarm.scheduledTime.toIso8601String();
+        final jsonString = jsonEncode(json);
 
-            // 각 알람의 데이터 로깅
-            logMessage('📝 알람 데이터 변환: ${alarm.busNo}번 버스');
-            logMessage('  - ID: ${autoAlarm.id}');
-            logMessage('  - 시간: ${autoAlarm.hour}:${autoAlarm.minute}');
-            logMessage(
-              '  - 정류장: ${autoAlarm.stationName} (${autoAlarm.stationId})',
-            );
-            logMessage(
-              '  - 반복: ${autoAlarm.repeatDays.map((d) => ['월', '화', '수', '목', '금', '토', '일'][d - 1]).join(", ")}',
-            );
-            logMessage('  - JSON: $jsonString');
+        // 각 알람의 데이터 로깅
+        logMessage('📝 알람 데이터 변환: ${alarm.busNo}번 버스');
+        logMessage('  - ID: ${autoAlarm.id}');
+        logMessage('  - 시간: ${autoAlarm.hour}:${autoAlarm.minute}');
+        logMessage(
+          '  - 정류장: ${autoAlarm.stationName} (${autoAlarm.stationId})',
+        );
+        logMessage(
+          '  - 반복: ${autoAlarm.repeatDays.map((d) => [
+                '월',
+                '화',
+                '수',
+                '목',
+                '금',
+                '토',
+                '일'
+              ][d - 1]).join(", ")}',
+        );
+        logMessage('  - JSON: $jsonString');
 
-            return jsonString;
-          }).toList();
+        return jsonString;
+      }).toList();
 
       // 저장 전 데이터 확인
       logMessage('📊 저장할 알람 수: ${alarms.length}개');
@@ -1538,7 +1541,15 @@ class AlarmService extends ChangeNotifier {
         logMessage('    • 버스: ${firstAlarm['routeNo']}');
         logMessage('    • 시간: ${firstAlarm['scheduledTime']}');
         logMessage(
-          '    • 반복: ${(firstAlarm['repeatDays'] as List).map((d) => ['월', '화', '수', '목', '금', '토', '일'][d - 1]).join(", ")}',
+          '    • 반복: ${(firstAlarm['repeatDays'] as List).map((d) => [
+                '월',
+                '화',
+                '수',
+                '목',
+                '금',
+                '토',
+                '일'
+              ][d - 1]).join(", ")}',
         );
       }
     } catch (e) {
@@ -1843,10 +1854,9 @@ class AlarmService extends ChangeNotifier {
   Future<void> _saveAlarms() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final List<String> alarms =
-          _activeAlarms.values
-              .map((alarm) => jsonEncode(alarm.toJson()))
-              .toList();
+      final List<String> alarms = _activeAlarms.values
+          .map((alarm) => jsonEncode(alarm.toJson()))
+          .toList();
       await prefs.setStringList('alarms', alarms);
       logMessage('✅ 알람 저장 완료: ${alarms.length}개');
     } catch (e) {
@@ -2223,14 +2233,12 @@ class AlarmService extends ChangeNotifier {
 
               if (busInfo != null) {
                 // ✅ 도착 정보 추출 - 다양한 필드명 지원
-                final estimatedTime =
-                    busInfo['arrState'] ??
+                final estimatedTime = busInfo['arrState'] ??
                     busInfo['estimatedTime'] ??
                     busInfo['도착예정소요시간'] ??
                     "정보 없음";
 
-                final currentStation =
-                    busInfo['bsNm'] ??
+                final currentStation = busInfo['bsNm'] ??
                     busInfo['currentStation'] ??
                     busInfo['현재정류소'] ??
                     '정보 없음';

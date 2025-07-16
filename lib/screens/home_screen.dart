@@ -433,10 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Consumer<AlarmService>(
               builder: (context, alarmService, child) {
                 return alarmService.activeAlarms.isNotEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        child: ActiveAlarmPanel(),
-                      )
+                    ? const ActiveAlarmPanel()
                     : const SizedBox.shrink();
               },
             ),

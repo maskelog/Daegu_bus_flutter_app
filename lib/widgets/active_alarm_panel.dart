@@ -77,7 +77,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         final manualAlarms = allAlarms.where((a) => !a.isAutoAlarm).toList();
 
         return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          margin: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -96,79 +96,80 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 8, bottom: 8, top: 8),
+          padding: const EdgeInsets.only(left: 8, bottom: 4, top: 8),
           child: Text(
             "자동 알람",
             style: TextStyle(
               fontWeight: FontWeight.bold,
+              fontSize: 14,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ),
         SizedBox(
-          height: 110,
-          child: ListView.builder(
+          height: 64,
+          child: ListView.separated(
             scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.zero,
             itemCount: alarms.length,
-            itemBuilder: (context, index) => _buildAutoAlarmItem(alarms[index]),
+            separatorBuilder: (_, __) => const SizedBox(width: 6),
+            itemBuilder: (context, index) =>
+                _buildAutoAlarmCompactItem(alarms[index]),
           ),
         ),
-        const Divider(height: 32),
+        // Divider 제거
       ],
     );
   }
 
-  Widget _buildAutoAlarmItem(AlarmData alarm) {
+  Widget _buildAutoAlarmCompactItem(AlarmData alarm) {
     final key = '${alarm.busNo}_${alarm.stationName}_${alarm.routeId}';
     final fullAlarm = _fullAutoAlarms[key];
     if (fullAlarm == null) return const SizedBox.shrink();
 
     return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
+      elevation: 1,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Container(
+        width: 120,
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(fullAlarm.routeNo,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1),
-            Text(fullAlarm.stationName,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1),
-            const Spacer(),
             Row(
               children: [
-                Icon(
-                  Icons.alarm,
-                  size: 14,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 4),
+                Text(fullAlarm.routeNo,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1),
+                const SizedBox(width: 6),
+                Icon(Icons.alarm,
+                    size: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                const SizedBox(width: 2),
                 Text(fullAlarm.getFormattedTime(),
                     style: TextStyle(
-                      fontSize: 14,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    )),
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.onSurface)),
               ],
             ),
+            Text(fullAlarm.stationName,
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurface),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1),
             Text(
               _getRepeatDaysText(fullAlarm.repeatDays),
               style: TextStyle(
-                fontSize: 10,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+                  fontSize: 10,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -281,7 +282,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         setState(() {
           // 강제 UI 업데이트
         });
-        if (mounted) { // Re-check mounted state before using context
+        if (mounted) {
+          // Re-check mounted state before using context
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다.')),
           );
