@@ -260,42 +260,88 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
         children: [
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
               child: Row(
                 children: [
                   // 검색 필드
                   Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        color: colorScheme.surfaceContainerHighest
-                            .withValues(alpha: 0.4),
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: _searchRoutes,
-                        decoration: InputDecoration(
-                          hintText: '버스 노선번호 검색 (예: 503, 급행1)',
-                          hintStyle:
-                              TextStyle(color: colorScheme.onSurfaceVariant),
-                          prefixIcon:
-                              Icon(Icons.search, color: colorScheme.primary),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide.none,
+                    child: Focus(
+                      onFocusChange: (hasFocus) => setState(() {}),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color:
+                              colorScheme.surfaceContainerHighest.withAlpha(40),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: FocusScope.of(context).hasFocus
+                                ? colorScheme.primary
+                                : colorScheme.outline.withAlpha(20),
+                            width: 2,
                           ),
-                          contentPadding: const EdgeInsets.symmetric(
-                              vertical: 16, horizontal: 16),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: Icon(Icons.clear,
-                                      color: colorScheme.onSurfaceVariant),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    _searchRoutes('');
-                                  },
-                                )
-                              : null,
+                          boxShadow: [
+                            if (FocusScope.of(context).hasFocus)
+                              BoxShadow(
+                                color: colorScheme.primary.withOpacity(0.15),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 16),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.search,
+                                      color: colorScheme.primary, size: 24),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _searchController,
+                                      onChanged: _searchRoutes,
+                                      style:
+                                          theme.textTheme.bodyLarge?.copyWith(
+                                        color: colorScheme.onSurface,
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      decoration: InputDecoration(
+                                        hintText: '버스 노선번호 검색 (예: 503, 급행1)',
+                                        hintStyle:
+                                            theme.textTheme.bodyLarge?.copyWith(
+                                          color: colorScheme.onSurfaceVariant
+                                              .withOpacity(0.97),
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                        suffixIcon:
+                                            _searchController.text.isNotEmpty
+                                                ? IconButton(
+                                                    icon: Icon(Icons.clear,
+                                                        size: 22,
+                                                        color: colorScheme
+                                                            .onSurfaceVariant),
+                                                    onPressed: () {
+                                                      _searchController.clear();
+                                                      _searchRoutes('');
+                                                    },
+                                                  )
+                                                : null,
+                                      ),
+                                      maxLines: 1,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),

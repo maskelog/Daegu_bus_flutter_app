@@ -347,62 +347,77 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_currentIndex == 0)
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                 child: Row(
                   children: [
                     // 검색 필드
                     Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color:
-                              colorScheme.surfaceContainerHighest.withAlpha(40),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: colorScheme.outline.withAlpha(20),
-                            width: 1,
-                          ),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () async {
-                              final result = await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => SearchScreen(
-                                    favoriteStops: _favoriteStops,
-                                  ),
-                                ),
-                              );
-                              if (result != null) {
-                                if (result is BusStop) {
-                                  setState(() => _selectedStop = result);
-                                  _loadBusArrivals();
-                                }
-                              }
-                            },
+                      child: Focus(
+                        onFocusChange: (hasFocus) => setState(() {}),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest
+                                .withAlpha(40),
                             borderRadius: BorderRadius.circular(16),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 16),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.search,
-                                    color: colorScheme.primary,
-                                    size: 24,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      "정류장 이름 또는 번호 검색 (예: 동대구역, 2001)",
-                                      style:
-                                          theme.textTheme.bodyMedium?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
+                            border: Border.all(
+                              color: FocusScope.of(context).hasFocus
+                                  ? colorScheme.primary
+                                  : colorScheme.outline.withAlpha(20),
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              if (FocusScope.of(context).hasFocus)
+                                BoxShadow(
+                                  color: colorScheme.primary.withOpacity(0.15),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                            ],
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () async {
+                                final result = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => SearchScreen(
+                                      favoriteStops: _favoriteStops,
                                     ),
                                   ),
-                                ],
+                                );
+                                if (result != null) {
+                                  if (result is BusStop) {
+                                    setState(() => _selectedStop = result);
+                                    _loadBusArrivals();
+                                  }
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(16),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 16),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.search,
+                                        color: colorScheme.primary, size: 24),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        "정류장 이름 또는 번호 검색 (예: 동대구역, 2001)",
+                                        style:
+                                            theme.textTheme.bodyLarge?.copyWith(
+                                          color: colorScheme.onSurfaceVariant
+                                              .withOpacity(0.97),
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -433,7 +448,11 @@ class _HomeScreenState extends State<HomeScreen> {
             Consumer<AlarmService>(
               builder: (context, alarmService, child) {
                 return alarmService.activeAlarms.isNotEmpty
-                    ? const ActiveAlarmPanel()
+                    ? const Padding(
+                        padding:
+                            EdgeInsets.only(bottom: 8), // 검색창~자동알람 사이 여백 축소
+                        child: ActiveAlarmPanel(),
+                      )
                     : const SizedBox.shrink();
               },
             ),

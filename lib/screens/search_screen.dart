@@ -274,47 +274,90 @@ class _SearchScreenState extends State<SearchScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              autofocus: true,
-              style: TextStyle(color: colorScheme.onSurface),
-              decoration: InputDecoration(
-                hintText: '정류장 이름을 입력하세요',
-                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                prefixIcon:
-                    Icon(Icons.search, color: colorScheme.onSurfaceVariant),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(Icons.clear,
-                            color: colorScheme.onSurfaceVariant),
-                        onPressed: () {
-                          _searchController.clear();
-                          _searchStations('');
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Focus(
+              onFocusChange: (hasFocus) => setState(() {}),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withAlpha(40),
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: colorScheme.outline),
+                  border: Border.all(
+                    color: FocusScope.of(context).hasFocus
+                        ? colorScheme.primary
+                        : colorScheme.outline.withAlpha(20),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    if (FocusScope.of(context).hasFocus)
+                      BoxShadow(
+                        color: colorScheme.primary.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                  ],
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: colorScheme.outline),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: colorScheme.primary, width: 2),
-                ),
-                filled: true,
-                fillColor: colorScheme.surfaceContainerHighest.withAlpha(30),
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                  horizontal: 16,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.search,
+                              color: colorScheme.primary, size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              autofocus: true,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(
+                                    color: colorScheme.onSurface,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                              decoration: InputDecoration(
+                                hintText: '정류장 이름을 입력하세요',
+                                hintStyle: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(
+                                      color: colorScheme.onSurfaceVariant
+                                          .withOpacity(0.97),
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                                suffixIcon: _searchController.text.isNotEmpty
+                                    ? IconButton(
+                                        icon: Icon(Icons.clear,
+                                            size: 22,
+                                            color:
+                                                colorScheme.onSurfaceVariant),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          _searchStations('');
+                                        },
+                                      )
+                                    : null,
+                              ),
+                              maxLines: 1,
+                              onChanged: _searchStations,
+                              onSubmitted: _searchStations,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              onChanged: _searchStations,
-              onSubmitted: _searchStations,
             ),
           ),
           Expanded(child: _buildSearchContent()),
