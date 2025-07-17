@@ -263,85 +263,116 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
               child: Row(
                 children: [
-                  // 검색 필드
+                  // 검색 필드 - Material 3 스타일
                   Expanded(
                     child: Focus(
                       onFocusChange: (hasFocus) => setState(() {}),
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        height: 52,
                         decoration: BoxDecoration(
-                          color:
-                              colorScheme.surfaceContainerHighest.withAlpha(40),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: FocusScope.of(context).hasFocus
-                                ? colorScheme.primary
-                                : colorScheme.outline.withAlpha(20),
-                            width: 2,
-                          ),
+                          color: colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(28),
+                          border: FocusScope.of(context).hasFocus
+                              ? Border.all(
+                                  color: colorScheme.primary.withValues(alpha: 0.8),
+                                  width: 2,
+                                )
+                              : null,
                           boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.shadow.withValues(alpha: 0.05),
+                              blurRadius: FocusScope.of(context).hasFocus ? 4 : 2,
+                              offset: const Offset(0, 1),
+                            ),
                             if (FocusScope.of(context).hasFocus)
                               BoxShadow(
-                                color: colorScheme.primary.withOpacity(0.15),
+                                color: colorScheme.primary.withValues(alpha: 0.1),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
                           ],
                         ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 16),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.search,
-                                      color: colorScheme.primary, size: 24),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _searchController,
-                                      onChanged: _searchRoutes,
-                                      style:
-                                          theme.textTheme.bodyLarge?.copyWith(
-                                        color: colorScheme.onSurface,
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      decoration: InputDecoration(
-                                        hintText: '버스 노선번호 검색 (예: 503, 급행1)',
-                                        hintStyle:
-                                            theme.textTheme.bodyLarge?.copyWith(
-                                          color: colorScheme.onSurfaceVariant
-                                              .withOpacity(0.97),
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        border: InputBorder.none,
-                                        isDense: true,
-                                        contentPadding: EdgeInsets.zero,
-                                        suffixIcon:
-                                            _searchController.text.isNotEmpty
-                                                ? IconButton(
-                                                    icon: Icon(Icons.clear,
-                                                        size: 22,
-                                                        color: colorScheme
-                                                            .onSurfaceVariant),
-                                                    onPressed: () {
-                                                      _searchController.clear();
-                                                      _searchRoutes('');
-                                                    },
-                                                  )
-                                                : null,
-                                      ),
-                                      maxLines: 1,
-                                    ),
-                                  ),
-                                ],
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: _searchRoutes,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: colorScheme.onSurface,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            height: 1.2,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: '버스 노선번호 검색 (예: 503, 급행1)',
+                            hintStyle: theme.textTheme.bodyLarge?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                              fontSize: 16,
+                              fontWeight: FontWeight.normal,
+                              height: 1.2,
+                            ),
+                            prefixIcon: Padding(
+                              padding: const EdgeInsets.only(left: 20, right: 12),
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 200),
+                                child: Icon(
+                                  Icons.search_rounded,
+                                  key: ValueKey(FocusScope.of(context).hasFocus),
+                                  color: FocusScope.of(context).hasFocus
+                                      ? colorScheme.primary
+                                      : colorScheme.onSurfaceVariant,
+                                  size: 24,
+                                ),
                               ),
                             ),
+                            suffixIcon: _searchController.text.isNotEmpty
+                                ? Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(20),
+                                        onTap: () {
+                                          _searchController.clear();
+                                          _searchRoutes('');
+                                        },
+                                        child: Container(
+                                          width: 36,
+                                          height: 36,
+                                          decoration: BoxDecoration(
+                                            color: colorScheme.surfaceContainerHigh,
+                                            borderRadius: BorderRadius.circular(18),
+                                          ),
+                                          child: Icon(
+                                            Icons.clear_rounded,
+                                            size: 18,
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
+                            isDense: true,
+                            filled: false,
+                            fillColor: Colors.transparent,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 0,
+                              vertical: 14,
+                            ),
                           ),
+                          maxLines: 1,
+                          textInputAction: TextInputAction.search,
+                          textAlignVertical: TextAlignVertical.center,
+                          onSubmitted: (value) {
+                            // 엔터키 눌렀을 때 키보드 숨기기
+                            FocusScope.of(context).unfocus();
+                          },
                         ),
                       ),
                     ),

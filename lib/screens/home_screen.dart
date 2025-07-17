@@ -350,25 +350,31 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                 child: Row(
                   children: [
-                    // 검색 필드
+                    // 검색 필드 - Material 3 스타일
                     Expanded(
                       child: Focus(
                         onFocusChange: (hasFocus) => setState(() {}),
-                        child: Container(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          height: 52,
                           decoration: BoxDecoration(
-                            color: colorScheme.surfaceContainerHighest
-                                .withAlpha(40),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: FocusScope.of(context).hasFocus
-                                  ? colorScheme.primary
-                                  : colorScheme.outline.withAlpha(20),
-                              width: 2,
-                            ),
+                            color: colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(28),
+                            border: FocusScope.of(context).hasFocus
+                                ? Border.all(
+                                    color: colorScheme.primary.withValues(alpha: 0.8),
+                                    width: 2,
+                                  )
+                                : null,
                             boxShadow: [
+                              BoxShadow(
+                                color: colorScheme.shadow.withValues(alpha: 0.05),
+                                blurRadius: FocusScope.of(context).hasFocus ? 4 : 2,
+                                offset: const Offset(0, 1),
+                              ),
                               if (FocusScope.of(context).hasFocus)
                                 BoxShadow(
-                                  color: colorScheme.primary.withOpacity(0.15),
+                                  color: colorScheme.primary.withValues(alpha: 0.1),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -376,7 +382,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           child: Material(
                             color: Colors.transparent,
+                            borderRadius: BorderRadius.circular(28),
                             child: InkWell(
+                              borderRadius: BorderRadius.circular(28),
+                              splashColor: colorScheme.primary.withOpacity(0.08),
+                              highlightColor: colorScheme.primary.withOpacity(0.04),
                               onTap: () async {
                                 final result = await Navigator.push(
                                   context,
@@ -393,24 +403,31 @@ class _HomeScreenState extends State<HomeScreen> {
                                   }
                                 }
                               },
-                              borderRadius: BorderRadius.circular(16),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 16),
+                                    horizontal: 20, vertical: 14),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.search,
-                                        color: colorScheme.primary, size: 24),
+                                    AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 200),
+                                      child: Icon(
+                                        Icons.search_rounded,
+                                        key: ValueKey(FocusScope.of(context).hasFocus),
+                                        color: FocusScope.of(context).hasFocus
+                                            ? colorScheme.primary
+                                            : colorScheme.onSurfaceVariant,
+                                        size: 24,
+                                      ),
+                                    ),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Text(
-                                        "정류장 이름 또는 번호 검색 (예: 동대구역, 2001)",
-                                        style:
-                                            theme.textTheme.bodyLarge?.copyWith(
-                                          color: colorScheme.onSurfaceVariant
-                                              .withOpacity(0.97),
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.bold,
+                                        "정류장 검색",
+                                        style: theme.textTheme.bodyLarge?.copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.normal,
+                                          height: 1.2,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
