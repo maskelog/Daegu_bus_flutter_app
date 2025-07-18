@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
+import '../models/bus_info.dart';
 import '../services/api_service.dart';
 import '../widgets/station_item.dart';
 import '../widgets/unified_bus_detail_widget.dart';
@@ -214,12 +215,6 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _loadStationArrivals(BusStop station) async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-      _selectedStation = station;
-    });
-
     try {
       // 첫 번째 시도
       debugPrint('정류장 도착 정보 조회 시도: ${station.name} (ID: ${station.id})');
@@ -236,12 +231,8 @@ class _SearchScreenState extends State<SearchScreen> {
       if (mounted) {
         setState(() {
           _stationArrivals[station.id] = arrivals;
-          _isLoading = false;
-
           if (arrivals.isEmpty) {
             debugPrint('정류장 도착 정보 없음: ${station.name}');
-            // 결과가 없지만 오류는 아님
-            _errorMessage = null;
           } else {
             debugPrint('정류장 도착 정보 로드 성공: ${arrivals.length}개 버스');
           }
@@ -251,8 +242,7 @@ class _SearchScreenState extends State<SearchScreen> {
       debugPrint('정류장 도착 정보 로드 오류: $e');
       if (mounted) {
         setState(() {
-          _errorMessage = '버스 도착 정보를 불러오지 못했습니다. 다시 시도해주세요.';
-          _isLoading = false;
+          _stationArrivals[station.id] = []; // 오류 발생 시 빈 리스트로 처리
         });
       }
     }
@@ -579,7 +569,8 @@ class _StationItemWrapperState extends State<_StationItemWrapper> {
           },
         ),
         Padding(
-          padding: const EdgeInsets.only(left: 44, bottom: 8, top: 2),
+          padding:
+              const EdgeInsets.only(left: 16, right: 16, bottom: 8, top: 4),
           child: _buildArrivalsInfo(widget.arrivals, colorScheme),
         ),
       ],
@@ -596,14 +587,35 @@ class _StationItemWrapperState extends State<_StationItemWrapper> {
       return Text('도착 정보 없음',
           style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant));
     }
-    // 각 BusArrival의 busInfoList에서 최대 2개만 표시
-    final List<Widget> infoWidgets = [];
-    int shown = 0;
-    for (final arrival in arrivals) {
-      for (final bus in arrival.busInfoList.take(2)) {
-        if (shown >= 2) break;
 
-        // unified_bus_detail_widget.dart와 동일한 시간 포맷팅 로직 적용
+    final List<Map<String, dynamic>> allArrivals = [];
+    for (final arrival in arrivals) {
+      for (final bus in arrival.busInfoList) {
+        allArrivals.add({'arrival': arrival, 'bus': bus});
+      }
+    }
+
+    if (allArrivals.isEmpty) {
+      return Text('도착 정보 없음',
+          style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant));
+    }
+
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: allArrivals.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 4,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 4,
+      ),
+      itemBuilder: (context, index) {
+        final item = allArrivals[index];
+        final BusArrival arrival = item['arrival'];
+        final BusInfo bus = item['bus'];
+
         final remainingTime = bus.getRemainingMinutes();
         String formattedTime;
 
@@ -620,7 +632,7 @@ class _StationItemWrapperState extends State<_StationItemWrapper> {
               bus.estimatedTime.isNotEmpty ? bus.estimatedTime : '정보 없음';
         }
 
-        infoWidgets.add(Row(
+        return Row(
           children: [
             Text(
               arrival.routeNo,
@@ -630,30 +642,23 @@ class _StationItemWrapperState extends State<_StationItemWrapper> {
                   fontSize: 14),
             ),
             const SizedBox(width: 8),
-            Text(
-              formattedTime,
-              style:
-                  TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
+            Expanded(
+              child: Text(
+                formattedTime,
+                style: TextStyle(
+                    color: colorScheme.onSurfaceVariant, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             if (bus.isLowFloor)
               Padding(
-                padding: const EdgeInsets.only(left: 6),
+                padding: const EdgeInsets.only(left: 4),
                 child: Text('[저상]',
                     style: TextStyle(fontSize: 12, color: colorScheme.primary)),
               ),
           ],
-        ));
-        shown++;
-      }
-      if (shown >= 2) break;
-    }
-    if (infoWidgets.isEmpty) {
-      return Text('도착 정보 없음',
-          style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant));
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: infoWidgets,
+        );
+      },
     );
   }
 }

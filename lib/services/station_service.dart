@@ -172,72 +172,66 @@ class StationService {
     }
   }
 
-  /// 버스 도착 정보 결과를 BusArrival 객체로 변환
+  /// 버스 도착 정보 결과를 BusArrival 객체로 변환 (v2)
   List<BusArrival> _parseBusArrivalResult(String jsonString) {
     try {
-      final List<dynamic> routeList = jsonDecode(jsonString);
+      final dynamic decodedData = jsonDecode(jsonString);
+      final List<dynamic> routeList;
+
+      // 데이터가 리스트가 아니면 리스트로 감싸줌
+      if (decodedData is Map<String, dynamic>) {
+        routeList = [decodedData];
+      } else if (decodedData is List) {
+        routeList = decodedData;
+      } else {
+        logMessage('도착 정보 형식이 올바르지 않습니다: ${decodedData.runtimeType}',
+            level: LogLevel.error);
+        return [];
+      }
+
       final List<BusArrival> result = [];
+      final Map<String, BusArrival> busArrivalMap = {};
 
-      for (var route in routeList) {
-        try {
-          final String routeNo = route['routeNo'] ?? '';
-          final List<dynamic>? arrList = route['arrList'];
+      for (var routeData in routeList) {
+        if (routeData is! Map<String, dynamic>) continue;
 
-          if (arrList == null || arrList.isEmpty) continue;
+        final List<dynamic>? arrList = routeData['arrList'];
+        if (arrList == null || arrList.isEmpty) continue;
 
-          // 같은 노선ID의 버스 정보 리스트 수집
-          final Map<String, List<BusInfo>> routeGroups = {};
+        for (var arrivalData in arrList) {
+          if (arrivalData is! Map<String, dynamic>) continue;
 
-          for (var arrival in arrList) {
-            final String routeId = arrival['routeId'] ?? '';
-            final String direction = arrival['moveDir'] ?? '';
-            final String groupKey = '$routeId:$direction';
+          final String routeId = arrivalData['routeId'] ?? '';
+          final String routeNo = arrivalData['routeNo'] ?? routeData['routeNo'] ?? '';
+          final String direction = arrivalData['moveDir'] ?? '';
+          final String key = '$routeId-$direction';
 
-            if (!routeGroups.containsKey(groupKey)) {
-              routeGroups[groupKey] = [];
-            }
+          final busInfo = BusInfo(
+            busNumber: arrivalData['vhcNo2'] ?? '',
+            currentStation: arrivalData['bsNm'] ?? '정보 없음',
+            remainingStops: (arrivalData['bsGap'] ?? 0).toString(),
+            estimatedTime: arrivalData['arrState'] ?? '정보 없음',
+            isLowFloor: arrivalData['busTCd2'] == '1',
+            isOutOfService: arrivalData['busTCd3'] == '1',
+          );
 
-            // BusInfo 생성 전에 필드 변환
-            final Map<String, dynamic> busInfoMap = {
-              'busNumber': arrival['vhcNo2'] ?? '',
-              'currentStation': arrival['bsNm'] ?? '',
-              'remainingStops': arrival['bsGap']?.toString() ?? '0',
-              'estimatedTime':
-                  arrival['arrState'] ?? arrival['bsGap']?.toString() ?? '',
-              'isLowFloor': arrival['busTCd2'] == '1',
-              'isOutOfService': arrival['busTCd3'] == '1',
-            };
-
-            // 디버그 로그 추가
-            logMessage('도착 정보 데이터: ${arrival['arrState']}',
-                level: LogLevel.debug);
-
-            routeGroups[groupKey]!.add(BusInfo.fromJson(busInfoMap));
-          }
-
-          // 그룹별로 BusArrival 객체 생성
-          routeGroups.forEach((key, busInfoList) {
-            final parts = key.split(':');
-            final String routeId = parts[0];
-            final String direction = parts.length > 1 ? parts[1] : '';
-
-            result.add(BusArrival(
-              routeNo: routeNo,
+          if (busArrivalMap.containsKey(key)) {
+            busArrivalMap[key]!.busInfoList.add(busInfo);
+          } else {
+            busArrivalMap[key] = BusArrival(
               routeId: routeId,
-              busInfoList: busInfoList,
+              routeNo: routeNo,
               direction: direction,
-            ));
-
-            // 로그로 확인
-            if (busInfoList.isNotEmpty) {
-              logMessage(
-                  '버스 도착 정보: routeNo=$routeNo, estimatedTime=${busInfoList.first.estimatedTime}',
-                  level: LogLevel.debug);
-            }
-          });
-        } catch (e) {
-          logMessage('도착 정보 개별 파싱 오류: $e', level: LogLevel.error);
+              busInfoList: [busInfo],
+            );
+          }
         }
+      }
+
+      result.addAll(busArrivalMap.values);
+
+      if (result.isNotEmpty) {
+        logMessage('${result.length}개의 노선 도착 정보 파싱 성공', level: LogLevel.debug);
       }
 
       return result;
