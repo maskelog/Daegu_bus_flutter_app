@@ -616,8 +616,12 @@ Future<void> main() async {
         '[${record.level.name}] ${record.time}: ${record.loggerName}: ${record.message}');
   });
 
-  // WorkManager 초기화
+  // WorkManager 및 권한 초기화 (웹이 아닌 경우)
   if (!kIsWeb) {
+    // 모든 권한 요청
+    await PermissionService.requestAllPermissions();
+
+    // WorkManager 초기화
     await Workmanager().initialize(
       callbackDispatcher,
       isInDebugMode: kDebugMode,
@@ -628,8 +632,6 @@ Future<void> main() async {
   final settingsService = SettingsService();
   await settingsService.initialize();
 
-  final permissionService = PermissionService();
-
   final notificationService = NotificationService();
   await notificationService.initialize();
 
@@ -638,7 +640,6 @@ Future<void> main() async {
       providers: [
         ChangeNotifierProvider.value(value: notificationService),
         ChangeNotifierProvider.value(value: settingsService),
-        Provider.value(value: permissionService),
         ChangeNotifierProvider(
           create: (context) => AlarmService(
             notificationService: context.read<NotificationService>(),
