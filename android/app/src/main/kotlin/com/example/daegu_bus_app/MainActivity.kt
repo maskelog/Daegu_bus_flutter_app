@@ -68,8 +68,6 @@ import com.example.daegu_bus_app.utils.NotificationHandler
 import kotlinx.coroutines.runBlocking
 import android.os.PowerManager
 import android.provider.Settings
-import android.os.Handler
-import android.os.Looper
 
 class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     companion object {
