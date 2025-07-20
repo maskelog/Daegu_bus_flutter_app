@@ -133,11 +133,19 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     // private val TTS_DUPLICATE_THRESHOLD_MS = 300
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        GeneratedPluginRegistrant.registerWith(flutterEngine)
+        try {
+            super.configureFlutterEngine(flutterEngine)
+            GeneratedPluginRegistrant.registerWith(flutterEngine)
 
-        // BUS_API_CHANNEL 설정 (기존과 동일) - _methodChannel에 할당
-        _methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL)
+            Log.d("MainActivity", "🔧 Flutter 엔진 설정 시작")
+
+            // BUS_API_CHANNEL 설정 (기존과 동일) - _methodChannel에 할당
+            _methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL)
+
+            Log.d("MainActivity", "✅ MethodChannel 생성 완료")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ Flutter 엔진 설정 오류: ${e.message}", e)
+        }
         _methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "cancelAlarmNotification" -> {
@@ -1475,19 +1483,45 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             // BusAlertService 인스턴스 가져오기 (onCreate에서 이미 생성됨)
             busAlertService = BusAlertService.getInstance()
             busAlertService?.initialize()
+            Log.d("MainActivity", "✅ BusAlertService 초기화 완료")
         } catch (e: Exception) {
-            Log.e(TAG, "알림 서비스 초기화 오류: ${e.message}", e)
+            Log.e(TAG, "❌ 알림 서비스 초기화 오류: ${e.message}", e)
         }
+
+        Log.d("MainActivity", "✅ Flutter 엔진 설정 완료")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
+            // Window 플래그 설정 (ViewRootImpl 오류 방지)
+            window?.let { window ->
+                window.statusBarColor = android.graphics.Color.TRANSPARENT
+                window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    window.setDecorFitsSystemWindows(false)
+                }
+            }
+
             super.onCreate(savedInstanceState)
 
             // 싱글톤 인스턴스 설정
             instance = this
 
             Log.d("MainActivity", "🚀 MainActivity 생성 시작")
+
+            // UI 스레드에서 안전하게 초기화
+            runOnUiThread {
+                initializeEssentialComponents()
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ MainActivity onCreate 오류: ${e.message}", e)
+        }
+    }
+
+    private fun initializeEssentialComponents() {
+        try {
+            Log.d("MainActivity", "🔧 필수 컴포넌트 초기화 시작")
 
             // 필수 초기화만 먼저 수행
             busApiService = BusApiService(this)
@@ -1498,15 +1532,15 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             // Create Notification Channel for Alarms
             createAlarmNotificationChannel()
 
-            Log.d("MainActivity", "✅ 기본 초기화 완료")
+            Log.d("MainActivity", "✅ 필수 컴포넌트 초기화 완료")
 
-            // 나머지 초기화는 지연 실행 (UI 렌더링 후)
+            // 나머지 초기화는 더 긴 지연으로 실행 (UI 완전 렌더링 후)
             Handler(Looper.getMainLooper()).postDelayed({
                 initializeDelayedComponents()
-            }, 100) // 100ms 지연
+            }, 500) // 500ms 지연으로 증가
 
         } catch (e: Exception) {
-            Log.e(TAG, "❌ MainActivity onCreate 오류: ${e.message}", e)
+            Log.e(TAG, "❌ 필수 컴포넌트 초기화 오류: ${e.message}", e)
         }
     }
 
