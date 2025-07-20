@@ -24,6 +24,8 @@ import android.speech.tts.UtteranceProgressListener
 import java.util.concurrent.ConcurrentHashMap
 import android.app.NotificationManager
 import android.widget.Toast
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.NonNull
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -783,16 +785,17 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 this, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                             ) else null
 
-                            // Cancel action - 간단한 알림 해제용
-                            val cancelIntent = Intent(this, BusAlertService::class.java).apply {
-                                action = BusAlertService.ACTION_CANCEL_NOTIFICATION
-                                putExtra("notificationId", id)
+                            // Cancel action - 간단한 알림 해제용 (MainActivity로 직접 전달)
+                            val cancelIntent = Intent(this, MainActivity::class.java).apply {
+                                action = "cancel_alarm"
+                                putExtra("alarm_id", id)
                                 putExtra("busNo", busNo)
                                 putExtra("stationName", stationName)
                                 putExtra("routeId", routeId)
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                             }
-                            val cancelPendingIntent = PendingIntent.getService(
-                                this, id + 1, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            val cancelPendingIntent = PendingIntent.getActivity(
+                                this, id + 1000, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                             )
 
                             // 잠금화면 표시를 위한 간단한 알림 생성
@@ -1482,17 +1485,13 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             super.onCreate(savedInstanceState)
-            
+
             // 싱글톤 인스턴스 설정
             instance = this
-            
-            Log.d("MainActivity", " MainActivity 생성")
 
-            // 승차 완료 액션 처리
-            if (intent?.action == "com.example.daegu_bus_app.BOARDING_COMPLETE") {
-                handleBoardingComplete()
-            }
+            Log.d("MainActivity", "🚀 MainActivity 생성 시작")
 
+            // 필수 초기화만 먼저 수행
             busApiService = BusApiService(this)
             audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
             notificationHelper = NotificationHelper(this)
@@ -1500,6 +1499,27 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
             // Create Notification Channel for Alarms
             createAlarmNotificationChannel()
+
+            Log.d("MainActivity", "✅ 기본 초기화 완료")
+
+            // 나머지 초기화는 지연 실행 (UI 렌더링 후)
+            Handler(Looper.getMainLooper()).postDelayed({
+                initializeDelayedComponents()
+            }, 100) // 100ms 지연
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ MainActivity onCreate 오류: ${e.message}", e)
+        }
+    }
+
+    private fun initializeDelayedComponents() {
+        try {
+            Log.d("MainActivity", "🔄 지연 초기화 시작")
+
+            // 승차 완료 액션 처리
+            if (intent?.action == "com.example.daegu_bus_app.BOARDING_COMPLETE") {
+                handleBoardingComplete()
+            }
 
             // TTS 초기화
             try {
@@ -1527,8 +1547,10 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             // 배터리 최적화 예외 요청
             requestBatteryOptimizationExemption()
 
+            Log.d("MainActivity", "✅ 지연 초기화 완료")
+
         } catch (e: Exception) {
-            Log.e(TAG, "MainActivity onCreate 오류: ${e.message}", e)
+            Log.e(TAG, "❌ 지연 초기화 오류: ${e.message}", e)
         }
     }
 
@@ -1820,7 +1842,13 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         when (action) {
             "cancel_alarm" -> {
                 val alarmId = intent.getIntExtra("alarm_id", -1)
+                val busNo = intent.getStringExtra("busNo") ?: ""
+                val stationName = intent.getStringExtra("stationName") ?: ""
+                val routeId = intent.getStringExtra("routeId") ?: ""
+
                 if (alarmId != -1) {
+                    Log.d(TAG, "🔔 노티피케이션에서 알람 취소: ID=$alarmId, 버스=$busNo, 정류장=$stationName, 노선=$routeId")
+
                     // 알림 취소
                     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     notificationManager.cancel(alarmId)
@@ -1835,6 +1863,24 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     val editor = prefs.edit()
                     editor.putBoolean("alarm_cancelled_$alarmId", true).apply()
 
+                    // ✅ Flutter 쪽에 알람 취소 정보 전달 (중요!)
+                    if (busNo.isNotEmpty() && stationName.isNotEmpty() && routeId.isNotEmpty()) {
+                        try {
+                            flutterEngine?.dartExecutor?.binaryMessenger?.let { messenger ->
+                                val channel = MethodChannel(messenger, "com.example.daegu_bus_app/bus_api")
+                                channel.invokeMethod("cancelAlarmFromNotification", mapOf(
+                                    "busNo" to busNo,
+                                    "stationName" to stationName,
+                                    "routeId" to routeId,
+                                    "alarmId" to alarmId
+                                ))
+                                Log.d(TAG, "✅ Flutter에 알람 취소 정보 전달 완료")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Flutter에 알람 취소 정보 전달 실패: ${e.message}")
+                        }
+                    }
+
                     // 토스트 메시지로 알림
                     Toast.makeText(
                         this,
@@ -1842,7 +1888,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         Toast.LENGTH_SHORT
                     ).show()
 
-                    Log.d(TAG, "Alarm notification cancelled: $alarmId (one-time cancel)")
+                    Log.d(TAG, "✅ Alarm notification cancelled: $alarmId (one-time cancel)")
                 }
             }
         }

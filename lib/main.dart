@@ -13,6 +13,9 @@ import 'services/permission_service.dart';
 import 'services/settings_service.dart';
 import 'services/alarm_manager.dart';
 
+// 전역 AlarmService 인스턴스 (노티피케이션 취소 처리용)
+AlarmService? _globalAlarmService;
+
 /// Material 3 색상 체계 정의
 class AppColorScheme {
   // Primary Colors (Material 3 동적 색상 시스템)
@@ -584,6 +587,36 @@ void _setupMethodChannelHandlers() {
           }
           break;
 
+        case 'cancelAlarmFromNotification':
+          // 노티피케이션에서 직접 알람 취소 요청
+          final busNo = call.arguments['busNo'] as String? ?? '';
+          final routeId = call.arguments['routeId'] as String? ?? '';
+          final stationName = call.arguments['stationName'] as String? ?? '';
+          final alarmId = call.arguments['alarmId'] as int? ?? 0;
+
+          debugPrint(
+              '🔔 [NOTIFICATION] 노티피케이션에서 알람 취소 요청: $busNo, $routeId, $stationName (ID: $alarmId)');
+
+          if (busNo.isNotEmpty &&
+              routeId.isNotEmpty &&
+              stationName.isNotEmpty) {
+            // 전역 AlarmService를 통해 알람 취소
+            if (_globalAlarmService != null) {
+              await _globalAlarmService!
+                  .cancelAlarmByRoute(busNo, stationName, routeId);
+              debugPrint('✅ [NOTIFICATION] Flutter에서 알람 취소 완료: $busNo');
+            } else {
+              // 전역 서비스가 없으면 AlarmManager 사용
+              await AlarmManager.cancelAlarm(
+                busNo: busNo,
+                stationName: stationName,
+                routeId: routeId,
+              );
+              debugPrint('✅ [NOTIFICATION] AlarmManager로 알람 취소 완료: $busNo');
+            }
+          }
+          break;
+
         case 'onAllAlarmsCanceled':
           // 모든 알람 취소 이벤트
           final source = call.arguments?['source'] as String? ?? '';
@@ -635,17 +668,19 @@ Future<void> main() async {
   final notificationService = NotificationService();
   await notificationService.initialize();
 
+  // 전역 AlarmService 초기화 (노티피케이션 취소 처리용)
+  _globalAlarmService = AlarmService(
+    notificationService: notificationService,
+    settingsService: settingsService,
+  );
+  await _globalAlarmService!.initialize();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: notificationService),
         ChangeNotifierProvider.value(value: settingsService),
-        ChangeNotifierProvider(
-          create: (context) => AlarmService(
-            notificationService: context.read<NotificationService>(),
-            settingsService: context.read<SettingsService>(),
-          ),
-        ),
+        ChangeNotifierProvider.value(value: _globalAlarmService!),
       ],
       child: const MyApp(), // const 제거
     ),

@@ -125,9 +125,45 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
             val repeatDays = inputData.getIntArray("repeatDays") ?: return Result.failure()
             
             Log.d(TAG, "AlarmManager 스케줄링: $busNo 번 버스, $stationName, $hour:$minute")
-            
+
             val alarmManager = applicationContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            
+
+            // 먼저 calendar 설정
+            val calendar = Calendar.getInstance()
+            val now = Calendar.getInstance()
+
+            calendar.set(Calendar.HOUR_OF_DAY, hour)
+            calendar.set(Calendar.MINUTE, minute)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+
+            val currentDay = calendar.get(Calendar.DAY_OF_WEEK)
+            val currentDayMapped = if (currentDay == Calendar.SUNDAY) 7 else currentDay - 1
+
+            if (repeatDays.contains(currentDayMapped) && calendar.timeInMillis > now.timeInMillis) {
+                Log.d(TAG, "오늘 알람 설정: ${calendar.time}, 요일: $currentDayMapped")
+            } else {
+                var nextAlarmSet = false
+                for (i in 1..7) {
+                    val testCalendar = Calendar.getInstance()
+                    testCalendar.add(Calendar.DAY_OF_YEAR, i)
+                    val testDay = testCalendar.get(Calendar.DAY_OF_WEEK)
+                    val testDayMapped = if (testDay == Calendar.SUNDAY) 7 else testDay - 1
+
+                    if (repeatDays.contains(testDayMapped)) {
+                        calendar.add(Calendar.DAY_OF_YEAR, i)
+                        nextAlarmSet = true
+                        Log.d(TAG, "다음 알람 설정: ${calendar.time}, 요일: $testDayMapped (${i}일 후)")
+                        break
+                    }
+                }
+
+                if (!nextAlarmSet) {
+                    Log.e(TAG, "다음 알람 시간을 찾을 수 없습니다")
+                    return Result.failure()
+                }
+            }
+
             val alarmIntent = Intent(applicationContext, AlarmReceiver::class.java).apply {
                 action = "com.example.daegu_bus_app.AUTO_ALARM"
                 putExtra("alarmId", alarmId)
@@ -139,6 +175,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
                 putExtra("hour", hour)
                 putExtra("minute", minute)
                 putExtra("repeatDays", repeatDays)
+                putExtra("scheduledTime", calendar.timeInMillis) // 스케줄된 시간 추가
             }
             
             val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -155,41 +192,6 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
                     alarmIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT
                 )
-            }
-            
-            val calendar = Calendar.getInstance()
-            val now = Calendar.getInstance()
-            
-            calendar.set(Calendar.HOUR_OF_DAY, hour)
-            calendar.set(Calendar.MINUTE, minute)
-            calendar.set(Calendar.SECOND, 0)
-            calendar.set(Calendar.MILLISECOND, 0)
-            
-            val currentDay = calendar.get(Calendar.DAY_OF_WEEK)
-            val currentDayMapped = if (currentDay == Calendar.SUNDAY) 7 else currentDay - 1
-            
-            if (repeatDays.contains(currentDayMapped) && calendar.timeInMillis > now.timeInMillis) {
-                Log.d(TAG, "오늘 알람 설정: ${calendar.time}, 요일: $currentDayMapped")
-            } else {
-                var nextAlarmSet = false
-                for (i in 1..7) {
-                    val testCalendar = Calendar.getInstance()
-                    testCalendar.add(Calendar.DAY_OF_YEAR, i)
-                    val testDay = testCalendar.get(Calendar.DAY_OF_WEEK)
-                    val testDayMapped = if (testDay == Calendar.SUNDAY) 7 else testDay - 1
-                    
-                    if (repeatDays.contains(testDayMapped)) {
-                        calendar.add(Calendar.DAY_OF_YEAR, i)
-                        nextAlarmSet = true
-                        Log.d(TAG, "다음 알람 설정: ${calendar.time}, 요일: $testDayMapped (${i}일 후)")
-                        break
-                    }
-                }
-                
-                if (!nextAlarmSet) {
-                    Log.e(TAG, "다음 알람 시간을 찾을 수 없습니다")
-                    return Result.failure()
-                }
             }
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

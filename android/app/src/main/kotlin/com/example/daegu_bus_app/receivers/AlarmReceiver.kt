@@ -88,8 +88,8 @@ class AlarmReceiver : BroadcastReceiver() {
             }
             Log.d(TAG, "✅ 경량화된 알림 서비스 시작")
 
-            // 다음 알람 스케줄링 (배터리 절약을 위해 조건부)
-            scheduleNextAlarmOptimized(context, intent)
+            // 다음 알람 즉시 재설정 (중요: 현재 알람 실행 후 바로 다음 알람 설정)
+            scheduleNextAlarmImmediate(context, intent)
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ 배터리 최적화된 자동 알람 처리 오류", e)
@@ -164,4 +164,104 @@ class AlarmReceiver : BroadcastReceiver() {
             Log.e(TAG, "❌ 배터리 최적화된 다음 알람 스케줄링 오류", e)
         }
     }
-} 
+
+    /**
+     * 다음 알람 즉시 재설정 - 반복 알람의 핵심 로직
+     * AlarmManager를 사용하여 다음 알람을 바로 설정
+     */
+    private fun scheduleNextAlarmImmediate(context: Context, intent: Intent) {
+        try {
+            val alarmId = intent.getIntExtra("alarmId", 0)
+            val busNo = intent.getStringExtra("busNo") ?: return
+            val stationName = intent.getStringExtra("stationName") ?: return
+            val routeId = intent.getStringExtra("routeId") ?: return
+            val stationId = intent.getStringExtra("stationId") ?: return
+            val useTTS = intent.getBooleanExtra("useTTS", true)
+            val hour = intent.getIntExtra("hour", 0)
+            val minute = intent.getIntExtra("minute", 0)
+            val repeatDays = intent.getIntArrayExtra("repeatDays") ?: return
+
+            Log.d(TAG, "🔄 다음 자동 알람 즉시 재설정: ${busNo}번 버스, $hour:$minute, 반복 요일: ${repeatDays.joinToString(",")}")
+
+            // 다음 알람 시간 계산
+            val calendar = java.util.Calendar.getInstance()
+            calendar.set(java.util.Calendar.HOUR_OF_DAY, hour)
+            calendar.set(java.util.Calendar.MINUTE, minute)
+            calendar.set(java.util.Calendar.SECOND, 0)
+            calendar.set(java.util.Calendar.MILLISECOND, 0)
+
+            // 다음 유효한 알람 날짜 찾기
+            var nextAlarmSet = false
+            for (i in 1..7) {
+                val testCalendar = java.util.Calendar.getInstance()
+                testCalendar.add(java.util.Calendar.DAY_OF_YEAR, i)
+                val testDay = testCalendar.get(java.util.Calendar.DAY_OF_WEEK)
+                val testDayMapped = if (testDay == java.util.Calendar.SUNDAY) 7 else testDay - 1
+
+                if (repeatDays.contains(testDayMapped)) {
+                    calendar.add(java.util.Calendar.DAY_OF_YEAR, i)
+                    nextAlarmSet = true
+                    Log.d(TAG, "✅ 다음 알람 시간 계산됨: ${calendar.time}, 요일: $testDayMapped (${i}일 후)")
+                    break
+                }
+            }
+
+            if (!nextAlarmSet) {
+                Log.e(TAG, "❌ 다음 알람 시간을 찾을 수 없습니다")
+                return
+            }
+
+            // AlarmManager로 다음 알람 설정
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+
+            val nextAlarmIntent = Intent(context, AlarmReceiver::class.java).apply {
+                action = "com.example.daegu_bus_app.AUTO_ALARM"
+                putExtra("alarmId", alarmId)
+                putExtra("busNo", busNo)
+                putExtra("stationName", stationName)
+                putExtra("routeId", routeId)
+                putExtra("stationId", stationId)
+                putExtra("useTTS", useTTS)
+                putExtra("hour", hour)
+                putExtra("minute", minute)
+                putExtra("repeatDays", repeatDays)
+                putExtra("scheduledTime", calendar.timeInMillis)
+            }
+
+            val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.app.PendingIntent.getBroadcast(
+                    context,
+                    alarmId,
+                    nextAlarmIntent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                )
+            } else {
+                android.app.PendingIntent.getBroadcast(
+                    context,
+                    alarmId,
+                    nextAlarmIntent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            }
+
+            // 정확한 알람 설정
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAlarmClock(
+                    android.app.AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent),
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    android.app.AlarmManager.RTC_WAKEUP,
+                    calendar.timeInMillis,
+                    pendingIntent
+                )
+            }
+
+            Log.d(TAG, "✅ 다음 자동 알람 재설정 완료: ${busNo}번 버스, ${calendar.time}")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 다음 알람 즉시 재설정 오류", e)
+        }
+    }
+}
