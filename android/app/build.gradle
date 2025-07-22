@@ -9,12 +9,13 @@ plugins {
 android {
     namespace = "com.example.daegu_bus_app"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
         encoding = "UTF-8"
+        coreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -71,6 +72,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
     // 기존 의존성 유지
     
     // Retrofit과 OkHttp
