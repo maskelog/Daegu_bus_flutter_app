@@ -708,4 +708,31 @@ class NotificationService extends ChangeNotifier {
           level: LogLevel.error);
     }
   }
+} // <-- Add this closing brace to end the class
+
+// 버스 도착 메시지 포맷터 (앱 전체에서 통일 사용)
+String getBusArrivalMessage(String busNo, int remainingMinutes) {
+  if (remainingMinutes <= 0) return '$busNo번 버스가 곧 도착합니다.';
+  if (remainingMinutes == 1) return '$busNo번 버스가 약 1분 후 도착 예정입니다.';
+  return '$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.';
+}
+
+// 버스 도착(정류장 기준) 안내 메시지
+String getBusArrivedMessage(String busNo, String stationName) {
+  return '$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.';
+}
+
+// 버스 운행종료 메시지
+String getBusOutOfServiceMessage(String busNo) {
+  return '$busNo번 버스는 운행이 종료되었습니다.';
+}
+
+// 버스 TTS 안내 메시지 (도착/곧 도착/운행종료 등 상황별)
+String getBusTtsMessage(String busNo, String stationName, int remainingMinutes,
+    {bool outOfService = false}) {
+  if (outOfService) return getBusOutOfServiceMessage(busNo);
+  if (remainingMinutes <= 0) return '$busNo번 버스가 $stationName 정류장에 곧 도착합니다.';
+  if (remainingMinutes == 1)
+    return '$busNo번 버스가 $stationName 정류장에 약 1분 후 도착 예정입니다.';
+  return '$busNo번 버스가 $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.';
 }
