@@ -27,19 +27,17 @@ void callbackDispatcher() {
 
       // alarmId가 문자열로 전달될 수 있으므로 안전하게 처리
       final dynamic rawAlarmId = inputData?['alarmId'];
-      final int alarmId =
-          rawAlarmId is int
-              ? rawAlarmId
-              : (rawAlarmId is String ? int.tryParse(rawAlarmId) ?? 0 : 0);
+      final int alarmId = rawAlarmId is int
+          ? rawAlarmId
+          : (rawAlarmId is String ? int.tryParse(rawAlarmId) ?? 0 : 0);
 
       final String stationId = inputData?['stationId'] ?? '';
 
       // remainingMinutes도 안전하게 처리
       final dynamic rawMinutes = inputData?['remainingMinutes'];
-      final int remainingMinutes =
-          rawMinutes is int
-              ? rawMinutes
-              : (rawMinutes is String ? int.tryParse(rawMinutes) ?? 3 : 3);
+      final int remainingMinutes = rawMinutes is int
+          ? rawMinutes
+          : (rawMinutes is String ? int.tryParse(rawMinutes) ?? 3 : 3);
 
       logMessage(
         "📱 작업 파라미터: busNo=$busNo, stationName=$stationName, routeId=$routeId",
@@ -407,7 +405,7 @@ Future<bool> _handleAutoAlarmTask({
         try {
           await SimpleTTSHelper.initialize();
           await SimpleTTSHelper.speak(
-            "$busNo번 버스가 약 $actualRemainingMinutes분 후 도착 예정입니다.",
+            getBusArrivalMessage(busNo, actualRemainingMinutes),
           );
           logMessage("🔊 백업 TTS 발화 성공");
         } catch (fallbackError) {
@@ -521,8 +519,7 @@ Future<bool> _handleTTSRepeatingTask({
 
       // 버스 정보 캐시에 업데이트할 필요가 있는 경우
       // BusArrival의 BusInfo로 변환해서 전달
-      final remainingTime =
-          int.tryParse(
+      final remainingTime = int.tryParse(
             busInfoFromApi.estimatedTime.replaceAll(RegExp(r'[^0-9]'), ''),
           ) ??
           0;
@@ -694,7 +691,7 @@ Future<void> _speakAlarm(
     if (remainingMinutes <= 0) {
       message = "$busNo번 버스가 $stationName 정류장에 곧 도착합니다. 탑승 준비하세요.";
     } else {
-      message = "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.";
+      message = getBusArrivalMessage(busNo, remainingMinutes);
     }
 
     // 볼륨 최대화 및 스피커 모드 설정

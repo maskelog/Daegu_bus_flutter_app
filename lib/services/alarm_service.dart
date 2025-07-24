@@ -1822,7 +1822,7 @@ class AlarmService extends ChangeNotifier {
 
           // 🎧 일반 알람은 이어폰 연결 시에만 TTS 발화 (earphoneOnly: true)
           final success = await SimpleTTSHelper.speak(
-            "$busNo번 버스가 $remainingMinutes분 후 도착 예정입니다.",
+            "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.",
             earphoneOnly: true, // 🎧 일반 알람은 이어폰 전용 모드 - 이어폰 연결 시에만 TTS 발화
           );
 

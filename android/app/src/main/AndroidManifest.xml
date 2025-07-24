@@ -81,6 +81,11 @@
                 <action android:name="com.example.daegu_bus_app.AUTO_ALARM" />
             </intent-filter>
         </receiver>
+        <receiver android:name=".receivers.NotificationCancelReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.daegu_bus_app.ACTION_NOTIFICATION_CANCEL" />
+            </intent-filter>
+        </receiver>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

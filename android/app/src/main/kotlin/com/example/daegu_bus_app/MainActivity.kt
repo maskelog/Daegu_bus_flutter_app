@@ -791,16 +791,15 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 this, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                             ) else null
 
-                            // Cancel action - 간단한 알림 해제용 (MainActivity로 직접 전달)
-                            val cancelIntent = Intent(this, MainActivity::class.java).apply {
-                                action = "cancel_alarm"
-                                putExtra("alarm_id", id)
+                            // Cancel action - Manifest 등록 브로드캐스트로 통일
+                            val cancelIntent = Intent("com.example.daegu_bus_app.ACTION_NOTIFICATION_CANCEL").apply {
+                                putExtra("routeId", routeId)
                                 putExtra("busNo", busNo)
                                 putExtra("stationName", stationName)
-                                putExtra("routeId", routeId)
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                putExtra("notificationId", id)
+                                putExtra("isAutoAlarm", isAutoAlarm)
                             }
-                            val cancelPendingIntent = PendingIntent.getActivity(
+                            val cancelPendingIntent = PendingIntent.getBroadcast(
                                 this, id + 1000, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                             )
 
@@ -1514,6 +1513,10 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 initializeEssentialComponents()
             }
 
+            // 알람 취소 브로드캐스트 리시버 등록
+            val filter = IntentFilter("cancel_alarm")
+            registerReceiver(alarmCancelReceiver, filter)
+
         } catch (e: Exception) {
             Log.e(TAG, "❌ MainActivity onCreate 오류: ${e.message}", e)
         }
@@ -1723,6 +1726,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             // 브로드캠스트 리시버 해제
             unregisterAlarmCancelReceiver()
 
+            // 알람 취소 브로드캐스트 리시버 해제
+            unregisterReceiver(alarmCancelReceiver)
+
             super.onDestroy()
         } catch (e: Exception) {
             Log.e(TAG, "onDestroy 오류: ${e.message}", e)
@@ -1929,7 +1935,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val action = intent.action
-        if (action != null) {
+        if (action != null && action != "cancel_alarm") {
             handleNotificationAction(action, intent)
         }
     }

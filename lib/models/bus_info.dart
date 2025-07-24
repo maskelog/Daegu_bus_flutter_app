@@ -20,6 +20,8 @@ class BusInfo {
   /// 운행종료 여부
   final bool isOutOfService;
 
+  final String? busTCd2;
+
   /// 생성자
   BusInfo({
     required this.busNumber,
@@ -28,6 +30,7 @@ class BusInfo {
     required this.estimatedTime,
     this.isLowFloor = false,
     this.isOutOfService = false,
+    this.busTCd2,
   });
 
   /// JSON에서 객체 생성
@@ -42,13 +45,15 @@ class BusInfo {
       outOfService = true;
     }
 
+    final String? busTCd2 = json['busTCd2']?.toString();
     return BusInfo(
       busNumber: json['busNumber'] ?? '',
       currentStation: json['currentStation'] ?? '',
       remainingStops: json['remainingStops'] ?? '0',
       estimatedTime: estTime,
-      isLowFloor: json['isLowFloor'] == true || json['busTCd2'] == '1',
+      isLowFloor: busTCd2 == 'D',
       isOutOfService: outOfService,
+      busTCd2: busTCd2,
     );
   }
 
@@ -80,6 +85,7 @@ class BusInfo {
       'estimatedTime': estimatedTime,
       'isLowFloor': isLowFloor,
       'isOutOfService': isOutOfService,
+      'busTCd2': busTCd2,
     };
   }
 
