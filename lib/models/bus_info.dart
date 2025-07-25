@@ -57,24 +57,7 @@ class BusInfo {
     );
   }
 
-  /// BusInfoData에서 객체 생성
-  factory BusInfo.fromBusInfoData(BusInfoData data) {
-    // 버스 번호에서 저상버스 정보 추출
-    bool isLowFloor = data.busNumber.contains('저상');
-    String busNumber = data.busNumber.replaceAll(RegExp(r'\(저상\)|\(일반\)'), '');
-
-    // 운행 종료 여부 확인
-    bool isOutOfService = data.estimatedTime == '운행종료';
-
-    return BusInfo(
-      busNumber: busNumber,
-      currentStation: data.currentStation,
-      remainingStops: data.remainingStations,
-      estimatedTime: data.estimatedTime,
-      isLowFloor: isLowFloor,
-      isOutOfService: isOutOfService,
-    );
-  }
+  
 
   /// JSON으로 변환
   Map<String, dynamic> toJson() {
