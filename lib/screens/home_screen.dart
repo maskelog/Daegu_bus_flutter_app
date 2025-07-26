@@ -4,20 +4,17 @@ import 'dart:developer';
 import 'package:daegu_bus_app/screens/alarm_screen.dart';
 import 'package:daegu_bus_app/screens/route_map_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
 import '../services/api_service.dart';
-import '../services/location_service.dart';
 import 'search_screen.dart';
 import 'favorites_screen.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
 import 'settings_screen.dart';
 import '../models/auto_alarm.dart';
 import '../models/bus_route.dart';
+import '../widgets/station_loading_widget.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -30,7 +27,6 @@ class _HomeScreenState extends State<HomeScreen>
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   bool _isLoading = true;
-  bool _isLoadingNearby = false;
   String? _errorMessage;
   Timer? _refreshTimer;
   final List<BusStop> _favoriteStops = [];
@@ -70,11 +66,9 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _initializeData() async {
     setState(() {
       _isLoading = true;
-      _isLoadingNearby = true;
       _errorMessage = null;
     });
     try {
-      await Future.wait([_loadFavoriteStops(), _loadNearbyStations()]);
       await _loadBusArrivals();
       _setupPeriodicRefresh();
     } catch (e) {
@@ -83,141 +77,34 @@ class _HomeScreenState extends State<HomeScreen>
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _isLoadingNearby = false;
         });
       }
     }
   }
 
-  Future<void> _loadFavoriteStops() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final favorites = prefs.getStringList('favorites') ?? [];
-      if (!mounted) return;
-      setState(() {
-        _favoriteStops.clear();
-        for (var json in favorites) {
-          final data = jsonDecode(json);
-          final stop = BusStop.fromJson(data);
-          _favoriteStops.add(stop);
-        }
-        if (_favoriteStops.isNotEmpty && _selectedStop == null) {
-          _selectedStop = _favoriteStops.first;
-        }
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _errorMessage = '즐겨찾기를 불러오는 중 오류가 발생했습니다.');
-    }
-  }
-
-  Future<void> _loadNearbyStations() async {
+  void _onNearbyStopsLoaded(List<BusStop> nearbyStops) {
     setState(() {
-      _isLoadingNearby = true;
-      _errorMessage = null;
+      _nearbyStops = nearbyStops;
     });
-    try {
-      final status = await Permission.location.status;
-      if (!status.isGranted) {
-        final requestedStatus = await Permission.location.request();
-        if (!requestedStatus.isGranted) {
-          setState(() {
-            _isLoadingNearby = false;
-            _nearbyStops = [];
-          });
-          if (requestedStatus.isPermanentlyDenied && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('위치 권한이 영구적으로 거부되었습니다. 앱 설정에서 허용해주세요.'),
-                action:
-                    SnackBarAction(label: '설정 열기', onPressed: openAppSettings),
-              ),
-            );
-          }
-          return;
-        }
-      }
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        setState(() {
-          _isLoadingNearby = false;
-          _nearbyStops = [];
-          _errorMessage = '위치 서비스가 비활성화되어 있습니다. GPS를 켜주세요.';
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('위치 서비스(GPS)를 활성화해주세요.')),
-          );
-        }
-        return;
-      }
-      if (!mounted) return;
-      final nearbyStations =
-          await LocationService.getNearbyStations(500, context: context);
-      if (!mounted) return;
-      setState(() {
-        _nearbyStops = nearbyStations;
-        if (_nearbyStops.isNotEmpty && _selectedStop == null) {
-          _selectedStop = _nearbyStops.first;
-          _loadBusArrivals();
-        }
-      });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = '주변 정류장을 불러오는 중 오류 발생: ${e.toString()}';
-          _nearbyStops = [];
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoadingNearby = false);
-      }
-    }
   }
 
-  Future<void> _saveFavoriteStops() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final favorites =
-          _favoriteStops.map((stop) => jsonEncode(stop.toJson())).toList();
-      await prefs.setStringList('favorites', favorites);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('즐겨찾기 저장에 실패했습니다')));
-    }
-  }
-
-  void _toggleFavorite(BusStop stop) {
+  void _onFavoriteStopsLoaded(List<BusStop> favoriteStops) {
     setState(() {
-      if (_isStopFavorite(stop)) {
-        _favoriteStops.removeWhere((s) => s.id == stop.id);
-        if (_selectedStop?.id == stop.id) {
-          _selectedStop =
-              _favoriteStops.isNotEmpty ? _favoriteStops.first : null;
-          if (_selectedStop != null) {
-            _loadBusArrivals();
-          } else {
-            _busArrivals = [];
-          }
-        }
-      } else {
-        _favoriteStops.add(stop.copyWith(isFavorite: true));
-      }
+      _favoriteStops.clear();
+      _favoriteStops.addAll(favoriteStops);
     });
-    _saveFavoriteStops();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_isStopFavorite(stop)
-            ? '${stop.name} 정류장이 즐겨찾기에 추가되었습니다'
-            : '${stop.name} 정류장이 즐겨찾기에서 제거되었습니다'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
   }
 
-  bool _isStopFavorite(BusStop stop) =>
-      _favoriteStops.any((s) => s.id == stop.id);
+  void _onSelectedStopChanged(BusStop? selectedStop) {
+    setState(() {
+      _selectedStop = selectedStop;
+    });
+    if (selectedStop != null) {
+      _loadBusArrivals();
+    } else {
+      _busArrivals = [];
+    }
+  }
 
   Future<void> _loadBusArrivals() async {
     if (_selectedStop == null) {
@@ -329,14 +216,8 @@ class _HomeScreenState extends State<HomeScreen>
         : null;
   }
 
-  String _formatDistance(double? distance) {
-    if (distance == null) return '';
-    return distance < 1000
-        ? '${distance.round()}m'
-        : '${(distance / 1000).toStringAsFixed(1)}km';
-  }
-
-  Color _getBusColor(BuildContext context, BusArrival arrival, bool isLowFloor) {
+  Color _getBusColor(
+      BuildContext context, BusArrival arrival, bool isLowFloor) {
     final routeType = _routeTypeCache[arrival.routeId];
     if (routeType == BusRouteType.express || arrival.routeNo.contains('급행')) {
       return Colors.red;
@@ -460,11 +341,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildHomeTab() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Builder(
           builder: (context) {
-            final alarms =
-                Provider.of<AlarmService>(context).activeAlarms;
+            final alarms = Provider.of<AlarmService>(context).activeAlarms;
             return _buildAutoAlarmChips(alarms);
           },
         ),
@@ -476,12 +357,16 @@ class _HomeScreenState extends State<HomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildStopSelectionButtons(
-                      '주변 정류장', _getFilteredNearbyStops(),
-                      isNearby: true),
-                  _buildStopSelectionButtons(
-                      '즐겨찾는 정류장', _favoriteStops,
-                      isNearby: false),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: StationLoadingWidget(
+                      onNearbyStopsLoaded: _onNearbyStopsLoaded,
+                      onFavoriteStopsLoaded: _onFavoriteStopsLoaded,
+                      onSelectedStopChanged: _onSelectedStopChanged,
+                      selectedStop: _selectedStop,
+                      favoriteStops: _favoriteStops,
+                    ),
+                  ),
                   _buildMainStationCard(),
                 ],
               ),
@@ -514,115 +399,12 @@ class _HomeScreenState extends State<HomeScreen>
     return const AlarmScreen();
   }
 
-  Widget _buildStopSelectionButtons(String title, List<BusStop> stops,
-      {bool isNearby = false}) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onSurface,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (stops.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                isNearby ? '주변 정류장이 없습니다.' : '즐겨찾는 정류장이 없습니다.',
-                style: TextStyle(
-                    color: colorScheme.onSurfaceVariant, fontSize: 14),
-              ),
-            )
-          else if (isNearby)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: stops.map((stop) {
-                  final isSelected = _selectedStop?.id == stop.id;
-                  final label =
-                      '${stop.name} - ${_formatDistance(stop.distance)}';
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(
-                        label,
-                        style: TextStyle(
-                          color: isSelected
-                              ? colorScheme.onPrimary
-                              : colorScheme.onSurface,
-                          fontWeight:
-                              isSelected ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                      selected: isSelected,
-                      onSelected: (_) {
-                        setState(() => _selectedStop = stop);
-                        _loadBusArrivals();
-                      },
-                      selectedColor: colorScheme.primary,
-                      backgroundColor: colorScheme.surfaceContainerHighest,
-                      side: BorderSide(
-                        color: isSelected
-                            ? colorScheme.primary
-                            : colorScheme.outlineVariant,
-                        width: isSelected ? 2 : 1,
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            )
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: stops.map((stop) {
-                final isSelected = _selectedStop?.id == stop.id;
-                return ChoiceChip(
-                  label: Text(
-                    stop.name,
-                    style: TextStyle(
-                      color: isSelected
-                          ? colorScheme.onPrimary
-                          : colorScheme.onSurface,
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                  selected: isSelected,
-                  onSelected: (_) {
-                    setState(() => _selectedStop = stop);
-                    _loadBusArrivals();
-                  },
-                  selectedColor: colorScheme.primary,
-                  backgroundColor: colorScheme.surfaceContainerHighest,
-                  side: BorderSide(
-                    color: isSelected
-                        ? colorScheme.primary
-                        : colorScheme.outlineVariant,
-                    width: isSelected ? 2 : 1,
-                  ),
-                );
-              }).toList(),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAutoAlarmChips(List<dynamic> alarms) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(
+          horizontal: 16, vertical: 4), // vertical 패딩 축소
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -631,90 +413,108 @@ class _HomeScreenState extends State<HomeScreen>
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: colorScheme.onSurface,
-              fontSize: 18,
+              fontSize: 16, // 폰트 크기 축소
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4), // 간격 축소
           if (alarms.isEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(vertical: 4), // 패딩 축소
               child: Text('설정된 자동 알람이 없습니다.',
                   style: TextStyle(
-                      color: colorScheme.onSurfaceVariant, fontSize: 14)),
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 13)), // 폰트 크기 축소
             )
           else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: alarms.whereType<AutoAlarm>().map((alarm) {
-                final isSelected = _selectedStop?.name == alarm.stationName;
-                return ChoiceChip(
-                  label: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                          '${alarm.routeNo}  ${alarm.hour.toString().padLeft(2, '0')}:${alarm.minute.toString().padLeft(2, '0')}',
-                          style: TextStyle(
-                            color: isSelected
-                                ? colorScheme.onPrimary
-                                : colorScheme.onSurface,
-                            fontWeight: FontWeight.bold,
-                          )),
-                      Text(alarm.stationName,
-                          style: TextStyle(
-                            color: isSelected
-                                ? colorScheme.onPrimary
-                                : colorScheme.onSurface,
-                            fontSize: 13,
-                          )),
-                      Text(
-                        alarm.repeatDays
-                            .map((d) =>
-                                ["월", "화", "수", "목", "금", "토", "일"][d - 1])
-                            .join(","),
-                        style: TextStyle(
-                          color: isSelected
-                              ? colorScheme.onPrimary
-                              : colorScheme.onSurfaceVariant,
-                          fontSize: 12,
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: alarms.whereType<AutoAlarm>().map((alarm) {
+                    final isSelected =
+                        _selectedStop?.name == alarm.stationName;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6), // 간격 축소
+                      child: ChoiceChip(
+                        label: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start, // 왼쪽 정렬
+                          mainAxisSize: MainAxisSize.min, // 최소 크기로 설정
+                          children: [
+                            Text(
+                                '${alarm.routeNo}  ${alarm.hour.toString().padLeft(2, '0')}:${alarm.minute.toString().padLeft(2, '0')}',
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? colorScheme.onPrimary
+                                      : colorScheme.onSurface,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12, // 폰트 크기 축소
+                                )),
+                            Text(alarm.stationName,
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? colorScheme.onPrimary
+                                      : colorScheme.onSurface,
+                                  fontSize: 11, // 폰트 크기 축소
+                                )),
+                            Text(
+                              alarm.repeatDays
+                                  .map((d) =>
+                                      ["월", "화", "수", "목", "금", "토", "일"][d - 1])
+                                  .join(","),
+                              style: TextStyle(
+                                color: isSelected
+                                    ? colorScheme.onPrimary
+                                    : colorScheme.onSurfaceVariant,
+                                fontSize: 10, // 폰트 크기 축소
+                              ),
+                            ),
+                          ],
                         ),
+                        selected: isSelected,
+                        onSelected: (_) {
+                          final stops = [..._favoriteStops, ..._nearbyStops];
+                          final match = stops.firstWhere(
+                            (s) => s.name == alarm.stationName,
+                            orElse: () => BusStop(
+                                id: alarm.stationId,
+                                name: alarm.stationName,
+                                isFavorite: false),
+                          );
+                          setState(() => _selectedStop = match);
+                          _loadBusArrivals();
+                        },
+                        selectedColor: colorScheme.primary,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        side: BorderSide(
+                          color: isSelected
+                              ? colorScheme.primary
+                              : colorScheme.outlineVariant,
+                          width: isSelected ? 2 : 1,
+                        ),
+                        labelPadding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2), // 패딩 축소
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 2, vertical: 1), // 패딩 축소
+                        showCheckmark: false, // 체크 아이콘 제거
                       ),
-                    ],
-                  ),
-                  selected: isSelected,
-                  onSelected: (_) {
-                    final stops = [..._favoriteStops, ..._nearbyStops];
-                    final match = stops.firstWhere(
-                      (s) => s.name == alarm.stationName,
-                      orElse: () => BusStop(
-                          id: alarm.stationId,
-                          name: alarm.stationName,
-                          isFavorite: false),
                     );
-                    setState(() => _selectedStop = match);
-                    _loadBusArrivals();
-                  },
-                  selectedColor: colorScheme.primary,
-                  backgroundColor: colorScheme.surfaceContainerHighest,
-                  side: BorderSide(
-                    color: isSelected
-                        ? colorScheme.primary
-                        : colorScheme.outlineVariant,
-                    width: isSelected ? 2 : 1,
-                  ),
-                );
-              }).toList(),
+                  }).toList(),
+                ),
+              ),
             ),
         ],
       ),
     );
   }
 
-  List<BusStop> _getFilteredNearbyStops() {
-    final favoriteStopIds = _favoriteStops.map((stop) => stop.id).toSet();
-    return _nearbyStops
-        .where((stop) => !favoriteStopIds.contains(stop.id))
-        .toList();
+  bool _isStopFavorite(BusStop stop) =>
+      _favoriteStops.any((s) => s.id == stop.id);
+
+  void _toggleFavorite(BusStop stop) {
+    // 이 메서드는 StationLoadingWidget에서 처리되므로 여기서는 빈 구현
   }
 
   Widget _buildMainStationCard() {
@@ -776,212 +576,224 @@ class _HomeScreenState extends State<HomeScreen>
             else if (_busArrivals.isEmpty)
               const Text('도착 예정 버스가 없습니다.')
             else
-              Column(
-                children: _busArrivals.asMap().entries.map((entry) {
-                  final idx = entry.key;
-                  final arrival = entry.value;
-                  final bus = arrival.firstBus;
-                  if (bus == null) return const SizedBox.shrink();
-                  final minutes = bus.getRemainingMinutes();
-                  final isLowFloor = bus.isLowFloor;
-                  final isOutOfService = bus.isOutOfService;
-                  String timeText;
-                  if (isOutOfService) {
-                    timeText = '운행종료';
-                  } else if (minutes <= 0) {
-                    timeText = '곧 도착';
-                  } else {
-                    timeText = '$minutes분 후 도착';
-                  }
-                  final stopsText =
-                      !isOutOfService ? '${bus.remainingStops}개 전' : '';
-                  final isSoon = !isOutOfService && minutes <= 1;
-                  final isWarning =
-                      !isOutOfService && minutes > 1 && minutes <= 3;
-                  final routeNo = arrival.routeNo;
-                  final routeId = arrival.routeId;
-                  final stationName = _selectedStop?.name ?? '';
-                  return Column(
-                    children: [
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _expandedBusIndex =
-                                _expandedBusIndex == idx ? null : idx;
-                          });
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: colorScheme.surface,
-                            borderRadius: BorderRadius.circular(14),
-                            border:
-                                Border.all(color: colorScheme.outlineVariant),
-                          ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  _getBusColor(context, arrival, isLowFloor),
-                              child: Text(
-                                arrival.routeNo,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize:
-                                      arrival.routeNo.length > 4 ? 13 : 16,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+              SizedBox(
+                height: 400, // 고정 높이로 설정하여 더 많은 버스 표시
+                child: ListView.builder(
+                  itemCount: _busArrivals.length,
+                  itemBuilder: (context, idx) {
+                    final arrival = _busArrivals[idx];
+                    final bus = arrival.firstBus;
+                    if (bus == null) return const SizedBox.shrink();
+
+                    final minutes = bus.getRemainingMinutes();
+                    final isLowFloor = bus.isLowFloor;
+                    final isOutOfService = bus.isOutOfService;
+                    String timeText;
+                    if (isOutOfService) {
+                      timeText = '운행종료';
+                    } else if (minutes <= 0) {
+                      timeText = '곧 도착';
+                    } else {
+                      timeText = '$minutes분 후 도착';
+                    }
+                    final stopsText =
+                        !isOutOfService ? '${bus.remainingStops}개 전' : '';
+                    final isSoon = !isOutOfService && minutes <= 1;
+                    final isWarning =
+                        !isOutOfService && minutes > 1 && minutes <= 3;
+                    final routeNo = arrival.routeNo;
+                    final routeId = arrival.routeId;
+                    final stationName = _selectedStop?.name ?? '';
+
+                    return Column(
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _expandedBusIndex =
+                                  _expandedBusIndex == idx ? null : idx;
+                            });
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8), // 마진 축소
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              borderRadius: BorderRadius.circular(12), // 반지름 축소
+                              border:
+                                  Border.all(color: colorScheme.outlineVariant),
                             ),
-                            title: Row(
-                              children: [
-                                Text(
-                                  timeText,
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6), // 패딩 축소
+                              leading: CircleAvatar(
+                                radius: 18, // 크기 축소
+                                backgroundColor:
+                                    _getBusColor(context, arrival, isLowFloor),
+                                child: Text(
+                                  arrival.routeNo,
                                   style: TextStyle(
-                                    color: isOutOfService
-                                        ? colorScheme.onSurfaceVariant
-                                        : isSoon
-                                            ? colorScheme.error
-                                            : isWarning
-                                                ? colorScheme.tertiary
-                                                : colorScheme.onSurface,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 16,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: arrival.routeNo.length > 4
+                                        ? 12
+                                        : 14, // 폰트 크기 축소
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                if (stopsText.isNotEmpty) ...[
-                                  const SizedBox(width: 8),
-                                  Text(stopsText,
+                              ),
+                              title: Row(
+                                children: [
+                                  Text(
+                                    timeText,
+                                    style: TextStyle(
+                                      color: isOutOfService
+                                          ? colorScheme.onSurfaceVariant
+                                          : isSoon
+                                              ? colorScheme.error
+                                              : isWarning
+                                                  ? colorScheme.tertiary
+                                                  : colorScheme.onSurface,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15, // 폰트 크기 축소
+                                    ),
+                                  ),
+                                  if (stopsText.isNotEmpty) ...[
+                                    const SizedBox(width: 6), // 간격 축소
+                                    Text(stopsText,
+                                        style: TextStyle(
+                                            color: colorScheme.onSurfaceVariant,
+                                            fontSize: 12)), // 폰트 크기 축소
+                                  ],
+                                  if (isLowFloor)
+                                    const Icon(Icons.accessible,
+                                        size: 16,
+                                        color: Colors.blue), // 아이콘 크기 축소
+                                ],
+                              ),
+                              subtitle: bus.currentStation.isNotEmpty
+                                  ? Text('현재 위치: ${bus.currentStation}',
                                       style: TextStyle(
                                           color: colorScheme.onSurfaceVariant,
-                                          fontSize: 13)),
-                                ],
-                                if (isLowFloor)
-                                  Icon(Icons.accessible,
-                                      size: 18, color: Colors.blue),
-                              ],
-                            ),
-                            subtitle: bus.currentStation.isNotEmpty
-                                ? Text('현재 위치: ${bus.currentStation}',
-                                    style: TextStyle(
-                                        color: colorScheme.onSurfaceVariant,
-                                        fontSize: 12))
-                                : null,
-                            trailing: Selector<AlarmService, bool>(
-                              selector: (context, alarmService) => alarmService
-                                  .hasAlarm(routeNo, stationName, routeId),
-                              builder: (context, hasAlarm, child) {
-                                return IconButton(
-                                  icon: Icon(
-                                    hasAlarm
-                                        ? Icons.notifications_active
-                                        : Icons.notifications_none,
-                                    color: hasAlarm
-                                        ? colorScheme.primary
-                                        : colorScheme.onSurfaceVariant,
-                                  ),
-                                  tooltip: hasAlarm ? '알람 해제' : '승차 알람',
-                                  onPressed: () async {
-                                    final alarmService =
-                                        Provider.of<AlarmService>(context,
-                                            listen: false);
-                                    try {
-                                      if (hasAlarm) {
-                                        await alarmService.cancelAlarmByRoute(
-                                            routeNo, stationName, routeId);
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                                content: Text(
-                                                    '$routeNo번 버스 알람이 해제되었습니다')),
-                                          );
-                                        }
-                                      } else {
-                                        if (minutes <= 0) {
+                                          fontSize: 11)) // 폰트 크기 축소
+                                  : null,
+                              trailing: Selector<AlarmService, bool>(
+                                selector: (context, alarmService) =>
+                                    alarmService.hasAlarm(
+                                        routeNo, stationName, routeId),
+                                builder: (context, hasAlarm, child) {
+                                  return IconButton(
+                                    icon: Icon(
+                                      hasAlarm
+                                          ? Icons.notifications_active
+                                          : Icons.notifications_none,
+                                      color: hasAlarm
+                                          ? colorScheme.primary
+                                          : colorScheme.onSurfaceVariant,
+                                      size: 20, // 아이콘 크기 축소
+                                    ),
+                                    tooltip: hasAlarm ? '알람 해제' : '승차 알람',
+                                    onPressed: () async {
+                                      final alarmService =
+                                          Provider.of<AlarmService>(context,
+                                              listen: false);
+                                      try {
+                                        if (hasAlarm) {
+                                          await alarmService.cancelAlarmByRoute(
+                                              routeNo, stationName, routeId);
                                           if (mounted) {
                                             ScaffoldMessenger.of(context)
                                                 .showSnackBar(
-                                              const SnackBar(
+                                              SnackBar(
                                                   content: Text(
-                                                      '버스가 이미 도착했거나 곧 도착합니다')),
+                                                      '$routeNo번 버스 알람이 해제되었습니다')),
                                             );
                                           }
-                                          return;
+                                        } else {
+                                          if (minutes <= 0) {
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                const SnackBar(
+                                                    content: Text(
+                                                        '버스가 이미 도착했거나 곧 도착합니다')),
+                                              );
+                                            }
+                                            return;
+                                          }
+                                          await alarmService.setOneTimeAlarm(
+                                            routeNo,
+                                            stationName,
+                                            minutes,
+                                            routeId: routeId,
+                                            useTTS: true,
+                                            isImmediateAlarm: true,
+                                            currentStation: bus.currentStation,
+                                          );
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                  content: Text(
+                                                      '$routeNo번 버스 알람이 설정되었습니다')),
+                                            );
+                                          }
                                         }
-                                        await alarmService.setOneTimeAlarm(
-                                          routeNo,
-                                          stationName,
-                                          minutes,
-                                          routeId: routeId,
-                                          useTTS: true,
-                                          isImmediateAlarm: true,
-                                          currentStation: bus.currentStation,
-                                        );
+                                      } catch (e) {
                                         if (mounted) {
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(
                                             SnackBar(
                                                 content: Text(
-                                                    '$routeNo번 버스 알람이 설정되었습니다')),
+                                                    '알람 처리 중 오류가 발생했습니다: $e')),
                                           );
                                         }
                                       }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                              content: Text(
-                                                  '알람 처리 중 오류가 발생했습니다: $e')),
-                                        );
-                                      }
-                                    }
-                                  },
-                                );
-                              },
+                                    },
+                                  );
+                                },
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      if (_expandedBusIndex == idx)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(12),
-                            border:
-                                Border.all(color: colorScheme.outlineVariant),
+                        if (_expandedBusIndex == idx)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8), // 패딩 축소
+                            margin: const EdgeInsets.only(bottom: 8), // 마진 축소
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(8), // 반지름 축소
+                              border:
+                                  Border.all(color: colorScheme.outlineVariant),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (arrival.secondBus != null)
+                                  Row(
+                                    children: [
+                                      Icon(Icons.directions_bus,
+                                          size: 14,
+                                          color:
+                                              colorScheme.primary), // 아이콘 크기 축소
+                                      const SizedBox(width: 4), // 간격 축소
+                                      Text(
+                                        '다음차: ${arrival.getSecondArrivalTimeText()}',
+                                        style: TextStyle(
+                                            fontSize: 13, // 폰트 크기 축소
+                                            color: colorScheme.onSurface),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (arrival.secondBus != null)
-                                Row(
-                                  children: [
-                                    Icon(Icons.directions_bus,
-                                        size: 16, color: colorScheme.primary),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '다음차: ${arrival.getSecondArrivalTimeText()}',
-                                      style: TextStyle(
-                                          fontSize: 14,
-                                          color: colorScheme.onSurface),
-                                    ),
-                                  ],
-                                ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  );
-                }).toList(),
+                      ],
+                    );
+                  },
+                ),
               ),
           ],
         ),
