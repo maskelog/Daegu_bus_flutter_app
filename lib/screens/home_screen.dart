@@ -420,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen>
           if (alarms.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4), // 패딩 축소
-              child: Text('설정된 자동 알람이 없습니다.',
+              child: Text('설정된 알람이 없습니다.',
                   style: TextStyle(
                       color: colorScheme.onSurfaceVariant,
                       fontSize: 13)), // 폰트 크기 축소
@@ -434,8 +434,7 @@ class _HomeScreenState extends State<HomeScreen>
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: alarms.whereType<AutoAlarm>().map((alarm) {
-                    final isSelected =
-                        _selectedStop?.name == alarm.stationName;
+                    final isSelected = _selectedStop?.name == alarm.stationName;
                     return Padding(
                       padding: const EdgeInsets.only(right: 6), // 간격 축소
                       child: ChoiceChip(
@@ -461,8 +460,15 @@ class _HomeScreenState extends State<HomeScreen>
                                 )),
                             Text(
                               alarm.repeatDays
-                                  .map((d) =>
-                                      ["월", "화", "수", "목", "금", "토", "일"][d - 1])
+                                  .map((d) => [
+                                        "월",
+                                        "화",
+                                        "수",
+                                        "목",
+                                        "금",
+                                        "토",
+                                        "일"
+                                      ][d - 1])
                                   .join(","),
                               style: TextStyle(
                                 color: isSelected
