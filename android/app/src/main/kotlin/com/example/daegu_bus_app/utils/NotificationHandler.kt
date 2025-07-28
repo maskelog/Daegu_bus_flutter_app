@@ -114,7 +114,7 @@ class NotificationHandler(private val context: Context) {
     // 알림 종료 브로드캐스트 리시버 등록 (앱 시작 시 1회만 등록 필요)
     init {
         try {
-            val filter = IntentFilter("com.example.daegu_bus_app.ACTION_NOTIFICATION_CANCEL")
+            val filter = IntentFilter(BusAlertService.ACTION_STOP_TRACKING)
             context.registerReceiver(NotificationCancelReceiver(), filter)
         } catch (e: Exception) {
             Log.e(TAG, "NotificationCancelReceiver 등록 오류: ${e.message}", e)
@@ -130,7 +130,7 @@ class NotificationHandler(private val context: Context) {
             Log.i(TAG, "[BR] 알림 종료 브로드캐스트 수신: $busNo, $routeId, $stationName")
             // BusAlertService에 종료 인텐트 전달
             val stopIntent = Intent(context, BusAlertService::class.java).apply {
-                action = BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+                action = BusAlertService.ACTION_STOP_TRACKING
                 putExtra("routeId", routeId)
                 putExtra("busNo", busNo)
                 putExtra("stationName", stationName)
@@ -148,14 +148,20 @@ class NotificationHandler(private val context: Context) {
         notificationId: Int,
         isAutoAlarm: Boolean = false
     ): PendingIntent {
-        val cancelIntent = Intent("com.example.daegu_bus_app.ACTION_NOTIFICATION_CANCEL").apply {
+        val cancelIntent = Intent(context, BusAlertService::class.java).apply {
+            action = if (isAutoAlarm) {
+                BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+            } else {
+                BusAlertService.ACTION_STOP_TRACKING
+            }
             putExtra("routeId", routeId)
             putExtra("busNo", busNo)
             putExtra("stationName", stationName)
             putExtra("notificationId", notificationId)
             putExtra("isAutoAlarm", isAutoAlarm)
+            putExtra("shouldRemoveFromList", true) // 개별 알람은 목록에서 제거
         }
-        return PendingIntent.getBroadcast(
+        return PendingIntent.getService(
             context, notificationId, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
@@ -278,7 +284,7 @@ class NotificationHandler(private val context: Context) {
             .addAction(
                 R.drawable.ic_stop_tracking,
                 "추적 중지",
-                createCancelBroadcastPendingIntent(null, null, null, ONGOING_NOTIFICATION_ID, false)
+                createStopPendingIntent()
             )
             .build()
 
@@ -540,6 +546,25 @@ class NotificationHandler(private val context: Context) {
              }, 500)
          } catch (e: Exception) {
              Log.e(TAG, "Error cancelling ongoing tracking notification: ${e.message}", e)
+         }
+     }
+
+     fun cancelBusTrackingNotification(routeId: String, busNo: String, stationName: String, isAutoAlarm: Boolean) {
+         Log.d(TAG, "Request to cancel bus tracking notification: Route=$routeId, Bus=$busNo, Station=$stationName")
+         try {
+             // 특정 노선 추적 알림 취소
+             val systemNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+             
+             // ONGOING_NOTIFICATION_ID 취소
+             systemNotificationManager.cancel(ONGOING_NOTIFICATION_ID)
+             
+             // NotificationManagerCompat으로도 취소
+             val notificationManager = NotificationManagerCompat.from(context)
+             notificationManager.cancel(ONGOING_NOTIFICATION_ID)
+             
+             Log.d(TAG, "Bus tracking notification cancelled: Route=$routeId, Bus=$busNo")
+         } catch (e: Exception) {
+             Log.e(TAG, "Error cancelling bus tracking notification: ${e.message}")
          }
      }
 

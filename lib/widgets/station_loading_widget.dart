@@ -152,50 +152,6 @@ class _StationLoadingWidgetState extends State<StationLoadingWidget> {
     }
   }
 
-  Future<void> _saveFavoriteStops(List<BusStop> favoriteStops) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final favorites =
-          favoriteStops.map((stop) => jsonEncode(stop.toJson())).toList();
-      await prefs.setStringList('favorites', favorites);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('즐겨찾기 저장에 실패했습니다')),
-      );
-    }
-  }
-
-  void _toggleFavorite(BusStop stop, List<BusStop> currentFavorites) {
-    final newFavorites = List<BusStop>.from(currentFavorites);
-
-    if (_isStopFavorite(stop, currentFavorites)) {
-      newFavorites.removeWhere((s) => s.id == stop.id);
-      if (widget.selectedStop?.id == stop.id) {
-        final newSelectedStop =
-            newFavorites.isNotEmpty ? newFavorites.first : null;
-        widget.onSelectedStopChanged(newSelectedStop);
-      }
-    } else {
-      newFavorites.add(stop.copyWith(isFavorite: true));
-    }
-
-    widget.onFavoriteStopsLoaded(newFavorites);
-    _saveFavoriteStops(newFavorites);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_isStopFavorite(stop, newFavorites)
-            ? '${stop.name} 정류장이 즐겨찾기에 추가되었습니다'
-            : '${stop.name} 정류장이 즐겨찾기에서 제거되었습니다'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-
-  bool _isStopFavorite(BusStop stop, List<BusStop> favorites) =>
-      favorites.any((s) => s.id == stop.id);
-
   String _formatDistance(double? distance) {
     if (distance == null) return '';
     return distance < 1000
@@ -302,8 +258,9 @@ class _StationLoadingWidgetState extends State<StationLoadingWidget> {
                             color: isSelected
                                 ? colorScheme.onPrimary
                                 : colorScheme.onSurface,
-                            fontWeight:
-                                isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                             fontSize: 12, // 폰트 크기 축소
                           ),
                         ),
@@ -349,8 +306,9 @@ class _StationLoadingWidgetState extends State<StationLoadingWidget> {
                             color: isSelected
                                 ? colorScheme.onPrimary
                                 : colorScheme.onSurface,
-                            fontWeight:
-                                isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                             fontSize: 12, // 폰트 크기 축소
                           ),
                         ),

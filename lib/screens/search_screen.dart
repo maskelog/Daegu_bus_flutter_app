@@ -545,7 +545,6 @@ class _StationItemWrapper extends StatefulWidget {
     required this.arrivals,
     required this.onSelect,
     required this.onFavoriteToggle,
-    super.key,
   });
 
   @override

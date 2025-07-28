@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import '../models/bus_stop.dart';
-import '../models/alarm_sound.dart';
+
 import '../models/auto_alarm.dart';
 import '../services/alarm_service.dart';
 import '../services/settings_service.dart';
@@ -24,7 +24,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
   final bool _isLoading = false;
   final List<String> _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
   late SettingsService _settingsService;
-  Set<int> _selectedAlarms = {}; // 선택된 알람 인덱스
+  final Set<int> _selectedAlarms = {}; // 선택된 알람 인덱스
   bool _selectionMode = false; // 선택 모드 상태
 
   @override
@@ -149,59 +149,27 @@ class _AlarmScreenState extends State<AlarmScreen> {
     }
   }
 
-  void _deleteAutoAlarm(int index) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+  void _toggleAutoAlarm(int index) async {
+    // async 추가
+    final alarmService = Provider.of<AlarmService>(context, listen: false);
+    final currentAlarm = _autoAlarms[index];
+    final newIsActive = !currentAlarm.isActive;
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: colorScheme.surface,
-        title: Text(
-          '자동 알림 삭제',
-          style: theme.textTheme.headlineSmall?.copyWith(
-            color: colorScheme.onSurface,
-          ),
-        ),
-        content: Text(
-          '이 자동 알림 설정을 삭제하시겠습니까?',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              '취소',
-              style: TextStyle(color: colorScheme.primary),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              setState(() {
-                _autoAlarms.removeAt(index);
-                _saveAutoAlarms();
-              });
-            },
-            child: Text(
-              '삭제',
-              style: TextStyle(color: colorScheme.error),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _toggleAutoAlarm(int index) {
     setState(() {
-      _autoAlarms[index] = _autoAlarms[index].copyWith(
-        isActive: !_autoAlarms[index].isActive,
+      _autoAlarms[index] = currentAlarm.copyWith(
+        isActive: newIsActive,
       );
-      _saveAutoAlarms();
     });
+
+    if (!newIsActive) {
+      // 알람이 비활성화될 때만 네이티브 중지 요청
+      await alarmService.stopAutoAlarm(
+        currentAlarm.routeNo,
+        currentAlarm.stationName,
+        currentAlarm.routeId,
+      );
+    }
+    _saveAutoAlarms(); // 상태 저장
   }
 
   void _toggleSelectAlarm(int index) {
@@ -229,12 +197,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
     });
   }
 
-  void _selectAllAlarms() {
-    setState(() {
-      _selectedAlarms = Set.from(List.generate(_autoAlarms.length, (i) => i));
-    });
-  }
-
   void _activateSelectedAlarms() {
     setState(() {
       for (var idx in _selectedAlarms) {
@@ -246,7 +208,21 @@ class _AlarmScreenState extends State<AlarmScreen> {
     });
   }
 
-  void _deleteSelectedAlarms() {
+  void _deleteSelectedAlarms() async {
+    // async 추가
+    final alarmService = Provider.of<AlarmService>(context, listen: false);
+    final alarmsToDelete = _autoAlarms
+        .where((alarm) => _selectedAlarms.contains(_autoAlarms.indexOf(alarm)))
+        .toList();
+
+    for (var alarm in alarmsToDelete) {
+      await alarmService.stopAutoAlarm(
+        alarm.routeNo,
+        alarm.stationName,
+        alarm.routeId,
+      );
+    }
+
     setState(() {
       _autoAlarms.removeWhere(
           (alarm) => _selectedAlarms.contains(_autoAlarms.indexOf(alarm)));
@@ -254,6 +230,28 @@ class _AlarmScreenState extends State<AlarmScreen> {
       _selectedAlarms.clear();
       _selectionMode = false;
     });
+  }
+
+  String _getRepeatDaysText(AutoAlarm alarm) {
+    if (alarm.repeatDays.isEmpty) return '반복 안함';
+    if (alarm.repeatDays.length == 7) return '매일';
+    if (alarm.repeatDays.length == 5 &&
+        alarm.repeatDays.every((day) => [1, 2, 3, 4, 5].contains(day))) {
+      return '평일 (월-금)';
+    }
+    if (alarm.repeatDays.length == 2 &&
+        alarm.repeatDays.every((day) => [6, 7].contains(day))) {
+      return '주말 (토,일)';
+    }
+    final days = alarm.repeatDays.map((day) => _weekdays[day - 1]).join(', ');
+    return '매주 $days요일';
+  }
+
+  String _getExcludeText(AutoAlarm alarm) {
+    List<String> excludes = [];
+    if (alarm.excludeWeekends) excludes.add('주말 제외');
+    if (alarm.excludeHolidays) excludes.add('공휴일 제외');
+    return excludes.join(', ');
   }
 
   @override
@@ -424,7 +422,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                               onTap: _selectionMode
                                                   ? () =>
                                                       _toggleSelectAlarm(index)
-                                                  : null,
+                                                  : () => _editAutoAlarm(index),
                                               child: Card(
                                                 margin: const EdgeInsets.only(
                                                     bottom: 8),
@@ -448,7 +446,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                               colorScheme
                                                                   .primary,
                                                         ),
-                                                      // 버스 번호
                                                       Container(
                                                         margin: const EdgeInsets
                                                             .only(right: 12),
@@ -490,7 +487,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                           ],
                                                         ),
                                                       ),
-                                                      // 정류장
                                                       Expanded(
                                                         child: Column(
                                                           crossAxisAlignment:
@@ -573,7 +569,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                           ],
                                                         ),
                                                       ),
-                                                      // on/off 토글
                                                       Switch(
                                                         value: alarm.isActive,
                                                         onChanged: (_) =>
@@ -645,33 +640,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
         );
       },
     );
-  }
-
-  String _getRepeatDaysText(AutoAlarm alarm) {
-    if (alarm.repeatDays.isEmpty) return '반복 안함';
-    if (alarm.repeatDays.length == 7) return '매일';
-    if (alarm.repeatDays.length == 5 &&
-        alarm.repeatDays.contains(1) &&
-        alarm.repeatDays.contains(2) &&
-        alarm.repeatDays.contains(3) &&
-        alarm.repeatDays.contains(4) &&
-        alarm.repeatDays.contains(5)) {
-      return '평일 (월-금)';
-    }
-    if (alarm.repeatDays.length == 2 &&
-        alarm.repeatDays.contains(6) &&
-        alarm.repeatDays.contains(7)) {
-      return '주말 (토,일)';
-    }
-    final days = alarm.repeatDays.map((day) => _weekdays[day - 1]).join(', ');
-    return '매주 $days요일';
-  }
-
-  String _getExcludeText(AutoAlarm alarm) {
-    List<String> excludes = [];
-    if (alarm.excludeWeekends) excludes.add('주말 제외');
-    if (alarm.excludeHolidays) excludes.add('공휴일 제외');
-    return excludes.join(', ');
   }
 }
 
@@ -804,6 +772,40 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
       ),
     );
+  }
+
+  void _saveAlarm() {
+    if (_selectedStation == null || _selectedRouteId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('정류장과 노선을 모두 선택해주세요')),
+      );
+      return;
+    }
+
+    if (_repeatDays.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('반복 요일을 하나 이상 선택해주세요')),
+      );
+      return;
+    }
+
+    final alarm = AutoAlarm(
+      id: widget.autoAlarm?.id ??
+          DateTime.now().millisecondsSinceEpoch.toString(),
+      routeNo: _selectedRouteNo!,
+      stationName: _selectedStation!.name,
+      stationId: _selectedStation!.id,
+      routeId: _selectedRouteId!,
+      hour: _hour,
+      minute: _minute,
+      repeatDays: _repeatDays,
+      excludeWeekends: _excludeWeekends,
+      excludeHolidays: _excludeHolidays,
+      useTTS: _useTTS,
+      isActive: true,
+    );
+
+    Navigator.pop(context, alarm);
   }
 
   @override
@@ -1217,39 +1219,5 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
         ),
       ),
     );
-  }
-
-  void _saveAlarm() {
-    if (_selectedStation == null || _selectedRouteId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('정류장과 노선을 모두 선택해주세요')),
-      );
-      return;
-    }
-
-    if (_repeatDays.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('반복 요일을 하나 이상 선택해주세요')),
-      );
-      return;
-    }
-
-    final alarm = AutoAlarm(
-      id: widget.autoAlarm?.id ??
-          DateTime.now().millisecondsSinceEpoch.toString(),
-      routeNo: _selectedRouteNo!,
-      stationName: _selectedStation!.name,
-      stationId: _selectedStation!.id,
-      routeId: _selectedRouteId!,
-      hour: _hour,
-      minute: _minute,
-      repeatDays: _repeatDays,
-      excludeWeekends: _excludeWeekends,
-      excludeHolidays: _excludeHolidays,
-      useTTS: _useTTS,
-      isActive: true,
-    );
-
-    Navigator.pop(context, alarm);
   }
 }

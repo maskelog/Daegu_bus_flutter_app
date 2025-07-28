@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
 import 'package:provider/provider.dart';
-import 'package:workmanager/workmanager.dart';
+
 import 'screens/home_screen.dart';
 import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
@@ -526,38 +526,7 @@ class AppTheme {
   );
 }
 
-/// WorkManager 콜백 함수 (백그라운드에서 실행)
-@pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    try {
-      if (inputData == null) {
-        return Future.value(false);
-      }
 
-      final notificationService = NotificationService();
-      await notificationService.initialize();
-
-      final settingsService = SettingsService();
-      await settingsService.initialize();
-
-      // 백그라운드에서는 Provider를 사용할 수 없으므로 직접 생성 및 주입
-      final alarmService = AlarmService(
-          notificationService: notificationService,
-          settingsService: settingsService);
-      await alarmService.initialize();
-
-      final String busNo = inputData['busNo'] ?? 'N/A';
-      logMessage('백그라운드 작업 실행: $busNo', level: LogLevel.info);
-
-      // await alarmService.triggerAutoAlarm(autoAlarm);
-      return Future.value(true);
-    } catch (e) {
-      logMessage('WorkManager 작업 오류: $e', level: LogLevel.error);
-      return Future.value(false);
-    }
-  });
-}
 
 /// Android에서 온 이벤트를 처리하기 위한 MethodChannel 핸들러 설정
 void _setupMethodChannelHandlers() {
@@ -654,11 +623,7 @@ Future<void> main() async {
     // 모든 권한 요청
     await PermissionService.requestAllPermissions();
 
-    // WorkManager 초기화
-    await Workmanager().initialize(
-      callbackDispatcher,
-      isInDebugMode: kDebugMode,
-    );
+    
   }
 
   // 서비스 초기화

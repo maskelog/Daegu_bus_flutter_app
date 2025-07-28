@@ -4,7 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:workmanager/workmanager.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart' as xml;
 import '../models/auto_alarm.dart';
@@ -1238,13 +1238,7 @@ class AlarmService extends ChangeNotifier {
       final executionDelay =
           actualDelay.isNegative ? Duration.zero : actualDelay;
 
-      // 기존 작업 취소 확인 (WorkManager 작업만 취소)
-      try {
-        await Workmanager().cancelByUniqueName(uniqueAlarmId);
-        logMessage('기존 자동 알람 작업 취소 완료, ID: $uniqueAlarmId');
-      } catch (e) {
-        logMessage('기존 작업 취소 오류 (무시): $e', level: LogLevel.warning);
-      }
+      
 
       // 이제 WorkManager 대신 네이티브 AlarmManager를 통해 스케줄링
       // 즉시 실행 조건은 Flutter에서 먼저 판단하여 네이티브에 전달
@@ -1456,19 +1450,7 @@ class AlarmService extends ChangeNotifier {
         return; // 이미 지난 시간이면 등록 취소
       }
 
-      // 백업 알람도 네이티브 AlarmManager를 통해 스케줄링
-      await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
-        'alarmId': id, // 동일 ID 사용
-        'busNo': alarm.routeNo,
-        'stationName': alarm.stationName,
-        'routeId': alarm.routeId,
-        'stationId': alarm.stationId, // alarm 객체에서 stationId 사용
-        'useTTS': alarm.useTTS,
-        'hour': backupTime.hour,
-        'minute': backupTime.minute,
-        'repeatDays': alarm.repeatDays, // 동일 요일 반복 정보 전달
-        'isBackup': true, // 백업 알람임을 표시 (네이티브에서 활용)
-      });
+      
 
       logMessage('✅ 네이티브 백업 알람 스케줄링 요청 완료: ${alarm.routeNo} at $backupTime');
     } catch (e) {
@@ -1607,7 +1589,7 @@ class AlarmService extends ChangeNotifier {
       _refreshTimer = null;
 
       // 버스 모니터링 서비스 중지
-      await stopBusMonitoringService();
+      await _notificationService.cancelOngoingTracking();
 
       // 알림 취소
       await _notificationService.cancelOngoingTracking();
@@ -1897,15 +1879,7 @@ class AlarmService extends ChangeNotifier {
       logMessage('🐛 [DEBUG] 모든 추적 중지 요청: ${_activeAlarms.length}개');
 
       // 1. 네이티브 서비스 완전 중지
-      try {
-        await _methodChannel?.invokeMethod('stopBusTrackingService');
-        logMessage('✅ stopBusTrackingService 호출 완료', level: LogLevel.debug);
-      } catch (e) {
-        logMessage(
-          '⚠️ stopBusTrackingService 실패 (무시): $e',
-          level: LogLevel.warning,
-        );
-      }
+      await _notificationService.cancelOngoingTracking();
 
       // 2. TTS 추적 중지
       try {

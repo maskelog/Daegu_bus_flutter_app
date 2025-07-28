@@ -330,65 +330,27 @@ class NotificationService extends ChangeNotifier {
       stopAutoAlarmUpdates();
       logMessage('✅ 자동 알람 업데이트 타이머 중지', level: LogLevel.debug);
 
-      // 2. 기존 방식: 'cancelOngoingTracking' 메서드 호출
-      bool result = false;
+      // 2. 네이티브 서비스에 모든 추적 중지 요청 (가장 확실한 방법)
+      //    이 메서드는 네이티브에서 포그라운드 서비스, 알림, TTS 등을 모두 중지해야 함
       try {
-        result = await _channel.invokeMethod('cancelOngoingTracking');
-        logMessage('✅ 네이티브 cancelOngoingTracking 호출 완료', level: LogLevel.debug);
+        await _channel.invokeMethod('stopAllBusTracking'); // New or existing robust native method
+        logMessage('✅ 네이티브 stopAllBusTracking 호출 완료', level: LogLevel.debug);
       } catch (e) {
-        logMessage('⚠️ 네이티브 cancelOngoingTracking 호출 실패 (무시): $e',
+        logMessage('⚠️ 네이티브 stopAllBusTracking 호출 실패 (무시): $e',
             level: LogLevel.warning);
       }
 
-      // 3. 추가: 'stopStationTracking' 메서드 호출하여 정류장 추적 서비스도 확실하게 중지
-      try {
-        await const MethodChannel('com.example.daegu_bus_app/station_tracking')
-            .invokeMethod('stopStationTracking');
-        logMessage('✅ 정류장 추적 서비스 중지 요청 완료', level: LogLevel.debug);
-      } catch (e) {
-        logMessage('⚠️ 정류장 추적 서비스 중지 요청 중 오류: ${e.toString()}',
-            level: LogLevel.error);
-      }
-
-      // 4. 추가: 'stopBusTracking' 메서드 호출하여 버스 추적 서비스 중지
-      try {
-        await const MethodChannel('com.example.daegu_bus_app/bus_tracking')
-            .invokeMethod('stopBusTracking', {});
-        logMessage('✅ 버스 추적 서비스 중지 요청 완료', level: LogLevel.debug);
-      } catch (e) {
-        logMessage('⚠️ 버스 추적 서비스 중지 요청 중 오류: ${e.toString()}',
-            level: LogLevel.error);
-      }
-
-      // 5. 추가: 특정 네이티브 서비스들 강제 중지
-      try {
-        await _channel.invokeMethod('stopBusTrackingService');
-        logMessage('✅ stopBusTrackingService 호출 완료', level: LogLevel.debug);
-      } catch (e) {
-        logMessage('⚠️ stopBusTrackingService 호출 오류: ${e.toString()}',
-            level: LogLevel.error);
-      }
-
-      // 6. 추가: 강제 전체 중지
-      try {
-        await _channel.invokeMethod('forceStopTracking');
-        logMessage('✅ forceStopTracking 호출 완료', level: LogLevel.debug);
-      } catch (e) {
-        logMessage('⚠️ forceStopTracking 호출 오류: ${e.toString()}',
-            level: LogLevel.error);
-      }
-
-      // 7. 모든 알림 강제 취소
+      // 3. 모든 알림 강제 취소 (혹시 모를 잔여 알림 제거)
       try {
         await _channel.invokeMethod('cancelAllNotifications');
         logMessage('✅ 모든 알림 강제 취소 완료', level: LogLevel.debug);
       } catch (e) {
-        logMessage('⚠️ 모든 알림 강제 취소 오류 (무시): ${e.toString()}',
+        logMessage('⚠️ 모든 알림 강제 취소 오류 (무시): $e',
             level: LogLevel.warning);
       }
 
       logMessage('✅ 모든 지속적인 추적 알림 취소 완료', level: LogLevel.info);
-      return result;
+      return true; // Assuming success if no exceptions
     } on PlatformException catch (e) {
       logMessage('❌ 지속적인 추적 알림 취소 오류: ${e.message}', level: LogLevel.error);
       return false;

@@ -1,8 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:developer';
+
 import 'package:daegu_bus_app/screens/alarm_screen.dart';
-import 'package:daegu_bus_app/screens/route_map_screen.dart';
+import 'package:daegu_bus_app/screens/map_screen.dart';
 import 'package:flutter/material.dart';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
@@ -325,8 +324,8 @@ class _HomeScreenState extends State<HomeScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  const Center(child: Text('지도 탭 (구현 필요)')),
-                  _buildRouteMapTab(),
+                  const MapScreen(),
+                  _buildMapTab(),
                   _buildHomeTab(),
                   _buildAlarmTab(),
                   _buildFavoritesTab(),
@@ -377,8 +376,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildRouteMapTab() {
-    return const SafeArea(top: true, bottom: false, child: RouteMapScreen());
+  Widget _buildMapTab() {
+    return const SafeArea(top: true, bottom: false, child: MapScreen());
   }
 
   Widget _buildFavoritesTab() {
@@ -703,13 +702,14 @@ class _HomeScreenState extends State<HomeScreen>
                                       final alarmService =
                                           Provider.of<AlarmService>(context,
                                               listen: false);
+                                      final scaffoldMessenger =
+                                          ScaffoldMessenger.of(context);
                                       try {
                                         if (hasAlarm) {
                                           await alarmService.cancelAlarmByRoute(
                                               routeNo, stationName, routeId);
                                           if (mounted) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
+                                            scaffoldMessenger.showSnackBar(
                                               SnackBar(
                                                   content: Text(
                                                       '$routeNo번 버스 알람이 해제되었습니다')),
@@ -718,8 +718,7 @@ class _HomeScreenState extends State<HomeScreen>
                                         } else {
                                           if (minutes <= 0) {
                                             if (mounted) {
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(
+                                              scaffoldMessenger.showSnackBar(
                                                 const SnackBar(
                                                     content: Text(
                                                         '버스가 이미 도착했거나 곧 도착합니다')),
@@ -737,8 +736,7 @@ class _HomeScreenState extends State<HomeScreen>
                                             currentStation: bus.currentStation,
                                           );
                                           if (mounted) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
+                                            scaffoldMessenger.showSnackBar(
                                               SnackBar(
                                                   content: Text(
                                                       '$routeNo번 버스 알람이 설정되었습니다')),
@@ -747,8 +745,7 @@ class _HomeScreenState extends State<HomeScreen>
                                         }
                                       } catch (e) {
                                         if (mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
+                                          scaffoldMessenger.showSnackBar(
                                             SnackBar(
                                                 content: Text(
                                                     '알람 처리 중 오류가 발생했습니다: $e')),

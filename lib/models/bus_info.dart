@@ -1,4 +1,4 @@
-import '../services/bus_api_service.dart';
+
 
 /// 버스 개별 정보 모델
 class BusInfo {
