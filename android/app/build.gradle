@@ -33,6 +33,7 @@ android {
         versionName = flutter.versionName
         // multidex 활성화 (필요한 경우)
         multiDexEnabled true
+        buildConfigField "String", "KAKAO_NATIVE_APP_KEY", "\"\""
         externalNativeBuild {
             cmake {
                 cppFlags ""
