@@ -50,10 +50,69 @@ class BusApiService {
         return true;
       }());
 
-      return decoded
-          .map((info) =>
-              convertToBusArrival(BusArrivalInfo.fromJson(info), stationId))
-          .toList();
+      // 네이티브 코드에서 반환하는 JSON 구조에 맞게 파싱
+      final List<BusArrival> arrivals = [];
+      
+      for (final routeData in decoded) {
+        if (routeData is! Map<String, dynamic>) continue;
+        
+        final String routeNo = routeData['routeNo'] ?? '';
+        final List<dynamic>? arrList = routeData['arrList'];
+        
+        if (arrList == null || arrList.isEmpty) continue;
+        
+        final List<BusInfo> busInfoList = [];
+        
+        for (final arrivalData in arrList) {
+          if (arrivalData is! Map<String, dynamic>) continue;
+          
+          final String routeId = arrivalData['routeId'] ?? '';
+          final String bsNm = arrivalData['bsNm'] ?? '정보 없음';
+          final String arrState = arrivalData['arrState'] ?? '정보 없음';
+          final int bsGap = arrivalData['bsGap'] ?? 0;
+          final String busTCd2 = arrivalData['busTCd2'] ?? 'N';
+          final String busTCd3 = arrivalData['busTCd3'] ?? 'N';
+          final String vhcNo2 = arrivalData['vhcNo2'] ?? '';
+          
+          // 저상버스 여부 확인 (busTCd2가 "1"이면 저상버스)
+          final bool isLowFloor = busTCd2 == '1';
+          
+          // 운행 종료 여부 확인
+          final bool isOutOfService = arrState == '운행종료' || arrState == '-';
+          
+          // 도착 예정 시간 처리
+          String estimatedTime = arrState;
+          if (estimatedTime.contains('출발예정')) {
+            estimatedTime = estimatedTime.replaceAll('출발예정', '').trim();
+            if (estimatedTime.isEmpty) {
+              estimatedTime = '출발예정';
+            }
+          }
+          
+          final busInfo = BusInfo(
+            busNumber: vhcNo2.isNotEmpty ? vhcNo2 : routeNo,
+            isLowFloor: isLowFloor,
+            currentStation: bsNm,
+            remainingStops: bsGap.toString(),
+            estimatedTime: estimatedTime,
+            isOutOfService: isOutOfService,
+          );
+          
+          busInfoList.add(busInfo);
+        }
+        
+        if (busInfoList.isNotEmpty) {
+          final arrival = BusArrival(
+            routeId: routeData['routeId'] ?? '',
+            routeNo: routeNo,
+            direction: '',
+            busInfoList: busInfoList,
+          );
+          arrivals.add(arrival);
+        }
+      }
+
+      return arrivals;
     } on PlatformException catch (e) {
       debugPrint('정류장 정보 조회 오류: ${e.message}');
       return [];
@@ -431,11 +490,11 @@ class BusArrivalInfo {
 
   factory BusArrivalInfo.fromJson(Map<String, dynamic> json) {
     return BusArrivalInfo(
-      name: json['name'],
-      sub: json['sub'],
-      id: json['id'],
-      forward: json['forward'],
-      bus: (json['bus'] as List)
+      name: json['name'] ?? '',
+      sub: json['sub'] ?? '',
+      id: json['id'] ?? '',
+      forward: json['forward'] ?? '',
+      bus: (json['bus'] as List? ?? [])
           .map((bus) => BusInfoData.fromJson(bus))
           .toList(),
     );

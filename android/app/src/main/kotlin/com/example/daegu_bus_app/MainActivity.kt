@@ -68,6 +68,7 @@ import com.example.daegu_bus_app.utils.NotificationHandler
 import kotlinx.coroutines.runBlocking
 import android.os.PowerManager
 import android.provider.Settings
+import android.webkit.WebView
 
 class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     companion object {
@@ -1476,6 +1477,11 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             }
 
             super.onCreate(savedInstanceState)
+
+            // WebView 디버깅 활성화 (개발 중에만)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                WebView.setWebContentsDebuggingEnabled(true)
+            }
 
             // 싱글톤 인스턴스 설정
             instance = this

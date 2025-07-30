@@ -8,5 +8,7 @@
   </base-config>
   <domain-config cleartextTrafficPermitted="true">
     <domain includeSubdomains="true">businfo.daegu.go.kr</domain>
+    <domain includeSubdomains="true">dapi.kakao.com</domain>
+    <domain includeSubdomains="true">t1.daumcdn.net</domain>
   </domain-config>
 </network-security-config>
