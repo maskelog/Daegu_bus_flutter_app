@@ -982,22 +982,59 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // 버스 도착 정보를 지도용 2행 N열 표 HTML로 포맷
+  // 버스 도착 정보를 지도용 2행 N열 표 HTML로 포맷 (노선별 중복 제거)
   String _formatBusInfoForMap(List<BusArrival> arrivals) {
     if (arrivals.isEmpty) {
       return '도착 예정 버스 없음';
     }
 
-    final busInfoList = <String>[];
+    // 노선별로 가장 빠른 버스만 선택
+    final Map<String, String> routeBestBus = <String, String>{};
+
     for (final arrival in arrivals) {
+      if (arrival.busInfoList.isEmpty) continue;
+
+      // 해당 노선의 가장 빠른 버스 찾기
+      BusInfo? bestBus;
+
       for (final busInfo in arrival.busInfoList) {
-        String timeInfo = busInfo.estimatedTime;
+        // 운행종료가 아닌 버스 우선 선택
         if (busInfo.isOutOfService) {
+          if (bestBus == null || bestBus.isOutOfService) {
+            bestBus = busInfo;
+          }
+          continue;
+        }
+
+        // 운행중인 버스가 더 우선순위가 높음
+        if (bestBus == null || bestBus.isOutOfService) {
+          bestBus = busInfo;
+          continue;
+        }
+
+        // 둘 다 운행중인 경우 시간 비교
+        if (!bestBus.isOutOfService) {
+          final bestTime = _parseTimeToMinutes(bestBus.estimatedTime);
+          final currentTime = _parseTimeToMinutes(busInfo.estimatedTime);
+
+          if (currentTime < bestTime) {
+            bestBus = busInfo;
+          }
+        }
+      }
+
+      // 해당 노선의 최고 우선순위 버스 정보 저장
+      if (bestBus != null) {
+        String timeInfo = bestBus.estimatedTime;
+        if (bestBus.isOutOfService) {
           timeInfo = '운행종료';
         }
-        busInfoList.add('${arrival.routeNo} - $timeInfo');
+        routeBestBus[arrival.routeNo] = '${arrival.routeNo} - $timeInfo';
       }
     }
+
+    final busInfoList = routeBestBus.values.toList();
+
     // 2행 N열로 나누기
     int n = (busInfoList.length / 2).ceil();
     final row1 = busInfoList.take(n).toList();
@@ -1028,6 +1065,27 @@ class _MapScreenState extends State<MapScreen> {
 
     buffer.write('</table>');
     return buffer.toString();
+  }
+
+  // 시간 문자열을 분 단위로 변환하는 헬퍼 함수
+  int _parseTimeToMinutes(String timeStr) {
+    if (timeStr.isEmpty || timeStr == '운행종료' || timeStr == '-') {
+      return 999; // 매우 큰 값으로 설정하여 우선순위 낮춤
+    }
+
+    // "곧 도착", "출발예정" 등의 특수 케이스
+    if (timeStr.contains('곧') || timeStr.contains('출발예정')) {
+      return 0;
+    }
+
+    // 숫자만 추출 (예: "3분 후" -> 3)
+    final regex = RegExp(r'(\d+)');
+    final match = regex.firstMatch(timeStr);
+    if (match != null) {
+      return int.tryParse(match.group(1) ?? '999') ?? 999;
+    }
+
+    return 999; // 파싱 실패 시 큰 값 반환
   }
 
   // 주변 정류장 검색 기능
