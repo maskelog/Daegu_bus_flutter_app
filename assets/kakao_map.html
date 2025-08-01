@@ -6,17 +6,107 @@
     <title>Kakao Map</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
+        /* 기본 스타일 */
         body,
         html {
             margin: 0;
             padding: 0;
             width: 100%;
             height: 100%;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         }
 
         #map {
             width: 100%;
             height: 100%;
+        }
+
+        /* 정보창 스타일 */
+        .kakao_maps_sdk_infowindow {
+            background: none !important;
+            border: none !important;
+            box-shadow: none !important;
+            transition: all 0.3s ease-in-out;
+        }
+
+        .infowindow-content {
+            position: relative;
+            padding: 14px 18px;
+            padding-right: 40px;
+            border-radius: 16px;
+            background: linear-gradient(145deg, #ffffff, #f8f9fa);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(240, 240, 240, 0.5);
+            min-width: 140px;
+            max-width: 300px;
+            transform: translateY(10px);
+            opacity: 0;
+            animation: fadeInUp 0.3s ease forwards;
+        }
+
+        @keyframes fadeInUp {
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .infowindow-content .title {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            white-space: nowrap;
+            font-weight: 700;
+            font-size: 16px;
+            color: #1a1a1a;
+            letter-spacing: -0.2px;
+        }
+
+        .infowindow-content .title .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+            flex-shrink: 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .bus-info-container {
+            display: grid;
+            grid-gap: 6px;
+            justify-items: stretch;
+        }
+
+        .bus-info-container.count-1 {
+            grid-template-columns: 1fr;
+        }
+
+        .bus-info-container.count-2,
+        .bus-info-container.count-3,
+        .bus-info-container.count-4 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .bus-info-container.count-multi {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .bus-info-container div {
+            padding: 8px 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+            background: #f9fafb;
+            color: #333;
+            text-align: center;
+            transition: transform 0.2s ease, background-color 0.2s ease;
+        }
+
+        .bus-info-container div:hover {
+            transform: translateY(-2px);
+            background-color: #e6f0fa;
         }
     </style>
 </head>
@@ -27,13 +117,13 @@
         src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_API_KEY&libraries=services"
         onload="console.log('카카오맵 스크립트 로드 완료')" onerror="console.error('카카오맵 스크립트 로드 실패')"></script>
     <script>
+        // 전역 변수 선언
         var map;
         var markers = [];
         var busMarkers = [];
-        var kakaoBusStopMarkers = []; // 카카오맵 버스정류장 마커 별도 관리
-        var currentInfoWindow = null; // 현재 열린 정보창 관리
+        var currentInfoWindow = null;
 
-        // 현재 열린 정보창 닫기
+        // infoWindow 관련 함수
         function closeCurrentInfoWindow() {
             if (currentInfoWindow) {
                 currentInfoWindow.close();
@@ -41,576 +131,102 @@
             }
         }
 
-        // 새 정보창 열기 (이전 정보창 자동 닫기)
         function openInfoWindow(infoWindow, map, marker) {
-            closeCurrentInfoWindow(); // 이전 정보창 닫기
+            closeCurrentInfoWindow();
             infoWindow.open(map, marker);
             currentInfoWindow = infoWindow;
         }
 
-        // 지도 초기화
+        // 지도 초기화 함수
         function initMap(lat, lng, level) {
             try {
-                console.log('지도 초기화 시작:', lat, lng, level);
-                console.log('kakao 객체 상태:', typeof kakao);
-                console.log('kakao.maps 상태:', typeof kakao?.maps);
-
-                if (typeof kakao === 'undefined') {
-                    console.error('kakao 객체가 정의되지 않았습니다.');
-                    sendMessageToFlutter('mapError', { error: 'kakao 객체 없음' });
-                    return;
-                }
-
-                if (!kakao.maps) {
-                    console.error('kakao.maps가 로드되지 않았습니다.');
-                    sendMessageToFlutter('mapError', { error: 'kakao.maps 로드 실패' });
-                    return;
-                }
-
                 var container = document.getElementById('map');
                 var options = {
-                    center: new kakao.maps.LatLng(lat || 35.8714, lng || 128.6014), // 대구 중심좌표
+                    center: new kakao.maps.LatLng(lat || 35.8714, lng || 128.6014),
                     level: level || 3
                 };
-
                 map = new kakao.maps.Map(container, options);
-                console.log('카카오맵 초기화 완료');
 
-                // 카카오맵 기본 버스정류장 검색 및 클릭 이벤트 설정
-                setupBusStopSearch();
-
-                // 지도 클릭 이벤트로 버스정류장 감지
-                setupMapClickForBusStops();
-
-                // 지도 클릭 이벤트
                 kakao.maps.event.addListener(map, 'click', function (mouseEvent) {
-                    var latlng = mouseEvent.latLng;
-
-                    // 클릭한 위치 근처의 버스정류장 검색
-                    searchNearbyBusStops(latlng.getLat(), latlng.getLng());
-
                     sendMessageToFlutter('mapClick', {
-                        latitude: latlng.getLat(),
-                        longitude: latlng.getLng()
+                        latitude: mouseEvent.latLng.getLat(),
+                        longitude: mouseEvent.latLng.getLng()
                     });
                 });
 
                 sendMessageToFlutter('mapReady', {});
-
             } catch (error) {
-                console.error('지도 초기화 오류:', error);
                 sendMessageToFlutter('mapError', { error: error.message });
             }
         }
 
-        // 카카오맵 기본 버스정류장 검색 설정
-        function setupBusStopSearch() {
-            try {
-                console.log('버스정류장 검색 설정 시작');
+        // ★★★ 정보창 업데이트 함수 (핵심 수정) ★★★
+        function updateStationBusInfo(stationName, stationType, busInfo) {
+            if (!currentInfoWindow || !currentInfoWindow.getContent()) return;
 
-                // 지도 클릭 이벤트에서 버스정류장 검색하도록 변경
-                // bounds_changed 이벤트는 너무 자주 발생하여 성능 문제 발생
+            const content = currentInfoWindow.getContent();
+            if (!content.includes(stationName)) return;
 
-                // 지도 레벨 변경 시에만 버스정류장 검색
-                kakao.maps.event.addListener(map, 'zoom_changed', function () {
-                    var level = map.getLevel();
-                    console.log('지도 레벨 변경:', level);
+            // 1. 버스 개수 파악
+            const busCount = (busInfo.match(/<div>/g) || []).length;
 
-                    if (level <= 5) { // 레벨 5까지 확대된 상태에서 검색 (조건 완화)
-                        var bounds = map.getBounds();
-                        searchBusStopsInBounds(bounds);
-                    } else {
-                        // 레벨이 높으면 카카오맵 버스정류장 마커 제거
-                        clearKakaoBusStopMarkers();
-                    }
-                });
-
-                // 초기 로드 시에도 검색 (더 빠르게)
-                setTimeout(function () {
-                    var level = map.getLevel();
-                    if (level <= 5) { // 레벨 조건 완화
-                        var bounds = map.getBounds();
-                        searchBusStopsInBounds(bounds);
-                    }
-                }, 500);
-
-                // 추가로 2초 후에도 검색 (지도 로딩 완료 후)
-                setTimeout(function () {
-                    var level = map.getLevel();
-                    if (level <= 5) { // 레벨 조건 완화
-                        var bounds = map.getBounds();
-                        searchBusStopsInBounds(bounds);
-                    }
-                }, 2000);
-
-                console.log('버스정류장 검색 설정 완료');
-            } catch (error) {
-                console.log('버스정류장 검색 설정 실패:', error);
-            }
-        }
-
-        // 지도 영역 내 버스정류장 검색 (CORS 문제 해결)
-        function searchBusStopsInBounds(bounds) {
-            try {
-                console.log('버스정류장 검색 시작');
-
-                var ps = new kakao.maps.services.Places();
-
-                // 지도 중심점 기준으로 검색 (bounds 대신 location 사용)
-                var center = map.getCenter();
-
-            } catch (error) {
-                console.log('버스정류장 검색 오류:', error);
-                console.log('오류 상세:', error.message, error.stack);
-            }
-        }
-
-        // 클릭 위치 근처 버스정류장 검색
-        function searchNearbyBusStops(lat, lng) {
-            try {
-                var ps = new kakao.maps.services.Places();
-                var position = new kakao.maps.LatLng(lat, lng);
-
-                // 반경 500m 내 버스정류장 검색
-                ps.keywordSearch('버스정류장', function (data, status) {
-                    if (status === kakao.maps.services.Status.OK && data.length > 0) {
-                        // 가장 가까운 버스정류장 찾기
-                        var nearest = data[0];
-                        var minDistance = getDistance(lat, lng, nearest.y, nearest.x);
-
-                        for (var i = 1; i < data.length; i++) {
-                            var distance = getDistance(lat, lng, data[i].y, data[i].x);
-                            if (distance < minDistance) {
-                                minDistance = distance;
-                                nearest = data[i];
-                            }
-                        }
-
-                        // 100m 이내의 버스정류장이면 클릭 이벤트 발생
-                        if (minDistance < 100) {
-                            sendMessageToFlutter('stationClick', {
-                                name: nearest.place_name.replace('버스정류장', '').trim(),
-                                latitude: parseFloat(nearest.y),
-                                longitude: parseFloat(nearest.x),
-                                type: 'kakao',
-                                address: nearest.address_name
-                            });
-                        }
-                    }
-                }, {
-                    location: position,
-                    radius: 500,
-                    size: 10
-                });
-            } catch (error) {
-                console.log('근처 버스정류장 검색 오류:', error);
-            }
-        }
-
-        // 카카오맵 기본 버스정류장 마커 추가
-        function addKakaoBusStopMarker(place) {
-            try {
-                var position = new kakao.maps.LatLng(place.y, place.x);
-                console.log('카카오 버스정류장 마커 추가:', place.place_name, place.y, place.x);
-
-                // 카카오 정류장 마커 (주황색, 구별되는 스타일)
-                var busSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">
-                    <circle cx="15" cy="15" r="13" fill="#FF6B35" stroke="#FFFFFF" stroke-width="3"/>
-                    <circle cx="15" cy="15" r="9" fill="#FFFFFF"/>
-                    <circle cx="15" cy="15" r="5" fill="#FF6B35"/>
-                    <text x="15" y="26" text-anchor="middle" fill="#FF6B35" font-size="8" font-weight="bold">K</text>
-                </svg>`;
-
-                var marker = new kakao.maps.Marker({
-                    position: position,
-                    image: createSafeSVGMarker(busSvg, new kakao.maps.Size(32, 32), new kakao.maps.Point(16, 16))
-                });
-
-                marker.setMap(map);
-                kakaoBusStopMarkers.push(marker); // 별도 배열에 저장
-
-                var infowindow = new kakao.maps.InfoWindow({
-                    content: `<div style="padding:12px; font-size:14px; max-width:250px; border-radius:8px;">
-                        <div style="display:flex; align-items:center; margin-bottom:8px;">
-                            <div style="width:16px; height:16px; background:#FF6B35; border-radius:50%; margin-right:8px;"></div>
-                            <strong style="color:#FF6B35; font-size:16px;">${place.place_name}</strong>
-                        </div>
-                        <div style="color:#666; font-size:12px; line-height:1.4;">버스 정보 로딩 중...</div>
-                    </div>`
-                });
-
-                // 클릭 이벤트 추가 (이전 정보창 자동 닫기)
-                kakao.maps.event.addListener(marker, 'click', function () {
-                    console.log('카카오 버스정류장 마커 클릭:', place.place_name);
-                    openInfoWindow(infowindow, map, marker);
-
-                    // Flutter로 이벤트 전송
-                    sendMessageToFlutter('stationClick', {
-                        name: place.place_name.replace(/버스정류장|정류장/g, '').trim(),
-                        latitude: parseFloat(place.y),
-                        longitude: parseFloat(place.x),
-                        type: 'kakao',
-                        address: place.address_name || '',
-                        originalName: place.place_name
-                    });
-                });
-
-                // 마우스 오버 이벤트도 추가
-                kakao.maps.event.addListener(marker, 'mouseover', function () {
-                    infowindow.open(map, marker);
-                });
-
-                kakao.maps.event.addListener(marker, 'mouseout', function () {
-                    infowindow.close();
-                });
-
-                console.log('카카오 버스정류장 마커 추가 완료');
-
-            } catch (error) {
-                console.log('카카오 버스정류장 마커 추가 오류:', error);
-            }
-        }
-
-        // 카카오맵 버스정류장 마커만 제거
-        function clearKakaoBusStopMarkers() {
-            console.log('카카오 버스정류장 마커 제거:', kakaoBusStopMarkers.length + '개');
-            kakaoBusStopMarkers.forEach(function (marker) {
-                marker.setMap(null);
-            });
-            kakaoBusStopMarkers = [];
-        }
-
-        // 지도 클릭으로 버스정류장 감지 (대안 방법)
-        function setupMapClickForBusStops() {
-            console.log('지도 클릭 이벤트 설정 (카카오맵 API 검색 제거)');
-
-            kakao.maps.event.addListener(map, 'click', function (mouseEvent) {
-                var latlng = mouseEvent.latLng;
-                var lat = latlng.getLat();
-                var lng = latlng.getLng();
-
-                console.log('지도 클릭 위치:', lat, lng);
-
-                // 지도 클릭 시 열린 정보창 닫기
-                closeCurrentInfoWindow();
-
-                // 카카오맵 API 검색 대신 Flutter에 좌표 전달
-                if (window.mapEvent) {
-                    window.mapEvent.postMessage(JSON.stringify({
-                        type: 'map_click',
-                        latitude: lat,
-                        longitude: lng
-                    }));
-                }
-            });
-        }
-
-        // 클릭 위치 근처 버스정류장 검색 (개선된 방법)
-        function searchNearbyBusStops(lat, lng) {
-            try {
-                console.log('클릭 위치 근처 버스정류장 검색:', lat, lng);
-
-                // Places 서비스 객체 생성 확인
-                if (typeof kakao === 'undefined' || !kakao.maps || !kakao.maps.services) {
-                    console.error('카카오맵 서비스가 로드되지 않음');
-                    return;
-                }
-
-                var ps = new kakao.maps.services.Places();
-                var position = new kakao.maps.LatLng(lat, lng);
-
-                console.log('Places 서비스 객체 생성 완료');
-
-                // 여러 키워드로 검색 시도
-                var keywords = ['버스정류장', '정류장', '버스정류소'];
-                var searchIndex = 0;
-
-                function trySearch() {
-                    if (searchIndex >= keywords.length) {
-                        console.log('모든 키워드 검색 실패');
-                        // 대안: 좌표 기반으로 가상 정류장 생성
-                        createVirtualBusStop(lat, lng);
-                        return;
-                    }
-
-                    var keyword = keywords[searchIndex];
-                    console.log('키워드 검색 시도:', keyword);
-
-                    ps.keywordSearch(keyword, function (data, status, pagination) {
-                        console.log('검색 결과 - 키워드:', keyword, 'status:', status, 'data length:', data ? data.length : 0);
-                        console.log('Status 상세:', {
-                            OK: kakao.maps.services.Status.OK,
-                            ZERO_RESULT: kakao.maps.services.Status.ZERO_RESULT,
-                            ERROR: kakao.maps.services.Status.ERROR,
-                            current: status
-                        });
-
-                        if (status === kakao.maps.services.Status.OK && data && data.length > 0) {
-                            console.log('검색 성공! 결과:', data.length + '개');
-
-                            // 가장 가까운 버스정류장 찾기
-                            var nearest = null;
-                            var minDistance = Infinity;
-
-                            for (var i = 0; i < data.length; i++) {
-                                var place = data[i];
-                                var distance = getDistance(lat, lng, parseFloat(place.y), parseFloat(place.x));
-
-                                console.log('정류장:', place.place_name, '거리:', distance + 'km');
-
-                                if (distance < minDistance && distance < 0.5) { // 500m 이내로 확장
-                                    minDistance = distance;
-                                    nearest = place;
-                                }
-                            }
-
-                            if (nearest) {
-                                console.log('가장 가까운 버스정류장 발견:', nearest.place_name, minDistance + 'km');
-
-                                // 임시 마커 표시
-                                addTemporaryBusStopMarker(nearest);
-
-                                // Flutter로 정류장 클릭 이벤트 전송
-                                sendMessageToFlutter('stationClick', {
-                                    name: nearest.place_name.replace(/버스정류장|정류장|정류소/g, '').trim(),
-                                    latitude: parseFloat(nearest.y),
-                                    longitude: parseFloat(nearest.x),
-                                    type: 'kakao',
-                                    address: nearest.address_name || '',
-                                    originalName: nearest.place_name,
-                                    distance: minDistance
-                                });
-                            } else {
-                                console.log('근처에 버스정류장 없음 (500m 이내)');
-                                searchIndex++;
-                                trySearch(); // 다음 키워드로 시도
-                            }
-                        } else {
-                            console.log('검색 실패 또는 결과 없음, 다음 키워드 시도');
-                            searchIndex++;
-                            trySearch(); // 다음 키워드로 시도
-                        }
-                    }, {
-                        location: position,
-                        radius: 500, // 반경을 500m로 확장
-                        size: 10
-                    });
-                }
-
-                // 검색 시작
-                trySearch();
-
-            } catch (error) {
-                console.log('근처 버스정류장 검색 오류:', error);
-                console.log('오류 상세:', error.message, error.stack);
-            }
-        }
-
-        // 가상 버스정류장 생성 (검색 실패 시 대안)
-        function createVirtualBusStop(lat, lng) {
-            console.log('가상 버스정류장 생성:', lat, lng);
-
-            // 주소 검색으로 지역명 확인
-            var geocoder = new kakao.maps.services.Geocoder();
-
-            geocoder.coord2Address(lng, lat, function (result, status) {
-                var placeName = 'Click Location';
-
-                if (status === kakao.maps.services.Status.OK && result[0]) {
-                    var addr = result[0].address;
-                    // 한글 주소를 영어로 변환하거나 기본값 사용
-                    var regionName = addr.region_3depth_name || addr.region_2depth_name;
-                    if (regionName && /[가-힣]/.test(regionName)) {
-                        placeName = 'Click Location Area';
-                    } else {
-                        placeName = (regionName || 'Click Location') + ' Area';
-                    }
-                }
-
-                console.log('가상 정류장 이름:', placeName);
-
-                // 가상 정류장 정보 생성
-                var virtualStop = {
-                    place_name: placeName + ' Station',
-                    y: lat,
-                    x: lng,
-                    address_name: 'Click Location'
-                };
-
-                // 임시 마커 표시
-                addTemporaryBusStopMarker(virtualStop);
-
-                // Flutter로 정류장 클릭 이벤트 전송
-                sendMessageToFlutter('stationClick', {
-                    name: placeName,
-                    latitude: lat,
-                    longitude: lng,
-                    type: 'virtual',
-                    address: 'Click Location',
-                    originalName: placeName + ' Station'
-                });
-            });
-        }
-
-        // 임시 버스정류장 마커 추가
-        function addTemporaryBusStopMarker(place) {
-            // 기존 임시 마커 제거
-            if (window.tempBusStopMarker) {
-                window.tempBusStopMarker.setMap(null);
+            // 2. 버스 개수에 따라 클래스 이름 결정
+            let countClass = 'count-multi'; // 5개 이상 기본값
+            if (busCount === 1) {
+                countClass = 'count-1';
+            } else if (busCount >= 2 && busCount <= 4) {
+                countClass = `count-${busCount}`;
             }
 
-            var position = new kakao.maps.LatLng(place.y, place.x);
+            // 3. 색상 및 메인 클래스 결정
+            let color = '#FF6B35'; // 기본
+            if (stationType === 'nearby') color = '#4CAF50';
+            else if (stationType === 'route') color = '#2196F3';
 
-            var tempSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-                <circle cx="16" cy="16" r="14" fill="#FF6B35" stroke="#FFFFFF" stroke-width="3"/>
-                <circle cx="16" cy="16" r="10" fill="#FFFFFF"/>
-                <circle cx="16" cy="16" r="6" fill="#FF6B35"/>
-                <circle cx="16" cy="16" r="2" fill="#FFFFFF"/>
-            </svg>`;
+            const mainClass = busCount === 1 ? 'infowindow-content single-bus-info' : 'infowindow-content';
 
-            var marker = new kakao.maps.Marker({
-                position: position,
-                image: createSafeSVGMarker(tempSvg, new kakao.maps.Size(36, 36), new kakao.maps.Point(18, 18))
-            });
-
-            marker.setMap(map);
-            window.tempBusStopMarker = marker;
-
-            // 3초 후 자동 제거
-            setTimeout(function () {
-                if (window.tempBusStopMarker) {
-                    window.tempBusStopMarker.setMap(null);
-                    window.tempBusStopMarker = null;
-                }
-            }, 3000);
-        }
-
-        // 두 좌표 간 거리 계산 (미터 단위)
-        function getDistance(lat1, lng1, lat2, lng2) {
-            var R = 6371e3; // 지구 반지름 (미터)
-            var φ1 = lat1 * Math.PI / 180;
-            var φ2 = lat2 * Math.PI / 180;
-            var Δφ = (lat2 - lat1) * Math.PI / 180;
-            var Δλ = (lng2 - lng1) * Math.PI / 180;
-
-            var a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-            return R * c;
-        }
-
-        // 현재 위치 마커 추가 (개선된 버전)
-        function addCurrentLocationMarker(lat, lng) {
-            var position = new kakao.maps.LatLng(lat, lng);
-
-            // 현재 위치를 나타내는 개선된 마커
-            var locationSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
-                <circle cx="13" cy="13" r="12" fill="#FF4444" stroke="#FFFFFF" stroke-width="3"/>
-                <circle cx="13" cy="13" r="8" fill="#FFFFFF"/>
-                <circle cx="13" cy="13" r="4" fill="#FF4444"/>
-                <circle cx="13" cy="13" r="1" fill="#FFFFFF"/>
-            </svg>`;
-
-            var marker = new kakao.maps.Marker({
-                position: position,
-                image: createSafeSVGMarker(locationSvg, new kakao.maps.Size(26, 26), new kakao.maps.Point(13, 13))
-            });
-
-            marker.setMap(map);
-            markers.push(marker);
-
-            var infowindow = new kakao.maps.InfoWindow({
-                content: `<div style="padding:8px; font-size:14px; max-width:150px; border-radius:6px;">
-                    <div style="display:flex; align-items:center;">
-                        <div style="width:12px; height:12px; background:#2E5BFF; border-radius:50%; margin-right:6px;"></div>
-                        <strong style="color:#2E5BFF;">현재 위치</strong>
+            // 4. 최종 HTML 생성
+            const updatedContent = `
+                <div class="${mainClass}">
+                    <div class="title">
+                        <div class="dot" style="background-color:${color};"></div>
+                        <span style="color:${color};">${stationName}</span>
                     </div>
-                </div>`
-            });
+                    <div class="bus-info-container ${countClass}">
+                        ${busInfo}
+                    </div>
+                </div>
+            `;
 
-            kakao.maps.event.addListener(marker, 'click', function () {
-                openInfoWindow(infowindow, map, marker);
-            });
+            currentInfoWindow.setContent(updatedContent);
         }
 
-        // 안전한 SVG 마커 생성 함수 (개선된 버전)
+        // SVG 마커 생성 함수
         function createSafeSVGMarker(svgContent, size, offset) {
             try {
-                // SVG 내용 정리 및 최적화
-                var cleanSvg = svgContent
-                    .replace(/\s+/g, ' ')  // 여러 공백을 하나로
-                    .replace(/>\s+</g, '><')  // 태그 사이 공백 제거
-                    .trim();
-
-                // 방법 1: URL 인코딩 방식 (가장 안전)
+                var cleanSvg = svgContent.replace(/\s+/g, ' ').replace(/>\s+</g, '><').trim();
                 var encodedSvg = encodeURIComponent(cleanSvg);
                 var dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodedSvg;
-
-                console.log('SVG 마커 생성 성공:', dataUrl.substring(0, 100) + '...');
-
-                return new kakao.maps.MarkerImage(
-                    dataUrl,
-                    size,
-                    { offset: offset }
-                );
+                return new kakao.maps.MarkerImage(dataUrl, size, { offset: offset });
             } catch (error) {
-                console.error('SVG 마커 생성 오류:', error);
-
-                // 대체 방법: Base64 인코딩 시도
-                try {
-                    var base64Svg = btoa(unescape(encodeURIComponent(svgContent)));
-                    return new kakao.maps.MarkerImage(
-                        'data:image/svg+xml;base64,' + base64Svg,
-                        size,
-                        { offset: offset }
-                    );
-                } catch (base64Error) {
-                    console.error('Base64 인코딩도 실패:', base64Error);
-
-                    // 최종 대체: 기본 마커 사용
-                    var defaultMarkerUrl = size.width <= 24 ?
-                        'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png' :
-                        'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png';
-
-                    return new kakao.maps.MarkerImage(
-                        defaultMarkerUrl,
-                        size,
-                        { offset: offset }
-                    );
-                }
+                var defaultMarkerUrl = 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png';
+                return new kakao.maps.MarkerImage(defaultMarkerUrl, size, { offset: offset });
             }
         }
 
-        // 정류장 마커 추가 (개선된 SVG 마커)
+        // 정류장 마커 추가 함수
         function addStationMarker(lat, lng, name, type, sequenceNo) {
-            // 좌표 정밀도 향상 (소수점 6자리까지)
-            var preciseLat = parseFloat(lat.toFixed(6));
-            var preciseLng = parseFloat(lng.toFixed(6));
-            var position = new kakao.maps.LatLng(preciseLat, preciseLng);
-
-            // 개선된 SVG 마커 (더 단순하고 안정적)
-            var markerSvg;
-            var markerSize;
-            var markerOffset;
+            var position = new kakao.maps.LatLng(lat, lng);
+            var markerSvg, markerSize, markerOffset, color;
 
             if (type === 'route') {
-                // 노선 정류장 마커 (파란색, 번호 표시)
-                markerSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
-                    <path d="M16 0C7.2 0 0 7.2 0 16c0 16 16 24 16 24s16-8 16-24C32 7.2 24.8 0 16 0z" fill="#2196F3" stroke="#FFFFFF" stroke-width="2"/>
-                    <circle cx="16" cy="16" r="9" fill="white"/>
-                    <text x="16" y="20" text-anchor="middle" fill="#2196F3" font-size="11" font-weight="bold">${sequenceNo || 'R'}</text>
-                </svg>`;
+                color = '#2196F3';
+                markerSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40"><path d="M16 0C7.2 0 0 7.2 0 16c0 16 16 24 16 24s16-8 16-24C32 7.2 24.8 0 16 0z" fill="${color}" stroke="#FFFFFF" stroke-width="2"/><circle cx="16" cy="16" r="9" fill="white"/><text x="16" y="20" text-anchor="middle" fill="${color}" font-size="11" font-weight="bold">${sequenceNo || 'R'}</text></svg>`;
                 markerSize = new kakao.maps.Size(32, 40);
                 markerOffset = new kakao.maps.Point(16, 40);
-            } else {
-                // 주변 정류장 마커 (녹색, 간단한 표시)
-                markerSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
-                    <path d="M14 0C6.3 0 0 6.3 0 14c0 14 14 22 14 22s14-8 14-22C28 6.3 21.7 0 14 0z" fill="#4CAF50" stroke="#FFFFFF" stroke-width="2"/>
-                    <circle cx="14" cy="14" r="8" fill="white"/>
-                    <circle cx="14" cy="14" r="4" fill="#4CAF50"/>
-                </svg>`;
+            } else { // 'nearby'
+                color = '#4CAF50';
+                markerSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><path d="M14 0C6.3 0 0 6.3 0 14c0 14 14 22 14 22s14-8 14-22C28 6.3 21.7 0 14 0z" fill="${color}" stroke="#FFFFFF" stroke-width="2"/><circle cx="14" cy="14" r="8" fill="white"/><circle cx="14" cy="14" r="4" fill="${color}"/></svg>`;
                 markerSize = new kakao.maps.Size(28, 36);
                 markerOffset = new kakao.maps.Point(14, 36);
             }
@@ -619,175 +235,47 @@
                 position: position,
                 image: createSafeSVGMarker(markerSvg, markerSize, markerOffset)
             });
-
             marker.setMap(map);
             markers.push(marker);
 
-            var content = type === 'route' ?
-                `<div style="padding:8px; font-size:14px; max-width:250px; border-radius:6px;">
-                    <div style="display:flex; align-items:center; margin-bottom:4px;">
-                        <div style="width:12px; height:12px; background:#2196F3; border-radius:50%; margin-right:6px;"></div>
-                        <strong style="color:#2196F3;">${name}</strong>
-                    </div>
-                    <div style="color:#666; font-size:12px; line-height:1.4;">버스 정보 로딩 중...</div>
-                </div>` :
-                `<div style="padding:8px; font-size:14px; max-width:250px; border-radius:6px;">
-                    <div style="display:flex; align-items:center; margin-bottom:4px;">
-                        <div style="width:12px; height:12px; background:#4CAF50; border-radius:50%; margin-right:6px;"></div>
-                        <strong style="color:#4CAF50;">${name}</strong>
-                    </div>
-                    <div style="color:#666; font-size:12px; line-height:1.4;">버스 정보 로딩 중...</div>
-                </div>`;
-
-            var infowindow = new kakao.maps.InfoWindow({
-                content: content
-            });
+            var initialContent = `<div class="infowindow-content"><div class="title"><div class="dot" style="background-color:${color};"></div><span style="color:${color};">${name}</span></div><div style="font-size:12px; text-align:center;">버스 정보 로딩 중...</div></div>`;
+            var infowindow = new kakao.maps.InfoWindow({ content: initialContent, removable: true });
 
             kakao.maps.event.addListener(marker, 'click', function () {
                 openInfoWindow(infowindow, map, marker);
-                sendMessageToFlutter('stationClick', {
-                    name: name,
-                    latitude: lat,
-                    longitude: lng,
-                    type: type,
-                    sequenceNo: sequenceNo
-                });
+                sendMessageToFlutter('stationClick', { name: name, latitude: lat, longitude: lng, type: type, sequenceNo: sequenceNo });
             });
         }
 
-        // 버스 마커 추가 (좌표 정확도 개선)
+        // 현재 위치, 버스 마커 및 기타 함수들... (기존과 동일)
+        function addCurrentLocationMarker(lat, lng) {
+            var position = new kakao.maps.LatLng(lat, lng);
+            var locationSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26"><circle cx="13" cy="13" r="12" fill="#FF4444" stroke="#FFFFFF" stroke-width="3"/><circle cx="13" cy="13" r="8" fill="#FFFFFF"/><circle cx="13" cy="13" r="4" fill="#FF4444"/><circle cx="13" cy="13" r="1" fill="#FFFFFF"/></svg>`;
+            var marker = new kakao.maps.Marker({
+                position: position,
+                image: createSafeSVGMarker(locationSvg, new kakao.maps.Size(26, 26), new kakao.maps.Point(13, 13))
+            });
+            marker.setMap(map);
+            markers.push(marker);
+        }
+
         function addBusMarker(lat, lng, busNumber, routeId) {
-            // 좌표 정밀도 향상
-            var preciseLat = parseFloat(lat.toFixed(6));
-            var preciseLng = parseFloat(lng.toFixed(6));
-            var position = new kakao.maps.LatLng(preciseLat, preciseLng);
-
-            // 개선된 버스 마커 SVG (실시간 위치 표시)
-            var busSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
-                <circle cx="18" cy="18" r="16" fill="#FF9800" stroke="#FFFFFF" stroke-width="3"/>
-                <rect x="8" y="10" width="20" height="12" rx="2" fill="white"/>
-                <rect x="10" y="12" width="3" height="2" fill="#FF9800"/>
-                <rect x="16" y="12" width="3" height="2" fill="#FF9800"/>
-                <rect x="23" y="12" width="3" height="2" fill="#FF9800"/>
-                <circle cx="12" cy="25" r="1.5" fill="#333"/>
-                <circle cx="24" cy="25" r="1.5" fill="#333"/>
-                <text x="18" y="31" text-anchor="middle" fill="white" font-size="9" font-weight="bold">${(busNumber || routeId || 'BUS').substring(0, 4)}</text>
-            </svg>`;
-
+            var position = new kakao.maps.LatLng(lat, lng);
+            var busSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16" fill="#FF9800" stroke="#FFFFFF" stroke-width="3"/><rect x="8" y="10" width="20" height="12" rx="2" fill="white"/><rect x="10" y="12" width="3" height="2" fill="#FF9800"/><rect x="16" y="12" width="3" height="2" fill="#FF9800"/><rect x="23" y="12" width="3" height="2" fill="#FF9800"/><circle cx="12" cy="25" r="1.5" fill="#333"/><circle cx="24" cy="25" r="1.5" fill="#333"/><text x="18" y="31" text-anchor="middle" fill="white" font-size="9" font-weight="bold">${(busNumber || routeId || 'BUS').substring(0, 4)}</text></svg>`;
             var marker = new kakao.maps.Marker({
                 position: position,
                 image: createSafeSVGMarker(busSvg, new kakao.maps.Size(36, 36), new kakao.maps.Point(18, 18))
             });
-
             marker.setMap(map);
             busMarkers.push(marker);
-
-            var infowindow = new kakao.maps.InfoWindow({
-                content: `<div style="padding:8px; font-size:14px; max-width:200px; border-radius:6px;">
-                    <div style="display:flex; align-items:center; margin-bottom:4px;">
-                        <div style="width:12px; height:12px; background:#FF9800; border-radius:50%; margin-right:6px;"></div>
-                        <strong style="color:#FF9800;">버스 ${busNumber || routeId}</strong>
-                    </div>
-                    <div style="color:#666; font-size:12px;">실시간 위치</div>
-                </div>`
-            });
-
-            kakao.maps.event.addListener(marker, 'click', function () {
-                openInfoWindow(infowindow, map, marker);
-            });
         }
 
-        // 모든 마커 제거
-        function clearMarkers() {
-            markers.forEach(function (marker) {
-                marker.setMap(null);
-            });
-            markers = [];
-        }
+        function clearMarkers() { markers.forEach(m => m.setMap(null)); markers = []; }
+        function clearBusMarkers() { busMarkers.forEach(m => m.setMap(null)); busMarkers = []; }
+        function moveToLocation(lat, lng, level) { map.setCenter(new kakao.maps.LatLng(lat, lng)); if (level) map.setLevel(level); }
+        function sendMessageToFlutter(type, data) { if (window.mapEvent) window.mapEvent.postMessage(JSON.stringify({ type, data })); }
 
-        // 버스 마커만 제거
-        function clearBusMarkers() {
-            busMarkers.forEach(function (marker) {
-                marker.setMap(null);
-            });
-            busMarkers = [];
-        }
-
-        // 지도 중심 이동
-        function moveToLocation(lat, lng, level) {
-            var position = new kakao.maps.LatLng(lat, lng);
-            map.setCenter(position);
-            if (level) {
-                map.setLevel(level);
-            }
-        }
-
-        // Flutter로 메시지 전송
-        function sendMessageToFlutter(type, data) {
-            console.log('Flutter로 메시지 전송:', type, data);
-            try {
-                if (window.mapEvent && window.mapEvent.postMessage) {
-                    window.mapEvent.postMessage(JSON.stringify({
-                        type: type,
-                        data: data
-                    }));
-                    console.log('메시지 전송 성공');
-                } else {
-                    console.error('mapEvent 채널을 찾을 수 없습니다');
-                }
-            } catch (error) {
-                console.error('메시지 전송 오류:', error);
-            }
-        }
-
-        // 정류장 정보창 업데이트 함수
-        function updateStationBusInfo(stationName, stationType, busInfo) {
-            console.log('정류장 버스 정보 업데이트:', stationName, stationType, busInfo);
-
-            // 현재 열린 정보창이 있고, 해당 정류장의 정보창인지 확인
-            if (currentInfoWindow && currentInfoWindow.getContent) {
-                const content = currentInfoWindow.getContent();
-                if (content && content.includes(stationName)) {
-                    // 정보창 내용 업데이트
-                    let updatedContent;
-
-                    if (stationType === 'nearby') {
-                        // 주변 정류장 정보창 업데이트
-                        updatedContent = `<div style="padding:8px; font-size:14px; max-width:250px; border-radius:6px;">
-                            <div style="display:flex; align-items:center; margin-bottom:4px;">
-                                <div style="width:12px; height:12px; background:#4CAF50; border-radius:50%; margin-right:6px;"></div>
-                                <strong style="color:#4CAF50;">${stationName}</strong>
-                            </div>
-                            <div style="color:#666; font-size:12px; line-height:1.4; white-space:pre-line;">${busInfo}</div>
-                        </div>`;
-                    } else if (stationType === 'route') {
-                        // 노선 정류장 정보창 업데이트
-                        updatedContent = `<div style="padding:8px; font-size:14px; max-width:250px; border-radius:6px;">
-                            <div style="display:flex; align-items:center; margin-bottom:4px;">
-                                <div style="width:12px; height:12px; background:#2196F3; border-radius:50%; margin-right:6px;"></div>
-                                <strong style="color:#2196F3;">${stationName}</strong>
-                            </div>
-                            <div style="color:#666; font-size:12px; line-height:1.4; white-space:pre-line;">${busInfo}</div>
-                        </div>`;
-                    } else {
-                        // 카카오 정류장 정보창 업데이트
-                        updatedContent = `<div style="padding:8px; font-size:14px; max-width:250px; border-radius:6px;">
-                            <div style="display:flex; align-items:center; margin-bottom:4px;">
-                                <div style="width:12px; height:12px; background:#FF6B35; border-radius:50%; margin-right:6px;"></div>
-                                <strong style="color:#FF6B35;">${stationName}</strong>
-                            </div>
-                            <div style="color:#666; font-size:12px; line-height:1.4; white-space:pre-line;">${busInfo}</div>
-                        </div>`;
-                    }
-
-                    // 정보창 내용 업데이트
-                    currentInfoWindow.setContent(updatedContent);
-                    console.log('정보창 내용 업데이트 완료');
-                }
-            }
-        }
-
-        // Flutter에서 호출할 수 있는 함수들
+        // Flutter에서 호출할 전역 함수들
         window.initMap = initMap;
         window.addCurrentLocationMarker = addCurrentLocationMarker;
         window.addStationMarker = addStationMarker;
@@ -796,38 +284,6 @@
         window.clearBusMarkers = clearBusMarkers;
         window.moveToLocation = moveToLocation;
         window.updateStationBusInfo = updateStationBusInfo;
-
-        // 페이지 로드 완료 시 Flutter에 알림
-        window.addEventListener('load', function () {
-            console.log('페이지 로드 완료');
-            console.log('현재 URL:', window.location.href);
-            console.log('Document ready state:', document.readyState);
-
-            // 카카오맵 API 로드 확인
-            if (typeof kakao === 'undefined') {
-                console.error('카카오맵 API 로드 실패');
-                console.error('스크립트 태그들:', document.querySelectorAll('script').length);
-                sendMessageToFlutter('mapError', { error: '카카오맵 API 스크립트 로드 실패' });
-            } else {
-                console.log('카카오맵 API 로드 성공');
-                console.log('kakao.maps 서비스 상태:', typeof kakao.maps?.services);
-                sendMessageToFlutter('mapReady', {});
-            }
-        });
-
-        // DOMContentLoaded 이벤트도 추가
-        document.addEventListener('DOMContentLoaded', function () {
-            console.log('DOM 로드 완료');
-            console.log('kakao 객체 상태 (DOM 로드 시):', typeof kakao);
-        });
-
-        // 스크립트 로드 오류 감지
-        window.addEventListener('error', function (e) {
-            if (e.target && e.target.src && e.target.src.includes('dapi.kakao.com')) {
-                console.error('카카오맵 스크립트 로드 오류:', e);
-                sendMessageToFlutter('mapError', { error: '카카오맵 스크립트 로드 오류' });
-            }
-        });
     </script>
 </body>
 

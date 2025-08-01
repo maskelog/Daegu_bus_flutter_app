@@ -181,27 +181,26 @@ class _MapScreenState extends State<MapScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.routeId != null ? '노선도' : '지도'),
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        actions: [
-          if (_currentPosition != null) ...[
-            IconButton.filledTonal(
-              icon: const Icon(Icons.search),
-              onPressed: _searchNearbyStations,
-              tooltip: '주변 정류장 검색',
-            ),
-            const SizedBox(width: 8),
-            IconButton.filledTonal(
-              icon: const Icon(Icons.my_location),
-              onPressed: _moveToCurrentLocation,
-              tooltip: '현재 위치로 이동',
-            ),
-          ],
-        ],
-      ),
       body: _buildBody(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+      floatingActionButton: _currentPosition != null
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.small(
+                  onPressed: _searchNearbyStations,
+                  tooltip: '주변 정류장 검색',
+                  child: const Icon(Icons.search),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  onPressed: _moveToCurrentLocation,
+                  tooltip: '현재 위치로 이동',
+                  child: const Icon(Icons.my_location),
+                ),
+              ],
+            )
+          : null,
     );
   }
 
@@ -982,88 +981,49 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // 버스 도착 정보를 지도용 2행 N열 표 HTML로 포맷 (노선별 중복 제거)
+  // 버스 도착 정보를 지도용 Grid Layout HTML로 포맷 (노선별 중복 제거)
+
   String _formatBusInfoForMap(List<BusArrival> arrivals) {
     if (arrivals.isEmpty) {
-      return '도착 예정 버스 없음';
+      return '<span>도착 예정 버스 없음</span>';
     }
 
-    // 노선별로 가장 빠른 버스만 선택
-    final Map<String, String> routeBestBus = <String, String>{};
-
+    // 노선 번호별로 가장 빠른 도착 정보만 필터링
+    final Map<String, BusInfo> bestArrivals = {};
     for (final arrival in arrivals) {
-      if (arrival.busInfoList.isEmpty) continue;
+      if (arrival.busInfoList.isNotEmpty) {
+        final currentBest = bestArrivals[arrival.routeNo];
+        final newCandidate = arrival.busInfoList.first;
 
-      // 해당 노선의 가장 빠른 버스 찾기
-      BusInfo? bestBus;
-
-      for (final busInfo in arrival.busInfoList) {
-        // 운행종료가 아닌 버스 우선 선택
-        if (busInfo.isOutOfService) {
-          if (bestBus == null || bestBus.isOutOfService) {
-            bestBus = busInfo;
-          }
-          continue;
+        if (currentBest == null ||
+            _parseTimeToMinutes(newCandidate.estimatedTime) <
+                _parseTimeToMinutes(currentBest.estimatedTime)) {
+          bestArrivals[arrival.routeNo] = newCandidate;
         }
-
-        // 운행중인 버스가 더 우선순위가 높음
-        if (bestBus == null || bestBus.isOutOfService) {
-          bestBus = busInfo;
-          continue;
-        }
-
-        // 둘 다 운행중인 경우 시간 비교
-        if (!bestBus.isOutOfService) {
-          final bestTime = _parseTimeToMinutes(bestBus.estimatedTime);
-          final currentTime = _parseTimeToMinutes(busInfo.estimatedTime);
-
-          if (currentTime < bestTime) {
-            bestBus = busInfo;
-          }
-        }
-      }
-
-      // 해당 노선의 최고 우선순위 버스 정보 저장
-      if (bestBus != null) {
-        String timeInfo = bestBus.estimatedTime;
-        if (bestBus.isOutOfService) {
-          timeInfo = '운행종료';
-        }
-        routeBestBus[arrival.routeNo] = '${arrival.routeNo} - $timeInfo';
       }
     }
 
-    final busInfoList = routeBestBus.values.toList();
+    if (bestArrivals.isEmpty) {
+      return '<span>도착 예정 버스 없음</span>';
+    }
 
-    // 2행 N열로 나누기
-    int n = (busInfoList.length / 2).ceil();
-    final row1 = busInfoList.take(n).toList();
-    final row2 = busInfoList.skip(n).toList();
+    // HTML 생성을 위해 정보 가공
+    final busInfoList = bestArrivals.entries.map((entry) {
+      final routeNo = entry.key;
+      final busInfo = entry.value;
+      String timeInfo = busInfo.isOutOfService ? '운행종료' : busInfo.estimatedTime;
+      return '$routeNo - $timeInfo';
+    }).toList();
 
-    // HTML 테이블 생성 (개선된 스타일)
+    // 정렬 (한글, 숫자, 영어 순으로)
+    busInfoList.sort();
+
     final buffer = StringBuffer();
-    buffer.write(
-        '<table style="width:100%; border-collapse: collapse; font-size: 13px; font-weight: bold; color: #333;">');
-
-    // 첫 번째 행
-    buffer.write('<tr>');
-    for (final cell in row1) {
-      buffer.write(
-          '<td style="padding: 4px 8px; border: 1px solid #ddd; background-color: #f8f9fa; text-align: center; min-width: 60px;">$cell</td>');
-    }
-    buffer.write('</tr>');
-
-    // 두 번째 행 (있는 경우만)
-    if (row2.isNotEmpty) {
-      buffer.write('<tr>');
-      for (final cell in row2) {
-        buffer.write(
-            '<td style="padding: 4px 8px; border: 1px solid #ddd; background-color: #f8f9fa; text-align: center; min-width: 60px;">$cell</td>');
-      }
-      buffer.write('</tr>');
+    for (final info in busInfoList) {
+      // 각 정보를 div로 감싸서 CSS가 스타일을 적용하도록 함
+      buffer.write('<div>$info</div>');
     }
 
-    buffer.write('</table>');
     return buffer.toString();
   }
 
