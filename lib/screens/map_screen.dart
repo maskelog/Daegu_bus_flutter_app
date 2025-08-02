@@ -472,6 +472,8 @@ class _MapScreenState extends State<MapScreen> {
           final lat = data['data']['latitude'];
           final lng = data['data']['longitude'];
           debugPrint('지도 클릭: $lat, $lng');
+          // 지도 클릭 시 해당 위치의 주변 정류장 검색
+          _searchNearbyStationsFromCoords(lat, lng);
           break;
         case 'stationClick':
           final stationData = data['data'];
@@ -693,6 +695,11 @@ class _MapScreenState extends State<MapScreen> {
           _addMarkers();
         }
 
+        // 지도를 클릭한 위치로 이동
+        if (_mapReady) {
+          _webViewController.runJavaScript('moveToLocation($lat, $lng, 3);');
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('근처 ${stations.length}개 정류장을 찾았습니다.'),
@@ -700,20 +707,59 @@ class _MapScreenState extends State<MapScreen> {
               label: '확인',
               onPressed: () {},
             ),
+            duration: const Duration(seconds: 3),
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('근처에 정류장을 찾을 수 없습니다.'),
-          ),
+        // 검색 반경을 늘려서 다시 시도
+        debugPrint('500m 반경에서 정류장을 찾지 못했습니다. 1km 반경으로 재검색합니다.');
+
+        final extendedStations = await ApiService.findNearbyStations(
+          lat,
+          lng,
+          radiusMeters: 1000.0,
         );
+
+        if (extendedStations.isNotEmpty) {
+          setState(() {
+            _nearbyStations = extendedStations;
+          });
+
+          // 지도에 마커 업데이트
+          if (_mapReady) {
+            _addMarkers();
+          }
+
+          // 지도를 클릭한 위치로 이동
+          if (_mapReady) {
+            _webViewController.runJavaScript('moveToLocation($lat, $lng, 3);');
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('1km 반경에서 ${extendedStations.length}개 정류장을 찾았습니다.'),
+              action: SnackBarAction(
+                label: '확인',
+                onPressed: () {},
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('근처에 정류장을 찾을 수 없습니다.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('근처 정류장 검색 중 오류가 발생했습니다: $e'),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
         ),
       );
     }

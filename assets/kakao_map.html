@@ -29,19 +29,244 @@
             transition: all 0.3s ease-in-out;
         }
 
+        /* 카카오맵 InfoWindow의 모든 border 제거 */
+        .kakao_maps_sdk_infowindow * {
+            border: none !important;
+            outline: none !important;
+        }
+
+        /* 카카오맵 InfoWindow 자체의 border 제거 */
+        .kakao_maps_sdk_infowindow,
+        .kakao_maps_sdk_infowindow>div,
+        .kakao_maps_sdk_infowindow>div>div {
+            border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+        }
+
+        /* 모든 가능한 border 클래스 제거 */
+        .kakao_maps_sdk_infowindow [class*="border"],
+        .kakao_maps_sdk_infowindow [class*="Border"],
+        .kakao_maps_sdk_infowindow [style*="border"] {
+            border: none !important;
+            outline: none !important;
+        }
+
+        /* 추가: 카카오맵 InfoWindow의 모든 스타일 재정의 */
+        .kakao_maps_sdk_infowindow,
+        .kakao_maps_sdk_infowindow *,
+        .kakao_maps_sdk_infowindow *::before,
+        .kakao_maps_sdk_infowindow *::after {
+            border: none !important;
+            outline: none !important;
+            border-radius: 16px !important;
+        }
+
+        /* InfoWindow 컨테이너 자체의 border 제거 */
+        .kakao_maps_sdk_infowindow {
+            border: none !important;
+            outline: none !important;
+            background: transparent !important;
+        }
+
+        /* 모든 InfoWindow 관련 요소의 border 강제 제거 */
+        .kakao_maps_sdk_infowindow,
+        .kakao_maps_sdk_infowindow *,
+        .kakao_maps_sdk_infowindow *::before,
+        .kakao_maps_sdk_infowindow *::after,
+        .kakao_maps_sdk_infowindow>div,
+        .kakao_maps_sdk_infowindow>div>div,
+        .kakao_maps_sdk_infowindow>div>div>div {
+            border: none !important;
+            outline: none !important;
+            border-width: 0 !important;
+            border-style: none !important;
+            border-color: transparent !important;
+        }
+
+        /* 카카오맵 기본 InfoWindow 스타일 완전 재정의 */
+        .kakao_maps_sdk_infowindow {
+            border: none !important;
+            outline: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+
+        /* InfoWindow 내부 모든 요소 border 제거 */
+        .kakao_maps_sdk_infowindow div,
+        .kakao_maps_sdk_infowindow span,
+        .kakao_maps_sdk_infowindow button,
+        .kakao_maps_sdk_infowindow input {
+            border: none !important;
+            outline: none !important;
+        }
+
+        /* 카카오맵 InfoWindow의 모든 가능한 border 스타일 완전 제거 */
+        .kakao_maps_sdk_infowindow,
+        .kakao_maps_sdk_infowindow *,
+        .kakao_maps_sdk_infowindow *::before,
+        .kakao_maps_sdk_infowindow *::after {
+            border: none !important;
+            outline: none !important;
+            border-width: 0 !important;
+            border-style: none !important;
+            border-color: transparent !important;
+            border-top: none !important;
+            border-right: none !important;
+            border-bottom: none !important;
+            border-left: none !important;
+            box-shadow: none !important;
+        }
+
+        /* 카카오맵 기본 InfoWindow 스타일 완전 재정의 */
+        .kakao_maps_sdk_infowindow {
+            border: none !important;
+            outline: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            border-radius: 16px !important;
+        }
+
+        /* 추가: 모든 InfoWindow 관련 클래스에 border 제거 */
+        [class*="infowindow"],
+        [class*="InfoWindow"],
+        [class*="info-window"],
+        [class*="info_window"] {
+            border: none !important;
+            outline: none !important;
+            border-width: 0 !important;
+            border-style: none !important;
+            border-color: transparent !important;
+        }
+
+        /* InfoWindow 배경 제거 */
+        .kakao_maps_sdk_infowindow,
+        .kakao_maps_sdk_infowindow *,
+        [class*="infowindow"],
+        [class*="InfoWindow"],
+        [class*="info-window"],
+        [class*="info_window"] {
+            border: none !important;
+            outline: none !important;
+            border-width: 0 !important;
+            border-style: none !important;
+            border-color: transparent !important;
+        }
+
+        /* 카카오맵 기본 InfoWindow 배경 완전 제거 */
+        .kakao_maps_sdk_infowindow {
+            background: transparent !important;
+            background-color: transparent !important;
+            background-image: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+
+        /* InfoWindow 컨테이너 배경 제거 (외부 반투명 영역) */
+        .kakao_maps_sdk_infowindow>div:first-child {
+            background: transparent !important;
+            background-color: transparent !important;
+            background-image: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+
+        /* InfoWindow 내용 영역만 배경 유지 */
+        .infowindow-content {
+            background: linear-gradient(145deg, #ffffff, #f8f9fa) !important;
+            background-color: #ffffff !important;
+            border-radius: 16px !important;
+            overflow: hidden !important;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+        }
+
+        /* InfoWindow 내부 요소들 배경 유지 */
+        .infowindow-content .title,
+        .infowindow-content .bus-info-container {
+            background: inherit !important;
+        }
+
+        /* 점(dot) 제거 */
+        .infowindow-content .dot {
+            display: none !important;
+        }
+
+        /* x 표시(닫기 버튼) 제거 */
+        .kakao_maps_sdk_infowindow .close {
+            display: none !important;
+        }
+
+        /* 카카오맵 기본 닫기 버튼 숨김 */
+        .kakao_maps_sdk_infowindow .closeBtn {
+            display: none !important;
+        }
+
+        /* 추가적인 닫기 버튼 요소들 숨김 */
+        .kakao_maps_sdk_infowindow [class*="close"],
+        .kakao_maps_sdk_infowindow [class*="Close"],
+        .kakao_maps_sdk_infowindow button[type="button"] {
+            display: none !important;
+        }
+
+        /* 카카오맵 기본 닫기 버튼만 숨김 (커스텀 닫기 버튼은 유지) */
+        .kakao_maps_sdk_infowindow .closeBtn {
+            display: none !important;
+        }
+
         .infowindow-content {
             position: relative;
             padding: 14px 18px;
-            padding-right: 40px;
             border-radius: 16px;
             background: linear-gradient(145deg, #ffffff, #f8f9fa);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(240, 240, 240, 0.5);
+            border: none;
             min-width: 140px;
             max-width: 300px;
             transform: translateY(10px);
             opacity: 0;
             animation: fadeInUp 0.3s ease forwards;
+        }
+
+        /* 커스텀 닫기 버튼 스타일 */
+        .custom-close-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 18px;
+            height: 18px;
+            border: none;
+            outline: none;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #666;
+            transition: all 0.2s ease;
+            z-index: 10;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .custom-close-btn:hover {
+            background: rgba(255, 255, 255, 1);
+            color: #333;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .custom-close-btn::before,
+        .custom-close-btn::after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 1px;
+            background: currentColor;
+            transform: rotate(45deg);
+        }
+
+        .custom-close-btn::after {
+            transform: rotate(-45deg);
         }
 
         @keyframes fadeInUp {
@@ -131,6 +356,182 @@
             }
         }
 
+        // 커스텀 닫기 버튼 클릭 이벤트 핸들러
+        function handleCustomCloseClick() {
+            closeCurrentInfoWindow();
+        }
+
+        // InfoWindow border 강제 제거 함수
+        function removeInfoWindowBorders() {
+            try {
+                console.log('🔍 [Border Debug] InfoWindow border 제거 시작');
+
+                // 다양한 가능한 InfoWindow 선택자들
+                const possibleSelectors = [
+                    '.kakao_maps_sdk_infowindow',
+                    '.kakao_maps_sdk_infowindow_',
+                    '.kakao_maps_sdk_infowindow__',
+                    '[class*="infowindow"]',
+                    '[class*="InfoWindow"]',
+                    '[class*="info-window"]',
+                    '[class*="info_window"]',
+                    '.kakao_maps_sdk_infowindow *',
+                    'div[style*="position: absolute"]',
+                    'div[style*="z-index"]'
+                ];
+
+                let foundInfoWindows = [];
+
+                possibleSelectors.forEach(function (selector) {
+                    try {
+                        const elements = document.querySelectorAll(selector);
+                        if (elements.length > 0) {
+                            console.log(`🔍 [Border Debug] 선택자 "${selector}"에서 ${elements.length}개 요소 발견`);
+                            foundInfoWindows = foundInfoWindows.concat(Array.from(elements));
+                        }
+                    } catch (e) {
+                        console.log(`🔍 [Border Debug] 선택자 "${selector}" 오류:`, e);
+                    }
+                });
+
+                // 중복 제거
+                foundInfoWindows = [...new Set(foundInfoWindows)];
+                console.log('🔍 [Border Debug] 총 발견된 InfoWindow 개수:', foundInfoWindows.length);
+
+                if (foundInfoWindows.length === 0) {
+                    console.log('🔍 [Border Debug] InfoWindow를 찾을 수 없음. DOM 전체 검색 시작');
+
+                    // DOM 전체에서 InfoWindow 관련 요소 검색
+                    const allDivs = document.querySelectorAll('div');
+                    allDivs.forEach(function (div, index) {
+                        if (index < 50) { // 처음 50개만 검사
+                            const style = window.getComputedStyle(div);
+                            const className = div.className || '';
+                            const id = div.id || '';
+
+                            // InfoWindow로 보이는 요소 찾기
+                            if (style.position === 'absolute' &&
+                                (style.zIndex > 1000 || className.includes('info') || className.includes('window'))) {
+                                console.log(`🔍 [Border Debug] 잠재적 InfoWindow 발견:`, {
+                                    className: className,
+                                    id: id,
+                                    position: style.position,
+                                    zIndex: style.zIndex,
+                                    border: style.border
+                                });
+
+                                // border 제거
+                                div.style.border = 'none';
+                                div.style.outline = 'none';
+                                div.style.borderWidth = '0';
+                                div.style.borderStyle = 'none';
+                                div.style.borderColor = 'transparent';
+
+                                // 배경 제거
+                                div.style.background = 'transparent';
+                                div.style.backgroundColor = 'transparent';
+                                div.style.backgroundImage = 'none';
+                                div.style.backdropFilter = 'none';
+                                div.style.webkitBackdropFilter = 'none';
+                            }
+                        }
+                    });
+                } else {
+                    foundInfoWindows.forEach(function (infoWindow, index) {
+                        console.log(`🔍 [Border Debug] InfoWindow ${index + 1} 처리 중`);
+
+                        // InfoWindow 자체의 border 제거
+                        const originalBorder = infoWindow.style.border;
+                        const originalOutline = infoWindow.style.outline;
+                        console.log(`🔍 [Border Debug] InfoWindow ${index + 1} 원본 border:`, originalBorder);
+                        console.log(`🔍 [Border Debug] InfoWindow ${index + 1} 원본 outline:`, originalOutline);
+
+                        infoWindow.style.border = 'none';
+                        infoWindow.style.outline = 'none';
+                        infoWindow.style.borderWidth = '0';
+                        infoWindow.style.borderStyle = 'none';
+                        infoWindow.style.borderColor = 'transparent';
+
+                        // InfoWindow 배경 제거 (외부 반투명 영역)
+                        infoWindow.style.background = 'transparent';
+                        infoWindow.style.backgroundColor = 'transparent';
+                        infoWindow.style.backgroundImage = 'none';
+                        infoWindow.style.backdropFilter = 'none';
+                        infoWindow.style.webkitBackdropFilter = 'none';
+
+                        // InfoWindow의 첫 번째 div (컨테이너) 배경도 제거
+                        const firstDiv = infoWindow.querySelector('div:first-child');
+                        if (firstDiv) {
+                            firstDiv.style.background = 'transparent';
+                            firstDiv.style.backgroundColor = 'transparent';
+                            firstDiv.style.backgroundImage = 'none';
+                            firstDiv.style.backdropFilter = 'none';
+                            firstDiv.style.webkitBackdropFilter = 'none';
+                        }
+
+                        // 내부 모든 요소의 border 제거
+                        const allElements = infoWindow.querySelectorAll('*');
+                        console.log(`🔍 [Border Debug] InfoWindow ${index + 1} 내부 요소 개수:`, allElements.length);
+
+                        allElements.forEach(function (element, elementIndex) {
+                            if (elementIndex < 10) { // 처음 10개 요소만 로그
+                                const elementBorder = element.style.border;
+                                const elementOutline = element.style.outline;
+                                if (elementBorder || elementOutline) {
+                                    console.log(`🔍 [Border Debug] 요소 ${elementIndex} (${element.tagName}) border:`, elementBorder, 'outline:', elementOutline);
+                                }
+                            }
+                            element.style.border = 'none';
+                            element.style.outline = 'none';
+                            element.style.borderWidth = '0';
+                            element.style.borderStyle = 'none';
+                            element.style.borderColor = 'transparent';
+
+                            // 배경 제거 (내부 요소는 제외 - 내용이 보이도록)
+                            if (!element.classList.contains('infowindow-content') &&
+                                !element.classList.contains('title') &&
+                                !element.classList.contains('bus-info-container')) {
+                                element.style.background = 'transparent';
+                                element.style.backgroundColor = 'transparent';
+                                element.style.backgroundImage = 'none';
+                                element.style.backdropFilter = 'none';
+                                element.style.webkitBackdropFilter = 'none';
+                            }
+                        });
+
+                        console.log(`🔍 [Border Debug] InfoWindow ${index + 1} border 제거 완료`);
+                    });
+                }
+
+                // 추가: computed style 확인
+                setTimeout(function () {
+                    const computedInfoWindows = document.querySelectorAll('[class*="infowindow"], [class*="InfoWindow"]');
+                    computedInfoWindows.forEach(function (infoWindow, index) {
+                        const computedStyle = window.getComputedStyle(infoWindow);
+                        console.log(`🔍 [Border Debug] InfoWindow ${index + 1} computed border:`, computedStyle.border);
+                        console.log(`🔍 [Border Debug] InfoWindow ${index + 1} computed outline:`, computedStyle.outline);
+                    });
+                }, 100);
+
+            } catch (error) {
+                console.log('❌ [Border Debug] Border 제거 중 오류:', error);
+            }
+        }
+
+        // InfoWindow가 열릴 때마다 border 제거
+        function openInfoWindowWithBorderRemoval(infoWindow, map, marker) {
+            console.log('🔍 [Border Debug] InfoWindow 열기 시작');
+            openInfoWindow(infoWindow, map, marker);
+
+            // 여러 타이밍으로 border 제거 실행
+            [50, 100, 200, 500, 1000].forEach(function (delay) {
+                setTimeout(function () {
+                    console.log(`🔍 [Border Debug] ${delay}ms 후 border 제거 실행`);
+                    removeInfoWindowBorders();
+                }, delay);
+            });
+        }
+
         function openInfoWindow(infoWindow, map, marker) {
             closeCurrentInfoWindow();
             infoWindow.open(map, marker);
@@ -187,9 +588,9 @@
 
             // 4. 최종 HTML 생성
             const updatedContent = `
-                <div class="${mainClass}">
+                <div class="${mainClass}" style="border: none !important; outline: none !important; border-width: 0 !important; border-style: none !important; border-color: transparent !important;">
+                    <button class="custom-close-btn" onclick="handleCustomCloseClick()"></button>
                     <div class="title">
-                        <div class="dot" style="background-color:${color};"></div>
                         <span style="color:${color};">${stationName}</span>
                     </div>
                     <div class="bus-info-container ${countClass}">
@@ -199,6 +600,11 @@
             `;
 
             currentInfoWindow.setContent(updatedContent);
+
+            // 콘텐츠 업데이트 후 border 제거
+            setTimeout(function () {
+                removeInfoWindowBorders();
+            }, 50);
         }
 
         // SVG 마커 생성 함수
@@ -238,11 +644,15 @@
             marker.setMap(map);
             markers.push(marker);
 
-            var initialContent = `<div class="infowindow-content"><div class="title"><div class="dot" style="background-color:${color};"></div><span style="color:${color};">${name}</span></div><div style="font-size:12px; text-align:center;">버스 정보 로딩 중...</div></div>`;
-            var infowindow = new kakao.maps.InfoWindow({ content: initialContent, removable: true });
+            var initialContent = `<div class="infowindow-content" style="border: none !important; outline: none !important; border-width: 0 !important; border-style: none !important; border-color: transparent !important;"><button class="custom-close-btn" onclick="handleCustomCloseClick()"></button><div class="title"><span style="color:${color};">${name}</span></div><div style="font-size:12px; text-align:center;">버스 정보 로딩 중...</div></div>`;
+            var infowindow = new kakao.maps.InfoWindow({
+                content: initialContent,
+                removable: false,
+                zIndex: 1000
+            });
 
             kakao.maps.event.addListener(marker, 'click', function () {
-                openInfoWindow(infowindow, map, marker);
+                openInfoWindowWithBorderRemoval(infowindow, map, marker);
                 sendMessageToFlutter('stationClick', { name: name, latitude: lat, longitude: lng, type: type, sequenceNo: sequenceNo });
             });
         }
