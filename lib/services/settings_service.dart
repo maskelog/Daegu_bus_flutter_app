@@ -34,6 +34,12 @@ class SettingsService extends ChangeNotifier {
   static const String _notificationDisplayModeKey = 'notificationDisplayMode';
   static const String _colorSchemeKey = 'color_scheme';
 
+  // API 절약 관련 키들 추가
+  static const String _realTimeEnabledKey = 'real_time_enabled';
+  static const String _updateIntervalKey = 'update_interval';
+  static const String _useCachingKey = 'use_caching';
+  static const String _useOpenStreetMapKey = 'use_openstreetmap';
+
   // 스피커 모드 상수
   static const int speakerModeHeadset = 0; // 이어폰 전용
   static const int speakerModeSpeaker = 1; // 스피커 전용
@@ -69,6 +75,12 @@ class SettingsService extends ChangeNotifier {
   NotificationDisplayMode _notificationDisplayMode =
       NotificationDisplayMode.alarmedOnly; // 기본값
 
+  // API 절약 관련 변수들
+  bool _isRealTimeEnabled = true;
+  int _updateInterval = 60; // 기본 60초
+  bool _useCaching = true;
+  bool _useOpenStreetMap = false;
+
   // Getters
   String get alarmSound => _alarmSound;
   String get alarmSoundId => _alarmSound; // 기존 코드 호환성을 위해 추가
@@ -87,6 +99,12 @@ class SettingsService extends ChangeNotifier {
 
   bool get isDarkMode => _isDarkMode;
 
+  // API 절약 관련 getter들
+  bool get isRealTimeEnabled => _isRealTimeEnabled;
+  int get updateInterval => _updateInterval;
+  bool get useCaching => _useCaching;
+  bool get useOpenStreetMap => _useOpenStreetMap;
+
   // 설정 초기화
   Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
@@ -102,6 +120,12 @@ class SettingsService extends ChangeNotifier {
     _notificationDisplayMode = NotificationDisplayMode
         .values[_prefs.getInt(_notificationDisplayModeKey) ?? 0];
     _colorScheme = ColorSchemeType.values[_prefs.getInt(_colorSchemeKey) ?? 0];
+
+    // API 절약 관련 설정 로드
+    _isRealTimeEnabled = _prefs.getBool(_realTimeEnabledKey) ?? true;
+    _updateInterval = _prefs.getInt(_updateIntervalKey) ?? 60;
+    _useCaching = _prefs.getBool(_useCachingKey) ?? true;
+    _useOpenStreetMap = _prefs.getBool(_useOpenStreetMapKey) ?? false;
     notifyListeners();
   }
 
@@ -256,6 +280,39 @@ class SettingsService extends ChangeNotifier {
     if (_colorScheme != colorScheme) {
       _colorScheme = colorScheme;
       await _prefs.setInt(_colorSchemeKey, colorScheme.index);
+      notifyListeners();
+    }
+  }
+
+  // API 절약 관련 설정 업데이트 메서드들
+  Future<void> updateRealTimeEnabled(bool enabled) async {
+    if (_isRealTimeEnabled != enabled) {
+      _isRealTimeEnabled = enabled;
+      await _prefs.setBool(_realTimeEnabledKey, enabled);
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateUpdateInterval(int seconds) async {
+    if (_updateInterval != seconds) {
+      _updateInterval = seconds;
+      await _prefs.setInt(_updateIntervalKey, seconds);
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateCaching(bool useCaching) async {
+    if (_useCaching != useCaching) {
+      _useCaching = useCaching;
+      await _prefs.setBool(_useCachingKey, useCaching);
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateOpenStreetMap(bool useOpenStreetMap) async {
+    if (_useOpenStreetMap != useOpenStreetMap) {
+      _useOpenStreetMap = useOpenStreetMap;
+      await _prefs.setBool(_useOpenStreetMapKey, useOpenStreetMap);
       notifyListeners();
     }
   }

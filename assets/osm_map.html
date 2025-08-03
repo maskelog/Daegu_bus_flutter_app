@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>OSM Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .leaflet-popup-content-wrapper {
+            border-radius: 16px;
+            border: none;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+        }
+
+        .leaflet-popup-content {
+            margin: 0;
+            padding: 14px 18px;
+            min-width: 140px;
+            max-width: 300px;
+        }
+
+        .custom-popup {
+            background: linear-gradient(145deg, #ffffff, #f8f9fa);
+            border-radius: 16px;
+            padding: 14px 18px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+        }
+
+        .popup-title {
+            font-weight: 700;
+            font-size: 16px;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+        }
+
+        .bus-info-container {
+            display: grid;
+            grid-gap: 6px;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+        }
+
+        .bus-info-item {
+            padding: 8px 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            background: #f9fafb;
+            color: #333;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        var map;
+        var markers = [];
+        var busMarkers = [];
+
+        function initMap(lat, lng, level) {
+            try {
+                // 적절한 줌 레벨 설정 (너무 작게 표시되는 것 방지)
+                const minZoomLevel = 16; // 최소 줌 레벨
+                const defaultZoomLevel = 16; // 기본 줌 레벨
+
+                let targetZoom = level || defaultZoomLevel;
+
+                // 줌 레벨이 너무 작으면 기본값으로 조정
+                if (targetZoom < minZoomLevel) {
+                    targetZoom = defaultZoomLevel;
+                }
+
+                map = L.map('map').setView([lat || 35.8714, lng || 128.6014], targetZoom);
+
+                // OpenStreetMap 타일 레이어 추가
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors',
+                    maxZoom: 19,
+                    minZoom: 10
+                }).addTo(map);
+
+                // 지도 클릭 이벤트
+                map.on('click', function (e) {
+                    sendMessageToFlutter('mapClick', {
+                        latitude: e.latlng.lat,
+                        longitude: e.latlng.lng
+                    });
+                });
+
+                sendMessageToFlutter('mapReady', {});
+            } catch (error) {
+                sendMessageToFlutter('mapError', { error: error.message });
+            }
+        }
+
+        function addCurrentLocationMarker(lat, lng) {
+            var marker = L.circleMarker([lat, lng], {
+                radius: 8,
+                fillColor: '#FF4444',
+                color: '#FFFFFF',
+                weight: 3,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(map);
+            markers.push(marker);
+        }
+
+        function addStationMarker(lat, lng, name, type, sequenceNo) {
+            var color = type === 'route' ? '#2196F3' : '#4CAF50';
+            var marker = L.circleMarker([lat, lng], {
+                radius: 6,
+                fillColor: color,
+                color: '#FFFFFF',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(map);
+
+            var popupContent = `
+                <div class="custom-popup">
+                    <div class="popup-title" style="color: ${color};">${name}</div>
+                    <div style="font-size:12px; text-align:center;">버스 정보 로딩 중...</div>
+                </div>
+            `;
+
+            marker.bindPopup(popupContent);
+            marker.on('click', function () {
+                sendMessageToFlutter('stationClick', {
+                    name: name,
+                    latitude: lat,
+                    longitude: lng,
+                    type: type,
+                    sequenceNo: sequenceNo
+                });
+            });
+            markers.push(marker);
+        }
+
+        function updateStationBusInfo(stationName, stationType, busInfo) {
+            markers.forEach(function (marker) {
+                if (marker.getPopup() && marker.getPopup().getContent().includes(stationName)) {
+                    var color = stationType === 'route' ? '#2196F3' : '#4CAF50';
+                    var updatedContent = `
+                        <div class="custom-popup">
+                            <div class="popup-title" style="color: ${color};">${stationName}</div>
+                            <div class="bus-info-container">
+                                ${busInfo}
+                            </div>
+                        </div>
+                    `;
+                    marker.getPopup().setContent(updatedContent);
+                }
+            });
+        }
+
+        function addBusMarker(lat, lng, busNumber, routeId) {
+            var marker = L.circleMarker([lat, lng], {
+                radius: 10,
+                fillColor: '#FF9800',
+                color: '#FFFFFF',
+                weight: 3,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(map);
+            busMarkers.push(marker);
+        }
+
+        function clearMarkers() {
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+        }
+
+        function clearBusMarkers() {
+            busMarkers.forEach(m => map.removeLayer(m));
+            busMarkers = [];
+        }
+
+        function moveToLocation(lat, lng, level) {
+            // GPS 버튼 클릭 시 적절한 줌 레벨 유지 (너무 작게 표시되는 것 방지)
+            // level이 지정되지 않았거나 너무 작은 경우 기본값 18 사용
+            const minZoomLevel = 16; // 최소 줌 레벨 (너무 멀리 보이는 것 방지)
+            const defaultZoomLevel = 18; // 기본 줌 레벨 (적당한 상세도)
+
+            let targetZoom = level || defaultZoomLevel;
+
+            // 줌 레벨이 너무 작으면 기본값으로 조정
+            if (targetZoom < minZoomLevel) {
+                targetZoom = defaultZoomLevel;
+            }
+
+            // 부드러운 애니메이션과 함께 위치 이동
+            map.flyTo([lat, lng], targetZoom, {
+                duration: 1.0, // 1초 동안 애니메이션
+                easeLinearity: 0.25
+            });
+        }
+
+        function sendMessageToFlutter(type, data) {
+            if (window.mapEvent) window.mapEvent.postMessage(JSON.stringify({ type, data }));
+        }
+
+        // Flutter에서 호출할 전역 함수들
+        window.initMap = initMap;
+        window.addCurrentLocationMarker = addCurrentLocationMarker;
+        window.addStationMarker = addStationMarker;
+        window.addBusMarker = addBusMarker;
+        window.clearMarkers = clearMarkers;
+        window.clearBusMarkers = clearBusMarkers;
+        window.moveToLocation = moveToLocation;
+        window.updateStationBusInfo = updateStationBusInfo;
+    </script>
+</body>
+
+</html>

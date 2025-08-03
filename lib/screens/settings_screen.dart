@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/settings_service.dart';
 import '../models/alarm_sound.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -14,6 +15,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // 선택된 값을 관리할 변수 (초기값은 SettingsService에서 로드)
   NotificationDisplayMode _selectedNotificationMode =
       NotificationDisplayMode.alarmedOnly;
+  bool _isRealTimeEnabled = true;
+  int _updateInterval = 60; // 기본 60초
+  bool _useCaching = true;
+  bool _useOpenStreetMap = false; // OpenStreetMap 사용 여부
 
   @override
   void initState() {
@@ -31,6 +36,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _selectedNotificationMode = settingsService.notificationDisplayMode;
       // Load other settings if needed for this screen
+      _isRealTimeEnabled = settingsService.isRealTimeEnabled;
+      _updateInterval = settingsService.updateInterval;
+      _useCaching = settingsService.useCaching;
+      _useOpenStreetMap = settingsService.useOpenStreetMap;
     });
   }
 
@@ -48,6 +57,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         duration: Duration(seconds: 1),
       ));
     }
+  }
+
+  Future<void> _saveSettings() async {
+    final settingsService = SettingsService();
+    await settingsService.updateRealTimeEnabled(_isRealTimeEnabled);
+    await settingsService.updateUpdateInterval(_updateInterval);
+    await settingsService.updateCaching(_useCaching);
+    await settingsService.updateOpenStreetMap(_useOpenStreetMap);
   }
 
   @override
@@ -168,6 +185,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             settingsService.updateUseAutoAlarm(value),
                       ),
                     ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // API 절약 설정 섹션
+                  _buildSectionHeader('API 절약 설정'),
+                  SwitchListTile(
+                    title: const Text('실시간 업데이트'),
+                    subtitle: const Text('버스 위치 실시간 추적'),
+                    value: _isRealTimeEnabled,
+                    onChanged: (value) {
+                      setState(() {
+                        _isRealTimeEnabled = value;
+                      });
+                      _saveSettings();
+                    },
+                  ),
+                  ListTile(
+                    title: const Text('업데이트 간격'),
+                    subtitle: Text('$_updateInterval초'),
+                    trailing: DropdownButton<int>(
+                      value: _updateInterval,
+                      items: [30, 60, 120, 300].map((seconds) {
+                        return DropdownMenuItem(
+                          value: seconds,
+                          child: Text('$seconds초'),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _updateInterval = value;
+                          });
+                          _saveSettings();
+                        }
+                      },
+                    ),
+                  ),
+                  SwitchListTile(
+                    title: const Text('캐싱 사용'),
+                    subtitle: const Text('중복 검색 방지로 API 절약'),
+                    value: _useCaching,
+                    onChanged: (value) {
+                      setState(() {
+                        _useCaching = value;
+                      });
+                      _saveSettings();
+                    },
+                  ),
+                  SwitchListTile(
+                    title: const Text('OpenStreetMap 사용'),
+                    subtitle: const Text('무료 지도 서비스 (카카오맵 대신)'),
+                    value: _useOpenStreetMap,
+                    onChanged: (value) {
+                      setState(() {
+                        _useOpenStreetMap = value;
+                      });
+                      _saveSettings();
+                    },
                   ),
 
                   const SizedBox(height: 16),
@@ -692,6 +768,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onChanged: onChanged,
         activeColor: colorScheme.primary,
         visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Text(
+        title,
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.bold,
+          color: colorScheme.onSurface,
+        ),
       ),
     );
   }

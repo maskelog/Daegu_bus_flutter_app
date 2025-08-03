@@ -41,6 +41,12 @@ class _MapScreenState extends State<MapScreen> {
   String? _htmlContent;
   bool _isSearchingNearby = false; // 주변 정류장 검색 상태
 
+  // 캐싱을 위한 변수들 추가
+  static const Duration _cacheDuration = Duration(minutes: 10); // 10분 캐시
+  static const double _lastSearchRadius = 2000.0; // 마지막 검색 반경
+  Position? _lastSearchPosition; // 마지막 검색 위치
+  DateTime? _lastSearchTime; // 마지막 검색 시간
+
   @override
   void initState() {
     super.initState();
@@ -93,20 +99,12 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _loadHtmlTemplate() async {
     try {
-      String htmlTemplate =
-          await rootBundle.loadString('assets/kakao_map.html');
+      String htmlTemplate = await rootBundle.loadString('assets/osm_map.html');
 
-      // 환경변수에서 카카오 API 키 가져오기
-      final kakaoApiKey = dotenv.env['KAKAO_JS_API_KEY'];
+      // OpenStreetMap은 API 키가 필요 없으므로 바로 사용
+      _htmlContent = htmlTemplate;
 
-      if (kakaoApiKey == null || kakaoApiKey.isEmpty) {
-        throw Exception('KAKAO_JS_API_KEY가 .env 파일에 설정되지 않았습니다.');
-      }
-
-      // 카카오 API 키를 실제 키로 교체
-      _htmlContent = htmlTemplate.replaceAll('YOUR_KAKAO_API_KEY', kakaoApiKey);
-
-      debugPrint('카카오맵 API 키 로드 완료 (길이: ${kakaoApiKey.length})');
+      debugPrint('OpenStreetMap HTML 템플릿 로드 완료');
     } catch (e) {
       debugPrint('HTML 템플릿 로드 오류: $e');
       throw Exception('HTML 템플릿을 로드할 수 없습니다: $e');
@@ -202,6 +200,16 @@ class _MapScreenState extends State<MapScreen> {
                     onPressed: _moveToCurrentLocation,
                     tooltip: '현재 위치로 이동',
                     child: const Icon(Icons.my_location),
+                  ),
+                  const SizedBox(height: 8),
+                  // 실시간 업데이트 토글 버튼 추가
+                  FloatingActionButton.small(
+                    onPressed: _toggleRealTimeUpdates,
+                    tooltip:
+                        '실시간 업데이트 ${_busPositionTimer != null ? '끄기' : '켜기'}',
+                    child: Icon(_busPositionTimer != null
+                        ? Icons.pause
+                        : Icons.play_arrow),
                   ),
                 ],
               ),
@@ -1110,6 +1118,29 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
+    // 캐시 확인: 같은 위치에서 10분 이내에 검색한 경우 캐시된 결과 사용
+    if (_lastSearchPosition != null && _lastSearchTime != null) {
+      final timeDiff = DateTime.now().difference(_lastSearchTime!);
+      final distanceDiff = _calculateDistance(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        _lastSearchPosition!.latitude,
+        _lastSearchPosition!.longitude,
+      );
+
+      // 10분 이내이고 100m 이내에서 검색한 경우 캐시 사용
+      if (timeDiff < _cacheDuration && distanceDiff < 0.1) {
+        debugPrint('캐시된 주변 정류장 결과 사용 (${_nearbyStations.length}개)');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('캐시된 주변 ${_nearbyStations.length}개 정류장을 표시합니다.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() {
       _isSearchingNearby = true;
     });
@@ -1143,6 +1174,9 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         _nearbyStations = stations;
         _isSearchingNearby = false;
+        // 캐시 정보 업데이트
+        _lastSearchPosition = _currentPosition;
+        _lastSearchTime = DateTime.now();
       });
 
       // 지도에 마커 업데이트
@@ -1192,8 +1226,8 @@ class _MapScreenState extends State<MapScreen> {
   void _startBusPositionTracking() {
     if (widget.routeId == null) return;
 
-    // 30초마다 버스 위치 업데이트
-    _busPositionTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    // 60초마다 버스 위치 업데이트 (30초에서 변경)
+    _busPositionTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       _updateBusPositions();
     });
 
@@ -1241,6 +1275,18 @@ class _MapScreenState extends State<MapScreen> {
           }
         }
       }
+    }
+  }
+
+  // 실시간 업데이트 토글 메서드
+  void _toggleRealTimeUpdates() {
+    if (_busPositionTimer != null) {
+      _busPositionTimer!.cancel();
+      _busPositionTimer = null;
+      debugPrint('실시간 업데이트 끄기');
+    } else {
+      _startBusPositionTracking();
+      debugPrint('실시간 업데이트 켜기');
     }
   }
 
