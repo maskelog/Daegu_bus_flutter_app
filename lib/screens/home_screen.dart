@@ -295,28 +295,6 @@ class _HomeScreenState extends State<HomeScreen>
                   const SizedBox(width: 12),
                   IconButton.filledTonal(
                     onPressed: () {
-                      debugPrint(
-                          '지도 버튼 클릭 - 현재 주변 정류장: ${_nearbyStops.length}개');
-                      for (final stop in _nearbyStops) {
-                        debugPrint(
-                            '  - ${stop.name} (${stop.latitude}, ${stop.longitude})');
-                      }
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => MapScreen(
-                            initialNearbyStations:
-                                _nearbyStops.isNotEmpty ? _nearbyStops : null,
-                          ),
-                        ),
-                      );
-                    },
-                    tooltip: '지도에서 주변 정류장 보기',
-                    icon: const Icon(Icons.map_outlined),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filledTonal(
-                    onPressed: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(

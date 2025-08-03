@@ -181,26 +181,33 @@ class _MapScreenState extends State<MapScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      body: _buildBody(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      floatingActionButton: _currentPosition != null
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FloatingActionButton.small(
-                  onPressed: _searchNearbyStations,
-                  tooltip: '주변 정류장 검색',
-                  child: const Icon(Icons.search),
-                ),
-                const SizedBox(height: 8),
-                FloatingActionButton.small(
-                  onPressed: _moveToCurrentLocation,
-                  tooltip: '현재 위치로 이동',
-                  child: const Icon(Icons.my_location),
-                ),
-              ],
-            )
-          : null,
+      body: Stack(
+        children: [
+          _buildBody(),
+          // 오른쪽 하단에 버튼들 배치
+          if (_currentPosition != null)
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FloatingActionButton.small(
+                    onPressed: _searchNearbyStations,
+                    tooltip: '주변 정류장 검색',
+                    child: const Icon(Icons.search),
+                  ),
+                  const SizedBox(height: 8),
+                  FloatingActionButton.small(
+                    onPressed: _moveToCurrentLocation,
+                    tooltip: '현재 위치로 이동',
+                    child: const Icon(Icons.my_location),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 
