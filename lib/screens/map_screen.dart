@@ -479,8 +479,22 @@ class _MapScreenState extends State<MapScreen> {
           final lat = data['data']['latitude'];
           final lng = data['data']['longitude'];
           debugPrint('지도 클릭: $lat, $lng');
-          // 지도 클릭 시 해당 위치의 주변 정류장 검색
-          _searchNearbyStationsFromCoords(lat, lng);
+          // 클릭한 위치 근처에 이미 정류장이 있는지 확인 (예: 100m 이내)
+          final nearestStation = _findNearestStation(lat, lng);
+          if (nearestStation != null) {
+            debugPrint('클릭한 위치 근처에 이미 정류장이 있습니다: ${nearestStation.name}');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content:
+                    Text('클릭한 위치 근처에 \'${nearestStation.name}\' 정류장이 있습니다.'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          } else {
+            // 근처에 정류장이 없을 때만 API를 통해 검색
+            debugPrint('근처에 정류장이 없어 새로 검색합니다.');
+            _searchNearbyStationsFromCoords(lat, lng);
+          }
           break;
         case 'stationClick':
           final stationData = data['data'];
