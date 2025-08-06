@@ -338,9 +338,8 @@
 
 <body>
     <div id="map"></div>
-    <script type="text/javascript"
-        src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_API_KEY"
-        onload="sendMessageToFlutter('mapLoaded', {})'" onerror="console.error('카카오맵 스크립트 로드 실패')"></script>
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_API_KEY"
+        onload="sendMessageToFlutter('mapLoaded', {})" onerror="console.error('카카오맵 스크립트 로드 실패')"></script>
     <script>
         // 전역 변수 선언
         var map;

@@ -6,7 +6,6 @@ import 'package:daegu_bus_app/utils/simple_tts_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:daegu_bus_app/services/settings_service.dart';
 import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
-// import 'package:daegu_bus_app/utils/logger.dart'; // 존재하지 않는 파일
 
 /// NotificationService: 네이티브 BusAlertService와 통신하는 Flutter 서비스
 class NotificationService extends ChangeNotifier {

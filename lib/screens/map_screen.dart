@@ -178,7 +178,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    // final colorScheme = theme.colorScheme; // 사용되지 않음
 
     return Scaffold(
       body: Stack(
@@ -721,16 +721,18 @@ class _MapScreenState extends State<MapScreen> {
           _webViewController.runJavaScript('moveToLocation($lat, $lng, 3);');
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('근처 ${stations.length}개 정류장을 찾았습니다.'),
-            action: SnackBarAction(
-              label: '확인',
-              onPressed: () {},
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('근처 ${stations.length}개 정류장을 찾았습니다.'),
+              action: SnackBarAction(
+                label: '확인',
+                onPressed: () {},
+              ),
+              duration: const Duration(seconds: 3),
             ),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+          );
+        }
       } else {
         // 검색 반경을 늘려서 다시 시도
         debugPrint('500m 반경에서 정류장을 찾지 못했습니다. 1km 반경으로 재검색합니다.');
@@ -756,33 +758,40 @@ class _MapScreenState extends State<MapScreen> {
             _webViewController.runJavaScript('moveToLocation($lat, $lng, 3);');
           }
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('1km 반경에서 ${extendedStations.length}개 정류장을 찾았습니다.'),
-              action: SnackBarAction(
-                label: '확인',
-                onPressed: () {},
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content:
+                    Text('1km 반경에서 ${extendedStations.length}개 정류장을 찾았습니다.'),
+                action: SnackBarAction(
+                  label: '확인',
+                  onPressed: () {},
+                ),
+                duration: const Duration(seconds: 3),
               ),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+            );
+          }
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('근처에 정류장을 찾을 수 없습니다.'),
-              duration: Duration(seconds: 2),
-            ),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('근처에 정류장을 찾을 수 없습니다.'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
         }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('근처 정류장 검색 중 오류가 발생했습니다: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('근처 정류장 검색 중 오류가 발생했습니다: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
@@ -942,7 +951,7 @@ class _MapScreenState extends State<MapScreen> {
 
         if (jsonResult.isNotEmpty && jsonResult != '[]') {
           final List<dynamic> decoded = jsonDecode(jsonResult);
-          final busApiService = BusApiService();
+          // final busApiService = BusApiService(); // 사용되지 않음
 
           // 네이티브 코드에서 반환하는 JSON 구조에 맞게 파싱
           final List<BusArrival> arrivals = [];
@@ -965,12 +974,12 @@ class _MapScreenState extends State<MapScreen> {
             for (final arrivalData in arrList) {
               if (arrivalData is! Map<String, dynamic>) continue;
 
-              final String routeId = arrivalData['routeId'] ?? '';
+              // final String routeId = arrivalData['routeId'] ?? ''; // 사용되지 않음
               final String bsNm = arrivalData['bsNm'] ?? '정보 없음';
               final String arrState = arrivalData['arrState'] ?? '정보 없음';
               final int bsGap = arrivalData['bsGap'] ?? 0;
               final String busTCd2 = arrivalData['busTCd2'] ?? 'N';
-              final String busTCd3 = arrivalData['busTCd3'] ?? 'N';
+              // final String busTCd3 = arrivalData['busTCd3'] ?? 'N'; // 사용되지 않음
               final String vhcNo2 = arrivalData['vhcNo2'] ?? '';
 
               // 저상버스 여부 확인 (busTCd2가 "1"이면 저상버스)
