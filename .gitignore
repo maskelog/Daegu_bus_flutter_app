@@ -188,3 +188,7 @@ CUserssh953*
 flutter_*.log
 *.crash
 .gemini/settings.json
+logcat.txt
+.gitignore
+BusInfo_old_backup.kt
+bash_stackdump_backup.txt
