@@ -1247,6 +1247,7 @@ class AlarmService extends ChangeNotifier {
 
       // 네이티브 AlarmManager 스케줄링 요청
       await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
+        'alarmId': uniqueAlarmId.hashCode,
         'busNo': alarm.routeNo,
         'stationName': alarm.stationName,
         'routeId': alarm.routeId,

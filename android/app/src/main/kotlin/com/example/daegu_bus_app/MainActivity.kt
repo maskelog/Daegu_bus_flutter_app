@@ -308,11 +308,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             putExtra("stationId", stationId)
                             putExtra("remainingMinutes", remainingMinutes)
                         }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(ttsIntent)
-                        } else {
-                            startService(ttsIntent)
-                        }
+                        // 포그라운드 알림 제거 요구사항에 따라 일반 Service로 실행
+                        startService(ttsIntent)
                         result.success(true)
                     } catch (e: Exception) {
                         Log.e(TAG, "startTtsTracking 호출 오류: ${e.message}", e)

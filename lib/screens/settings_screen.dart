@@ -167,6 +167,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onChanged: (value) =>
                             settingsService.updateUseAutoAlarm(value),
                       ),
+                      if (settingsService.useAutoAlarm) ...[
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        _buildAutoAlarmTimeoutSelector(
+                            context, settingsService),
+                      ],
                     ],
                   ),
 
@@ -392,6 +397,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: NotificationDisplayMode.allBuses,
           groupValue: _selectedNotificationMode,
           onChanged: _updateNotificationModeSetting,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAutoAlarmTimeoutSelector(
+      BuildContext context, SettingsService settingsService) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final options = <int>[5, 10, 15, 30, 45, 60, 90, 120];
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.timer_outlined,
+                size: 16,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '자동알람 자동 종료 시간',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              DropdownButton<int>(
+                value: settingsService.autoAlarmTimeoutMinutes,
+                onChanged: (value) {
+                  if (value != null) {
+                    settingsService.updateAutoAlarmTimeoutMinutes(value);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('자동 종료 시간: $value분으로 설정되었습니다.'),
+                        duration: const Duration(seconds: 1),
+                      ),
+                    );
+                  }
+                },
+                items: options
+                    .map((m) => DropdownMenuItem<int>(
+                          value: m,
+                          child: Text('$m분'),
+                        ))
+                    .toList(),
+              ),
+            ],
+          ),
         ),
       ],
     );

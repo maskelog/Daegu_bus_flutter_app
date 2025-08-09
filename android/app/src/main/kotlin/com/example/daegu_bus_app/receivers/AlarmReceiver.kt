@@ -17,7 +17,17 @@ class AlarmReceiver : BroadcastReceiver() {
         Log.d(TAG, "🔔 알람 수신: $action")
 
         if (action == "com.example.daegu_bus_app.AUTO_ALARM") {
-            handleOptimizedAutoAlarm(context, intent)
+            // ANR 방지를 위해 비동기 처리
+            val pendingResult = goAsync()
+            Thread {
+                try {
+                    handleOptimizedAutoAlarm(context.applicationContext, intent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 알람 처리 중 오류", e)
+                } finally {
+                    try { pendingResult.finish() } catch (_: Exception) {}
+                }
+            }.start()
         }
     }
     
@@ -43,9 +53,47 @@ class AlarmReceiver : BroadcastReceiver() {
             val scheduledTime = intent.getLongExtra("scheduledTime", 0L)
             val timeDiff = Math.abs(currentTime - scheduledTime)
 
-            // 5분 이상 차이나면 실행하지 않음 (배터리 절약)
-            if (scheduledTime > 0 && timeDiff > 300000L) { // 5분 = 300초
-                Log.w(TAG, "⚠️ 알람 시간이 부정확함 (${timeDiff/1000}초 차이), 실행 취소")
+            // 지연이 큰 경우(> 5분) 현재 실행은 건너뛰되, 다음 알람은 반드시 재설정
+            if (scheduledTime > 0 && (currentTime - scheduledTime) > 300000L) { // 5분 = 300초
+                Log.w(TAG, "⚠️ 알람 지연 감지 (${(currentTime - scheduledTime)/1000}초). 현재 실행 건너뛰고 다음 알람을 재설정합니다.")
+                scheduleNextAlarmImmediate(context, intent)
+                return
+            }
+
+            // 예정 시간보다 너무 이른 경우(> 5초)에는 보정: 정확한 시각에 다시 울리도록 재설정하고 즉시 종료
+            if (scheduledTime > 0 && (scheduledTime - currentTime) > 5000L) {
+                val earlySec = (scheduledTime - currentTime) / 1000
+                Log.w(TAG, "⚠️ 알람이 ${earlySec}초 일찍 도착함. 정확한 시각으로 재설정합니다.")
+
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                val pendingIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    android.app.PendingIntent.getBroadcast(
+                        context,
+                        intent.getIntExtra("alarmId", 0),
+                        intent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                    )
+                } else {
+                    android.app.PendingIntent.getBroadcast(
+                        context,
+                        intent.getIntExtra("alarmId", 0),
+                        intent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                }
+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    alarmManager.setAlarmClock(
+                        android.app.AlarmManager.AlarmClockInfo(scheduledTime, pendingIntent),
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.setExact(
+                        android.app.AlarmManager.RTC_WAKEUP,
+                        scheduledTime,
+                        pendingIntent
+                    )
+                }
                 return
             }
 
@@ -62,11 +110,8 @@ class AlarmReceiver : BroadcastReceiver() {
                     putExtra("singleExecution", true) // 단일 실행 모드
                 }
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(ttsIntent)
-                } else {
-                    context.startService(ttsIntent)
-                }
+                // 포그라운드 알림 제거 요구사항에 따라 일반 Service로 실행
+                context.startService(ttsIntent)
                 Log.d(TAG, "✅ 경량화된 TTS 서비스 시작")
             }
 

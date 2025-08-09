@@ -389,30 +389,24 @@ class _MapScreenState extends State<MapScreen> {
     // 기존 마커 제거
     _webViewController.runJavaScript('clearMarkers();');
 
-    // 현재 위치 마커 추가
+    // 현재 위치 마커 추가 (원본 좌표 사용 - 불필요한 반올림 제거)
     if (_currentPosition != null) {
-      // 좌표 정밀도 향상 (카카오맵과 일치하도록)
-      final preciseLat =
-          double.parse(_currentPosition!.latitude.toStringAsFixed(6));
-      final preciseLng =
-          double.parse(_currentPosition!.longitude.toStringAsFixed(6));
+      final lat = _currentPosition!.latitude;
+      final lng = _currentPosition!.longitude;
 
-      debugPrint('현재 위치 마커 추가: $preciseLat, $preciseLng');
-      _webViewController
-          .runJavaScript('addCurrentLocationMarker($preciseLat, $preciseLng);');
+      debugPrint('현재 위치 마커 추가: $lat, $lng');
+      _webViewController.runJavaScript('addCurrentLocationMarker($lat, $lng);');
     }
 
     // 노선 정류장 마커 추가 (우선순위 높음)
     for (final station in _routeStations) {
       if (station.latitude != null && station.longitude != null) {
-        // 좌표 정밀도 향상 (카카오맵과 일치하도록)
-        final preciseLat = double.parse(station.latitude!.toStringAsFixed(6));
-        final preciseLng = double.parse(station.longitude!.toStringAsFixed(6));
+        final lat = station.latitude!;
+        final lng = station.longitude!;
 
-        debugPrint(
-            '노선 정류장 마커 추가: ${station.stationName} ($preciseLat, $preciseLng)');
+        debugPrint('노선 정류장 마커 추가: ${station.stationName} ($lat, $lng)');
         _webViewController.runJavaScript(
-            'addStationMarker($preciseLat, $preciseLng, "${station.stationName}", "route", ${station.sequenceNo});');
+            'addStationMarker($lat, $lng, "${station.stationName}", "route", ${station.sequenceNo});');
       }
     }
 
@@ -438,15 +432,12 @@ class _MapScreenState extends State<MapScreen> {
         }
 
         if (!isDuplicate && !addedCoordinates.contains(coordKey)) {
-          // 좌표 정밀도 향상 (카카오맵과 일치하도록)
-          final preciseLat = double.parse(station.latitude!.toStringAsFixed(6));
-          final preciseLng =
-              double.parse(station.longitude!.toStringAsFixed(6));
+          final lat = station.latitude!;
+          final lng = station.longitude!;
 
-          debugPrint(
-              '주변 정류장 마커 추가: ${station.name} ($preciseLat, $preciseLng)');
+          debugPrint('주변 정류장 마커 추가: ${station.name} ($lat, $lng)');
           _webViewController.runJavaScript(
-              'addStationMarker($preciseLat, $preciseLng, "${station.name}", "nearby", 0);');
+              'addStationMarker($lat, $lng, "${station.name}", "nearby", 0);');
           addedCoordinates.add(coordKey);
         }
       }
@@ -467,6 +458,22 @@ class _MapScreenState extends State<MapScreen> {
       switch (type) {
         case 'mapReady':
           debugPrint('지도 준비 완료');
+          break;
+        case 'zoomChanged':
+          final lvl = data['data']?['level'];
+          final mpp = data['data']?['metersPerPixel'];
+          final dpr = data['data']?['dpr'];
+          debugPrint(
+              '줌 변경: level=$lvl, m/px=${mpp?.toStringAsFixed(3)}, dpr=$dpr');
+          break;
+        case 'mapMetrics':
+          final lvl = data['data']?['level'];
+          final mpp = data['data']?['metersPerPixel'];
+          final lat = data['data']?['centerLat'];
+          final lng = data['data']?['centerLng'];
+          final dpr = data['data']?['dpr'];
+          debugPrint(
+              '맵 메트릭스: level=$lvl, m/px=${mpp?.toStringAsFixed(3)}, center=($lat,$lng), dpr=$dpr');
           break;
         case 'mapError':
           final error = data['data']['error'];
@@ -1215,8 +1222,8 @@ class _MapScreenState extends State<MapScreen> {
   void _startBusPositionTracking() {
     if (widget.routeId == null) return;
 
-    // 30초마다 버스 위치 업데이트
-    _busPositionTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    // 60초마다 버스 위치 업데이트 (부하 감소)
+    _busPositionTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       _updateBusPositions();
     });
 

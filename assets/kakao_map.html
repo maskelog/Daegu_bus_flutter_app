@@ -339,13 +339,54 @@
 <body>
     <div id="map"></div>
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_API_KEY"
-        onload="sendMessageToFlutter('mapLoaded', {})" onerror="console.error('카카오맵 스크립트 로드 실패')"></script>
+        onload="if(window.sendMessageToFlutter){sendMessageToFlutter('mapLoaded', {})} else {window.__kakaoLoaded__=true;}"
+        onerror="console.error('카카오맵 스크립트 로드 실패')"></script>
     <script>
         // 전역 변수 선언
         var map;
         var markers = [];
         var busMarkers = [];
         var currentInfoWindow = null;
+        var clickMarker = null;
+
+        // 지도 메트릭 계산 (줌 레벨, 중심좌표, 픽셀당 미터 수)
+        function getMapMetrics() {
+            try {
+                if (!map) return null;
+                var center = map.getCenter();
+                var level = map.getLevel();
+                var dpr = window.devicePixelRatio || 1;
+                var proj = map.getProjection();
+                // 중심점에서 가로로 100px 이동한 지점의 좌표를 얻어 거리 산출
+                var cp = proj.containerPointFromCoords(center);
+                var cp2 = new kakao.maps.Point(cp.x + 100, cp.y);
+                var coords2 = proj.coordsFromContainerPoint(cp2);
+                var meters = haversine(center.getLat(), center.getLng(), coords2.getLat(), coords2.getLng());
+                var metersPerPixel = meters / 100.0;
+                return {
+                    level: level,
+                    dpr: dpr,
+                    centerLat: center.getLat(),
+                    centerLng: center.getLng(),
+                    metersPerPixel: metersPerPixel
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // 하버사인 거리 계산 (미터)
+        function haversine(lat1, lon1, lat2, lon2) {
+            var R = 6371000; // meters
+            var toRad = function (deg) { return deg * Math.PI / 180; };
+            var dLat = toRad(lat2 - lat1);
+            var dLon = toRad(lon2 - lon1);
+            var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
 
         // infoWindow 관련 함수
         function closeCurrentInfoWindow() {
@@ -397,14 +438,59 @@
                 };
                 map = new kakao.maps.Map(container, options);
 
+                // 지도 리사이즈/레벨 변경 시 마커 렌더 보정을 위해 리레이아웃 호출
+                kakao.maps.event.addListener(map, 'zoom_changed', function () {
+                    map.relayout();
+                    var metrics = getMapMetrics();
+                    if (metrics) sendMessageToFlutter('zoomChanged', metrics);
+                });
+                kakao.maps.event.addListener(map, 'idle', function () {
+                    // idle 시점에 한 번 더 relayout 하여 고배율에서 드리프트 방지
+                    map.relayout();
+                    var metrics = getMapMetrics();
+                    if (metrics) sendMessageToFlutter('mapMetrics', metrics);
+                });
+
                 kakao.maps.event.addListener(map, 'click', function (mouseEvent) {
+                    // 클릭한 지점에 정확한 표시 마커(십자/점)를 찍어 시각적 기준 제공
+                    try {
+                        if (!clickMarker) {
+                            var crossSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="#e53935"/><line x1="8" y1="0" x2="8" y2="16" stroke="#e53935" stroke-width="1"/><line x1="0" y1="8" x2="16" y2="8" stroke="#e53935" stroke-width="1"/></svg>';
+                            clickMarker = new kakao.maps.Marker({
+                                position: mouseEvent.latLng,
+                                image: createSafeSVGMarker(crossSvg, new kakao.maps.Size(16, 16), new kakao.maps.Point(8, 8))
+                            });
+                            clickMarker.setMap(map);
+                        } else {
+                            clickMarker.setPosition(mouseEvent.latLng);
+                            if (!clickMarker.getMap()) clickMarker.setMap(map);
+                        }
+                    } catch (e) { /* ignore */ }
                     sendMessageToFlutter('mapClick', {
                         latitude: mouseEvent.latLng.getLat(),
                         longitude: mouseEvent.latLng.getLng()
                     });
                 });
 
-                sendMessageToFlutter('mapReady', {});
+                // 브리지 준비 상태 확인 후 초기 메트릭과 준비 이벤트 전송
+                if (window.mapEvent) {
+                    sendMessageToFlutter('mapReady', {});
+                    var metrics = getMapMetrics();
+                    if (metrics) sendMessageToFlutter('mapMetrics', metrics);
+                } else {
+                    // 브리지 지연 대비: 소량 재시도
+                    var tries = 0;
+                    var t = setInterval(function () {
+                        if (window.mapEvent || ++tries > 20) { // 최대 2초 대기
+                            clearInterval(t);
+                            if (window.mapEvent) {
+                                sendMessageToFlutter('mapReady', {});
+                                var m = getMapMetrics();
+                                if (m) sendMessageToFlutter('mapMetrics', m);
+                            }
+                        }
+                    }, 100);
+                }
             } catch (error) {
                 sendMessageToFlutter('mapError', { error: error.message });
             }
@@ -478,6 +564,7 @@
                 color = '#2196F3';
                 markerSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40"><path d="M16 0C7.2 0 0 7.2 0 16c0 16 16 24 16 24s16-8 16-24C32 7.2 24.8 0 16 0z" fill="${color}" stroke="#FFFFFF" stroke-width="2"/><circle cx="16" cy="16" r="9" fill="white"/><text x="16" y="20" text-anchor="middle" fill="${color}" font-size="11" font-weight="bold">${sequenceNo || 'R'}</text></svg>`;
                 markerSize = new kakao.maps.Size(32, 40);
+                // 중심 하단 정확히 고정
                 markerOffset = new kakao.maps.Point(16, 40);
             } else { // 'nearby'
                 color = '#4CAF50';
@@ -531,8 +618,25 @@
 
         function clearMarkers() { markers.forEach(m => m.setMap(null)); markers = []; }
         function clearBusMarkers() { busMarkers.forEach(m => m.setMap(null)); busMarkers = []; }
-        function moveToLocation(lat, lng, level) { map.setCenter(new kakao.maps.LatLng(lat, lng)); if (level) map.setLevel(level); }
-        function sendMessageToFlutter(type, data) { if (window.mapEvent) window.mapEvent.postMessage(JSON.stringify({ type, data })); }
+        function moveToLocation(lat, lng, level) {
+            var center = new kakao.maps.LatLng(lat, lng);
+            if (level) { map.setLevel(level, { animate: false }); }
+            map.setCenter(center);
+        }
+        function sendMessageToFlutter(type, data) {
+            try {
+                if (window.mapEvent && typeof window.mapEvent.postMessage === 'function') {
+                    window.mapEvent.postMessage(JSON.stringify({ type: type, data: data }));
+                }
+            } catch (e) {
+                // swallow
+            }
+        }
+
+        // Kakao SDK가 먼저 로드되었고, 브리지가 늦게 준비되는 경우 대비
+        if (window.__kakaoLoaded__ && window.mapEvent) {
+            sendMessageToFlutter('mapLoaded', {});
+        }
 
         // Flutter에서 호출할 전역 함수들
         window.initMap = initMap;

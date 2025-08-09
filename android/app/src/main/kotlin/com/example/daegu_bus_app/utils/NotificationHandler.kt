@@ -150,7 +150,8 @@ class NotificationHandler(private val context: Context) {
     ): PendingIntent {
         val cancelIntent = Intent(context, BusAlertService::class.java).apply {
             action = if (isAutoAlarm) {
-                BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
+                // 자동알람은 전체 자동알람 모드 종료 액션 제공
+                BusAlertService.ACTION_STOP_AUTO_ALARM
             } else {
                 BusAlertService.ACTION_STOP_TRACKING
             }
@@ -159,10 +160,10 @@ class NotificationHandler(private val context: Context) {
             putExtra("stationName", stationName)
             putExtra("notificationId", notificationId)
             putExtra("isAutoAlarm", isAutoAlarm)
-            putExtra("shouldRemoveFromList", true) // 개별 알람은 목록에서 제거
+            putExtra("shouldRemoveFromList", true)
         }
         return PendingIntent.getService(
-            context, notificationId, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            context, notificationId + if (isAutoAlarm) 5000 else 0, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
@@ -264,7 +265,7 @@ class NotificationHandler(private val context: Context) {
         }
 
         // NotificationCompat.Builder에 setWhen 추가 및 FLAG_ONGOING_EVENT 플래그 추가
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID_ONGOING)
+        val notificationBuilder = NotificationCompat.Builder(context, CHANNEL_ID_ONGOING)
             .setContentTitle(title)
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_bus_notification)
@@ -286,7 +287,18 @@ class NotificationHandler(private val context: Context) {
                 "추적 중지",
                 createStopPendingIntent()
             )
-            .build()
+
+        // 자동알람 중지 액션 추가: 활성 추적 중 자동알람이 하나라도 있으면 버튼 표시
+        val hasAutoAlarm = activeTrackings.values.any { it.isAutoAlarm }
+        if (hasAutoAlarm) {
+            notificationBuilder.addAction(
+                R.drawable.ic_cancel,
+                "중지",
+                createStopAutoAlarmPendingIntent()
+            )
+        }
+
+        val notification = notificationBuilder.build()
 
         // 노티피케이션 플래그 직접 설정 - 항상 최신 정보로 표시되도록 함
         notification.flags = notification.flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR or Notification.FLAG_FOREGROUND_SERVICE
@@ -334,6 +346,16 @@ class NotificationHandler(private val context: Context) {
         }
         return PendingIntent.getService(
             context, 9999, stopAllIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE // 고유한 requestCode
+        )
+    }
+
+    private fun createStopAutoAlarmPendingIntent(): PendingIntent {
+        val stopAutoAlarmIntent = Intent(context, BusAlertService::class.java).apply {
+            action = BusAlertService.ACTION_STOP_AUTO_ALARM
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        return PendingIntent.getService(
+            context, 9998, stopAutoAlarmIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
 

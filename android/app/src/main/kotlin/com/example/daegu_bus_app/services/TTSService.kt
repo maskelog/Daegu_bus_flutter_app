@@ -64,8 +64,17 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     override fun onCreate() {
         super.onCreate()
         Log.e(TAG, "🔴 [중요] AppSettings 확인: speaker_mode=${getAudioOutputMode()}, TTSService_HEADSET_MODE=$OUTPUT_MODE_HEADSET, BusService_HEADSET_MODE=${BusAlertService.OUTPUT_MODE_HEADSET}")
-        createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification("TTS 서비스 실행 중"))
+        // 자동알람 경량 모드에서는 포그라운드 알림 없이 일시적으로 실행되도록 함
+        // Android 정책상 포그라운드 서비스 알림이 필요할 수 있으나, 사용성 요구에 따라 노출을 최소화
+        // 필요 시 조건부로만 노출하도록 변경
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Q 이상에서도 알림을 만들지 않음
+            } else {
+                // 레거시 단말 최소한의 채널만 생성하되, 포그라운드 시작은 생략
+                createNotificationChannel()
+            }
+        } catch (_: Exception) { }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -123,17 +132,17 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                     Log.d(TAG, "🔊 자동 알람 TTS 요청 - 배터리 최적화 모드")
                     isAutoAlarmMode = true
 
-                    if (isInitialized) {
-                        handleAutoAlarmTTS(customMessage)
-                    } else {
-                        initializeTTS()
-                        // 초기화 후 발화 시도
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            if (isInitialized) {
-                                handleAutoAlarmTTS(customMessage)
-                            }
-                        }, 1000)
-                    }
+                if (isInitialized) {
+                    handleAutoAlarmTTS(customMessage)
+                } else {
+                    initializeTTS()
+                    // 초기화 후 발화 시도
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (isInitialized) {
+                            handleAutoAlarmTTS(customMessage)
+                        }
+                    }, 1000)
+                }
                     return START_STICKY
                 }
 

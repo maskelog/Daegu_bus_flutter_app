@@ -33,6 +33,10 @@ class SettingsService extends ChangeNotifier {
   static const String _kSpeakerModeKey = 'speaker_mode';
   static const String _notificationDisplayModeKey = 'notificationDisplayMode';
   static const String _colorSchemeKey = 'color_scheme';
+  static const String _autoAlarmTimeoutMsKey = 'auto_alarm_timeout_ms';
+  static const int defaultAutoAlarmTimeoutMinutes = 30; // 기본 30분
+  static const int minAutoAlarmTimeoutMinutes = 5; // 최소 5분
+  static const int maxAutoAlarmTimeoutMinutes = 120; // 최대 120분
 
   // 스피커 모드 상수
   static const int speakerModeHeadset = 0; // 이어폰 전용
@@ -48,6 +52,7 @@ class SettingsService extends ChangeNotifier {
   String _alarmSound = 'tts';
   bool _useAutoAlarm = true;
   double _autoAlarmVolume = 0.7;
+  int _autoAlarmTimeoutMinutes = defaultAutoAlarmTimeoutMinutes;
   bool _useTts = true;
   bool _isDarkMode = false;
   ColorSchemeType _colorScheme = ColorSchemeType.blue;
@@ -84,6 +89,7 @@ class SettingsService extends ChangeNotifier {
   NotificationDisplayMode get notificationDisplayMode =>
       _notificationDisplayMode;
   ColorSchemeType get colorScheme => _colorScheme;
+  int get autoAlarmTimeoutMinutes => _autoAlarmTimeoutMinutes;
 
   bool get isDarkMode => _isDarkMode;
 
@@ -102,6 +108,11 @@ class SettingsService extends ChangeNotifier {
     _notificationDisplayMode = NotificationDisplayMode
         .values[_prefs.getInt(_notificationDisplayModeKey) ?? 0];
     _colorScheme = ColorSchemeType.values[_prefs.getInt(_colorSchemeKey) ?? 0];
+    // 자동 알람 자동 종료 시간(분) 불러오기 (기본 30분)
+    _autoAlarmTimeoutMinutes = ((_prefs.getInt(_autoAlarmTimeoutMsKey) ??
+                (defaultAutoAlarmTimeoutMinutes * 60 * 1000)) ~/
+            (60 * 1000))
+        .clamp(minAutoAlarmTimeoutMinutes, maxAutoAlarmTimeoutMinutes);
     notifyListeners();
   }
 
@@ -241,6 +252,16 @@ class SettingsService extends ChangeNotifier {
   // Future<void> _notifyNativeSettingsChanged() async {
   //   // Use MethodChannel to send updated settings to BusAlertService if necessary
   // }
+
+  // 자동 알람 자동 종료 시간(분) 업데이트
+  Future<void> updateAutoAlarmTimeoutMinutes(int minutes) async {
+    final clamped =
+        minutes.clamp(minAutoAlarmTimeoutMinutes, maxAutoAlarmTimeoutMinutes);
+    if (_autoAlarmTimeoutMinutes == clamped) return;
+    _autoAlarmTimeoutMinutes = clamped;
+    await _prefs.setInt(_autoAlarmTimeoutMsKey, clamped * 60 * 1000);
+    notifyListeners();
+  }
 
   // 현재 스피커 모드가 이어폰 전용인지 확인
   bool get isHeadsetMode => _speakerMode == speakerModeHeadset;

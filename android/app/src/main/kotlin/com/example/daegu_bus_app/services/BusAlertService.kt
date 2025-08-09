@@ -135,7 +135,7 @@ class BusAlertService : Service() {
     // 배터리 최적화를 위한 자동알람 모드
     private var isAutoAlarmMode = false
     private var autoAlarmStartTime = 0L
-    private val AUTO_ALARM_TIMEOUT_MS = 300000L // 5분 후 자동 종료
+    private var autoAlarmTimeoutMs = 1800000L // 기본 30분, 설정으로 변경 가능
     
     // 추적 중지 후 재시작 방지를 위한 플래그
     private var isManuallyStoppedByUser = false
@@ -170,6 +170,8 @@ class BusAlertService : Service() {
             audioOutputMode = prefs.getInt(PREF_SPEAKER_MODE, OUTPUT_MODE_AUTO)
             notificationDisplayMode = prefs.getInt(PREF_NOTIFICATION_DISPLAY_MODE_KEY, DISPLAY_MODE_ALARMED_ONLY)
             ttsVolume = prefs.getFloat(PREF_TTS_VOLUME, 1.0f).coerceIn(0f, 1f)
+            // 자동알람 타임아웃(ms) 로드, 기본 30분
+            autoAlarmTimeoutMs = prefs.getLong("auto_alarm_timeout_ms", 1800000L).coerceIn(300000L, 7200000L)
             Log.d(TAG, "⚙️ Settings loaded - TTS: $useTextToSpeech, Sound: $currentAlarmSound, NotifMode: $notificationDisplayMode, Output: $audioOutputMode, Volume: ${ttsVolume * 100}%")
         } catch (e: Exception) {
             Log.e(TAG, "⚙️ Error loading settings: ${e.message}")
@@ -549,7 +551,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
         ACTION_STOP_AUTO_ALARM -> {
             Log.i(TAG, "ACTION_STOP_AUTO_ALARM received")
-            stopAutoAlarmLightweight()
+            // 자동알람 전체 종료: 경량화 알림 + 모든 추적 중지
+            try {
+                stopAutoAlarmLightweight()
+            } catch (_: Exception) { }
+            stopAllBusTracking()
             return START_NOT_STICKY
         }
         else -> {
@@ -2731,13 +2737,13 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             // 경량화된 알림 표시
             showAutoAlarmLightweightNotification(busNo, stationName, remainingMinutes, currentStation)
 
-            // 5분 후 자동 종료 스케줄링
+            // 설정 기반 자동 종료 스케줄링
             Handler(Looper.getMainLooper()).postDelayed({
-                if (isAutoAlarmMode && (System.currentTimeMillis() - autoAlarmStartTime) >= AUTO_ALARM_TIMEOUT_MS) {
+                if (isAutoAlarmMode && (System.currentTimeMillis() - autoAlarmStartTime) >= autoAlarmTimeoutMs) {
                     Log.d(TAG, "🔔 자동알람 경량화 모드 타임아웃으로 종료")
                     stopAutoAlarmLightweight()
                 }
-            }, AUTO_ALARM_TIMEOUT_MS)
+            }, autoAlarmTimeoutMs)
 
             Log.d(TAG, "✅ 자동알람 경량화 모드 시작 완료")
 
