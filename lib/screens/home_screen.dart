@@ -212,7 +212,7 @@ class _HomeScreenState extends State<HomeScreen>
     _refreshTimer?.cancel();
     _refreshTimer = _selectedStop != null
         ? Timer.periodic(
-            const Duration(seconds: 30), (timer) => _loadBusArrivals())
+            const Duration(seconds: 60), (timer) => _loadBusArrivals())
         : null;
   }
 

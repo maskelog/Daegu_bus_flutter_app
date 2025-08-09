@@ -322,12 +322,13 @@ class AlarmService extends ChangeNotifier {
       _loadDataInBackground();
 
       _alarmCheckTimer?.cancel();
-      _alarmCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      // 5초 → 15초로 완화하여 불필요한 빈번한 작업 감소
+      _alarmCheckTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
         refreshAlarms();
         _checkAutoAlarms(); // 자동 알람 체크 추가 (5초마다 정밀 체크)
 
         // 디버깅: 현재 자동 알람 상태 출력 (30초마다)
-        if (timer.tick % 6 == 0) {
+        if (timer.tick % 2 == 0) {
           _logAutoAlarmStatus();
         }
       });
@@ -1238,8 +1239,6 @@ class AlarmService extends ChangeNotifier {
       final executionDelay =
           actualDelay.isNegative ? Duration.zero : actualDelay;
 
-      
-
       // 이제 WorkManager 대신 네이티브 AlarmManager를 통해 스케줄링
       // 즉시 실행 조건은 Flutter에서 먼저 판단하여 네이티브에 전달
 
@@ -1449,8 +1448,6 @@ class AlarmService extends ChangeNotifier {
         logMessage('⚠️ 백업 알람 시간($backupTime)이 현재($now)보다 빠릅니다. 백업 알람 등록 취소.');
         return; // 이미 지난 시간이면 등록 취소
       }
-
-      
 
       logMessage('✅ 네이티브 백업 알람 스케줄링 요청 완료: ${alarm.routeNo} at $backupTime');
     } catch (e) {

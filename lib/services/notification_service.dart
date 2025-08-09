@@ -332,7 +332,8 @@ class NotificationService extends ChangeNotifier {
       // 2. 네이티브 서비스에 모든 추적 중지 요청 (가장 확실한 방법)
       //    이 메서드는 네이티브에서 포그라운드 서비스, 알림, TTS 등을 모두 중지해야 함
       try {
-        await _channel.invokeMethod('stopAllBusTracking'); // New or existing robust native method
+        await _channel.invokeMethod(
+            'stopAllBusTracking'); // New or existing robust native method
         logMessage('✅ 네이티브 stopAllBusTracking 호출 완료', level: LogLevel.debug);
       } catch (e) {
         logMessage('⚠️ 네이티브 stopAllBusTracking 호출 실패 (무시): $e',
@@ -344,8 +345,7 @@ class NotificationService extends ChangeNotifier {
         await _channel.invokeMethod('cancelAllNotifications');
         logMessage('✅ 모든 알림 강제 취소 완료', level: LogLevel.debug);
       } catch (e) {
-        logMessage('⚠️ 모든 알림 강제 취소 오류 (무시): $e',
-            level: LogLevel.warning);
+        logMessage('⚠️ 모든 알림 강제 취소 오류 (무시): $e', level: LogLevel.warning);
       }
 
       logMessage('✅ 모든 지속적인 추적 알림 취소 완료', level: LogLevel.info);
@@ -461,19 +461,16 @@ class NotificationService extends ChangeNotifier {
     _currentRouteId = routeId;
     _currentStationId = stationId;
 
-    // 타이머 시작 (15초마다 업데이트 - 더 빈번하게)
-    _busUpdateTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      _updateBusInfo();
-    });
-
-    // 즉시 한 번 업데이트
+    // 즉시 한 번 업데이트하고, 이후에는 남은 시간에 따라 적응형 주기로 스케줄링
     _updateBusInfo();
+    // 최초 스케줄 (초기값 30초)
+    _scheduleNextBusUpdate(remainingMinutes: null);
 
     logMessage('🚌 실시간 버스 정보 업데이트 타이머 시작: $busNo, $stationName',
         level: LogLevel.info);
   }
 
-// 실시간 버스 정보 업데이트 - 강화된 업데이트 메커니즘
+// 실시간 버스 정보 업데이트 - 강화된 업데이트 메커니즘 (적응형 주기)
   Future<void> _updateBusInfo() async {
     if (_currentBusNo == null ||
         _currentStationName == null ||
@@ -526,29 +523,18 @@ class NotificationService extends ChangeNotifier {
         logMessage('⚠️ bus_tracking 채널 호출 오류: $e', level: LogLevel.error);
       }));
 
-      // 2. 직접 서비스 시작 인텐트 전송 (ACTION_UPDATE_TRACKING) - 백업 방법
-      updateMethods.add(_channel.invokeMethod('startBusTrackingService', {
-        'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
-        'busNo': _currentBusNo!,
-        'stationName': _currentStationName!,
-        'remainingMinutes': remainingMinutes,
-        'currentStation': currentStation,
-        'routeId': _currentRouteId!,
-      }).then((_) {
-        logMessage('✅ ACTION_UPDATE_TRACKING 인텐트 전송 완료', level: LogLevel.debug);
-      }).catchError((e) {
-        logMessage('⚠️ ACTION_UPDATE_TRACKING 인텐트 전송 오류: $e',
-            level: LogLevel.error);
-      }));
-
       // 모든 방법 병렬 실행
       await Future.wait(updateMethods);
 
       logMessage(
           '✅ 실시간 버스 추적 알림 업데이트 완료: $_currentBusNo, $remainingMinutes분, 현재 위치: $currentStation',
           level: LogLevel.info);
+      // 다음 업데이트 스케줄링 (남은 시간 기반)
+      _scheduleNextBusUpdate(remainingMinutes: remainingMinutes);
     } catch (e) {
       logMessage('❌ 버스 정보 업데이트 오류: $e', level: LogLevel.error);
+      // 오류 발생 시 보수적으로 주기를 늘려 재시도
+      _scheduleNextBusUpdate(remainingMinutes: null);
     }
   }
 
@@ -618,21 +604,6 @@ class NotificationService extends ChangeNotifier {
         logMessage('⚠️ bus_tracking 채널 호출 오류: $e', level: LogLevel.error);
       }));
 
-      // 2. 직접 서비스 시작 인텐트 전송 (ACTION_UPDATE_TRACKING) - 백업 방법
-      updateMethods.add(_channel.invokeMethod('startBusTrackingService', {
-        'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
-        'busNo': busNo,
-        'stationName': stationName,
-        'remainingMinutes': remainingMinutes,
-        'currentStation': currentStation,
-        'routeId': routeId,
-      }).then((_) {
-        logMessage('✅ ACTION_UPDATE_TRACKING 인텐트 전송 완료', level: LogLevel.debug);
-      }).catchError((e) {
-        logMessage('⚠️ ACTION_UPDATE_TRACKING 인텐트 전송 오류: $e',
-            level: LogLevel.error);
-      }));
-
       // showOngoingBusTracking 및 updateNotification 호출 제거 - 중복 알림 방지
 
       // 모든 방법 병렬 실행
@@ -643,23 +614,7 @@ class NotificationService extends ChangeNotifier {
       _currentStationName = stationName;
       _currentRouteId = routeId;
       _currentStationId = stationId;
-
-      // 추가: 1초 후 다시 한번 업데이트 시도 (백업) - 간소화
-      Future.delayed(const Duration(seconds: 1), () {
-        try {
-          _channel.invokeMethod('startBusTrackingService', {
-            'action': 'com.example.daegu_bus_app.action.UPDATE_TRACKING',
-            'busNo': busNo,
-            'stationName': stationName,
-            'remainingMinutes': remainingMinutes,
-            'currentStation': currentStation,
-            'routeId': routeId,
-          });
-          logMessage('✅ 지연 업데이트 인텐트 전송 완료', level: LogLevel.debug);
-        } catch (e) {
-          logMessage('⚠️ 지연 업데이트 인텐트 전송 오류: $e', level: LogLevel.error);
-        }
-      });
+      // 지연 백업 업데이트 제거 (중복 호출 방지)
 
       logMessage(
           '✅ 실시간 버스 추적 알림 업데이트 완료: $busNo, $remainingMinutes분, 현재 위치: $currentStation',
@@ -668,6 +623,31 @@ class NotificationService extends ChangeNotifier {
       logMessage('❌ updateBusTrackingNotification 오류: $e',
           level: LogLevel.error);
     }
+  }
+
+  // 남은 시간에 따라 다음 업데이트를 적응형으로 스케줄링
+  void _scheduleNextBusUpdate({int? remainingMinutes}) {
+    // 기존 타이머 취소
+    _busUpdateTimer?.cancel();
+
+    // 기본 주기 (오류/정보없음 시): 60초
+    Duration nextInterval = const Duration(seconds: 60);
+
+    if (remainingMinutes != null) {
+      if (remainingMinutes <= 3 && remainingMinutes >= 0) {
+        nextInterval = const Duration(seconds: 10);
+      } else if (remainingMinutes <= 10 && remainingMinutes > 3) {
+        nextInterval = const Duration(seconds: 20);
+      } else if (remainingMinutes > 10) {
+        nextInterval = const Duration(seconds: 60);
+      }
+    }
+
+    _busUpdateTimer = Timer(nextInterval, () {
+      _updateBusInfo();
+    });
+    logMessage('⏱️ 다음 실시간 업데이트 예약: ${nextInterval.inSeconds}s 후',
+        level: LogLevel.debug);
   }
 } // <-- Add this closing brace to end the class
 

@@ -38,8 +38,8 @@ class _CompactBusCardState extends State<CompactBusCard> {
   void initState() {
     super.initState();
     if (widget.busArrival.busInfoList.isNotEmpty) {
-      // 30초마다 주기적으로 버스 정보 업데이트
-      _updateTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      // 60초마다 주기적으로 버스 정보 업데이트 (부하 감소)
+      _updateTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
         if (mounted) {
           _updateBusArrivalInfo();
         } else {
@@ -400,7 +400,9 @@ class _CompactBusCardState extends State<CompactBusCard> {
         }
       } else {
         if (remainingMinutes > 0) {
-          int alarmNotificationId = ("${widget.busArrival.routeNo}_${widget.stationName!}_$routeId").hashCode;
+          int alarmNotificationId =
+              ("${widget.busArrival.routeNo}_${widget.stationName!}_$routeId")
+                  .hashCode;
 
           DateTime arrivalTime =
               DateTime.now().add(Duration(minutes: remainingMinutes));
