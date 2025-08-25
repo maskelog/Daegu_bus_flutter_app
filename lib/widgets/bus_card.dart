@@ -284,7 +284,9 @@ class _BusCardState extends State<BusCard> {
   }
 
   void _playAlarm() {
-    int notificationId = ("${widget.busArrival.routeNo}_${widget.stationName ?? '정류장 정보 없음'}_${widget.busArrival.routeId}").hashCode;
+    int notificationId =
+        ("${widget.busArrival.routeNo}_${widget.stationName ?? '정류장 정보 없음'}_${widget.busArrival.routeId}")
+            .hashCode;
     _notificationService.showNotification(
       id: notificationId,
       busNo: widget.busArrival.routeNo,
@@ -304,7 +306,9 @@ class _BusCardState extends State<BusCard> {
 
     logMessage('🚌 다음 버스 알람 설정 - 사용할 routeId: $routeId', level: LogLevel.debug);
 
-    int notificationId = ("${widget.busArrival.routeNo}_${widget.stationName ?? '정류장 정보 없음'}_$routeId").hashCode;
+    int notificationId =
+        ("${widget.busArrival.routeNo}_${widget.stationName ?? '정류장 정보 없음'}_$routeId")
+            .hashCode;
 
     if (widget.stationName == null || widget.stationName!.isEmpty) {
       logMessage('🚌 정류장 정보가 없습니다. 알람을 설정할 수 없습니다.', level: LogLevel.error);
@@ -506,7 +510,9 @@ class _BusCardState extends State<BusCard> {
           }
         }
 
-        int notificationId = ("${widget.busArrival.routeNo}_${widget.stationName ?? '정류장 정보 없음'}_$routeId").hashCode;
+        int notificationId =
+            ("${widget.busArrival.routeNo}_${widget.stationName ?? '정류장 정보 없음'}_$routeId")
+                .hashCode;
 
         logMessage(
           '🚌 알람 설정 시작: ${widget.busArrival.routeNo}번 버스, ${widget.stationName}, 알람ID: $notificationId, stationId: $stationId',
@@ -749,8 +755,8 @@ class _BusCardState extends State<BusCard> {
 
     return Semantics(
       label: '${widget.busArrival.routeNo}번 버스 정보',
-      hint: firstBus.isOutOfService 
-          ? '운행이 종료된 버스입니다' 
+      hint: firstBus.isOutOfService
+          ? '운행이 종료된 버스입니다'
           : '$arrivalTimeText에 도착 예정이며, 현재 위치는 $currentStationText입니다',
       child: Card(
         margin: const EdgeInsets.only(bottom: 12),
@@ -763,391 +769,399 @@ class _BusCardState extends State<BusCard> {
         child: InkWell(
           onTap: widget.onTap,
           borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.location_on, color: Colors.grey, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${widget.busArrival.routeNo}번 버스 - ${widget.stationName ?? "정류장 정보 없음"}',
-                              style: TextStyle(
-                                  fontSize: 18,
-                                  color:
-                                      Theme.of(context).colorScheme.onSurface),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ),
-                          if (hasAutoAlarm)
-                            Container(
-                              margin: const EdgeInsets.only(left: 8),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.amber[100],
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.amber[300]!),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.location_on,
+                          color: Colors.grey, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${widget.busArrival.routeNo}번 버스 - ${widget.stationName ?? "정류장 정보 없음"}',
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.schedule,
-                                      size: 12, color: Colors.amber[800]),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '자동',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.amber[800],
+                            ),
+                            if (hasAutoAlarm)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber[100],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.amber[300]!),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.schedule,
+                                        size: 12, color: Colors.amber[800]),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '자동',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.amber[800],
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (_isUpdating)
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Text(
-                      widget.busArrival.routeNo,
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: firstBus.isOutOfService
-                            ? Colors.grey
-                            : Colors.blue[500],
-                      ),
-                    ),
-                    if (firstBus.isLowFloor)
-                      Container(
-                        margin: const EdgeInsets.only(left: 8),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.green[100],
-                          borderRadius: BorderRadius.circular(12),
+                          ],
                         ),
-                        child: Text(
-                          '저상',
-                          style: TextStyle(
-                            color: Colors.green[700],
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                      ),
+                      if (_isUpdating)
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Text(
+                        widget.busArrival.routeNo,
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: firstBus.isOutOfService
+                              ? Colors.grey
+                              : Colors.blue[500],
+                        ),
+                      ),
+                      if (firstBus.isLowFloor)
+                        Container(
+                          margin: const EdgeInsets.only(left: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green[100],
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '저상',
+                            style: TextStyle(
+                              color: Colors.green[700],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                      ),
-                    Expanded(
-                      child: Text(
-                        currentStationText,
-                        style: TextStyle(
-                            fontSize: 14,
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant),
-                        textAlign: TextAlign.right,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                LinearProgressIndicator(
-                  value: 0.6,
-                  backgroundColor: Colors.grey[200],
-                  color:
-                      firstBus.isOutOfService ? Colors.grey : Colors.blue[500],
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          firstBus.isOutOfService ? '버스 상태' : '도착예정',
+                      Expanded(
+                        child: Text(
+                          currentStationText,
                           style: TextStyle(
                               fontSize: 14,
                               color: Theme.of(context)
                                   .colorScheme
                                   .onSurfaceVariant),
+                          textAlign: TextAlign.right,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          arrivalTimeText,
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: firstBus.isOutOfService
-                                ? Colors.grey
-                                : (remainingTime <= 3
-                                    ? Colors.red
-                                    : Colors.blue[600]),
-                          ),
-                        ),
-                        if (currentStationText.isNotEmpty &&
-                            !firstBus.isOutOfService)
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(
+                    value: 0.6,
+                    backgroundColor: Colors.grey[200],
+                    color: firstBus.isOutOfService
+                        ? Colors.grey
+                        : Colors.blue[500],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            '($currentStationText)',
+                            firstBus.isOutOfService ? '버스 상태' : '도착예정',
                             style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 14,
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onSurfaceVariant),
                           ),
-                      ],
-                    ),
-                    if (widget.busArrival.busInfoList.length > 1)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('다음 버스',
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant)),
                           Text(
-                            widget.busArrival.busInfoList[1].isOutOfService
-                                ? '운행종료'
-                                : '${widget.busArrival.busInfoList[1].getRemainingMinutes()}분',
+                            arrivalTimeText,
                             style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: firstBus.isOutOfService
+                                  ? Colors.grey
+                                  : (remainingTime <= 3
+                                      ? Colors.red
+                                      : Colors.blue[600]),
                             ),
                           ),
+                          if (currentStationText.isNotEmpty &&
+                              !firstBus.isOutOfService)
+                            Text(
+                              '($currentStationText)',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant),
+                            ),
                         ],
-                      )
-                    else if (hasAutoAlarm)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.amber[50],
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.amber[200]!),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.amber.withAlpha(25),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
+                      ),
+                      if (widget.busArrival.busInfoList.length > 1)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('다음 버스',
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant)),
+                            Text(
+                              widget.busArrival.busInfoList[1].isOutOfService
+                                  ? '운행종료'
+                                  : '${widget.busArrival.busInfoList[1].getRemainingMinutes()}분',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
                             ),
                           ],
+                        )
+                      else if (hasAutoAlarm)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.amber[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.amber[200]!),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.amber.withAlpha(25),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.alarm_on,
+                                      size: 16, color: Colors.amber[800]),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '자동 알람 설정됨',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.amber[800],
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              FutureBuilder<String>(
+                                future: _getAutoAlarmTimeInfo(alarmService),
+                                builder: (context, snapshot) {
+                                  return Text(
+                                    snapshot.data ?? '승차 알람을 사용할 수 없습니다',
+                                    style: TextStyle(
+                                        fontSize: 11, color: Colors.amber[700]),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        const SizedBox.shrink(),
+                      Semantics(
+                        label: alarmEnabled ? '승차 알람 해제' : '승차 알람 설정',
+                        hint: alarmEnabled
+                            ? '현재 설정된 승차 알람을 해제합니다'
+                            : '${widget.busArrival.routeNo}번 버스 승차 알람을 설정합니다',
+                        child: ElevatedButton.icon(
+                          onPressed: firstBus.isOutOfService ||
+                                  alarmService.hasAutoAlarm(
+                                      widget.busArrival.routeNo,
+                                      widget.stationName ?? '정류장 정보 없음',
+                                      widget.busArrival.routeId)
+                              ? null
+                              : () async {
+                                  // 햅틱 피드백 추가
+                                  HapticFeedback.lightImpact();
+
+                                  await _toggleBoardingAlarm();
+                                  setState(() {});
+                                },
+                          icon: Icon(
+                            alarmEnabled
+                                ? Icons.notifications_active
+                                : Icons.notifications_none,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          label: Text(
+                            alarmEnabled ? '알람 해제' : '승차 알람',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: firstBus.isOutOfService ||
+                                    alarmService.hasAutoAlarm(
+                                        widget.busArrival.routeNo,
+                                        widget.stationName ?? '정류장 정보 없음',
+                                        widget.busArrival.routeId)
+                                ? Colors.grey
+                                : (alarmEnabled
+                                    ? Colors.yellow[700]
+                                    : Colors.blue[600]),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 0),
+                            minimumSize: const Size(100, 40),
+                            elevation: alarmEnabled ? 4 : 2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (alarmEnabled &&
+                      !hasBoarded &&
+                      !firstBus.isOutOfService &&
+                      remainingTime <= 3)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: _showBoardingButton(),
+                    ),
+                  if (widget.busArrival.busInfoList.length > 1) ...[
+                    const SizedBox(height: 24),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ...widget.busArrival.busInfoList.skip(1).map((bus) {
+                      final int nextRemainingMin = bus.getRemainingMinutes();
+                      final bool isOutOfService = bus.isOutOfService;
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[300]!),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Icon(Icons.alarm_on,
-                                    size: 16, color: Colors.amber[800]),
-                                const SizedBox(width: 6),
+                                Row(
+                                  children: [
+                                    Text(
+                                      widget.busArrival.routeNo,
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: isOutOfService
+                                            ? Colors.grey
+                                            : Colors.blue[600],
+                                      ),
+                                    ),
+                                    if (bus.isLowFloor)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 4, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green[100],
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '저상',
+                                          style: TextStyle(
+                                            color: Colors.green[700],
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                                 Text(
-                                  '자동 알람 설정됨',
+                                  isOutOfService
+                                      ? '운행종료'
+                                      : '$nextRemainingMin분',
                                   style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.amber[800],
+                                    fontSize: 18,
                                     fontWeight: FontWeight.bold,
+                                    color: isOutOfService
+                                        ? Colors.grey
+                                        : (nextRemainingMin <= 3
+                                            ? Colors.red
+                                            : Colors.blue[600]),
                                   ),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 4),
-                            FutureBuilder<String>(
-                              future: _getAutoAlarmTimeInfo(alarmService),
-                              builder: (context, snapshot) {
-                                return Text(
-                                  snapshot.data ?? '승차 알람을 사용할 수 없습니다',
-                                  style: TextStyle(
-                                      fontSize: 11, color: Colors.amber[700]),
-                                );
-                              },
+                            Text(
+                              bus.currentStation,
+                              style: TextStyle(
+                                  fontSize: 13, color: Colors.grey[600]),
+                            ),
+                            Text(
+                              bus.remainingStops,
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[500]),
                             ),
                           ],
                         ),
-                      )
-                    else
-                      const SizedBox.shrink(),
-                    Semantics(
-                      label: alarmEnabled ? '승차 알람 해제' : '승차 알람 설정',
-                      hint: alarmEnabled 
-                          ? '현재 설정된 승차 알람을 해제합니다'
-                          : '${widget.busArrival.routeNo}번 버스 승차 알람을 설정합니다',
-                      child: ElevatedButton.icon(
-                        onPressed: firstBus.isOutOfService ||
-                                alarmService.hasAutoAlarm(
-                                    widget.busArrival.routeNo,
-                                    widget.stationName ?? '정류장 정보 없음',
-                                    widget.busArrival.routeId)
-                            ? null
-                            : () async {
-                                // 햅틱 피드백 추가
-                                HapticFeedback.lightImpact();
-                                
-                                await _toggleBoardingAlarm();
-                                setState(() {});
-                              },
-                      icon: Icon(
-                        alarmEnabled
-                            ? Icons.notifications_active
-                            : Icons.notifications_none,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      label: Text(
-                        alarmEnabled ? '알람 해제' : '승차 알람',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: firstBus.isOutOfService ||
-                                alarmService.hasAutoAlarm(
-                                    widget.busArrival.routeNo,
-                                    widget.stationName ?? '정류장 정보 없음',
-                                    widget.busArrival.routeId)
-                            ? Colors.grey
-                            : (alarmEnabled
-                                ? Colors.yellow[700]
-                                : Colors.blue[600]),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 0),
-                        minimumSize: const Size(100, 40),
-                        elevation: alarmEnabled ? 4 : 2,
-                      ),
-                    ),
-                    ),
+                      );
+                    }),
                   ],
-                ),
-                if (alarmEnabled &&
-                    !hasBoarded &&
-                    !firstBus.isOutOfService &&
-                    remainingTime <= 3)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: _showBoardingButton(),
-                  ),
-                if (widget.busArrival.busInfoList.length > 1) ...[
-                  const SizedBox(height: 24),
-                  Container(
-                    width: double.infinity,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.blue[50],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ...widget.busArrival.busInfoList.skip(1).map((bus) {
-                    final int nextRemainingMin = bus.getRemainingMinutes();
-                    final bool isOutOfService = bus.isOutOfService;
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    widget.busArrival.routeNo,
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: isOutOfService
-                                          ? Colors.grey
-                                          : Colors.blue[600],
-                                    ),
-                                  ),
-                                  if (bus.isLowFloor)
-                                    Container(
-                                      margin: const EdgeInsets.only(left: 8),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 4, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green[100],
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        '저상',
-                                        style: TextStyle(
-                                          color: Colors.green[700],
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              Text(
-                                isOutOfService ? '운행종료' : '$nextRemainingMin분',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: isOutOfService
-                                      ? Colors.grey
-                                      : (nextRemainingMin <= 3
-                                          ? Colors.red
-                                          : Colors.blue[600]),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            bus.currentStation,
-                            style: TextStyle(
-                                fontSize: 13, color: Colors.grey[600]),
-                          ),
-                          Text(
-                            bus.remainingStops,
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.grey[500]),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
                 ],
-              ],
+              ),
             ),
           ),
         ),
