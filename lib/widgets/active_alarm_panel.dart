@@ -282,8 +282,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         setState(() {
           // 강제 UI 업데이트
         });
+        // BuildContext 사용 전에 mounted 상태 재확인
         if (mounted) {
-          // Re-check mounted state before using context
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다.')),
           );

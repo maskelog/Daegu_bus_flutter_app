@@ -34,9 +34,15 @@ class SettingsService extends ChangeNotifier {
   static const String _notificationDisplayModeKey = 'notificationDisplayMode';
   static const String _colorSchemeKey = 'color_scheme';
   static const String _autoAlarmTimeoutMsKey = 'auto_alarm_timeout_ms';
+  static const String _fontSizeMultiplierKey = 'font_size_multiplier';
   static const int defaultAutoAlarmTimeoutMinutes = 30; // 기본 30분
   static const int minAutoAlarmTimeoutMinutes = 5; // 최소 5분
   static const int maxAutoAlarmTimeoutMinutes = 120; // 최대 120분
+  
+  // 폰트 크기 관련 상수
+  static const double defaultFontSizeMultiplier = 1.0; // 기본 크기
+  static const double minFontSizeMultiplier = 0.8; // 최소 크기 (80%)
+  static const double maxFontSizeMultiplier = 2.0; // 최대 크기 (200%)
 
   // 스피커 모드 상수
   static const int speakerModeHeadset = 0; // 이어폰 전용
@@ -56,6 +62,7 @@ class SettingsService extends ChangeNotifier {
   bool _useTts = true;
   bool _isDarkMode = false;
   ColorSchemeType _colorScheme = ColorSchemeType.blue;
+  double _fontSizeMultiplier = defaultFontSizeMultiplier;
 
   // 싱글톤 패턴
   static final SettingsService _instance = SettingsService._internal();
@@ -90,6 +97,7 @@ class SettingsService extends ChangeNotifier {
       _notificationDisplayMode;
   ColorSchemeType get colorScheme => _colorScheme;
   int get autoAlarmTimeoutMinutes => _autoAlarmTimeoutMinutes;
+  double get fontSizeMultiplier => _fontSizeMultiplier;
 
   bool get isDarkMode => _isDarkMode;
 
@@ -108,6 +116,7 @@ class SettingsService extends ChangeNotifier {
     _notificationDisplayMode = NotificationDisplayMode
         .values[_prefs.getInt(_notificationDisplayModeKey) ?? 0];
     _colorScheme = ColorSchemeType.values[_prefs.getInt(_colorSchemeKey) ?? 0];
+    _fontSizeMultiplier = _prefs.getDouble(_fontSizeMultiplierKey) ?? defaultFontSizeMultiplier;
     // 자동 알람 자동 종료 시간(분) 불러오기 (기본 30분)
     _autoAlarmTimeoutMinutes = ((_prefs.getInt(_autoAlarmTimeoutMsKey) ??
                 (defaultAutoAlarmTimeoutMinutes * 60 * 1000)) ~/
@@ -279,5 +288,15 @@ class SettingsService extends ChangeNotifier {
       await _prefs.setInt(_colorSchemeKey, colorScheme.index);
       notifyListeners();
     }
+  }
+
+  // 폰트 크기 업데이트 메서드
+  Future<void> updateFontSizeMultiplier(double multiplier) async {
+    final clamped = multiplier.clamp(minFontSizeMultiplier, maxFontSizeMultiplier);
+    if (_fontSizeMultiplier == clamped) return;
+    
+    _fontSizeMultiplier = clamped;
+    await _prefs.setDouble(_fontSizeMultiplierKey, clamped);
+    notifyListeners();
   }
 }

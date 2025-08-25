@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
 
 import 'package:daegu_bus_app/screens/alarm_screen.dart';
 import 'package:daegu_bus_app/screens/map_screen.dart';
@@ -54,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen>
         .removeListener(_onAlarmChanged);
     _searchController.dispose();
     _refreshTimer?.cancel();
+
     super.dispose();
   }
 
@@ -219,13 +221,15 @@ class _HomeScreenState extends State<HomeScreen>
   Color _getBusColor(
       BuildContext context, BusArrival arrival, bool isLowFloor) {
     final routeType = _routeTypeCache[arrival.routeId];
+
+    // 색각이상 사용자를 위해 더 구별되는 색상 사용
     if (routeType == BusRouteType.express || arrival.routeNo.contains('급행')) {
-      return Colors.red;
+      return const Color(0xFFE53935); // 강한 빨간색 (accessibleRed)
     }
     if (isLowFloor) {
-      return Colors.blue;
+      return const Color(0xFF2196F3); // 강한 파란색 (accessibleBlue)
     }
-    return Colors.grey;
+    return const Color(0xFF757575); // 중성 회색 (accessibleGrey)
   }
 
   @override
@@ -243,84 +247,102 @@ class _HomeScreenState extends State<HomeScreen>
               child: Row(
                 children: [
                   Expanded(
-                    child: GestureDetector(
-                      onTap: () async {
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => SearchScreen(
-                              favoriteStops: _favoriteStops,
+                    child: Semantics(
+                      label: '정류장 검색',
+                      hint: '탭하여 정류장을 검색하세요',
+                      child: GestureDetector(
+                        onTap: () async {
+                          // 햅틱 피드백 추가
+                          HapticFeedback.lightImpact();
+
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => SearchScreen(
+                                favoriteStops: _favoriteStops,
+                              ),
                             ),
+                          );
+                          if (result != null && result is BusStop) {
+                            setState(() => _selectedStop = result);
+                            _loadBusArrivals();
+                          }
+                        },
+                        child: Container(
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(28),
                           ),
-                        );
-                        if (result != null && result is BusStop) {
-                          setState(() => _selectedStop = result);
-                          _loadBusArrivals();
-                        }
-                      },
-                      child: Container(
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 14),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.search_rounded,
-                                color: colorScheme.onSurfaceVariant,
-                                size: 24,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  "정류장 검색",
-                                  style: theme.textTheme.bodyLarge?.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                    fontSize: 16,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 14),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.search_rounded,
+                                  color: colorScheme.onSurfaceVariant,
+                                  size: 24,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    "정류장 검색",
+                                    style: theme.textTheme.bodyLarge?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontSize: 16,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  IconButton.filledTonal(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const SettingsScreen(),
-                        ),
-                      );
-                    },
-                    icon: Icon(Icons.settings_outlined,
-                        color: colorScheme.onSurface),
-                    tooltip: '설정',
+                  Semantics(
+                    label: '설정',
+                    hint: '앱 설정을 열려면 탭하세요',
+                    child: IconButton.filledTonal(
+                      onPressed: () {
+                        // 햅틱 피드백 추가
+                        HapticFeedback.lightImpact();
+
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const SettingsScreen(),
+                          ),
+                        );
+                      },
+                      icon: Icon(Icons.settings_outlined,
+                          color: colorScheme.onSurface),
+                      tooltip: '설정',
+                    ),
                   ),
                 ],
               ),
             ),
-            TabBar(
-              controller: _tabController,
-              labelColor: colorScheme.primary,
-              unselectedLabelColor: colorScheme.onSurfaceVariant,
-              indicatorColor: colorScheme.primary,
-              tabs: const [
-                Tab(text: '지도'),
-                Tab(text: '노선도'),
-                Tab(text: '홈'),
-                Tab(text: '알람'),
-                Tab(text: '즐겨찾기'),
-              ],
+            Semantics(
+              label: '메인 탭 메뉴',
+              hint: '지도, 노선도, 홈, 알람, 즐겨찾기 탭을 선택할 수 있습니다',
+              child: TabBar(
+                controller: _tabController,
+                labelColor: colorScheme.primary,
+                unselectedLabelColor: colorScheme.onSurfaceVariant,
+                indicatorColor: colorScheme.primary,
+                tabs: const [
+                  Tab(text: '지도'),
+                  Tab(text: '노선도'),
+                  Tab(text: '홈'),
+                  Tab(text: '알람'),
+                  Tab(text: '즐겨찾기'),
+                ],
+              ),
             ),
             Expanded(
               child: TabBarView(

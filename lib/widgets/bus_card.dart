@@ -747,17 +747,22 @@ class _BusCardState extends State<BusCard> {
       level: LogLevel.debug,
     );
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      color: Colors.grey[50],
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey[200]!, width: 1),
-      ),
-      child: InkWell(
-        onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(12),
+    return Semantics(
+      label: '${widget.busArrival.routeNo}번 버스 정보',
+      hint: firstBus.isOutOfService 
+          ? '운행이 종료된 버스입니다' 
+          : '$arrivalTimeText에 도착 예정이며, 현재 위치는 $currentStationText입니다',
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        elevation: 0,
+        color: Colors.grey[50],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.grey[200]!, width: 1),
+        ),
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: SingleChildScrollView(
@@ -989,17 +994,25 @@ class _BusCardState extends State<BusCard> {
                       )
                     else
                       const SizedBox.shrink(),
-                    ElevatedButton.icon(
-                      onPressed: firstBus.isOutOfService ||
-                              alarmService.hasAutoAlarm(
-                                  widget.busArrival.routeNo,
-                                  widget.stationName ?? '정류장 정보 없음',
-                                  widget.busArrival.routeId)
-                          ? null
-                          : () async {
-                              await _toggleBoardingAlarm();
-                              setState(() {});
-                            },
+                    Semantics(
+                      label: alarmEnabled ? '승차 알람 해제' : '승차 알람 설정',
+                      hint: alarmEnabled 
+                          ? '현재 설정된 승차 알람을 해제합니다'
+                          : '${widget.busArrival.routeNo}번 버스 승차 알람을 설정합니다',
+                      child: ElevatedButton.icon(
+                        onPressed: firstBus.isOutOfService ||
+                                alarmService.hasAutoAlarm(
+                                    widget.busArrival.routeNo,
+                                    widget.stationName ?? '정류장 정보 없음',
+                                    widget.busArrival.routeId)
+                            ? null
+                            : () async {
+                                // 햅틱 피드백 추가
+                                HapticFeedback.lightImpact();
+                                
+                                await _toggleBoardingAlarm();
+                                setState(() {});
+                              },
                       icon: Icon(
                         alarmEnabled
                             ? Icons.notifications_active
@@ -1030,6 +1043,7 @@ class _BusCardState extends State<BusCard> {
                         minimumSize: const Size(100, 40),
                         elevation: alarmEnabled ? 4 : 2,
                       ),
+                    ),
                     ),
                   ],
                 ),

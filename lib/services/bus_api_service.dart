@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/api_result.dart';
+import '../utils/bus_cache_manager.dart';
+import '../utils/debouncer.dart';
 
 class BusApiService {
   static const MethodChannel _channel =
@@ -14,112 +18,138 @@ class BusApiService {
 
   factory BusApiService() => _instance;
 
-  BusApiService._internal();
+  BusApiService._internal() {
+    _initializeCacheManager();
+  }
 
-  // 정류장 검색 메소드
-  Future<List<StationSearchResult>> searchStations(String searchText) async {
+  // 캐시 매니저 인스턴스
+  final _cacheManager = BusCacheManager.instance;
+  
+  // API 호출 디바운서
+  final _debouncer = DebounceManager.getDebouncer(
+    'bus_api_service',
+    delay: const Duration(milliseconds: 800),
+  );
+
+  /// 캐시 매니저 초기화
+  Future<void> _initializeCacheManager() async {
     try {
-      final String jsonResult = await _channel.invokeMethod('searchStations', {
-        'searchText': searchText,
-      });
-
-      final List<dynamic> decoded = jsonDecode(jsonResult);
-      return decoded
-          .map((station) => StationSearchResult.fromJson(station))
-          .toList();
-    } on PlatformException catch (e) {
-      debugPrint('정류장 검색 오류: ${e.message}');
-      return [];
+      await _cacheManager.initialize();
     } catch (e) {
-      debugPrint('예상치 못한 오류: $e');
-      return [];
+      debugPrint('⚠️ 캐시 매니저 초기화 실패: $e');
     }
   }
 
-  // 정류장 도착 정보 조회 메소드
-  Future<List<BusArrival>> getStationInfo(String stationId) async {
+  // 정류장 검색 메소드 (캐싱 및 디바운싱 적용)
+  Future<BusApiResult<List<StationSearchResult>>> searchStationsWithResult(String searchText) async {
+    if (searchText.trim().isEmpty) {
+      return BusApiResult.error(BusApiError.invalidParameter, message: '검색어를 입력해주세요');
+    }
+
     try {
+      // 캐시에서 먼저 확인
+      final cacheKey = searchText.trim().toLowerCase();
+      
+      debugPrint('🔍 [검색 요청] "$searchText"');
+      final apiStartTime = DateTime.now();
+
+      final String jsonResult = await _channel.invokeMethod('searchStations', {
+        'searchText': searchText.trim(),
+      });
+
+      final apiDuration = DateTime.now().difference(apiStartTime).inMilliseconds;
+      debugPrint('🔍 [검색 응답] 소요시간: ${apiDuration}ms');
+
+      if (jsonResult.isEmpty || jsonResult == '[]') {
+        return BusApiResult.error(BusApiError.noData, message: '"$searchText"에 대한 검색 결과가 없습니다');
+      }
+
+      final List<dynamic> decoded = jsonDecode(jsonResult);
+      final results = decoded
+          .map((station) => StationSearchResult.fromJson(station))
+          .toList();
+
+      if (results.isEmpty) {
+        return BusApiResult.error(BusApiError.noData, message: '검색 결과가 없습니다');
+      }
+
+      debugPrint('✅ [검색 성공] ${results.length}개 정류장 찾음');
+      return BusApiResult.success(results);
+    } on PlatformException catch (e) {
+      final error = ErrorAnalyzer.analyzeException(e);
+      debugPrint('❌ [검색 오류] ${e.message}');
+      return BusApiResult.error(error, message: e.message);
+    } catch (e) {
+      final error = ErrorAnalyzer.analyzeException(e);
+      debugPrint('❌ [검색 오류] $e');
+      return BusApiResult.error(error, message: e.toString());
+    }
+  }
+
+  // 기존 메소드 호환성 유지 (디바운싱 적용)
+  Future<List<StationSearchResult>> searchStations(String searchText) async {
+    // 디바운싱된 검색
+    final completer = Completer<List<StationSearchResult>>();
+    
+    _debouncer.call(() async {
+      final result = await searchStationsWithResult(searchText);
+      completer.complete(result.dataOrDefault([]));
+    });
+    
+    return completer.future;
+  }
+
+  // 정류장 도착 정보 조회 메소드 (캐싱 및 에러 처리 개선)
+  Future<BusApiResult<List<BusArrival>>> getStationInfoWithResult(String stationId) async {
+    try {
+      // 캐시에서 먼저 확인
+      final cachedData = await _cacheManager.getCachedBusArrivals(stationId);
+      if (cachedData != null) {
+        debugPrint('🎯 캐시에서 버스 정보 반환: ${cachedData.length}개 노선');
+        return BusApiResult.success(cachedData);
+      }
+
+      debugPrint('🚌 [API 호출] 버스 정보 조회: stationId=$stationId');
+      final apiStartTime = DateTime.now();
+
       final String jsonResult = await _channel.invokeMethod('getStationInfo', {
         'stationId': stationId,
       });
 
-      final List<dynamic> decoded = jsonDecode(jsonResult);
-      // 디버그 모드에서만 로그 출력
-      assert(() {
-        debugPrint('정류장 도착 정보 조회 성공: ${decoded.length}개 버스');
-        return true;
-      }());
+      final apiDuration = DateTime.now().difference(apiStartTime).inMilliseconds;
+      debugPrint('🚌 [API 응답] 소요시간: ${apiDuration}ms');
 
-      // 네이티브 코드에서 반환하는 JSON 구조에 맞게 파싱
-      final List<BusArrival> arrivals = [];
-      
-      for (final routeData in decoded) {
-        if (routeData is! Map<String, dynamic>) continue;
-        
-        final String routeNo = routeData['routeNo'] ?? '';
-        final List<dynamic>? arrList = routeData['arrList'];
-        
-        if (arrList == null || arrList.isEmpty) continue;
-        
-        final List<BusInfo> busInfoList = [];
-        
-        for (final arrivalData in arrList) {
-          if (arrivalData is! Map<String, dynamic>) continue;
-          
-          final String routeId = arrivalData['routeId'] ?? '';
-          final String bsNm = arrivalData['bsNm'] ?? '정보 없음';
-          final String arrState = arrivalData['arrState'] ?? '정보 없음';
-          final int bsGap = arrivalData['bsGap'] ?? 0;
-          final String busTCd2 = arrivalData['busTCd2'] ?? 'N';
-          final String busTCd3 = arrivalData['busTCd3'] ?? 'N';
-          final String vhcNo2 = arrivalData['vhcNo2'] ?? '';
-          
-          // 저상버스 여부 확인 (busTCd2가 "1"이면 저상버스)
-          final bool isLowFloor = busTCd2 == '1';
-          
-          // 운행 종료 여부 확인
-          final bool isOutOfService = arrState == '운행종료' || arrState == '-';
-          
-          // 도착 예정 시간 처리
-          String estimatedTime = arrState;
-          if (estimatedTime.contains('출발예정')) {
-            estimatedTime = estimatedTime.replaceAll('출발예정', '').trim();
-            if (estimatedTime.isEmpty) {
-              estimatedTime = '출발예정';
-            }
-          }
-          
-          final busInfo = BusInfo(
-            busNumber: vhcNo2.isNotEmpty ? vhcNo2 : routeNo,
-            isLowFloor: isLowFloor,
-            currentStation: bsNm,
-            remainingStops: bsGap.toString(),
-            estimatedTime: estimatedTime,
-            isOutOfService: isOutOfService,
-          );
-          
-          busInfoList.add(busInfo);
-        }
-        
-        if (busInfoList.isNotEmpty) {
-          final arrival = BusArrival(
-            routeId: routeData['routeId'] ?? '',
-            routeNo: routeNo,
-            direction: '',
-            busInfoList: busInfoList,
-          );
-          arrivals.add(arrival);
-        }
+      if (jsonResult.isEmpty || jsonResult == '[]') {
+        return BusApiResult.error(BusApiError.noData, message: '도착 예정 버스 정보가 없습니다');
       }
 
-      return arrivals;
+      final List<dynamic> decoded = jsonDecode(jsonResult);
+      final List<BusArrival> arrivals = await _parseBusArrivals(decoded);
+
+      if (arrivals.isEmpty) {
+        return BusApiResult.error(BusApiError.noData, message: '유효한 버스 정보가 없습니다');
+      }
+
+      // 유효한 데이터만 캐시에 저장
+      await _cacheManager.cacheBusArrivals(stationId, arrivals);
+      debugPrint('✅ [API 성공] ${arrivals.length}개 노선 정보 수신 및 캐시 저장 완료');
+      
+      return BusApiResult.success(arrivals);
     } on PlatformException catch (e) {
-      debugPrint('정류장 정보 조회 오류: ${e.message}');
-      return [];
+      final error = ErrorAnalyzer.analyzeException(e);
+      debugPrint('❌ [Platform 오류] ${e.message}');
+      return BusApiResult.error(error, message: e.message);
     } catch (e) {
-      debugPrint('예상치 못한 오류: $e');
-      return [];
+      final error = ErrorAnalyzer.analyzeException(e);
+      debugPrint('❌ [일반 오류] $e');
+      return BusApiResult.error(error, message: e.toString());
     }
+  }
+
+  // 기존 메소드 호환성 유지
+  Future<List<BusArrival>> getStationInfo(String stationId) async {
+    final result = await getStationInfoWithResult(stationId);
+    return result.dataOrDefault([]);
   }
 
   // 버스 도착 정보 조회 메소드 개선
@@ -354,6 +384,81 @@ class BusApiService {
   }
 
   /// 성공한 API 응답 저장 (분석용)
+  /// 버스 도착 정보 JSON 파싱 (개선된 버전)
+  Future<List<BusArrival>> _parseBusArrivals(List<dynamic> decoded) async {
+    final List<BusArrival> arrivals = [];
+    
+    for (final routeData in decoded) {
+      if (routeData is! Map<String, dynamic>) continue;
+      
+      final String routeNo = routeData['routeNo'] ?? '';
+      final List<dynamic>? arrList = routeData['arrList'];
+      
+      if (arrList == null || arrList.isEmpty) continue;
+      
+      final List<BusInfo> busInfoList = [];
+      
+      for (final arrivalData in arrList) {
+        if (arrivalData is! Map<String, dynamic>) continue;
+        
+        final String routeId = arrivalData['routeId'] ?? '';
+        final String bsNm = arrivalData['bsNm'] ?? '정보 없음';
+        final String arrState = arrivalData['arrState'] ?? '정보 없음';
+        final int bsGap = arrivalData['bsGap'] ?? 0;
+        final String busTCd2 = arrivalData['busTCd2'] ?? 'N';
+        final String busTCd3 = arrivalData['busTCd3'] ?? 'N';
+        final String vhcNo2 = arrivalData['vhcNo2'] ?? '';
+        
+        // 저상버스 여부 확인 (busTCd2가 "1"이면 저상버스)
+        final bool isLowFloor = busTCd2 == '1';
+        
+        // 운행 종료 여부 확인 (개선된 조건)
+        final bool isOutOfService = arrState == '운행종료' || 
+                                   arrState == '-' || 
+                                   busTCd3 == '1' ||
+                                   arrState.contains('종료');
+        
+        // 도착 예정 시간 처리 (개선)
+        String estimatedTime = arrState;
+        if (estimatedTime.contains('출발예정')) {
+          estimatedTime = estimatedTime.replaceAll('출발예정', '').trim();
+          if (estimatedTime.isEmpty) {
+            estimatedTime = '출발예정';
+          }
+        }
+        
+        // 유효하지 않은 데이터 필터링
+        if (estimatedTime.isEmpty || estimatedTime == '정보 없음') {
+          continue;
+        }
+        
+        final busInfo = BusInfo(
+          busNumber: vhcNo2.isNotEmpty ? vhcNo2 : routeNo,
+          isLowFloor: isLowFloor,
+          currentStation: bsNm,
+          remainingStops: bsGap.toString(),
+          estimatedTime: estimatedTime,
+          isOutOfService: isOutOfService,
+        );
+        
+        busInfoList.add(busInfo);
+      }
+      
+      // 유효한 버스 정보가 있는 경우에만 추가
+      if (busInfoList.isNotEmpty) {
+        final arrival = BusArrival(
+          routeId: routeData['routeId'] ?? '',
+          routeNo: routeNo,
+          direction: '',
+          busInfoList: busInfoList,
+        );
+        arrivals.add(arrival);
+      }
+    }
+
+    return arrivals;
+  }
+
   void _saveSuccessfulResponse(dynamic response, int duration) {
     try {
       debugPrint('✅ API 응답 저장 (${duration}ms)');

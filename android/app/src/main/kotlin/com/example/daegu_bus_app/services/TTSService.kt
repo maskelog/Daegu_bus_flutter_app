@@ -64,17 +64,9 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     override fun onCreate() {
         super.onCreate()
         Log.e(TAG, "🔴 [중요] AppSettings 확인: speaker_mode=${getAudioOutputMode()}, TTSService_HEADSET_MODE=$OUTPUT_MODE_HEADSET, BusService_HEADSET_MODE=${BusAlertService.OUTPUT_MODE_HEADSET}")
-        // 자동알람 경량 모드에서는 포그라운드 알림 없이 일시적으로 실행되도록 함
-        // Android 정책상 포그라운드 서비스 알림이 필요할 수 있으나, 사용성 요구에 따라 노출을 최소화
-        // 필요 시 조건부로만 노출하도록 변경
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Q 이상에서도 알림을 만들지 않음
-            } else {
-                // 레거시 단말 최소한의 채널만 생성하되, 포그라운드 시작은 생략
-                createNotificationChannel()
-            }
-        } catch (_: Exception) { }
+        // 저우선(무음) 포그라운드 알림으로 정책 충족 + 사용자 방해 최소화
+        createNotificationChannel()
+        startForeground(NOTIFICATION_ID, createNotification("자동알람 음성 안내 중"))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -399,9 +391,13 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_MIN // 최저 중요도
             ).apply {
-                description = "TTS 서비스 알림"
+                description = "자동알람 TTS 알림 (저우선)"
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
             }
 
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -419,9 +415,14 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("대구 버스 알림")
+            .setContentTitle("자동알람 음성 안내")
             .setContentText(content)
             .setSmallIcon(R.mipmap.ic_launcher)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
             .setContentIntent(pendingIntent)
             .build()
     }

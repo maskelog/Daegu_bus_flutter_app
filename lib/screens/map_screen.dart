@@ -1222,8 +1222,8 @@ class _MapScreenState extends State<MapScreen> {
   void _startBusPositionTracking() {
     if (widget.routeId == null) return;
 
-    // 60초마다 버스 위치 업데이트 (부하 감소)
-    _busPositionTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
+    // 90초마다 버스 위치 업데이트 (부하 더욱 감소)
+    _busPositionTimer = Timer.periodic(const Duration(seconds: 90), (timer) {
       _updateBusPositions();
     });
 

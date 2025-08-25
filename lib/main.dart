@@ -12,6 +12,7 @@ import 'services/notification_service.dart';
 import 'services/permission_service.dart';
 import 'services/settings_service.dart';
 import 'services/alarm_manager.dart';
+import 'services/cache_cleanup_service.dart';
 
 // 전역 AlarmService 인스턴스 (노티피케이션 취소 처리용)
 AlarmService? _globalAlarmService;
@@ -46,10 +47,10 @@ class AppColorScheme {
   static const Color backgroundLight = Color(0xFFFEFBFF);
   static const Color onBackgroundLight = Color(0xFF1B1B1F);
 
-  // Error Colors
-  static const Color errorLight = Color(0xFFBA1A1A);
+  // Error Colors - 더 강한 대비 제공
+  static const Color errorLight = Color(0xFFD32F2F); // 더 진한 빨간색
   static const Color onErrorLight = Color(0xFFFFFFFF);
-  static const Color errorContainerLight = Color(0xFFFFDAD6);
+  static const Color errorContainerLight = Color(0xFFFFCDD2); // 더 밝은 배경
   static const Color onErrorContainerLight = Color(0xFF410002);
 
   // Outline Colors
@@ -75,10 +76,17 @@ class AppColorScheme {
   static const Color surfaceDark = Color(0xFF131316);
   static const Color onSurfaceDark = Color(0xFFFFFFFF); // 더 강한 흰색으로 변경
   static const Color surfaceVariantDark = Color(0xFF47464F);
-  static const Color onSurfaceVariantDark = Color(0xFFC8C5D0);
+  static const Color onSurfaceVariantDark = Color(0xFFE0E0E0); // 더 강한 대비
 
   static const Color backgroundDark = Color(0xFF131316);
   static const Color onBackgroundDark = Color(0xFFFFFFFF); // 더 강한 흰색으로 변경
+
+  // 색각이상 사용자를 위한 추가 색상
+  static const Color accessibleGreen = Color(0xFF4CAF50);
+  static const Color accessibleBlue = Color(0xFF2196F3);
+  static const Color accessibleOrange = Color(0xFFFF9800);
+  static const Color accessibleRed = Color(0xFFE53935);
+  static const Color accessibleGrey = Color(0xFF757575);
 
   // Light ColorScheme
   static const ColorScheme lightColorScheme = ColorScheme.light(
@@ -633,6 +641,10 @@ Future<void> main() async {
   final notificationService = NotificationService();
   await notificationService.initialize();
 
+  // 캐시 정리 서비스 초기화
+  final cacheCleanupService = CacheCleanupService.instance;
+  await cacheCleanupService.initialize();
+
   // 전역 AlarmService 초기화 (노티피케이션 취소 처리용)
   _globalAlarmService = AlarmService(
     notificationService: notificationService,
@@ -670,15 +682,76 @@ class MyApp extends StatelessWidget {
           Brightness.dark,
         );
 
+        // 폰트 크기 배율을 적용한 테마 생성
+        final adjustedLightTheme = AppTheme.lightTheme.copyWith(
+          colorScheme: lightColorScheme,
+          textTheme: _scaleTextTheme(AppTheme.lightTheme.textTheme, settingsService.fontSizeMultiplier),
+        );
+        final adjustedDarkTheme = AppTheme.darkTheme.copyWith(
+          colorScheme: darkColorScheme,
+          textTheme: _scaleTextTheme(AppTheme.darkTheme.textTheme, settingsService.fontSizeMultiplier),
+        );
+
         return MaterialApp(
           title: '대구버스',
-          theme: AppTheme.lightTheme.copyWith(colorScheme: lightColorScheme),
-          darkTheme: AppTheme.darkTheme.copyWith(colorScheme: darkColorScheme),
+          theme: adjustedLightTheme,
+          darkTheme: adjustedDarkTheme,
           themeMode: settingsService.themeMode,
           home: const HomeScreen(),
           debugShowCheckedModeBanner: false,
         );
       },
+    );
+  }
+  
+  // 텍스트 테마에 폰트 크기 배율 적용
+  static TextTheme _scaleTextTheme(TextTheme textTheme, double scaleFactor) {
+    return TextTheme(
+      displayLarge: textTheme.displayLarge?.copyWith(
+        fontSize: (textTheme.displayLarge?.fontSize ?? 57) * scaleFactor,
+      ),
+      displayMedium: textTheme.displayMedium?.copyWith(
+        fontSize: (textTheme.displayMedium?.fontSize ?? 45) * scaleFactor,
+      ),
+      displaySmall: textTheme.displaySmall?.copyWith(
+        fontSize: (textTheme.displaySmall?.fontSize ?? 36) * scaleFactor,
+      ),
+      headlineLarge: textTheme.headlineLarge?.copyWith(
+        fontSize: (textTheme.headlineLarge?.fontSize ?? 32) * scaleFactor,
+      ),
+      headlineMedium: textTheme.headlineMedium?.copyWith(
+        fontSize: (textTheme.headlineMedium?.fontSize ?? 28) * scaleFactor,
+      ),
+      headlineSmall: textTheme.headlineSmall?.copyWith(
+        fontSize: (textTheme.headlineSmall?.fontSize ?? 24) * scaleFactor,
+      ),
+      titleLarge: textTheme.titleLarge?.copyWith(
+        fontSize: (textTheme.titleLarge?.fontSize ?? 22) * scaleFactor,
+      ),
+      titleMedium: textTheme.titleMedium?.copyWith(
+        fontSize: (textTheme.titleMedium?.fontSize ?? 16) * scaleFactor,
+      ),
+      titleSmall: textTheme.titleSmall?.copyWith(
+        fontSize: (textTheme.titleSmall?.fontSize ?? 14) * scaleFactor,
+      ),
+      bodyLarge: textTheme.bodyLarge?.copyWith(
+        fontSize: (textTheme.bodyLarge?.fontSize ?? 16) * scaleFactor,
+      ),
+      bodyMedium: textTheme.bodyMedium?.copyWith(
+        fontSize: (textTheme.bodyMedium?.fontSize ?? 14) * scaleFactor,
+      ),
+      bodySmall: textTheme.bodySmall?.copyWith(
+        fontSize: (textTheme.bodySmall?.fontSize ?? 12) * scaleFactor,
+      ),
+      labelLarge: textTheme.labelLarge?.copyWith(
+        fontSize: (textTheme.labelLarge?.fontSize ?? 14) * scaleFactor,
+      ),
+      labelMedium: textTheme.labelMedium?.copyWith(
+        fontSize: (textTheme.labelMedium?.fontSize ?? 12) * scaleFactor,
+      ),
+      labelSmall: textTheme.labelSmall?.copyWith(
+        fontSize: (textTheme.labelSmall?.fontSize ?? 11) * scaleFactor,
+      ),
     );
   }
 }
