@@ -37,9 +37,9 @@ class _MapScreenState extends State<MapScreen> {
   Timer? _busPositionTimer;
   bool _isLoading = true;
   bool _mapReady = false;
+  bool _isSearchingNearby = false;
   String? _errorMessage;
   String? _htmlContent;
-  bool _isSearchingNearby = false; // 주변 정류장 검색 상태
 
   @override
   void initState() {
