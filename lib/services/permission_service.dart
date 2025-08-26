@@ -106,41 +106,55 @@ class PermissionService {
     if (!Platform.isAndroid) return;
 
     try {
-      const methodChannel =
-          MethodChannel('com.example.daegu_bus_app/permission');
-
-      // 먼저 현재 상태 확인
-      final bool isIgnored =
-          await methodChannel.invokeMethod('isIgnoringBatteryOptimizations');
-
-      if (isIgnored) {
-        logMessage('🔋 이미 배터리 최적화에서 제외됨', level: LogLevel.info);
-        return;
-      }
-
-      // 배터리 최적화 제외 요청
-      final bool result =
-          await methodChannel.invokeMethod('requestIgnoreBatteryOptimizations');
-
-      if (result) {
-        logMessage('🔋 배터리 최적화 제외 요청 성공', level: LogLevel.info);
-      } else {
-        logMessage('⚠️ 배터리 최적화 제외 요청 실패', level: LogLevel.warning);
-      }
-    } catch (e) {
-      logMessage('❌ 배터리 최적화 요청 오류: $e', level: LogLevel.error);
-
-      // 폴백: permission_handler 사용
+      // 폴백: permission_handler를 먼저 사용 (더 안정적)
       try {
         final status = await Permission.ignoreBatteryOptimizations.request();
         if (status.isGranted) {
-          logMessage('🔋 배터리 최적화 제외 승인됨 (폴백)', level: LogLevel.info);
-        } else {
-          logMessage('⚠️ 배터리 최적화 제외 거부됨 (폴백)', level: LogLevel.warning);
+          logMessage('🔋 배터리 최적화 제외 승인됨', level: LogLevel.info);
+          return;
+        } else if (status.isDenied) {
+          logMessage('⚠️ 배터리 최적화 제외 거부됨 - 설정에서 수동으로 허용해주세요', level: LogLevel.warning);
+          return;
+        } else if (status.isPermanentlyDenied) {
+          logMessage('⚠️ 배터리 최적화 권한 영구 거부 → 설정 페이지로 이동', level: LogLevel.warning);
+          openAppSettings();
+          return;
         }
-      } catch (e2) {
-        logMessage('❌ 배터리 최적화 폴백 요청 오류: $e2', level: LogLevel.error);
+      } catch (permissionError) {
+        logMessage('⚠️ permission_handler로 배터리 최적화 요청 실패: $permissionError', level: LogLevel.warning);
       }
+
+      // 네이티브 메서드 채널 시도 (폴백)
+      try {
+        const methodChannel =
+            MethodChannel('com.example.daegu_bus_app/permission');
+
+        // 먼저 현재 상태 확인
+        final bool isIgnored =
+            await methodChannel.invokeMethod('isIgnoringBatteryOptimizations');
+
+        if (isIgnored) {
+          logMessage('🔋 이미 배터리 최적화에서 제외됨', level: LogLevel.info);
+          return;
+        }
+
+        // 배터리 최적화 제외 요청
+        final bool result =
+            await methodChannel.invokeMethod('requestIgnoreBatteryOptimizations');
+
+        if (result) {
+          logMessage('🔋 배터리 최적화 제외 요청 성공 (네이티브)', level: LogLevel.info);
+        } else {
+          logMessage('⚠️ 배터리 최적화 제외 요청 실패 (네이티브)', level: LogLevel.warning);
+        }
+      } catch (nativeError) {
+        logMessage('❌ 네이티브 배터리 최적화 요청 오류: $nativeError', level: LogLevel.error);
+        // 사용자에게 수동 설정 안내
+        logMessage('📱 설정 > 배터리 > 앱 배터리 사용량 최적화에서 이 앱을 제외해주세요', level: LogLevel.info);
+      }
+    } catch (e) {
+      logMessage('❌ 배터리 최적화 요청 전체 오류: $e', level: LogLevel.error);
+      logMessage('📱 설정에서 수동으로 배터리 최적화를 해제해주세요', level: LogLevel.info);
     }
   }
 
@@ -177,11 +191,28 @@ class PermissionService {
   /// 필요한 모든 권한 요청 일괄 실행 (초기 실행 시 사용)
   static Future<void> requestAllPermissions() async {
     logMessage('필요한 모든 권한 요청 시작', level: LogLevel.info);
-    await requestNotificationPermission();
-    await requestLocationPermission();
-    // await requestBackgroundLocationPermission(); // 필요시 활성화
-    await requestExactAlarmPermission();
-    await requestIgnoreBatteryOptimizations();
-    await checkAutoStartPermission();
+    
+    // 단계별로 권한 요청하고 각각 완료 대기
+    try {
+      await requestNotificationPermission();
+      await Future.delayed(const Duration(milliseconds: 500)); // 권한 간 지연
+      
+      await requestLocationPermission();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // await requestBackgroundLocationPermission(); // 필요시 활성화
+      
+      await requestExactAlarmPermission();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      await requestIgnoreBatteryOptimizations();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      await checkAutoStartPermission();
+      
+      logMessage('모든 권한 요청 완료', level: LogLevel.info);
+    } catch (e) {
+      logMessage('권한 요청 중 오류 발생: $e', level: LogLevel.error);
+    }
   }
 }

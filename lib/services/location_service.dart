@@ -47,9 +47,20 @@ class LocationService {
       debugPrint('Getting current location...');
       return await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium, // 정확도를 약간 낮춰 속도 향상
-          timeLimit: Duration(seconds: 10), // 10초 타임아웃
+          accuracy: LocationAccuracy.low, // 정확도를 낮춰 속도 향상
+          timeLimit: Duration(seconds: 15), // 타임아웃을 15초로 증가
         ),
+      ).timeout(
+        const Duration(seconds: 15), // 추가 타임아웃 보장
+        onTimeout: () async {
+          debugPrint('getCurrentPosition timeout, trying last known position');
+          // 타임아웃 시 마지막으로 알려진 위치 반환
+          final lastPosition = await Geolocator.getLastKnownPosition();
+          if (lastPosition != null) {
+            return lastPosition;
+          }
+          throw TimeoutException('Location timeout', const Duration(seconds: 15));
+        },
       );
     } catch (e) {
       debugPrint('Error getting current location: $e');
@@ -57,7 +68,16 @@ class LocationService {
         debugPrint('Getting location timed out.');
       }
       // 오류 발생 시 마지막으로 알려진 위치라도 반환 시도
-      return await Geolocator.getLastKnownPosition();
+      try {
+        final lastPosition = await Geolocator.getLastKnownPosition();
+        if (lastPosition != null) {
+          debugPrint('Using last known position as fallback');
+          return lastPosition;
+        }
+      } catch (fallbackError) {
+        debugPrint('Error getting last known position: $fallbackError');
+      }
+      return null;
     }
   }
 

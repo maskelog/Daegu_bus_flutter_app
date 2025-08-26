@@ -115,7 +115,13 @@ class NotificationHandler(private val context: Context) {
     init {
         try {
             val filter = IntentFilter(BusAlertService.ACTION_STOP_TRACKING)
-            context.registerReceiver(NotificationCancelReceiver(), filter)
+            // Android 14 이상에서는 RECEIVER_NOT_EXPORTED 플래그 필수
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(NotificationCancelReceiver(), filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(NotificationCancelReceiver(), filter)
+            }
+            Log.d(TAG, "NotificationCancelReceiver 등록 성공")
         } catch (e: Exception) {
             Log.e(TAG, "NotificationCancelReceiver 등록 오류: ${e.message}", e)
         }
