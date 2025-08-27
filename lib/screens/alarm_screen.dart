@@ -285,18 +285,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
                         onPressed: _addAutoAlarm,
                         tooltip: '알람 추가',
                       ),
-                      IconButton.filledTonal(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => const SettingsScreen()),
-                          );
-                        },
-                        icon: Icon(Icons.settings_outlined,
-                            color: colorScheme.onSurface),
-                        tooltip: '설정',
-                      ),
                     ],
                   ),
                 ),

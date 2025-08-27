@@ -178,29 +178,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
     return Column(
       children: [
-        // 설정 버튼
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                IconButton.filledTonal(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => const SettingsScreen()),
-                    );
-                  },
-                  icon: Icon(Icons.settings_outlined,
-                      color: colorScheme.onSurface),
-                  tooltip: '설정',
-                ),
-              ],
-            ),
-          ),
-        ),
         // 메인 콘텐츠
         Expanded(
           child: Container(
