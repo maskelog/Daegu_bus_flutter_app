@@ -107,14 +107,15 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
           ),
         ),
         SizedBox(
-          height: 64,
+          height: 80, // Increased height for the button
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.zero,
+            padding: const EdgeInsets.symmetric(
+                vertical: 8, horizontal: 4), // Padding for shadow
             itemCount: alarms.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 6),
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
             itemBuilder: (context, index) =>
-                _buildAutoAlarmCompactItem(alarms[index]),
+                _buildAutoAlarmCompactItem(context, alarms[index]),
           ),
         ),
         // Divider 제거
@@ -122,61 +123,119 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     );
   }
 
-  Widget _buildAutoAlarmCompactItem(AlarmData alarm) {
+  Widget _buildAutoAlarmCompactItem(BuildContext context, AlarmData alarm) {
     final key = '${alarm.busNo}_${alarm.stationName}_${alarm.routeId}';
     final fullAlarm = _fullAutoAlarms[key];
     if (fullAlarm == null) return const SizedBox.shrink();
 
-    return Card(
-      elevation: 1,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: Container(
-        width: 120,
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Card(
+          elevation: 1,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: Container(
+            width: 140, // Increased width for better layout
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(fullAlarm.routeNo,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
+                Text(
+                  fullAlarm.routeNo,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  fullAlarm.stationName,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(Icons.alarm,
+                        size: 13,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 2),
+                    Text(
+                      fullAlarm.getFormattedTime(),
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurface),
                     ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1),
-                const SizedBox(width: 6),
-                Icon(Icons.alarm,
-                    size: 13,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
-                const SizedBox(width: 2),
-                Text(fullAlarm.getFormattedTime(),
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).colorScheme.onSurface)),
+                  ],
+                ),
               ],
             ),
-            Text(fullAlarm.stationName,
-                style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurface),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1),
-            Text(
-              _getRepeatDaysText(fullAlarm.repeatDays),
-              style: TextStyle(
-                  fontSize: 10,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+          ),
         ),
-      ),
+        Positioned(
+          top: -8,
+          right: -8,
+          child: InkWell(
+            onTap: () => _cancelAutoAlarm(context, alarm),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(1, 1),
+                  )
+                ],
+              ),
+              padding: const EdgeInsets.all(2),
+              child: Icon(
+                Icons.cancel,
+                size: 20,
+                color:
+                    Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.8),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
+  }
+
+  Future<void> _cancelAutoAlarm(BuildContext context, AlarmData alarm) async {
+    if (!mounted) return;
+
+    try {
+      final alarmService = context.read<AlarmService>();
+      await alarmService.stopAutoAlarm(
+          alarm.busNo, alarm.stationName, alarm.routeId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('${alarm.busNo}번 버스 자동 알람이 중지되었습니다.'),
+              duration: const Duration(seconds: 2)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('자동 알람 중지 중 오류가 발생했습니다.'),
+              duration: const Duration(seconds: 2)),
+        );
+      }
+    }
   }
 
   Widget _buildManualAlarmList(BuildContext context, List<AlarmData> alarms) {
