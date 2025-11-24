@@ -18,6 +18,7 @@ import 'settings_screen.dart';
 import '../models/auto_alarm.dart';
 import '../models/bus_route.dart';
 import '../widgets/station_loading_widget.dart';
+import '../widgets/unified_bus_detail_widget.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -141,29 +142,10 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _loadSelectedStationData(String busStationId) async {
     try {
+      // 1단계: 정류장 도착 정보 가져오기
       final stopArrivals = await ApiService.getStationInfo(busStationId);
-      final routeIds = stopArrivals.map((a) => a.routeId).toSet();
-      final missingRouteIds =
-          routeIds.where((id) => !_routeTypeCache.containsKey(id)).toList();
 
-      if (missingRouteIds.isNotEmpty) {
-        final results = await Future.wait(
-          missingRouteIds.map((id) async {
-            try {
-              final route = await ApiService.getBusRouteDetails(id);
-              return route != null ? MapEntry(id, route.getRouteType()) : null;
-            } catch (e) {
-              return null;
-            }
-          }),
-        );
-        final newTypes = <String, BusRouteType>{};
-        for (final entry in results) {
-          if (entry != null) newTypes[entry.key] = entry.value;
-        }
-        _routeTypeCache.addAll(newTypes);
-      }
-
+      // 2단계: 즉시 UI 업데이트 (빠른 응답)
       if (mounted && _selectedStop != null) {
         setState(() {
           _stationArrivals[_selectedStop!.id] = stopArrivals;
@@ -171,6 +153,9 @@ class _HomeScreenState extends State<HomeScreen>
           _isLoading = false;
         });
       }
+
+      // 3단계: 노선 상세 정보는 백그라운드에서 로드 (UI 블로킹 없음)
+      _loadRouteDetailsInBackground(stopArrivals);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -178,6 +163,45 @@ class _HomeScreenState extends State<HomeScreen>
           _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
         });
       }
+    }
+  }
+
+  /// 노선 상세 정보를 백그라운드에서 로드 (UI 블로킹 없음)
+  Future<void> _loadRouteDetailsInBackground(List<BusArrival> arrivals) async {
+    try {
+      final routeIds = arrivals.map((a) => a.routeId).toSet();
+      final missingRouteIds =
+          routeIds.where((id) => !_routeTypeCache.containsKey(id)).toList();
+
+      if (missingRouteIds.isEmpty) return;
+
+      // 백그라운드에서 노선 상세 정보 로드
+      final results = await Future.wait(
+        missingRouteIds.map((id) async {
+          try {
+            final route = await ApiService.getBusRouteDetails(id);
+            return route != null ? MapEntry(id, route.getRouteType()) : null;
+          } catch (e) {
+            return null;
+          }
+        }),
+      );
+
+      // 캐시에 추가
+      final newTypes = <String, BusRouteType>{};
+      for (final entry in results) {
+        if (entry != null) newTypes[entry.key] = entry.value;
+      }
+
+      // 새로운 노선 타입 정보가 있으면 UI 업데이트 (색상 반영)
+      if (newTypes.isNotEmpty && mounted) {
+        setState(() {
+          _routeTypeCache.addAll(newTypes);
+        });
+      }
+    } catch (e) {
+      // 백그라운드 로드 실패는 무시 (이미 도착 정보는 표시됨)
+      print('노선 상세 정보 백그라운드 로드 실패: $e');
     }
   }
 
@@ -676,16 +700,28 @@ class _HomeScreenState extends State<HomeScreen>
                   final routeNo = arrival.routeNo;
                   final routeId = arrival.routeId;
                   final stationName = _selectedStop?.name ?? '';
+                  final stationId = _selectedStop?.stationId ?? _selectedStop?.id ?? '';
 
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.3)),
-                    ),
-                    child: Row(
+                  return InkWell(
+                    onTap: () {
+                      // 버스 클릭 시 상세 정보 모달 표시
+                      showUnifiedBusDetailModal(
+                        context,
+                        arrival,
+                        stationId,
+                        stationName,
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.3)),
+                      ),
+                      child: Row(
                       children: [
                         Container(
                           width: 50,
@@ -855,7 +891,8 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ],
                     ),
-                  );
+                  ),
+                );
                 }).toList(),
               ),
           ],
