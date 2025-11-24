@@ -296,7 +296,7 @@ class AppTheme {
     ),
 
     // Card Theme
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 1,
       shadowColor: Colors.transparent,
       surfaceTintColor: AppColorScheme.lightColorScheme.surfaceTint,
