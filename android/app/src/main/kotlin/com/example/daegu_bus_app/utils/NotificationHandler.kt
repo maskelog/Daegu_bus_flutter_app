@@ -288,15 +288,22 @@ class NotificationHandler(private val context: Context) {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // 잠금화면에서 전체 내용 표시
             .setTimeoutAfter(0) // 자동 삭제 방지
             .setLocalOnly(false) // 웨어러블 기기에도 표시
-            .addAction(
-                R.drawable.ic_stop_tracking,
-                "추적 중지",
-                createStopPendingIntent()
-            )
+
+        // 추적 중지 버튼 추가
+        Log.d(TAG, "🔔🔔🔔 '추적 중지' 버튼 추가 시작 🔔🔔🔔")
+        val stopPendingIntent = createStopPendingIntent()
+        Log.d(TAG, "🔔 Stop PendingIntent 생성됨: $stopPendingIntent")
+        notificationBuilder.addAction(
+            R.drawable.ic_stop_tracking,
+            "추적 중지",
+            stopPendingIntent
+        )
+        Log.d(TAG, "🔔 '추적 중지' 액션 추가 완료")
 
         // 자동알람 중지 액션 추가: 활성 추적 중 자동알람이 하나라도 있으면 버튼 표시
         val hasAutoAlarm = activeTrackings.values.any { it.isAutoAlarm }
         if (hasAutoAlarm) {
+            Log.d(TAG, "🔔 자동알람 감지됨 - '중지' 버튼 추가")
             notificationBuilder.addAction(
                 R.drawable.ic_cancel,
                 "중지",
@@ -346,13 +353,22 @@ class NotificationHandler(private val context: Context) {
     }
 
     private fun createStopPendingIntent(): PendingIntent {
+        Log.d(TAG, "🔔 createStopPendingIntent 호출됨")
         val stopAllIntent = Intent(context, BusAlertService::class.java).apply {
             action = ACTION_STOP_TRACKING // 통일된 ACTION 사용
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
-        return PendingIntent.getService(
-            context, 9999, stopAllIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE // 고유한 requestCode
+        Log.d(TAG, "🔔 Stop Intent 생성: action=${stopAllIntent.action}, flags=${stopAllIntent.flags}")
+        
+        val pendingIntent = PendingIntent.getService(
+            context, 
+            99999, // 더 고유한 requestCode 사용
+            stopAllIntent, 
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        
+        Log.d(TAG, "🔔 Stop PendingIntent 생성 완료: requestCode=99999")
+        return pendingIntent
     }
 
     private fun createStopAutoAlarmPendingIntent(): PendingIntent {

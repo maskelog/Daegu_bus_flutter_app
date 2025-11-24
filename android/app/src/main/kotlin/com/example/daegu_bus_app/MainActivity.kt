@@ -779,17 +779,21 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 this, id, openAppIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                             ) else null
 
-                            // Cancel action - Manifest 등록 브로드캐스트로 통일
-                            val cancelIntent = Intent("com.example.daegu_bus_app.ACTION_NOTIFICATION_CANCEL").apply {
+                            // Cancel action - 명시적 브로드캐스트로 변경 (Android 8.0+ 호환)
+                            Log.d(TAG, "🔴 '종료' 버튼 PendingIntent 생성 시작")
+                            val cancelIntent = Intent(this, com.example.daegu_bus_app.receivers.NotificationCancelReceiver::class.java).apply {
+                                action = "com.example.daegu_bus_app.ACTION_NOTIFICATION_CANCEL"
                                 putExtra("routeId", routeId)
                                 putExtra("busNo", busNo)
                                 putExtra("stationName", stationName)
                                 putExtra("notificationId", id)
                                 putExtra("isAutoAlarm", isAutoAlarm)
                             }
+                            Log.d(TAG, "🔴 Cancel Intent 생성: routeId=$routeId, busNo=$busNo, stationName=$stationName")
                             val cancelPendingIntent = PendingIntent.getBroadcast(
                                 this, id + 1000, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                             )
+                            Log.d(TAG, "🔴 Cancel PendingIntent 생성 완료: requestCode=${id + 1000}")
 
                             // 잠금화면 표시를 위한 간단한 알림 생성
                             val builder = NotificationCompat.Builder(this, ALARM_NOTIFICATION_CHANNEL_ID)
