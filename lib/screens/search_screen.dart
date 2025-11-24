@@ -631,31 +631,46 @@ class _StationItemWrapperState extends State<_StationItemWrapper> {
               bus.estimatedTime.isNotEmpty ? bus.estimatedTime : '정보 없음';
         }
 
-        return Row(
-          children: [
-            Text(
-              arrival.routeNo,
-              style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.primary,
-                  fontSize: 14),
+        return InkWell(
+          onTap: () {
+            // 클릭한 버스의 상세 정보를 모달로 표시
+            showUnifiedBusDetailModal(
+              context,
+              arrival,
+              widget.station.stationId ?? widget.station.id,
+              widget.station.name,
+            );
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            child: Row(
+              children: [
+                Text(
+                  arrival.routeNo,
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
+                      fontSize: 14),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    formattedTime,
+                    style: TextStyle(
+                        color: colorScheme.onSurfaceVariant, fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (bus.isLowFloor)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Text('[저상]',
+                        style: TextStyle(fontSize: 12, color: colorScheme.primary)),
+                  ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                formattedTime,
-                style: TextStyle(
-                    color: colorScheme.onSurfaceVariant, fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (bus.isLowFloor)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Text('[저상]',
-                    style: TextStyle(fontSize: 12, color: colorScheme.primary)),
-              ),
-          ],
+          ),
         );
       },
     );
