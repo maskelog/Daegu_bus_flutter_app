@@ -105,6 +105,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     var _methodChannel: MethodChannel? = null
         private set
 
+    // TTS 채널
+    private var _ttsMethodChannel: MethodChannel? = null
+
     // 서비스 바인딩을 위한 커넥션 객체
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -143,7 +146,10 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             // BUS_API_CHANNEL 설정 (기존과 동일) - _methodChannel에 할당
             _methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BUS_API_CHANNEL)
 
-            Log.d("MainActivity", "✅ MethodChannel 생성 완료")
+            // TTS_CHANNEL 설정
+            _ttsMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_CHANNEL)
+
+            Log.d("MainActivity", "✅ MethodChannel 생성 완료 (BUS_API, TTS)")
         } catch (e: Exception) {
             Log.e("MainActivity", "❌ Flutter 엔진 설정 오류: ${e.message}", e)
         }
@@ -720,6 +726,28 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.error("INVALID_ARGUMENT", "routeId cannot be null.", null)
                     }
                 }
+                "setAudioOutputMode" -> {
+                    val mode = call.argument<Int>("mode") ?: 2 // Default to Auto
+                    try {
+                        Log.i(TAG, "Flutter에서 오디오 출력 모드 변경 요청: $mode")
+                        busAlertService?.setAudioOutputMode(mode)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "오디오 출력 모드 변경 오류: ${e.message}", e)
+                        result.error("SET_MODE_ERROR", "오디오 출력 모드 변경 실패: ${e.message}", null)
+                    }
+                }
+                "setVolume" -> {
+                    val volume = call.argument<Double>("volume") ?: 1.0
+                    try {
+                        Log.i(TAG, "Flutter에서 TTS 볼륨 변경 요청: $volume")
+                        busAlertService?.setTtsVolume(volume)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "TTS 볼륨 변경 오류: ${e.message}", e)
+                        result.error("SET_VOLUME_ERROR", "TTS 볼륨 변경 실패: ${e.message}", null)
+                    }
+                }
                 "showNotification" -> {
                     val id = call.argument<Int>("id") ?: 0
                     val busNo = call.argument<String>("busNo") ?: ""
@@ -1123,6 +1151,76 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     } catch (e: Exception) {
                         Log.e(TAG, "startTtsTracking error: ${e.message}", e)
                         result.error("TTS_ERROR", "startTtsTracking failed: ${e.message}", null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // TTS_CHANNEL 핸들러 설정
+        _ttsMethodChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "speakTTS" -> {
+                    val message = call.argument<String>("message") ?: ""
+                    val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false
+                    val forceSpeaker = call.argument<Boolean>("forceSpeaker") ?: false
+                    if (message.isEmpty()) {
+                         result.error("INVALID_ARGUMENT", "메시지가 비어있습니다", null)
+                         return@setMethodCallHandler
+                    }
+                    try {
+                        if (busAlertService != null) {
+                            // 강제 스피커 모드인 경우 이어폰 체크 무시
+                            if (forceSpeaker) {
+                                Log.d(TAG, "🔊 강제 스피커 모드로 TTS 발화: $message")
+                                busAlertService?.speakTts(message, earphoneOnly = false, forceSpeaker = true)
+                            } else {
+                                // BusAlertService의 speakTts 호출 (오디오 포커스 관리 포함)
+                                busAlertService?.speakTts(message, earphoneOnly = isHeadphoneMode, forceSpeaker = false)
+                            }
+                        } else {
+                            // BusAlertService가 null인 경우 MainActivity의 TTS 사용
+                            if (::tts.isInitialized) {
+                                tts.speak(message, TextToSpeech.QUEUE_FLUSH, null, message.hashCode().toString())
+                                Log.d(TAG, "TTS 발화 (대안 방법): $message")
+                            } else {
+                                Log.w(TAG, "TTS가 초기화되지 않아 발화 실패")
+                            }
+                        }
+                        result.success(true) // 비동기 호출이므로 일단 성공으로 응답
+                    } catch (e: Exception) {
+                        Log.e(TAG, "TTS 발화 오류: ${e.message}", e)
+                        result.success(true) // TTS 실패도 성공으로 처리
+                    }
+                }
+                "setAudioOutputMode" -> {
+                    val mode = call.argument<Int>("mode") ?: 2
+                    try {
+                        if (busAlertService != null) {
+                            busAlertService?.setAudioOutputMode(mode)
+                        } else {
+                            Log.d(TAG, "오디오 출력 모드 설정 요청 (대안): $mode")
+                        }
+                        Log.d(TAG, "오디오 출력 모드 설정 요청: $mode")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "오디오 모드 설정 오류: ${e.message}", e)
+                        result.success(true)
+                    }
+                }
+                "setVolume" -> {
+                    val volume = call.argument<Double>("volume") ?: 1.0
+                    try {
+                        if (busAlertService != null) {
+                            busAlertService?.setTtsVolume(volume)
+                        } else {
+                            Log.d(TAG, "TTS 볼륨 설정 (대안): ${volume * 100}%")
+                        }
+                        Log.d(TAG, "TTS 볼륨 설정: ${volume * 100}%")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "볼륨 설정 오류: ${e.message}")
+                        result.success(true)
                     }
                 }
                 else -> result.notImplemented()

@@ -864,6 +864,7 @@ class _HomeScreenState extends State<HomeScreen>
                                           stationName,
                                           minutes,
                                           routeId: routeId,
+                                          stationId: stationId,
                                           useTTS: true,
                                           isImmediateAlarm: true,
                                           currentStation: bus.currentStation,

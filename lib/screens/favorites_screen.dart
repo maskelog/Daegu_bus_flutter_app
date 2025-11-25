@@ -481,6 +481,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                                                     station.name,
                                                                     minutes,
                                                                     routeId: routeId,
+                                                                    stationId: station.id,
                                                                     useTTS: true,
                                                                     isImmediateAlarm: true,
                                                                     currentStation: bus.currentStation,

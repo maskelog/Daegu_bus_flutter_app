@@ -52,6 +52,8 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
     super.didUpdateWidget(oldWidget);
     if (widget.busArrival != oldWidget.busArrival) {
       _initializeBusInfo();
+      // 부모 위젯에서 데이터가 갱신되었을 때 알림도 동기화
+      _updateNotification();
     }
   }
 
@@ -153,6 +155,36 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
     }
   }
 
+  Future<void> _updateNotification() async {
+    if (!mounted) return;
+    try {
+      final alarmService = Provider.of<AlarmService>(context, listen: false);
+      final hasAlarm = alarmService.hasAlarm(
+        widget.busArrival.routeNo,
+        widget.stationName,
+        widget.busArrival.routeId,
+      );
+
+      if (hasAlarm) {
+        if (kDebugMode) {
+          debugPrint('🔄 알림 동기화: ${widget.busArrival.routeNo}번, $_remainingTime분');
+        }
+        await NotificationService().updateBusTrackingNotification(
+          busNo: widget.busArrival.routeNo,
+          stationName: widget.stationName,
+          remainingMinutes: _remainingTime,
+          currentStation: _currentBus.currentStation,
+          routeId: widget.busArrival.routeId,
+          stationId: widget.stationId,
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 알림 동기화 오류: $e');
+      }
+    }
+  }
+
   Future<void> _toggleAlarm() async {
     if (!mounted) return;
 
@@ -228,6 +260,11 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('승차 알람이 해제되었습니다')),
         );
+        
+        // UI 강제 업데이트
+        if (mounted) {
+          setState(() {});
+        }
       }
     } catch (e) {
       if (kDebugMode) {
@@ -272,6 +309,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
         widget.stationName,
         _remainingTime,
         routeId: widget.busArrival.routeId,
+        stationId: widget.stationId,
         useTTS: true,
         isImmediateAlarm: true,
         currentStation: _currentBus.currentStation,
@@ -305,6 +343,11 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('승차 알람이 설정되었습니다')),
         );
+        
+        // UI 강제 업데이트
+        if (mounted) {
+          setState(() {});
+        }
       } else {
         if (kDebugMode) {
           debugPrint('❌ 알람 설정 실패');

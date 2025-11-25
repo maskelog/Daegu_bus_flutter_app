@@ -130,9 +130,10 @@ class _LightweightBusCardState extends State<LightweightBusCard> {
         if (remainingTime > 0) {
           await alarmService.setOneTimeAlarm(
             widget.busArrival.routeNo,
-            widget.stationName ?? '정류장 정보 없음',
+            widget.stationName ?? '정보 없음',
             remainingTime,
             routeId: widget.busArrival.routeId,
+            stationId: widget.stationId,
             useTTS: true,
             isImmediateAlarm: true,
             currentStation: _currentBus.currentStation,

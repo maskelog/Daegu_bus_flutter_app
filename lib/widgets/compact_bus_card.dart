@@ -470,6 +470,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
             widget.stationName ?? '정류장 정보 없음',
             remainingMinutes,
             routeId: routeId,
+            stationId: widget.stationId,
             useTTS: true,
             isImmediateAlarm: true,
             currentStation: busInfo.currentStation, // 현재 위치 정보 전달

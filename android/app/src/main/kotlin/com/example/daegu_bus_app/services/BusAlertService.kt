@@ -101,7 +101,7 @@ class BusAlertService : Service() {
 
         // 추가 상수 정의
         private const val MAX_CONSECUTIVE_ERRORS = 3
-        private const val ARRIVAL_THRESHOLD_MINUTES = 1
+        private const val ARRIVAL_THRESHOLD_MINUTES = 60
     }
 
     private val binder = LocalBinder()
@@ -483,6 +483,10 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                     remainingMinutes = remainingMinutes,
                     currentStation = currentStation ?: "정보 없음"
                 )
+                
+                // 📌 중요: 업데이트 시 즉시 노티피케이션 갱신 (기존 로직은 showOngoingBusTracking 호출에 의존)
+                // 하지만 showOngoingBusTracking이 아래에서 호출되므로 중복 호출 방지를 위해 여기서는 로그만 남김
+                Log.d(TAG, "🔔 업데이트 요청에 따른 노티피케이션 갱신 예정")
             }
 
             // 자동알람인 경우 강제로 노티피케이션 표시
@@ -750,7 +754,14 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             // 5. 서비스 상태 확인 (shouldRemoveFromList가 true이고 모든 추적이 끝났을 때만 서비스 중지)
             if (shouldRemoveFromList) {
                 Log.d(TAG, "🔔 4단계: 서비스 상태 확인 (남은 추적: ${activeTrackings.size}개)")
-                checkAndStopServiceIfNeeded()
+                // [수정] activeTrackings가 비어있으면 강제로 서비스 중지 시도 (좀 더 적극적인 종료)
+                if (activeTrackings.isEmpty()) {
+                     Log.i(TAG, "🔔 모든 추적 종료됨. 서비스 중지 요청.")
+                     stopAllTracking() // 확실한 정리를 위해 호출
+                     stopSelf()
+                } else {
+                    checkAndStopServiceIfNeeded()
+                }
             } else {
                 Log.d(TAG, "🔔 4단계: 알람 리스트 유지 모드 - 서비스 계속 실행")
                 // 알람이 리스트에 남아있으므로 포그라운드 알림 업데이트
@@ -954,36 +965,29 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                             // [추가] 다음 버스로 전환되었는지 확인하고 안내
                             checkNextBusAndNotify(currentInfo, firstBus)
 
-                            // [수정] 음성 알림 조건 완화: 5분 이하에서 TTSService 호출, 중복 방지 개선
-                            Log.d(TAG, "[TTS] 호출 조건 체크: useTextToSpeech=$useTextToSpeech, remainingMinutes=$remainingMinutes, lastNotifiedMinutes=${currentInfo.lastNotifiedMinutes}")
-                            if (useTextToSpeech && remainingMinutes <= 5 && remainingMinutes >= 0) {
-                                val ttsShouldAnnounce =
-                                    (currentInfo.lastTtsAnnouncedMinutes == null || currentInfo.lastTtsAnnouncedMinutes != remainingMinutes) ||
-                                    (currentInfo.lastTtsAnnouncedStation == null || currentInfo.lastTtsAnnouncedStation != currentStation)
-                                if (ttsShouldAnnounce) {
-                                    val ttsMessage = when (firstBus.estimatedTime) {
-                                        "곧 도착" -> "${currentInfo.busNo}번 버스가 ${currentInfo.stationName} 정류장에 곧 도착합니다."
-                                        "출발예정", "기점출발예정" -> null // TTS 울리지 않음
-                                        else -> "${currentInfo.busNo}번 버스가 ${currentInfo.stationName} 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
-                                    }
-                                    if (ttsMessage != null) {
-                                        speakTts(ttsMessage)
-                                        currentInfo.lastTtsAnnouncedMinutes = remainingMinutes
-                                        currentInfo.lastTtsAnnouncedStation = currentStation
-                                        Log.d(TAG, "[TTS] 실시간 TTS 안내: $ttsMessage (중복 방지 적용)")
-                                    } else {
-                                        Log.d(TAG, "[TTS] TTS 메시지 없음(출발예정 등): estimatedTime=${firstBus.estimatedTime}")
-                                    }
+                            // [수정] 음성 알림 조건 완화: ARRIVAL_THRESHOLD_MINUTES 이하에서 TTSService 호출
+                        Log.d(TAG, "[TTS] 호출 조건 체크: useTextToSpeech=$useTextToSpeech, remainingMinutes=$remainingMinutes, lastNotifiedMinutes=${currentInfo.lastNotifiedMinutes}")
+                        if (useTextToSpeech && remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES && remainingMinutes >= 0) {
+                            val ttsMessage = when (firstBus.estimatedTime) {
+                                    "곧 도착" -> "${currentInfo.busNo}번 버스가 ${currentInfo.stationName} 정류장에 곧 도착합니다."
+                                    "출발예정", "기점출발예정" -> null // TTS 울리지 않음
+                                    else -> "${currentInfo.busNo}번 버스가 ${currentInfo.stationName} 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
+                                }
+                                if (ttsMessage != null) {
+                                    speakTts(ttsMessage)
+                                    currentInfo.lastTtsAnnouncedMinutes = remainingMinutes
+                                    currentInfo.lastTtsAnnouncedStation = currentStation
+                                    Log.d(TAG, "[TTS] 실시간 TTS 안내: $ttsMessage (항상 발화)")
                                 } else {
-                                    Log.d(TAG, "[TTS] 중복 방지로 TTS 미호출: remainingMinutes=$remainingMinutes, currentStation=$currentStation")
+                                    Log.d(TAG, "[TTS] TTS 메시지 없음(출발예정 등): estimatedTime=${firstBus.estimatedTime}")
                                 }
                             } else if (remainingMinutes < 0) {
                                 currentInfo.lastTtsAnnouncedMinutes = null
                                 currentInfo.lastTtsAnnouncedStation = null
                             }
 
-                            // [이동] 비교 로직 완료 후 최신 정보로 업데이트
-                            currentInfo.lastBusInfo = firstBus
+                            // [이동] 비교 로직 완료 후 최신 정보로 업데이트 (showOngoingBusTracking에서 처리)
+                            // currentInfo.lastBusInfo = firstBus
                         } else {
                             Log.w(TAG, "No available buses for route $routeId at $stationId.")
                             currentInfo.lastBusInfo = null
@@ -1301,6 +1305,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         initializeTts()
     }
 
+
+
     fun addMonitoredRoute(routeId: String, stationId: String, stationName: String) {
         monitoredRoutes[routeId] = Triple(stationId, stationName, monitoringJobs[routeId])
         Log.d(TAG, "Added route to monitored list: $routeId at $stationName ($stationId)")
@@ -1450,32 +1456,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
         Log.d(TAG, "✅ lastBusInfo 갱신: $busNo, $formattedTime, '$currentStationFinal'")
 
-        // TTS 알림 (개별 알람이 아니고, 추적 중일 때만 TTS)
-        if (!isIndividualAlarm) {
-            try {
-                val lastSpokenMinutes = trackingInfo.lastNotifiedMinutes
-                if (useTextToSpeech && minutes in 0..5) {
-                    if (lastSpokenMinutes == Int.MAX_VALUE || lastSpokenMinutes > minutes) {
-                        val ttsIntent = Intent(this, TTSService::class.java).apply {
-                            action = "REPEAT_TTS_ALERT"
-                            putExtra("busNo", busNo)
-                            putExtra("stationName", stationName)
-                            putExtra("routeId", effectiveRouteId)
-                            putExtra("stationId", effectiveStationId)
-                            putExtra("remainingMinutes", minutes as Int)
-                            putExtra("currentStation", (currentStationFinal ?: "").toString())
-                        }
-                        startService(ttsIntent)
-                        trackingInfo.lastNotifiedMinutes = minutes
-                        Log.d(TAG, "[TTS] 실시간 TTSService 호출: $busNo, $stationName, $minutes, stationId=$effectiveStationId")
-                    }
-                } else if (minutes > 5 && trackingInfo.lastNotifiedMinutes != Int.MAX_VALUE) {
-                    trackingInfo.lastNotifiedMinutes = Int.MAX_VALUE
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "[TTS] 오류: ${e.message}", e)
-            }
-        }
+        // TTS 알림은 startTrackingInternal에서 직접 처리하므로 이 블록은 제거합니다.
 
         // 알림 갱신 (통합 알림으로 통일)
         try {
@@ -2137,48 +2118,35 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
 
         if (remainingMinutes >= 0 && remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES) {
-            // 자동알람인 경우 항상 TTS 발화 (다음 버스 추적을 위해)
-            val shouldNotifyTts = if (trackingInfo.isAutoAlarm) {
-                // 자동알람: 이전 알림 시간과 다르면 항상 발화
-                trackingInfo.lastNotifiedMinutes != remainingMinutes
-            } else {
-                // 일반 알람: 한 번만 발화
-                !hasNotifiedTts.contains(trackingInfo.routeId)
-            }
+            // 자동알람 및 일반 알람 모두 시간이 변경되면 TTS 발화 (사용자 요청: 실시간 업데이트)
+        val shouldNotifyTts = trackingInfo.lastNotifiedMinutes != remainingMinutes
 
-            if (useTextToSpeech && shouldNotifyTts) {
-                // TTS 시스템을 통한 발화 시도
-                try {
-                    startTTSServiceSpeak(
-                        busNo = trackingInfo.busNo,
-                        stationName = trackingInfo.stationName,
-                        routeId = trackingInfo.routeId,
-                        stationId = trackingInfo.stationId,
-                        remainingMinutes = 0, // 곧 도착 상태
-                        currentStation = busInfo.currentStation
-                    )
-                    
-                    // 자동알람이 아닌 경우에만 hasNotifiedTts에 추가 (중복 방지)
-                    if (!trackingInfo.isAutoAlarm) {
-                        hasNotifiedTts.add(trackingInfo.routeId)
-                    }
-                    trackingInfo.lastNotifiedMinutes = remainingMinutes
-                    
-                    Log.d(TAG, "📢 TTS 발화 시도 성공: ${trackingInfo.busNo}번 버스, ${trackingInfo.stationName} (자동알람: ${trackingInfo.isAutoAlarm})")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ TTS 발화 시도 오류: ${e.message}", e)
+        if (useTextToSpeech && shouldNotifyTts) {
+            // TTS 시스템을 통한 발화 시도
+            try {
+                startTTSServiceSpeak(
+                    busNo = trackingInfo.busNo,
+                    stationName = trackingInfo.stationName,
+                    routeId = trackingInfo.routeId,
+                    stationId = trackingInfo.stationId,
+                    remainingMinutes = 0, // 곧 도착 상태
+                    currentStation = busInfo.currentStation
+                )
+                
+                // hasNotifiedTts 로직 제거 (매 분마다 알림)
+                trackingInfo.lastNotifiedMinutes = remainingMinutes
+                
+                Log.d(TAG, "📢 TTS 발화 시도 성공: ${trackingInfo.busNo}번 버스, ${trackingInfo.stationName} (남은시간: $remainingMinutes)")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ TTS 발화 시도 오류: ${e.message}", e)
 
-                    // TTSService 실패 시 백업으로 내부 TTS 시도
-                    val message = "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
-                    speakTts(message)
-                    
-                    // 자동알람이 아닌 경우에만 hasNotifiedTts에 추가 (중복 방지)
-                    if (!trackingInfo.isAutoAlarm) {
-                        hasNotifiedTts.add(trackingInfo.routeId)
-                    }
-                    trackingInfo.lastNotifiedMinutes = remainingMinutes
-                }
+                // TTSService 실패 시 백업으로 내부 TTS 시도
+                val message = "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
+                speakTts(message)
+                
+                trackingInfo.lastNotifiedMinutes = remainingMinutes
             }
+        }
 
             // 자동알람인 경우 항상 도착 알림 (다음 버스 추적을 위해)
             val shouldNotifyArrival = if (trackingInfo.isAutoAlarm) {

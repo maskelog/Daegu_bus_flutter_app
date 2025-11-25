@@ -203,17 +203,88 @@ class AlarmService extends ChangeNotifier {
               level: LogLevel.info,
             );
           } else {
-            logMessage(
-              '⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리만 수행',
-              level: LogLevel.warning,
+            // 키로 찾지 못한 경우 routeId로 검색하여 제거 (안전장치)
+            final fallbackKey = _activeAlarms.keys.firstWhere(
+              (k) => _activeAlarms[k]?.routeId == routeId,
+              orElse: () => '',
             );
 
-            // 상태 정리
-            if (_activeAlarms.isEmpty && _isInTrackingMode) {
-              _isInTrackingMode = false;
-              _trackedRouteId = null;
+            if (fallbackKey.isNotEmpty) {
+              final removedAlarm = _activeAlarms.remove(fallbackKey);
+              logMessage(
+                '🔔 [노티피케이션] 알람 취소 감지 및 제거 (RouteId 기반): $fallbackKey',
+                level: LogLevel.info,
+              );
+
+              // 수동으로 중지된 알람으로 표시 (자동 알람 재시작 방지)
+              _manuallyStoppedAlarms.add(fallbackKey);
+              _manuallyStoppedTimestamps[fallbackKey] = DateTime.now();
+              logMessage('🚫 수동 중지 알람 추가: $fallbackKey', level: LogLevel.info);
+
+              // 캐시 정리
+              final cacheKey = "${busNo}_$routeId";
+              _cachedBusInfo.remove(cacheKey);
+
+              // 추적 상태 업데이트
+              if (_trackedRouteId == routeId) {
+                _trackedRouteId = null;
+                if (_activeAlarms.isEmpty) {
+                  _isInTrackingMode = false;
+                  logMessage(
+                    '🛑 추적 모드 비활성화 (취소된 알람이 추적 중이던 알람)',
+                    level: LogLevel.info,
+                  );
+                }
+              } else if (_activeAlarms.isEmpty) {
+                _isInTrackingMode = false;
+                _trackedRouteId = null;
+                logMessage('🛑 추적 모드 비활성화 (모든 알람 취소됨)', level: LogLevel.info);
+              }
+
+              // 상태 저장 및 UI 업데이트
+              await _saveAlarms();
               notifyListeners();
-              logMessage('🛑 추적 모드 비활성화 (상태 정리)', level: LogLevel.info);
+
+              logMessage(
+                '✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료 (RouteId 기반): $fallbackKey',
+                level: LogLevel.info,
+              );
+            } else {
+              // 자동 알람 목록에서 확인
+              logMessage(
+                  '🔍 [Debug] 자동 알람 검색 시작: busNo=$busNo, stationName=$stationName, routeId=$routeId');
+
+              final autoAlarmIndex = _autoAlarms.indexWhere(
+                (a) =>
+                    a.busNo == busNo &&
+                    a.stationName == stationName &&
+                    a.routeId == routeId,
+              );
+
+              if (autoAlarmIndex != -1) {
+                logMessage(
+                  '🔔 [노티피케이션] 자동 알람 취소 감지: $busNo번, $stationName',
+                  level: LogLevel.info,
+                );
+                await stopAutoAlarm(busNo, stationName, routeId);
+              } else {
+                // 일반 알람이 _activeAlarms에 없더라도, 혹시 모르니 강제로 키를 재구성해서 삭제 시도
+                // (키 생성 로직이 다를 수 있으므로)
+                logMessage(
+                  '⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리 및 강제 UI 업데이트 수행',
+                  level: LogLevel.warning,
+                );
+
+                // 상태 정리
+                if (_activeAlarms.isEmpty && _isInTrackingMode) {
+                  _isInTrackingMode = false;
+                  _trackedRouteId = null;
+                  logMessage('🛑 추적 모드 비활성화 (상태 정리)', level: LogLevel.info);
+                }
+
+                // UI 강제 업데이트
+                notifyListeners();
+              }
             }
           }
 
@@ -1738,6 +1809,7 @@ class AlarmService extends ChangeNotifier {
     String stationName,
     int remainingMinutes, {
     String routeId = '',
+    String stationId = '',
     bool useTTS = true,
     bool isImmediateAlarm = true,
     String? currentStation,
@@ -1771,26 +1843,9 @@ class AlarmService extends ChangeNotifier {
       await settingsService.initialize();
       final volume = settingsService.autoAlarmVolume;
 
-      // 🔔 간단한 일회성 알림만 표시 (진행중 추적 알림 비활성화)
-      try {
-        // 알림 ID는 고유 ID의 해시코드를 사용
-        await _notificationService.showNotification(
-          id: alarmData.id.hashCode,
-          busNo: busNo,
-          stationName: stationName,
-          remainingMinutes: remainingMinutes,
-          currentStation: currentStation ?? '정보 없음',
-          routeId: routeId,
-          isAutoAlarm: false, // 일반 알람
-          isOngoing: false, // 🔔 간단한 일회성 알림만 표시 (진행중 추적 노티 완전 비활성화)
-        );
-        logMessage('✅ 일반 알람 간단한 알림 표시 완료: $busNo번', level: LogLevel.info);
-      } catch (e) {
-        logMessage('❌ 일반 알람 알림 표시 오류: $e', level: LogLevel.error);
-      }
-
-      // TTS 알림 시작 (설정된 경우 - 일반 알람)
-      if (useTTS) {
+      // TTS 알림 시작 (승차알람은 항상 TTS 발화 - 사용자가 직접 버튼 클릭)
+      // isImmediateAlarm이 true이면 무조건 TTS 발화
+      if (isImmediateAlarm || useTTS) {
         try {
           await SimpleTTSHelper.initialize();
           await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
@@ -1800,26 +1855,61 @@ class AlarmService extends ChangeNotifier {
             level: LogLevel.info,
           );
 
-          // 🎧 일반 알람은 이어폰 연결 시에만 TTS 발화 (earphoneOnly: true)
+          // 사용자의 스피커 모드 설정 확인
+          final speakerMode = settingsService.speakerMode;
+          final isSpeakerMode = speakerMode == SettingsService.speakerModeSpeaker;
+
+          logMessage(
+            '🔊 스피커 모드: ${settingsService.getSpeakerModeName(speakerMode)}',
+            level: LogLevel.info,
+          );
+
+          // 승차알람은 사용자가 직접 설정한 것이므로 강제로 발화
+          // 스피커 모드인 경우 force=true로 설정하여 무조건 발화
+          // isImmediateAlarm이 true이면 force=true로 설정 (중복 체크 무시)
           final success = await SimpleTTSHelper.speak(
             "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.",
-            earphoneOnly: true, // 🎧 일반 알람은 이어폰 전용 모드 - 이어폰 연결 시에만 TTS 발화
+            force: isImmediateAlarm || isSpeakerMode, // 승차알람이거나 스피커 모드면 강제 발화
+            earphoneOnly: speakerMode == SettingsService.speakerModeHeadset, // 이어폰 전용 모드만 true
           );
 
           if (success) {
             logMessage(
-              '✅ 일반 알람 TTS 발화 완료 (볼륨: ${volume * 100}%)',
+              '✅ 일반 알람 TTS 발화 완료 (볼륨: ${volume * 100}%, 모드: ${settingsService.getSpeakerModeName(speakerMode)})',
               level: LogLevel.info,
             );
           } else {
             logMessage(
-              '❌ 일반 알람 TTS 발화 실패 (이어폰 미연결일 수 있음)',
+              '❌ 일반 알람 TTS 발화 실패',
               level: LogLevel.warning,
             );
           }
         } catch (e) {
           logMessage('❌ 일반 알람 TTS 발화 오류: $e', level: LogLevel.error);
         }
+      }
+
+      // 실시간 버스 추적 서비스 시작
+      if (stationId.isNotEmpty) {
+        try {
+          await startBusMonitoringService(
+            stationId: stationId,
+            stationName: stationName,
+            routeId: routeId,
+            busNo: busNo,
+          );
+          logMessage(
+            '✅ 버스 추적 서비스 시작: $busNo번 버스',
+            level: LogLevel.info,
+          );
+        } catch (e) {
+          logMessage('❌ 버스 추적 서비스 시작 오류: $e', level: LogLevel.error);
+        }
+      } else {
+        logMessage(
+          '⚠️ stationId가 없어서 실시간 추적을 시작할 수 없습니다',
+          level: LogLevel.warning,
+        );
       }
 
       logMessage('✅ 알람 설정 완료: $busNo번 버스');

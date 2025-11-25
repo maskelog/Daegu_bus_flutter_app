@@ -278,7 +278,10 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                             device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
                             device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
                             device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                            device.type == AudioDeviceInfo.TYPE_USB_HEADSET) {
+                            device.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                            device.type == AudioDeviceInfo.TYPE_USB_DEVICE || // USB 오디오 장치 추가
+                            device.type == AudioDeviceInfo.TYPE_BLE_HEADSET || // BLE 헤드셋 추가
+                            device.type == AudioDeviceInfo.TYPE_HEARING_AID) { // 보청기 추가
                             hasHeadset = true
                         }
                     }
@@ -286,12 +289,14 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 Log.d(TAG, "🎧 Modern headset check: hasHeadset=$hasHeadset")
             }
 
+            // 하나라도 연결되어 있으면 true
             val isConnected = isWired || isA2dp || isSco || hasHeadset
             Log.d(TAG, "🎧 Headset status: Wired=$isWired, A2DP=$isA2dp, SCO=$isSco, Modern=$hasHeadset -> Connected=$isConnected")
             return isConnected
         } catch (e: Exception) {
             Log.e(TAG, "🎧 Error checking headset status: ${e.message}", e)
-            return false
+            // 오류 발생 시 안전하게 false 반환 (또는 true로 하여 TTS가 나오게 할 수도 있음 - 정책 결정 필요)
+            return false 
         }
     }
 
