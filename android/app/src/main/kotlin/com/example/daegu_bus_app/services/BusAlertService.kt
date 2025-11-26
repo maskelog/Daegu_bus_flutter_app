@@ -947,18 +947,33 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                             val allBusesSummary = activeTrackings.values.joinToString("\n") { info ->
                                 "${info.busNo}: ${info.lastBusInfo?.estimatedTime ?: "정보 없음"} (${info.lastBusInfo?.currentStation ?: "위치 정보 없음"})"
                             }
-                            showOngoingBusTracking(
-                                busNo = busNo,
-                                stationName = stationName,
-                                remainingMinutes = remainingMinutes,
-                                currentStation = currentStation, // 실시간 위치(항상 보장)
-                                isUpdate = true,
-                                notificationId = ONGOING_NOTIFICATION_ID,
-                                allBusesSummary = allBusesSummary,
-                                routeId = routeId
-                            )
-                            // 알림 강제 갱신(백업)
-                            updateForegroundNotification()
+
+                            // [최적화] 시간이나 정류장이 변경되었을 때만 알림 업데이트
+                            val prevMinutes = currentInfo.lastBusInfo?.getRemainingMinutes()
+                            val prevStation = currentInfo.lastBusInfo?.currentStation
+                            
+                            if (prevMinutes != remainingMinutes || prevStation != currentStation) {
+                                Log.d(TAG, "🔔 알림 업데이트 조건 충족: 시간($prevMinutes->$remainingMinutes) 또는 위치($prevStation->$currentStation) 변경")
+                                showOngoingBusTracking(
+                                    busNo = busNo,
+                                    stationName = stationName,
+                                    remainingMinutes = remainingMinutes,
+                                    currentStation = currentStation, // 실시간 위치(항상 보장)
+                                    isUpdate = true,
+                                    notificationId = ONGOING_NOTIFICATION_ID,
+                                    allBusesSummary = allBusesSummary,
+                                    routeId = routeId
+                                )
+                                // 알림 강제 갱신(백업)
+                                updateForegroundNotification()
+                            } else {
+                                Log.d(TAG, "🔕 알림 업데이트 스킵: 변경 사항 없음 ($remainingMinutes 분, $currentStation)")
+                                // 알림은 스킵하지만, 상태 정보는 최신으로 유지해야 다음 비교가 정확함
+                                // 단, showOngoingBusTracking의 복잡한 BusInfo 생성 로직을 완벽히 대체하긴 어려우므로
+                                // 여기서는 lastBusInfo를 firstBus로 업데이트하여 근사치 유지
+                                currentInfo.lastBusInfo = firstBus
+                                currentInfo.lastUpdateTime = System.currentTimeMillis()
+                            }
                             // 도착 알림 체크
                             checkArrivalAndNotify(currentInfo, firstBus)
 
@@ -2158,18 +2173,15 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             }
 
             if (shouldNotifyArrival) {
-                notificationHandler.sendAlertNotification(
-                    trackingInfo.routeId,
-                    trackingInfo.busNo,
-                    trackingInfo.stationName
-                )
+                // [수정] 중복 노티피케이션 제거 요청으로 인해 sendAlertNotification 호출 제거
+                // notificationHandler.sendAlertNotification(...) 
                 
                 // 자동알람이 아닌 경우에만 hasNotifiedArrival에 추가 (중복 방지)
                 if (!trackingInfo.isAutoAlarm) {
                     hasNotifiedArrival.add(trackingInfo.routeId)
                 }
                 
-                Log.d(TAG, "📳 도착 알림 전송: ${trackingInfo.busNo}번, ${trackingInfo.stationName} (자동알람: ${trackingInfo.isAutoAlarm})")
+                Log.d(TAG, "📳 도착 임박 상태 감지: ${trackingInfo.busNo}번, ${trackingInfo.stationName} (자동알람: ${trackingInfo.isAutoAlarm}) - 별도 알림은 생성하지 않음")
             }
         } else if (remainingMinutes > ARRIVAL_THRESHOLD_MINUTES && trackingInfo.isAutoAlarm) {
             // 자동알람인 경우 버스가 멀어지면 알림 상태 초기화 (다음 버스를 위해)
