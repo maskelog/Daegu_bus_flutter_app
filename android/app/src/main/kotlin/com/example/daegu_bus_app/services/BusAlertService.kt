@@ -565,9 +565,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             val stationName = intent.getStringExtra("stationName") ?: ""
             val remainingMinutes = intent.getIntExtra("remainingMinutes", -1)
             val currentStation = intent.getStringExtra("currentStation") ?: ""
+            val routeId = intent.getStringExtra("routeId") ?: ""
+            val stationId = intent.getStringExtra("stationId") ?: ""
 
             Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $busNo 번, $stationName")
-            handleAutoAlarmLightweight(busNo, stationName, remainingMinutes, currentStation)
+            handleAutoAlarmLightweight(busNo, stationName, remainingMinutes, currentStation, routeId, stationId)
         }
         ACTION_STOP_AUTO_ALARM -> {
             Log.i(TAG, "ACTION_STOP_AUTO_ALARM received")
@@ -586,6 +588,25 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
     return START_STICKY
 }
+
+    // MainActivity에서 호출하는 래퍼 함수들
+    fun startBusTracking(busNo: String, stationName: String, routeId: String) {
+        val stationId = activeTrackings[routeId]?.stationId ?: ""
+        if (stationId.isNotEmpty()) {
+            startTracking(routeId, stationId, stationName, busNo)
+        } else {
+            Log.e(TAG, "Cannot start tracking, stationId not found for routeId: $routeId")
+        }
+    }
+
+    fun stopBusTracking(busNo: String, stationName: String, routeId: String) {
+        stopSpecificTracking(routeId, busNo, stationName, shouldRemoveFromList = true)
+    }
+
+    // 모든 추적 중지 (MainActivity 호출용)
+    fun stopAllBusTracking() {
+        stopAllTracking()
+    }
 
 // 특정 버스 추적 중지
     private fun stopSpecificTracking(routeId: String, busNo: String, stationName: String, shouldRemoveFromList: Boolean = true) {
@@ -1875,107 +1896,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
     }
 
-    fun stopAllBusTracking() {
-        serviceScope.launch {
-            Log.i(TAG, "--- BusAlertService stopTracking Starting ---")
-            try {
-                // 1. 모든 추적 작업 중지
-                monitoringJobs.values.forEach { it.cancel() }
-               
-                monitoringJobs.clear()
-                stopMonitoringTimer()
-                stopTtsTracking(forceStop = true)
-
-                // 자동 알람 WorkManager 작업 취소
-                try {
-                    val workManager = androidx.work.WorkManager.getInstance(this@BusAlertService)
-                    workManager.cancelAllWorkByTag("autoAlarmTask")
-                    Log.d(TAG, "✅ 자동 알람 WorkManager 작업 취소 완료 (stopAllBusTracking)")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ 자동 알람 WorkManager 작업 취소 오류 (stopAllBusTracking): ${e.message}")
-                }
-
-                monitoredRoutes.clear()
-                cachedBusInfo.clear()
-                arrivingSoonNotified.clear()
-                activeTrackings.clear() // 추가: 활성 추적 목록 초기화
-                Log.d(TAG, "Monitoring, jobs, and related caches/flags reset.")
-
-                // 2. 포그라운드 서비스 먼저 중지 (노티피케이션 제거를 위해)
-                if (isInForeground) {
-                    try {
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                        isInForeground = false
-                        Log.d(TAG, "Foreground service stopped explicitly.")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "포그라운드 서비스 중지 오류: ${e.message}")
-                    }
-                }
-
-                // 3. 모든 알림 직접 취소 (포그라운드 중지 후)
-                try {
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.cancelAll()
-                    Log.i(TAG, "모든 알림 직접 취소 완료 (stopAllBusTracking)")
-
-                    // 특정 노티피케이션 ID도 명시적으로 취소
-                    notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                    Log.i(TAG, "ONGOING_NOTIFICATION_ID 명시적 취소 완료")
-                } catch (e: Exception) {
-                    Log.e(TAG, "알림 취소 오류: ${e.message}")
-                }
-
-                // 4. Flutter 측에 알림 취소 이벤트 전송 시도
-                try {
-                    val stopTrackingIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
-                    sendBroadcast(stopTrackingIntent)
-                    Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송 (stopAllBusTracking)")
-
-                    // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
-                    try {
-                        if (applicationContext is MainActivity) {
-                            (applicationContext as MainActivity)._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
-                            Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료 (stopAllBusTracking)")
-                        }
-                    } catch (ex: Exception) {
-                        Log.e(TAG, "Flutter 메서드 채널 전송 오류 (stopAllBusTracking): ${ex.message}")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
-                }
-
-                // 5. 서비스 중지 요청
-                Log.i("BusAlertService", "All tasks stopped. Service stop requested.")
-                stopSelf()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in stopAllBusTracking: ${e.message}", e)
-
-                // 오류 발생 시 강제 중지 시도
-                if (isInForeground) {
-                    try {
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                        isInForeground = false
-                        Log.d(TAG, "Foreground service stopped after error.")
-                    } catch (ex: Exception) {
-                        Log.e(TAG, "Error stopping foreground service: ${ex.message}", ex)
-                    }
-                }
-
-                // 모든 알림 강제 취소 시도
-                try {
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.cancelAll()
-                    Log.i(TAG, "모든 알림 강제 취소 완료 (오류 복구)")
-                } catch (ex: Exception) {
-                    Log.e(TAG, "모든 알림 강제 취소 오류: ${ex.message}", ex)
-                }
-
-                stopSelf()
-            } finally {
-                Log.i(TAG, "--- BusAlertService stopAllBusTracking Finished ---")
-            }
-        }
-    }
+    
 
     // 알림 취소 (MainActivity 호출 호환)
     fun cancelNotification(id: Int) {
@@ -2134,34 +2055,36 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
         if (remainingMinutes >= 0 && remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES) {
             // 자동알람 및 일반 알람 모두 시간이 변경되면 TTS 발화 (사용자 요청: 실시간 업데이트)
-        val shouldNotifyTts = trackingInfo.lastNotifiedMinutes != remainingMinutes
+            val shouldNotifyTts = trackingInfo.lastNotifiedMinutes != remainingMinutes
+            if (shouldNotifyTts) {
+                try {
+                    startTTSServiceSpeak(
+                        busNo = trackingInfo.busNo,
+                        stationName = trackingInfo.stationName,
+                        routeId = trackingInfo.routeId,
+                        stationId = trackingInfo.stationId,
+                        remainingMinutes = remainingMinutes, // 실제 남은 시간 전달
+                        currentStation = busInfo.currentStation
+                    )
 
-        if (useTextToSpeech && shouldNotifyTts) {
-            // TTS 시스템을 통한 발화 시도
-            try {
-                startTTSServiceSpeak(
-                    busNo = trackingInfo.busNo,
-                    stationName = trackingInfo.stationName,
-                    routeId = trackingInfo.routeId,
-                    stationId = trackingInfo.stationId,
-                    remainingMinutes = 0, // 곧 도착 상태
-                    currentStation = busInfo.currentStation
-                )
-                
-                // hasNotifiedTts 로직 제거 (매 분마다 알림)
-                trackingInfo.lastNotifiedMinutes = remainingMinutes
-                
-                Log.d(TAG, "📢 TTS 발화 시도 성공: ${trackingInfo.busNo}번 버스, ${trackingInfo.stationName} (남은시간: $remainingMinutes)")
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ TTS 발화 시도 오류: ${e.message}", e)
+                    // hasNotifiedTts 로직 제거 (매 분마다 알림)
+                    trackingInfo.lastNotifiedMinutes = remainingMinutes
 
-                // TTSService 실패 시 백업으로 내부 TTS 시도
-                val message = "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
-                speakTts(message)
-                
-                trackingInfo.lastNotifiedMinutes = remainingMinutes
+                    Log.d(
+                        TAG,
+                        "📢 TTS 발화 시도 성공: ${trackingInfo.busNo}번 버스, ${trackingInfo.stationName} (남은시간: $remainingMinutes)"
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ TTS 발화 시도 오류: ${e.message}", e)
+
+                    // TTSService 실패 시 백업으로 내부 TTS 시도
+                    val message =
+                        "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
+                    speakTts(message)
+
+                    trackingInfo.lastNotifiedMinutes = remainingMinutes
+                }
             }
-        }
 
             // 자동알람인 경우 항상 도착 알림 (다음 버스 추적을 위해)
             val shouldNotifyArrival = if (trackingInfo.isAutoAlarm) {
@@ -2174,13 +2097,13 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             if (shouldNotifyArrival) {
                 // [수정] 중복 노티피케이션 제거 요청으로 인해 sendAlertNotification 호출 제거
-                // notificationHandler.sendAlertNotification(...) 
-                
+                // notificationHandler.sendAlertNotification(...)
+
                 // 자동알람이 아닌 경우에만 hasNotifiedArrival에 추가 (중복 방지)
                 if (!trackingInfo.isAutoAlarm) {
                     hasNotifiedArrival.add(trackingInfo.routeId)
                 }
-                
+
                 Log.d(TAG, "📳 도착 임박 상태 감지: ${trackingInfo.busNo}번, ${trackingInfo.stationName} (자동알람: ${trackingInfo.isAutoAlarm}) - 별도 알림은 생성하지 않음")
             }
         } else if (remainingMinutes > ARRIVAL_THRESHOLD_MINUTES && trackingInfo.isAutoAlarm) {
@@ -2740,22 +2663,50 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         )
     }
 
+    // 현재 실행 중인 자동 알람 정보
+    private var currentAutoAlarmBusNo: String = ""
+    private var currentAutoAlarmStationName: String = ""
+    private var currentAutoAlarmRouteId: String = ""
+
     /**
      * 배터리 절약을 위한 자동알람 경량화 모드
-     * - Foreground Service 사용 안함
+     * - Foreground Service 사용 안함 (하지만 추적을 위해 필요하다면 사용)
      * - 간단한 알림만 표시
      * - 5분 후 자동 종료
      */
-    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String) {
+    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String, routeId: String, stationId: String) {
         try {
-            Log.d(TAG, "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName")
+            Log.d(TAG, "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName, routeId=$routeId, stationId=$stationId")
 
             // 자동알람 모드 활성화
             isAutoAlarmMode = true
             autoAlarmStartTime = System.currentTimeMillis()
+            
+            // 정보 저장
+            currentAutoAlarmBusNo = busNo
+            currentAutoAlarmStationName = stationName
+            currentAutoAlarmRouteId = routeId
 
             // 경량화된 알림 표시
             showAutoAlarmLightweightNotification(busNo, stationName, remainingMinutes, currentStation)
+            
+            // 📌 중요: 실시간 데이터 업데이트를 위해 실제 추적 시작
+            // 기존에는 알림만 표시하고 추적을 안 해서 TTS가 갱신되지 않았음
+            if (routeId.isNotBlank() && stationId.isNotBlank()) {
+                Log.d(TAG, "🔔 자동알람: 실시간 추적 시작 ($routeId, $stationId)")
+                addMonitoredRoute(routeId, stationId, stationName)
+                startTracking(routeId, stationId, stationName, busNo, isAutoAlarm = true)
+            } else {
+                Log.e(TAG, "❌ 자동알람: routeId 또는 stationId 누락으로 추적 불가")
+            }
+
+            // Flutter에 시작 알림 전송 (중복 실행 방지용)
+            MainActivity.sendFlutterEvent("onAutoAlarmStarted", mapOf(
+                "busNo" to busNo,
+                "stationName" to stationName,
+                "routeId" to routeId,
+                "timestamp" to System.currentTimeMillis()
+            ))
 
             // 설정 기반 자동 종료 스케줄링
             Handler(Looper.getMainLooper()).postDelayed({
@@ -2847,33 +2798,28 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
      */
     private fun stopAutoAlarmLightweight() {
         try {
-            Log.d(TAG, "🔔 자동알람 경량화 모드 종료")
+            Log.d("BusAlertService", "🔔 자동알람 경량화 모드 종료")
 
             isAutoAlarmMode = false
             autoAlarmStartTime = 0L
 
             // 자동알람 알림 제거
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
+            notificationManager.cancel(9999)
 
-            Log.d(TAG, "✅ 자동알람 경량화 모드 종료 완료")
+            // Flutter에 종료 알림 전송 (재실행 방지용)
+            MainActivity.sendFlutterEvent("onAutoAlarmStopped", mapOf(
+                "timestamp" to System.currentTimeMillis(),
+                "busNo" to currentAutoAlarmBusNo,
+                "stationName" to currentAutoAlarmStationName,
+                "routeId" to currentAutoAlarmRouteId
+            ))
+
+            Log.d("BusAlertService", "✅ 자동알람 경량화 모드 종료 완료")
 
         } catch (e: Exception) {
-            Log.e(TAG, "❌ 자동알람 경량화 모드 종료 오류: ${e.message}", e)
+            Log.e("BusAlertService", "❌ 자동알람 경량화 모드 종료 오류: ${e.message}", e)
         }
-    }
-
-    fun startBusTracking(busNo: String, stationName: String, routeId: String) {
-        val stationId = activeTrackings[routeId]?.stationId ?: ""
-        if (stationId.isNotEmpty()) {
-            startTracking(routeId, stationId, stationName, busNo)
-        } else {
-            Log.e(TAG, "Cannot start tracking, stationId not found for routeId: $routeId")
-        }
-    }
-
-    fun stopBusTracking(busNo: String, stationName: String, routeId: String) {
-        stopSpecificTracking(routeId, busNo, stationName, shouldRemoveFromList = true)
     }
 }
 

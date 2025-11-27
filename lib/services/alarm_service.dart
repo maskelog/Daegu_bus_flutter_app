@@ -368,6 +368,38 @@ class AlarmService extends ChangeNotifier {
           }
 
           return true;
+
+        case 'onAutoAlarmStarted':
+          final Map<String, dynamic> args = Map<String, dynamic>.from(call.arguments);
+          final String busNo = args['busNo'] ?? '';
+          final String routeId = args['routeId'] ?? '';
+          final String stationName = args['stationName'] ?? '';
+          final int timestamp = args['timestamp'] ?? DateTime.now().millisecondsSinceEpoch;
+
+          final now = DateTime.fromMillisecondsSinceEpoch(timestamp);
+          final alarmKey = "${busNo}_${stationName}_$routeId";
+          final executionKey = "${alarmKey}_${now.hour}:${now.minute}";
+
+          _executedAlarms[executionKey] = now;
+          logMessage('✅ [네이티브] 자동 알람 시작 감지: $executionKey', level: LogLevel.info);
+          return true;
+
+        case 'onAutoAlarmStopped':
+          final Map<String, dynamic> args = Map<String, dynamic>.from(call.arguments);
+          final String busNo = args['busNo'] ?? '';
+          final String stationName = args['stationName'] ?? '';
+          final String routeId = args['routeId'] ?? '';
+
+          if (busNo.isNotEmpty && stationName.isNotEmpty && routeId.isNotEmpty) {
+            final alarmKey = "${busNo}_${stationName}_$routeId";
+            _manuallyStoppedAlarms.add(alarmKey);
+            _manuallyStoppedTimestamps[alarmKey] = DateTime.now();
+            logMessage('🚫 [네이티브] 자동 알람 종료 감지 -> 수동 중지 목록 추가 (당일 재실행 방지): $alarmKey', level: LogLevel.info);
+          } else {
+            logMessage('⚠️ [네이티브] 자동 알람 종료 감지되었으나 정보 부족', level: LogLevel.warning);
+          }
+          return true;
+
         default:
           // Ensure other method calls are still handled if any exist
           logMessage(
@@ -1677,16 +1709,16 @@ class AlarmService extends ChangeNotifier {
       await _saveAutoAlarms();
       await _saveAlarms();
 
-      // TTS 중지 알림
-      try {
-        await SimpleTTSHelper.speak(
-          "$busNo번 버스 자동 알람이 중지되었습니다.",
-          force: true,
-          earphoneOnly: false,
-        );
-      } catch (e) {
-        logMessage('❌ TTS 중지 알림 오류: $e', level: LogLevel.error);
-      }
+      // TTS 중지 알림 제거 (사용자 요청)
+      // try {
+      //   await SimpleTTSHelper.speak(
+      //     "$busNo번 버스 자동 알람이 중지되었습니다.",
+      //     force: true,
+      //     earphoneOnly: false,
+      //   );
+      // } catch (e) {
+      //   logMessage('❌ TTS 중지 알림 오류: $e', level: LogLevel.error);
+      // }
 
       logMessage('✅ 자동 알람 중지 완료: $busNo번', level: LogLevel.info);
 

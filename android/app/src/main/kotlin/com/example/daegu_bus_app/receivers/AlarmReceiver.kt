@@ -98,6 +98,9 @@ class AlarmReceiver : BroadcastReceiver() {
             }
 
             // 배터리 절약을 위한 경량화된 TTS 처리
+            // BusAlertService가 시작되면 자동으로 추적을 시작하고 데이터를 받아오면 그때 TTS를 호출하므로
+            // 여기서 직접 호출할 필요가 없음. 직접 호출 시 데이터가 없어 "곧 도착"으로 오발화됨.
+            /*
             if (useTTS) {
                 val ttsIntent = Intent(context, TTSService::class.java).apply {
                     action = "REPEAT_TTS_ALERT"
@@ -114,6 +117,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 context.startService(ttsIntent)
                 Log.d(TAG, "✅ 경량화된 TTS 서비스 시작")
             }
+            */
 
             // 경량화된 알림 서비스 시작
             val busIntent = Intent(context, BusAlertService::class.java).apply {
@@ -122,7 +126,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("stationName", stationName)
                 putExtra("routeId", routeId)
                 putExtra("stationId", stationId)
-                putExtra("remainingMinutes", 0) // 기본값
+                putExtra("remainingMinutes", -1) // 초기값 -1로 설정 (데이터 없음)
                 putExtra("currentStation", "")
             }
 

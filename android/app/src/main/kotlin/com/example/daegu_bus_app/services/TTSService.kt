@@ -211,11 +211,11 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 }
 
                 override fun onDone(utteranceId: String?) {
-                    // Log.d(TAG, "TTS 발화 완료: $utteranceId")
+                    Log.d(TAG, "TTS 발화 완료: $utteranceId")
                 }
 
                 override fun onError(utteranceId: String?) {
-                    // Log.e(TAG, "TTS 발화 오류: $utteranceId")
+                    Log.e(TAG, "TTS 발화 오류: $utteranceId")
                 }
             })
 
@@ -232,15 +232,15 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             return
         }
 
-        // 자동알람 모드이거나 단일 실행 모드인 경우 반복 안함
-        if (isAutoAlarmMode || singleExecutionMode) {
-            Log.d(TAG, "🔊 자동알람/단일실행 모드: 반복 TTS 없음")
+        // 단일 실행 모드인 경우에만 반복 안함 (자동 알람은 반복 허용)
+        if (singleExecutionMode) {
+            Log.d(TAG, "🔊 단일실행 모드: 반복 TTS 없음")
             speakBusAlert(forceSpeaker = true)
             return
         }
 
         isTracking = true
-        speakBusAlert()
+        speakBusAlert(forceSpeaker = isAutoAlarmMode) // 자동 알람이면 강제 스피커
         // schedule periodic announcements
         ttsHandler.removeCallbacks(ttsRunnable)
         ttsHandler.postDelayed(ttsRunnable, SPEAK_INTERVAL)
@@ -347,7 +347,9 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             // 스피커 모드 설정
             audioManager.isSpeakerphoneOn = useSpeaker
 
-            // 볼륨 최대화 (자동 알람인 경우)
+            // 사용자 피드백 반영: 볼륨 강제 최대화 로직 제거
+            // 사용자가 설정한 시스템 알람 볼륨 또는 앱 내 TTS 볼륨 설정을 따름
+            /*
             if (forceSpeaker) {
                 val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
                 audioManager.setStreamVolume(
@@ -357,6 +359,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 )
                 Log.d(TAG, "🔊 자동 알람 볼륨 설정 (STREAM_ALARM): ${(maxVolume * 0.9).toInt()}/${maxVolume}")
             }
+            */
         } catch (e: Exception) {
             Log.e(TAG, "❌ 오디오 설정 오류: ${e.message}")
         }
@@ -377,8 +380,14 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             customMessage
         } else if (remainingMinutes > 0) {
             "$busNo 번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
-        } else {
+        } else if (remainingMinutes == 0) {
             "$busNo 번 버스가 곧 도착합니다."
+        } else {
+            // remainingMinutes가 -1이거나 유효하지 않은 경우 (초기 상태 등)
+            // "잠시 후 도착 정보를 안내합니다" 또는 아무 말도 안 하거나, 상황에 맞게 처리
+            // 여기서는 일단 로그만 남기고 발화하지 않거나, "정보를 가져오는 중입니다"라고 안내
+            Log.w(TAG, "⚠️ 남은 시간 정보 없음 ($remainingMinutes), 기본 메시지 사용 안함")
+            return 
         }
 
         // TTS 발화
@@ -447,21 +456,20 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         try {
             Log.d(TAG, "🔊 자동알람 TTS 처리 시작")
 
-            // 강제 스피커 모드로 한 번만 발화
+            // 강제 스피커 모드로 발화
             speakBusAlert(forceSpeaker = true, customMessage = customMessage)
 
-            // TTS 발화 완료 후 서비스 종료 (배터리 절약)
-            // 자동 알람은 사용자가 중지할 때까지 지속되어야 하므로 stopSelf() 호출 제거
-            // Handler(Looper.getMainLooper()).postDelayed({
-            //     Log.d(TAG, "🔊 자동알람 TTS 완료, 서비스 종료")
-            //     stopSelf()
-            // }, 5000) // 5초 후 종료 (발화 완료 대기)
+            // 사용자 피드백 반영: 자동 알람은 사용자가 중지할 때까지 계속되어야 하므로
+            // 서비스 종료(stopSelf) 코드를 제거하고, 반복 발화가 유지되도록 함.
+            
+            // 반복 발화를 위해 핸들러 작동 확인
+            if (!ttsHandler.hasCallbacks(ttsRunnable)) {
+                Log.d(TAG, "🔊 자동알람 반복 발화 스케줄링 시작")
+                ttsHandler.postDelayed(ttsRunnable, SPEAK_INTERVAL)
+            }
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ 자동알람 TTS 처리 오류: ${e.message}", e)
-            // 오류 발생 시에도 서비스 종료
-            // 자동 알람은 사용자가 중지할 때까지 지속되어야 하므로 stopSelf() 호출 제거
-            // stopSelf()
         }
     }
 }

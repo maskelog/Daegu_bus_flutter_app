@@ -1019,6 +1019,28 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.error("STOP_SPECIFIC_ERROR", "특정 추적 중지 실패: ${e.message}", null)
                     }
                 }
+                "stopAllBusTracking" -> {
+                    try {
+                        Log.i(TAG, "모든 버스 추적 중지 요청 수신 (stopAllBusTracking)")
+                        if (busAlertService != null) {
+                            busAlertService?.stopAllBusTracking()
+                        } else {
+                            // 서비스가 null인 경우 인텐트로 중지 요청
+                            val intent = Intent(this, BusAlertService::class.java).apply {
+                                action = BusAlertService.ACTION_STOP_TRACKING
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(intent)
+                            } else {
+                                startService(intent)
+                            }
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "모든 버스 추적 중지 요청 처리 오류: ${e.message}", e)
+                        result.error("STOP_ALL_ERROR", "모든 추적 중지 실패", null)
+                    }
+                }
                 "speakTTS" -> {
                     val message = call.argument<String>("message") ?: ""
                     val isHeadphoneMode = call.argument<Boolean>("isHeadphoneMode") ?: false
@@ -1220,6 +1242,23 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.success(true)
                     } catch (e: Exception) {
                         Log.e(TAG, "볼륨 설정 오류: ${e.message}")
+                        result.success(true)
+                    }
+                }
+                "setAutoAlarmVolume" -> {
+                    val volume = call.argument<Double>("volume") ?: 1.0
+                    try {
+                        // SharedPreferences에 저장하여 TTSService 등에서 참조 가능하게 함
+                        val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+                        prefs.edit().putFloat("tts_volume", volume.toFloat()).apply()
+
+                        if (busAlertService != null) {
+                            busAlertService?.setTtsVolume(volume)
+                        }
+                        Log.d(TAG, "자동 알람 볼륨 설정: ${volume * 100}%")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "자동 알람 볼륨 설정 오류: ${e.message}")
                         result.success(true)
                     }
                 }
