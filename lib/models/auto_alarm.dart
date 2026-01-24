@@ -173,6 +173,31 @@ class AutoAlarm {
   DateTime? getNextAlarmTime() {
     final now = DateTime.now();
 
+    if (repeatDays.isEmpty) {
+      DateTime candidate = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        hour,
+        minute,
+      );
+
+      if (!candidate.isAfter(now)) {
+        candidate = candidate.add(const Duration(days: 1));
+      }
+
+      if (excludeWeekends) {
+        for (int i = 0; i < 7; i++) {
+          if (candidate.weekday != 6 && candidate.weekday != 7) {
+            return candidate;
+          }
+          candidate = candidate.add(const Duration(days: 1));
+        }
+      }
+
+      return candidate;
+    }
+
     // 오늘 요일이 반복 요일에 포함되는지 확인
     if (repeatDays.contains(now.weekday)) {
       // 주말 제외 옵션 확인

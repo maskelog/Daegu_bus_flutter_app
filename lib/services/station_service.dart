@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
 import '../models/bus_stop.dart';
+import '../utils/bus_cache_manager.dart';
 import '../utils/dio_client.dart';
 import '../main.dart' show logMessage, LogLevel;
 
@@ -13,6 +15,11 @@ class StationService {
 
   // 사용하는 DioClient 인스턴스
   final DioClient _dioClient;
+  final BusCacheManager _cacheManager = BusCacheManager.instance;
+  final Map<String, Future<List<BusStop>>> _stationSearchInFlight = {};
+  final Map<String, Future<List<BusArrival>>> _stationInfoInFlight = {};
+  final LinkedHashMap<String, String> _stationIdCache = LinkedHashMap();
+  static const int _stationIdCacheLimit = 200;
 
   // 생성자
   StationService({DioClient? dioClient})
@@ -21,21 +28,26 @@ class StationService {
   /// 정류장 검색 API
   Future<List<BusStop>> searchStations(String searchText) async {
     try {
-      if (searchText.isEmpty) {
+      final normalized = _normalizeSearchKey(searchText);
+      if (normalized.isEmpty) {
         logMessage('검색어가 비어있습니다', level: LogLevel.warning);
         return [];
       }
 
       // 네이티브 코드 호출
-      final result = await _callNativeMethod(
-          'searchStations', {'searchText': searchText, 'searchType': 'web'});
+      final cacheKey = _searchCacheKey('web', normalized);
+      final result = await _stationSearchInFlight.putIfAbsent(
+        cacheKey,
+        () => _searchStationsInternal(
+          searchText,
+          searchType: 'web',
+          cacheKey: cacheKey,
+        ),
+      ).whenComplete(() => _stationSearchInFlight.remove(cacheKey));
 
-      if (result == null) {
-        return [];
-      }
 
       // JSON 변환 및 객체 생성
-      return _parseStationSearchResult(result);
+      return result;
     } catch (e) {
       logMessage('정류장 검색 오류: $e', level: LogLevel.error);
       return [];
@@ -45,18 +57,22 @@ class StationService {
   /// 로컬 DB에서 정류장 검색 API
   Future<List<BusStop>> searchStationsLocal(String searchText) async {
     try {
-      if (searchText.isEmpty) {
+      final normalized = _normalizeSearchKey(searchText);
+      if (normalized.isEmpty) {
         return [];
       }
 
-      final result = await _callNativeMethod(
-          'searchStations', {'searchText': searchText, 'searchType': 'local'});
+      final cacheKey = _searchCacheKey('local', normalized);
+      final result = await _stationSearchInFlight.putIfAbsent(
+        cacheKey,
+        () => _searchStationsInternal(
+          searchText,
+          searchType: 'local',
+          cacheKey: cacheKey,
+        ),
+      ).whenComplete(() => _stationSearchInFlight.remove(cacheKey));
 
-      if (result == null) {
-        return [];
-      }
-
-      return _parseStationSearchResult(result);
+      return result;
     } catch (e) {
       logMessage('로컬 정류장 검색 오류: $e', level: LogLevel.error);
       return [];
@@ -104,14 +120,15 @@ class StationService {
         }
       }
 
-      final result =
-          await _callNativeMethod('getStationInfo', {'stationId': stationId});
-
-      if (result == null) {
-        return [];
+      final cached = await _cacheManager.getCachedBusArrivals(stationId);
+      if (cached != null) {
+        return cached;
       }
 
-      return _parseBusArrivalResult(result);
+      return await _stationInfoInFlight.putIfAbsent(
+        stationId,
+        () => _fetchStationInfoInternal(stationId),
+      ).whenComplete(() => _stationInfoInFlight.remove(stationId));
     } catch (e) {
       logMessage('정류장 도착 정보 조회 오류: $e', level: LogLevel.error);
       return [];
@@ -130,8 +147,20 @@ class StationService {
         return bsId;
       }
 
+      final cached = _stationIdCache[bsId];
+      if (cached != null && cached.isNotEmpty) {
+        return cached;
+      }
+
       final result =
           await _callNativeMethod('getStationIdFromBsId', {'bsId': bsId});
+
+      if (result != null && result.isNotEmpty) {
+        _stationIdCache[bsId] = result;
+        if (_stationIdCache.length > _stationIdCacheLimit) {
+          _stationIdCache.remove(_stationIdCache.keys.first);
+        }
+      }
 
       return result;
     } catch (e) {
@@ -239,5 +268,59 @@ class StationService {
       logMessage('도착 정보 파싱 오류: $e', level: LogLevel.error);
       return [];
     }
+  }
+
+  Future<List<BusStop>> _searchStationsInternal(
+    String searchText, {
+    required String searchType,
+    required String cacheKey,
+  }) async {
+    try {
+      final cached = await _cacheManager.getCachedBusStops(cacheKey);
+      if (cached != null) {
+        return cached;
+      }
+
+      final result = await _callNativeMethod(
+          'searchStations', {'searchText': searchText, 'searchType': searchType});
+
+      if (result == null) {
+        return [];
+      }
+
+      final parsed = _parseStationSearchResult(result);
+      if (parsed.isNotEmpty) {
+        await _cacheManager.cacheBusStops(cacheKey, parsed);
+      }
+
+      return parsed;
+    } catch (e) {
+      logMessage('?뺣쪟??寃???ㅻ쪟: $e', level: LogLevel.error);
+      return [];
+    }
+  }
+
+  Future<List<BusArrival>> _fetchStationInfoInternal(String stationId) async {
+    final result =
+        await _callNativeMethod('getStationInfo', {'stationId': stationId});
+
+    if (result == null) {
+      return [];
+    }
+
+    final arrivals = _parseBusArrivalResult(result);
+    if (arrivals.isNotEmpty) {
+      await _cacheManager.cacheBusArrivals(stationId, arrivals);
+    }
+
+    return arrivals;
+  }
+
+  String _normalizeSearchKey(String searchText) {
+    return searchText.trim().toLowerCase();
+  }
+
+  String _searchCacheKey(String type, String normalizedSearchText) {
+    return '${type}_$normalizedSearchText';
   }
 }
