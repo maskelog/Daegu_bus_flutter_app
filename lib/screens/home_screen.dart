@@ -725,79 +725,141 @@ class _HomeScreenState extends State<HomeScreen>
                 final currentStation = bus?.currentStation ?? '위치 정보 없음';
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 50,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Center(
-                          child: Text(
-                            favorite.routeNo,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
+                  child: InkWell(
+                    onTap: () {
+                      showUnifiedBusDetailModal(
+                        context,
+                        arrival,
+                        favorite.stationId,
+                        favorite.stationName,
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary,
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            child: Center(
+                              child: Text(
+                                favorite.routeNo,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              favorite.stationName,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: colorScheme.onSurface,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  favorite.stationName,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: colorScheme.onSurface,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '$timeText · $currentStation',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '$timeText · $currentStation',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.headset,
+                              color: colorScheme.primary,
+                              size: 20,
                             ),
-                          ],
-                        ),
+                            tooltip: '이어폰 알람',
+                            onPressed: () async {
+                              final bus = arrival.firstBus;
+                              if (bus == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('도착 정보가 없습니다.')),
+                                );
+                                return;
+                              }
+                              final minutes = bus.getRemainingMinutes();
+                              if (minutes < 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('운행 종료 상태입니다.')),
+                                );
+                                return;
+                              }
+                              final alarmService = Provider.of<AlarmService>(
+                                context,
+                                listen: false,
+                              );
+                              await alarmService.setOneTimeAlarm(
+                                favorite.routeNo,
+                                favorite.stationName,
+                                minutes,
+                                routeId: favorite.routeId,
+                                stationId: favorite.stationId,
+                                useTTS: true,
+                                isImmediateAlarm: true,
+                                earphoneOnlyOverride: true,
+                                currentStation: bus.currentStation,
+                              );
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '${favorite.routeNo}번 버스 이어폰 알람을 설정했습니다.',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.star,
+                              color: colorScheme.primary,
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              final stop = BusStop(
+                                id: favorite.stationId,
+                                stationId: favorite.stationId,
+                                name: favorite.stationName,
+                                isFavorite: false,
+                              );
+                              _toggleFavoriteBus(stop, arrival);
+                            },
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.star,
-                          color: colorScheme.primary,
-                          size: 20,
-                        ),
-                        onPressed: () {
-                          final stop = BusStop(
-                            id: favorite.stationId,
-                            stationId: favorite.stationId,
-                            name: favorite.stationName,
-                            isFavorite: false,
-                          );
-                          _toggleFavoriteBus(stop, arrival);
-                        },
-                      ),
-                    ],
+                    ),
                   ),
                 );
               }).toList(),

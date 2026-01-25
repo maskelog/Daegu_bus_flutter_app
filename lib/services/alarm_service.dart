@@ -1844,6 +1844,8 @@ class AlarmService extends ChangeNotifier {
     String stationId = '',
     bool useTTS = true,
     bool isImmediateAlarm = true,
+    bool? earphoneOnlyOverride,
+    bool? vibrateOverride,
     String? currentStation,
   }) async {
     try {
@@ -1882,6 +1884,14 @@ class AlarmService extends ChangeNotifier {
           await SimpleTTSHelper.initialize();
           await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
 
+          final shouldVibrate = vibrateOverride ??
+              ((earphoneOnlyOverride == true) &&
+                  settingsService.vibrate &&
+                  settingsService.earphoneAlarmVibrate);
+          if (shouldVibrate) {
+            HapticFeedback.vibrate();
+          }
+
           logMessage(
             '🔊 일반 알람 TTS 발화 시도: $busNo번 버스, $remainingMinutes분 후',
             level: LogLevel.info,
@@ -1902,7 +1912,8 @@ class AlarmService extends ChangeNotifier {
           final success = await SimpleTTSHelper.speak(
             "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.",
             force: isImmediateAlarm || isSpeakerMode, // 승차알람이거나 스피커 모드면 강제 발화
-            earphoneOnly: speakerMode == SettingsService.speakerModeHeadset, // 이어폰 전용 모드만 true
+            earphoneOnly: earphoneOnlyOverride ??
+                (speakerMode == SettingsService.speakerModeHeadset), // 이어폰 전용 모드만 true
           );
 
           if (success) {

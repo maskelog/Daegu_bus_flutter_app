@@ -146,6 +146,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (settingsService.useTts) ...[
                         const Divider(height: 1, indent: 16, endIndent: 16),
                         _buildSpeakerModeSelector(context, settingsService),
+                        const Divider(height: 1, indent: 16, endIndent: 16),
+                        _buildSwitchTile(
+                          context,
+                          title: '이어폰 알람 진동',
+                          subtitle: '이어폰 전용 알람에 진동을 함께 사용합니다.',
+                          icon: Icons.vibration,
+                          value: settingsService.earphoneAlarmVibrate,
+                          onChanged: (value) => settingsService
+                              .updateEarphoneAlarmVibrate(value),
+                        ),
                       ],
                     ],
                   ),

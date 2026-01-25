@@ -35,6 +35,7 @@ class SettingsService extends ChangeNotifier {
   static const String _colorSchemeKey = 'color_scheme';
   static const String _autoAlarmTimeoutMsKey = 'auto_alarm_timeout_ms';
   static const String _fontSizeMultiplierKey = 'font_size_multiplier';
+  static const String _earphoneAlarmVibrateKey = 'earphone_alarm_vibrate';
   static const int defaultAutoAlarmTimeoutMinutes = 30; // 기본 30분
   static const int minAutoAlarmTimeoutMinutes = 5; // 최소 5분
   static const int maxAutoAlarmTimeoutMinutes = 120; // 최대 120분
@@ -71,6 +72,7 @@ class SettingsService extends ChangeNotifier {
 
   ThemeMode _themeMode = ThemeMode.system;
   bool _vibrate = true;
+  bool _earphoneAlarmVibrate = true;
   int _speakerMode = speakerModeHeadset; // 스피커 모드 변수 (기본값: 이어폰 전용)
 
   // MethodChannel 추가
@@ -91,6 +93,7 @@ class SettingsService extends ChangeNotifier {
   double get autoAlarmVolume => _autoAlarmVolume;
   bool get useTts => _useTts;
   bool get vibrate => _vibrate;
+  bool get earphoneAlarmVibrate => _earphoneAlarmVibrate;
   int get speakerMode => _speakerMode;
   ThemeMode get themeMode => _themeMode;
   NotificationDisplayMode get notificationDisplayMode =>
@@ -109,6 +112,8 @@ class SettingsService extends ChangeNotifier {
     _themeMode = _parseThemeMode(_prefs.getString(_kThemeModeKey) ?? 'system');
     _useTts = _prefs.getBool(_useTtsKey) ?? true;
     _vibrate = _prefs.getBool(_kVibrateKey) ?? true;
+    _earphoneAlarmVibrate =
+        _prefs.getBool(_earphoneAlarmVibrateKey) ?? true;
     _useAutoAlarm = _prefs.getBool(_autoAlarmKey) ?? true;
     _speakerMode = _prefs.getInt(_kSpeakerModeKey) ?? speakerModeHeadset;
     _autoAlarmVolume =
@@ -153,6 +158,14 @@ class SettingsService extends ChangeNotifier {
 
     _vibrate = value;
     await _prefs.setBool(_kVibrateKey, value);
+    notifyListeners();
+  }
+
+  Future<void> updateEarphoneAlarmVibrate(bool value) async {
+    if (_earphoneAlarmVibrate == value) return;
+
+    _earphoneAlarmVibrate = value;
+    await _prefs.setBool(_earphoneAlarmVibrateKey, value);
     notifyListeners();
   }
 

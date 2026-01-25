@@ -10,6 +10,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -45,6 +47,8 @@ class NotificationHandler(private val context: Context) {
         const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_TRACKING"
         const val ACTION_STOP_SPECIFIC_ROUTE_TRACKING = "com.example.daegu_bus_app.action.STOP_SPECIFIC_ROUTE_TRACKING"
         const val ACTION_CANCEL_NOTIFICATION = "com.example.daegu_bus_app.action.CANCEL_NOTIFICATION"
+
+        private val lastRemainingMinutesByRoute = mutableMapOf<String, Int>()
     }
 
      // --- Notification Channel Creation ---
@@ -178,12 +182,25 @@ class NotificationHandler(private val context: Context) {
     fun buildOngoingNotification(activeTrackings: Map<String, BusAlertService.TrackingInfo>): Notification {
         val startTime = System.currentTimeMillis()
         val currentTimeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        var shouldVibrateOnChange = false
         Log.d(TAG, "🔔 알림 생성 시작 - $currentTimeStr")
 
         // 각 활성 추적의 버스 정보를 로그로 출력
         activeTrackings.forEach { (routeId, info) ->
             val busInfo = info.lastBusInfo
             Log.d(TAG, "🔍 추적 상태: ${info.busNo}번 버스, 시간=${busInfo?.estimatedTime ?: "정보 없음"}, 위치=${busInfo?.currentStation ?: "위치 정보 없음"}")
+            if (busInfo != null) {
+                val currentMinutes = busInfo.getRemainingMinutes()
+                val prevMinutes = lastRemainingMinutesByRoute[routeId]
+                if (prevMinutes != null &&
+                    currentMinutes >= 0 &&
+                    prevMinutes >= 0 &&
+                    currentMinutes != prevMinutes
+                ) {
+                    shouldVibrateOnChange = true
+                }
+                lastRemainingMinutesByRoute[routeId] = currentMinutes
+            }
         }
 
         val currentTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()) // 현재 시간을 초 단위까지 표시
@@ -321,6 +338,10 @@ class NotificationHandler(private val context: Context) {
 
         Log.d(TAG, "buildOngoingNotification: ${activeTrackings.mapValues { it.value.lastBusInfo }}")
 
+        if (shouldVibrateOnChange && isVibrationEnabled()) {
+            vibrateOnce()
+        }
+
         // 디버깅: 생성된 알림 내용 로깅
         try {
             val extras = notification.extras
@@ -339,6 +360,32 @@ class NotificationHandler(private val context: Context) {
         }
 
         return notification
+    }
+
+
+
+    private fun isVibrationEnabled(): Boolean {
+        return try {
+            val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            prefs.getBoolean("flutter.vibrate", true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading vibration setting: ${e.message}")
+            true
+        }
+    }
+
+    private fun vibrateOnce() {
+        try {
+            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(200)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error triggering vibration: ${e.message}")
+        }
     }
 
     private fun createPendingIntent(): PendingIntent? {

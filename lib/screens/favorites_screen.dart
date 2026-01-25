@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_stop.dart';
 import '../models/favorite_bus.dart';
+import '../services/alarm_service.dart';
 import '../services/api_service.dart';
 import '../utils/favorite_bus_store.dart';
 import '../widgets/unified_bus_detail_widget.dart';
 import 'search_screen.dart';
+import 'package:provider/provider.dart';
 
 class FavoritesScreen extends StatefulWidget {
   final List<FavoriteBus> favoriteBuses;
@@ -287,12 +289,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   ),
                   child: InkWell(
                     onTap: () {
-                      if (arrival.firstBus == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('도착 정보가 없습니다.')),
-                        );
-                        return;
-                      }
                       final stop = BusStop(
                         id: favorite.stationId,
                         stationId: favorite.stationId,
@@ -355,6 +351,53 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               ),
                             ],
                           ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.headset,
+                            color: colorScheme.primary,
+                            size: 20,
+                          ),
+                          tooltip: '이어폰 알람',
+                          onPressed: () async {
+                            final bus = arrival.firstBus;
+                            if (bus == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('도착 정보가 없습니다.')),
+                              );
+                              return;
+                            }
+                            final minutes = bus.getRemainingMinutes();
+                            if (minutes < 0) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('운행 종료 상태입니다.')),
+                              );
+                              return;
+                            }
+                            final alarmService = Provider.of<AlarmService>(
+                              context,
+                              listen: false,
+                            );
+                            await alarmService.setOneTimeAlarm(
+                              favorite.routeNo,
+                              favorite.stationName,
+                              minutes,
+                              routeId: favorite.routeId,
+                              stationId: favorite.stationId,
+                              useTTS: true,
+                              isImmediateAlarm: true,
+                              earphoneOnlyOverride: true,
+                              currentStation: bus.currentStation,
+                            );
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  '${favorite.routeNo}번 버스 이어폰 알람을 설정했습니다.',
+                                ),
+                              ),
+                            );
+                          },
                         ),
                         IconButton(
                           icon: Icon(
