@@ -13,6 +13,7 @@ class StationLoadingWidget extends StatefulWidget {
   final Function(BusStop?) onSelectedStopChanged;
   final BusStop? selectedStop;
   final List<BusStop> favoriteStops;
+  final bool showSelectors;
 
   const StationLoadingWidget({
     super.key,
@@ -21,6 +22,7 @@ class StationLoadingWidget extends StatefulWidget {
     required this.onSelectedStopChanged,
     required this.selectedStop,
     required this.favoriteStops,
+    this.showSelectors = true,
   });
 
   @override
@@ -168,6 +170,9 @@ class _StationLoadingWidgetState extends State<StationLoadingWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.showSelectors) {
+      return const SizedBox.shrink();
+    }
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 

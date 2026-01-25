@@ -235,13 +235,18 @@ class StationService {
           final String direction = arrivalData['moveDir'] ?? '';
           final String key = '$routeId-$direction';
 
+          final arrState = arrivalData['arrState']?.toString() ?? '';
+          final busTCd3 = arrivalData['busTCd3']?.toString();
+          final isOutOfService = arrState.contains('운행종료') ||
+              arrState.contains('운행 종료') ||
+              busTCd3 == '1';
           final busInfo = BusInfo(
-            busNumber: arrivalData['vhcNo2'] ?? '',
-            currentStation: arrivalData['bsNm'] ?? '정보 없음',
+            busNumber: arrivalData['vhcNo2']?.toString() ?? '',
+            currentStation: arrivalData['bsNm']?.toString() ?? '정보 없음',
             remainingStops: (arrivalData['bsGap'] ?? 0).toString(),
-            estimatedTime: arrivalData['arrState'] ?? '정보 없음',
-            isLowFloor: arrivalData['busTCd2'] == '1',
-            isOutOfService: arrivalData['busTCd3'] == '1',
+            estimatedTime: arrState,
+            isLowFloor: arrivalData['busTCd2']?.toString() == '1',
+            isOutOfService: isOutOfService,
           );
 
           if (busArrivalMap.containsKey(key)) {

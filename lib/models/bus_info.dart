@@ -1,28 +1,12 @@
-
-
-/// 버스 개별 정보 모델
 class BusInfo {
-  /// 버스 번호
   final String busNumber;
-
-  /// 현재 정류장 위치
   final String currentStation;
-
-  /// 남은 정류장 수
   final String remainingStops;
-
-  /// 예상 도착 시간 (분)
   final String estimatedTime;
-
-  /// 저상 버스 여부
   final bool isLowFloor;
-
-  /// 운행종료 여부
   final bool isOutOfService;
-
   final String? busTCd2;
 
-  /// 생성자
   BusInfo({
     required this.busNumber,
     required this.currentStation,
@@ -33,23 +17,20 @@ class BusInfo {
     this.busTCd2,
   });
 
-  /// JSON에서 객체 생성
   factory BusInfo.fromJson(Map<String, dynamic> json) {
-    // 운행 종료 확인 로직
-    bool outOfService = false;
-    String estTime = json['estimatedTime'] ?? '';
-
-    if (estTime == '운행종료' ||
+    final estTime = (json['estimatedTime'] ?? '').toString();
+    final busTCd3 = json['busTCd3']?.toString();
+    final outOfService = estTime.contains('운행종료') ||
+        estTime.contains('운행 종료') ||
+        estTime == '-' ||
         json['isOutOfService'] == true ||
-        json['busTCd3'] == '1') {
-      outOfService = true;
-    }
+        busTCd3 == '1';
 
     final String? busTCd2 = json['busTCd2']?.toString();
     return BusInfo(
-      busNumber: json['busNumber'] ?? '',
-      currentStation: json['currentStation'] ?? '',
-      remainingStops: json['remainingStops'] ?? '0',
+      busNumber: (json['busNumber'] ?? '').toString(),
+      currentStation: (json['currentStation'] ?? '').toString(),
+      remainingStops: (json['remainingStops'] ?? '0').toString(),
       estimatedTime: estTime,
       isLowFloor: busTCd2 == 'D',
       isOutOfService: outOfService,
@@ -57,9 +38,6 @@ class BusInfo {
     );
   }
 
-  
-
-  /// JSON으로 변환
   Map<String, dynamic> toJson() {
     return {
       'busNumber': busNumber,
@@ -72,70 +50,60 @@ class BusInfo {
     };
   }
 
-  /// 남은 시간(분) 계산
   int getRemainingMinutes() {
-    if (isOutOfService) return 0;
+    if (isOutOfService) return -1;
 
-    // "전" 또는 "곧 도착", "진입" 같은 특수 케이스
-    if (estimatedTime.contains('전') ||
-        estimatedTime.contains('곧 도착') ||
-        estimatedTime.contains('진입') ||
-        estimatedTime.trim() == '0' ||
-        estimatedTime.trim() == '0분') {
+    final time = estimatedTime.trim();
+    if (time.isEmpty) return 0;
+
+    if (time.contains('곧 도착') ||
+        time.contains('곧도착') ||
+        time.contains('진입') ||
+        time == '0' ||
+        time == '0분') {
       return 0;
     }
 
-    // 숫자로 파싱 가능한 경우 (예: "9분", "12분")
-    final numberMatch = RegExp(r'(\d+)분?').firstMatch(estimatedTime);
+    if (time.contains('운행종료') ||
+        time.contains('운행 종료') ||
+        time == '-' ||
+        time.contains('출발예정') ||
+        time.contains('기점출발')) {
+      return -1;
+    }
+
+    final numberMatch = RegExp(r'(\d+)').firstMatch(time);
     if (numberMatch != null) {
-      try {
-        return int.parse(numberMatch.group(1)!);
-      } catch (_) {
-        // 파싱 오류 시 예외 처리
-      }
+      return int.tryParse(numberMatch.group(1) ?? '') ?? 0;
     }
 
-    // estimatedTime이 순수한 숫자인 경우 (네이티브에서 전달된 값)
-    try {
-      if (estimatedTime.trim().isNotEmpty &&
-          int.tryParse(estimatedTime.trim()) != null) {
-        return int.parse(estimatedTime.trim());
-      }
-    } catch (_) {
-      // 파싱 오류 시 예외 처리
-    }
-
-    // 남은 정류장 수를 기준으로 대략적인 시간 추정 (1정류장 = 약 2분)
-    try {
-      final stops = int.parse(remainingStops.replaceAll(RegExp(r'[^0-9]'), ''));
+    final stops = int.tryParse(remainingStops.replaceAll(RegExp(r'[^0-9]'), ''));
+    if (stops != null) {
       return stops * 2;
-    } catch (_) {
-      // 파싱 오류 시 예외 처리
     }
 
     return 0;
   }
 
-  /// 남은 시간 텍스트
   String getRemainingTimeText() {
     if (isOutOfService) {
-      return '운행종료';
+      return '운행 종료';
     }
 
     final minutes = getRemainingMinutes();
-    if (minutes <= 0) {
-      return '곧 도착';
-    } else {
-      return '$minutes분 후';
+    if (minutes < 0) {
+      return '운행 종료';
     }
+    if (minutes == 0) {
+      return '곧 도착';
+    }
+    return '${minutes}분';
   }
 
-  /// 저상 버스 표시
   String getLowFloorText() {
     return isLowFloor ? '[저상]' : '';
   }
 
-  /// 복사본 생성 with 일부 필드 변경
   BusInfo copyWith({
     String? busNumber,
     String? currentStation,
@@ -154,7 +122,6 @@ class BusInfo {
     );
   }
 
-  /// 객체 동등성 비교
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -168,7 +135,6 @@ class BusInfo {
         other.isOutOfService == isOutOfService;
   }
 
-  /// 해시코드
   @override
   int get hashCode {
     return busNumber.hashCode ^

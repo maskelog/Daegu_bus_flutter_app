@@ -1,29 +1,23 @@
 import 'dart:async';
 
-import 'package:daegu_bus_app/services/alarm_service.dart';
-import 'package:daegu_bus_app/widgets/unified_bus_detail_widget.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:flutter/services.dart';
-import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 
-import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
-import '../models/bus_route.dart';
+import '../models/bus_stop.dart';
+import '../models/favorite_bus.dart';
 import '../services/api_service.dart';
-import '../widgets/station_item.dart';
-import 'settings_screen.dart';
+import '../utils/favorite_bus_store.dart';
+import '../widgets/unified_bus_detail_widget.dart';
+import 'search_screen.dart';
 
 class FavoritesScreen extends StatefulWidget {
-  final List<BusStop> favoriteStops;
-  final Function(BusStop) onStopSelected;
-  final Function(BusStop) onFavoriteToggle;
+  final List<FavoriteBus> favoriteBuses;
+  final ValueChanged<List<FavoriteBus>> onFavoritesUpdated;
 
   const FavoritesScreen({
     super.key,
-    required this.favoriteStops,
-    required this.onStopSelected,
-    required this.onFavoriteToggle,
+    required this.favoriteBuses,
+    required this.onFavoritesUpdated,
   });
 
   @override
@@ -31,562 +25,396 @@ class FavoritesScreen extends StatefulWidget {
 }
 
 class _FavoritesScreenState extends State<FavoritesScreen> {
+  List<FavoriteBus> _favoriteBuses = [];
   final Map<String, List<BusArrival>> _stationArrivals = {};
-  final Map<String, bool> _isLoadingMap = {};
-  final Map<String, String?> _errorMap = {};
-  BusStop? _selectedStop;
   Timer? _refreshTimer;
-  final Map<String, bool> _stationTrackingStatus = {};
-  final Map<String, BusRouteType> _routeTypeCache = {};
-
-  static const _stationTrackingChannel =
-      MethodChannel('com.example.daegu_bus_app/station_tracking');
+  bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    if (widget.favoriteStops.isNotEmpty) {
-      _loadAllFavoriteArrivals();
+    _favoriteBuses = List<FavoriteBus>.from(widget.favoriteBuses);
+    _loadFavorites();
+    _refreshTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _refreshArrivals(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant FavoritesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.favoriteBuses != widget.favoriteBuses) {
+      setState(() {
+        _favoriteBuses = List<FavoriteBus>.from(widget.favoriteBuses);
+      });
+      _refreshArrivals();
     }
-    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
-      if (mounted) {
-        if (_selectedStop != null) {
-          _loadStationArrivals(_selectedStop!);
-        } else if (widget.favoriteStops.isNotEmpty) {
-          _loadAllFavoriteArrivals();
-        }
-      } else {
-        timer.cancel();
-      }
-    });
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
-    // 화면 종료 시 모든 추적 중지 (선택적) <-- 이 라인을 제거합니다.
-    // _stopAllStationTracking();
     super.dispose();
   }
 
-  /// 즐겨찾는 모든 정류장의 도착 정보 불러오기
-  Future<void> _loadAllFavoriteArrivals() async {
-    for (final station in widget.favoriteStops) {
-      await _loadStationArrivals(station);
+  Future<void> _loadFavorites() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final loaded = await FavoriteBusStore.load();
+      if (!mounted) return;
+      setState(() {
+        _favoriteBuses = loaded;
+      });
+      widget.onFavoritesUpdated(loaded);
+      await _refreshArrivals();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = '즐겨찾기를 불러오는 중 오류가 발생했습니다: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  Future<void> _loadStationArrivals(BusStop station) async {
+  Future<void> _refreshArrivals() async {
+    final stationIds = _favoriteBuses
+        .map((bus) => bus.stationId)
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    for (final stationId in stationIds) {
+      try {
+        final arrivals = await ApiService.getStationInfo(stationId);
+        if (!mounted) return;
+        setState(() {
+          _stationArrivals[stationId] = arrivals;
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _stationArrivals[stationId] = <BusArrival>[];
+        });
+      }
+    }
+  }
+
+  String _formatArrivalTime(BusArrival arrival) {
+    final bus = arrival.firstBus;
+    if (bus == null) return '?? ?? ??';
+    if (bus.isOutOfService) return '?? ??';
+    final minutes = bus.getRemainingMinutes();
+    if (minutes < 0) return '?? ??';
+    if (minutes == 0) return '? ??';
+    return '${minutes}?';
+  }
+
+  Future<void> _toggleFavorite(FavoriteBus bus) async {
+    final updated = FavoriteBusStore.toggle(_favoriteBuses, bus);
+    await FavoriteBusStore.save(updated);
+    if (!mounted) return;
     setState(() {
-      _isLoadingMap[station.id] = true;
-      _errorMap[station.id] = null;
+      _favoriteBuses = updated;
     });
+    widget.onFavoritesUpdated(updated);
+  }
+
+  Future<void> _openAddFavoriteFlow() async {
+    final selectedStop = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SearchScreen(),
+      ),
+    );
+    if (!mounted) return;
+    if (selectedStop is! BusStop) return;
 
     try {
-      final arrivals = await ApiService.getStationInfo(station.id);
+      final arrivals = await ApiService.getStationInfo(
+        selectedStop.stationId ?? selectedStop.id,
+      );
       if (!mounted) return;
-
-      // 루트 타입 캐시 업데이트
-      final routeIds = arrivals.map((a) => a.routeId).toSet();
-      final missingRouteIds = routeIds.where((id) => !_routeTypeCache.containsKey(id)).toList();
-
-      if (missingRouteIds.isNotEmpty) {
-        final results = await Future.wait(
-          missingRouteIds.map((id) async {
-            try {
-              final route = await ApiService.getBusRouteDetails(id);
-              return route != null ? MapEntry(id, route.getRouteType()) : null;
-            } catch (e) {
-              return null;
-            }
-          }),
-        );
-        final newTypes = <String, BusRouteType>{};
-        for (final entry in results) {
-          if (entry != null) newTypes[entry.key] = entry.value;
-        }
-        _routeTypeCache.addAll(newTypes);
-      }
-
-      if (mounted) {
-        setState(() {
-          _stationArrivals[station.id] = arrivals;
-          _isLoadingMap[station.id] = false;
-        });
-      }
-
-      _updateAlarmServiceCache(arrivals, station.name);
+      _showArrivalPicker(selectedStop, arrivals);
     } catch (e) {
-      logMessage('Error loading arrivals for station ${station.id}: $e',
-          level: LogLevel.error);
       if (!mounted) return;
-
-      if (mounted) {
-        setState(() {
-          _errorMap[station.id] = '도착 정보를 불러오지 못했습니다';
-          _isLoadingMap[station.id] = false;
-        });
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('정류장 정보를 불러오지 못했습니다: $e')),
+      );
     }
   }
 
-  void _updateAlarmServiceCache(
-      List<BusArrival> busArrivals, String stationName) {
-    if (busArrivals.isEmpty || !mounted) return;
+  void _showArrivalPicker(BusStop stop, List<BusArrival> arrivals) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        final colorScheme = Theme.of(context).colorScheme;
+        if (arrivals.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              '선택할 버스가 없습니다.',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+          );
+        }
 
-    final alarmService = Provider.of<AlarmService>(context, listen: false);
-    final Set<String> updatedBuses = {};
-
-    for (var busArrival in busArrivals) {
-      if (busArrival.busInfoList.isNotEmpty) {
-        final firstBus = busArrival.busInfoList.first;
-        final remainingTime = firstBus.getRemainingMinutes();
-        final busKey = "${busArrival.routeNo}:${busArrival.routeId}";
-        if (updatedBuses.contains(busKey)) continue;
-        updatedBuses.add(busKey);
-
-        alarmService.updateBusInfoCache(
-          busArrival.routeNo,
-          busArrival.routeId,
-          firstBus,
-          remainingTime,
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  stop.name,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...arrivals.map((arrival) {
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      '${arrival.routeNo}?',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      _formatArrivalTime(arrival),
+                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+                    ),
+                    trailing: Icon(
+                      Icons.star_border,
+                      color: colorScheme.primary,
+                    ),
+                    onTap: () async {
+                      final favorite = FavoriteBus(
+                        stationId: stop.stationId ?? stop.id,
+                        stationName: stop.name,
+                        routeId: arrival.routeId,
+                        routeNo: arrival.routeNo,
+                      );
+                      await _toggleFavorite(favorite);
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('${arrival.routeNo}번 버스를 추가했습니다.')),
+                      );
+                    },
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
         );
-        logMessage(
-            '즐겨찾기 화면에서 캐시 업데이트: ${busArrival.routeNo}, 남은 시간: $remainingTime분',
-            level: LogLevel.debug);
-      }
-    }
-  }
-
-  Color _getBusColor(BusArrival arrival, bool isLowFloor) {
-    final routeType = _routeTypeCache[arrival.routeId];
-
-    // 색각이상 사용자를 위해 더 구별되는 색상 사용
-    if (routeType == BusRouteType.express || arrival.routeNo.contains('급행')) {
-      return const Color(0xFFE53935); // 강한 빨간색 (accessibleRed)
-    }
-    if (isLowFloor) {
-      return const Color(0xFF2196F3); // 강한 파란색 (accessibleBlue)
-    }
-    return const Color(0xFF757575); // 중성 회색 (accessibleGrey)
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
-    return Column(
-      children: [
-        // 메인 콘텐츠
-        Expanded(
-          child: Container(
-            color: colorScheme.surface,
-            child: widget.favoriteStops.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      body: RefreshIndicator(
+        onRefresh: _loadFavorites,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '즐겨찾기',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _openAddFavoriteFlow,
+                  icon: const Icon(Icons.add),
+                  label: const Text('?? ??'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (_errorMessage != null)
+              Text(
+                _errorMessage!,
+                style: TextStyle(color: colorScheme.error),
+              )
+            else if (_favoriteBuses.isEmpty)
+              Text(
+                '즐겨찾기한 버스가 없습니다.',
+                style: TextStyle(
+                  color: colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+              )
+            else
+              ..._favoriteBuses.map((favorite) {
+                final arrivals =
+                    _stationArrivals[favorite.stationId] ?? const <BusArrival>[];
+                final arrival = _pickArrivalForFavorite(arrivals, favorite);
+                final bus = arrival.firstBus;
+                final timeText =
+                    bus == null ? '?? ?? ??' : _formatArrivalTime(arrival);
+                final currentStation = bus?.currentStation ?? '?? ?? ??';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: InkWell(
+                    onTap: () {
+                      if (arrival.firstBus == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('도착 정보가 없습니다.')),
+                        );
+                        return;
+                      }
+                      final stop = BusStop(
+                        id: favorite.stationId,
+                        stationId: favorite.stationId,
+                        name: favorite.stationName,
+                        isFavorite: false,
+                      );
+                      showUnifiedBusDetailModal(
+                        context,
+                        arrival,
+                        stop.stationId ?? stop.id,
+                        stop.name,
+                      );
+                    },
+                    child: Row(
                       children: [
-                        Icon(Icons.star_border,
-                            size: 64, color: colorScheme.onSurfaceVariant),
-                        const SizedBox(height: 16),
-                        Text(
-                          '즐겨찾는 정류장이 없습니다',
-                          style: TextStyle(
-                              fontSize: 16, color: colorScheme.onSurface),
+                        Container(
+                          width: 52,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Center(
+                            child: Text(
+                              favorite.routeNo,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '정류장 검색 후 별표 아이콘을 눌러 추가하세요',
-                          style: TextStyle(
-                              fontSize: 14,
-                              color: colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                favorite.stationName,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: colorScheme.onSurface,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '$timeText ? $currentStation',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.star,
+                            color: colorScheme.primary,
+                            size: 20,
+                          ),
+                          onPressed: () => _toggleFavorite(favorite),
                         ),
                       ],
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: widget.favoriteStops.length,
-                    itemBuilder: (context, index) {
-                      final station = widget.favoriteStops[index];
-                      final isSelected = _selectedStop?.id == station.id;
-                      final stationArrivals =
-                          _stationArrivals[station.id] ?? [];
-                      final isLoading = _isLoadingMap[station.id] ?? false;
-                      final error = _errorMap[station.id];
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          StationItem(
-                            station: station,
-                            isSelected: isSelected,
-                            isTracking:
-                                _stationTrackingStatus[station.id] ?? false,
-                            onTap: () {
-                              setState(() {
-                                if (_selectedStop?.id == station.id) {
-                                  _selectedStop = null;
-                                } else {
-                                  _selectedStop = station;
-                                  if (stationArrivals.isEmpty && !isLoading) {
-                                    _loadStationArrivals(station);
-                                  }
-                                }
-                              });
-                              widget.onStopSelected(station);
-                            },
-                            onFavoriteToggle: () =>
-                                widget.onFavoriteToggle(station),
-                            onTrackingToggle: () {
-                              final isTracking =
-                                  _stationTrackingStatus[station.id] ?? false;
-                              if (isTracking) {
-                                _stopStationTracking(station);
-                              } else {
-                                _startStationTracking(station);
-                              }
-                            },
-                          ),
-                          if (isSelected)
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                  left: 12, top: 8, bottom: 16),
-                              child: SizedBox(
-                                height: 300,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (isLoading)
-                                      const Center(
-                                        child: Padding(
-                                          padding: EdgeInsets.all(16.0),
-                                          child: CircularProgressIndicator(),
-                                        ),
-                                      )
-                                    else if (error != null)
-                                      Center(
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(16.0),
-                                          child: Column(
-                                            children: [
-                                              Icon(Icons.error_outline,
-                                                  size: 32,
-                                                  color: colorScheme.error),
-                                              const SizedBox(height: 8),
-                                              Text(error,
-                                                  style: TextStyle(
-                                                      color:
-                                                          colorScheme.error)),
-                                              TextButton(
-                                                onPressed: () =>
-                                                    _loadStationArrivals(
-                                                        station),
-                                                child: const Text('다시 시도'),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      )
-                                    else if (stationArrivals.isEmpty)
-                                      Center(
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(16.0),
-                                          child: Text('도착 예정 버스가 없습니다',
-                                              style: TextStyle(
-                                                  color:
-                                                      colorScheme.onSurface)),
-                                        ),
-                                      )
-                                    else
-                                      Expanded(
-                                        child: Column(
-                                          children: stationArrivals.map((arrival) {
-                                            final bus = arrival.firstBus;
-                                            if (bus == null) return const SizedBox.shrink();
-
-                                            final minutes = bus.getRemainingMinutes();
-                                            final isLowFloor = bus.isLowFloor;
-                                            final isOutOfService = bus.isOutOfService;
-                                            String timeText;
-                                            Color timeColor;
-                                            
-                                            if (isOutOfService) {
-                                              timeText = '운행종료';
-                                              timeColor = colorScheme.onSurfaceVariant;
-                                            } else if (minutes <= 0) {
-                                              timeText = '곧 도착';
-                                              timeColor = colorScheme.error;
-                                            } else if (minutes <= 3) {
-                                              timeText = '$minutes분';
-                                              timeColor = colorScheme.error;
-                                            } else {
-                                              timeText = '$minutes분';
-                                              timeColor = colorScheme.onSurface;
-                                            }
-                                            
-                                            final stopsText = !isOutOfService ? '${bus.remainingStops}정거장' : '';
-                                            final routeNo = arrival.routeNo;
-                                            final routeId = arrival.routeId;
-
-                                            return Container(
-                                              margin: const EdgeInsets.only(bottom: 4),
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                              decoration: BoxDecoration(
-                                                color: colorScheme.surface,
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.3)),
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  Container(
-                                                    width: 50,
-                                                    height: 28,
-                                                    decoration: BoxDecoration(
-                                                      color: _getBusColor(arrival, isLowFloor),
-                                                      borderRadius: BorderRadius.circular(6),
-                                                    ),
-                                                    child: Center(
-                                                      child: Text(
-                                                        routeNo,
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontWeight: FontWeight.bold,
-                                                          fontSize: 13,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 12),
-                                                  Expanded(
-                                                    flex: 2,
-                                                    child: Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Row(
-                                                          children: [
-                                                            Text(
-                                                              timeText,
-                                                              style: TextStyle(
-                                                                color: timeColor,
-                                                                fontWeight: FontWeight.bold,
-                                                                fontSize: 16,
-                                                              ),
-                                                            ),
-                                                            if (!isOutOfService) ...[
-                                                              const SizedBox(width: 4),
-                                                              Text(
-                                                                '후',
-                                                                style: TextStyle(
-                                                                  color: colorScheme.onSurfaceVariant,
-                                                                  fontSize: 14,
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ],
-                                                        ),
-                                                        if (stopsText.isNotEmpty)
-                                                          Text(
-                                                            stopsText,
-                                                            style: TextStyle(
-                                                              color: colorScheme.onSurfaceVariant,
-                                                              fontSize: 12,
-                                                            ),
-                                                          ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  if (arrival.secondBus != null) ...[
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      flex: 1,
-                                                      child: Column(
-                                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                                        children: [
-                                                          Text(
-                                                            '다음차',
-                                                            style: TextStyle(
-                                                              color: colorScheme.onSurfaceVariant,
-                                                              fontSize: 11,
-                                                            ),
-                                                          ),
-                                                          Text(
-                                                            arrival.getSecondArrivalTimeText(),
-                                                            style: TextStyle(
-                                                              color: colorScheme.onSurface,
-                                                              fontSize: 12,
-                                                              fontWeight: FontWeight.w500,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                  Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      if (isLowFloor)
-                                                        Icon(
-                                                          Icons.accessible,
-                                                          size: 16,
-                                                          color: colorScheme.primary,
-                                                        ),
-                                                      const SizedBox(width: 4),
-                                                      Selector<AlarmService, bool>(
-                                                        selector: (context, alarmService) =>
-                                                            alarmService.hasAlarm(routeNo, station.name, routeId),
-                                                        builder: (context, hasAlarm, child) {
-                                                          return IconButton(
-                                                            padding: EdgeInsets.zero,
-                                                            constraints: const BoxConstraints(),
-                                                            icon: Icon(
-                                                              hasAlarm
-                                                                  ? Icons.notifications_active
-                                                                  : Icons.notifications_none_outlined,
-                                                              color: hasAlarm
-                                                                  ? colorScheme.primary
-                                                                  : colorScheme.onSurfaceVariant,
-                                                              size: 20,
-                                                            ),
-                                                            onPressed: () async {
-                                                              final alarmService =
-                                                                  Provider.of<AlarmService>(context, listen: false);
-                                                              final scaffoldMessenger =
-                                                                  ScaffoldMessenger.of(context);
-                                                              try {
-                                                                if (hasAlarm) {
-                                                                  await alarmService.cancelAlarmByRoute(
-                                                                      routeNo, station.name, routeId);
-                                                                  if (mounted) {
-                                                                    scaffoldMessenger.showSnackBar(
-                                                                      SnackBar(
-                                                                          content: Text('$routeNo번 버스 알람이 해제되었습니다')),
-                                                                    );
-                                                                  }
-                                                                } else {
-                                                                  if (minutes <= 0) {
-                                                                    if (mounted) {
-                                                                      scaffoldMessenger.showSnackBar(
-                                                                        const SnackBar(
-                                                                            content: Text('버스가 이미 도착했거나 곧 도착합니다')),
-                                                                      );
-                                                                    }
-                                                                    return;
-                                                                  }
-                                                                  await alarmService.setOneTimeAlarm(
-                                                                    routeNo,
-                                                                    station.name,
-                                                                    minutes,
-                                                                    routeId: routeId,
-                                                                    stationId: station.id,
-                                                                    useTTS: true,
-                                                                    isImmediateAlarm: true,
-                                                                    currentStation: bus.currentStation,
-                                                                  );
-                                                                  if (mounted) {
-                                                                    scaffoldMessenger.showSnackBar(
-                                                                      SnackBar(
-                                                                          content: Text('$routeNo번 버스 알람이 설정되었습니다')),
-                                                                    );
-                                                                  }
-                                                                }
-                                                              } catch (e) {
-                                                                if (mounted) {
-                                                                  scaffoldMessenger.showSnackBar(
-                                                                    SnackBar(
-                                                                        content: Text('알람 처리 중 오류가 발생했습니다: $e')),
-                                                                  );
-                                                                }
-                                                              }
-                                                            },
-                                                          );
-                                                        },
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }).toList(),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          if (index < widget.favoriteStops.length - 1)
-                            const Divider(height: 24),
-                        ],
-                      );
-                    },
                   ),
-          ),
+                );
+              }).toList(),
+          ],
         ),
-      ],
+      ),
     );
   }
 
-  Future<void> _startStationTracking(BusStop station) async {
-    try {
-      final result =
-          await _stationTrackingChannel.invokeMethod('startStationTracking', {
-        'stationId': station.id,
-        'stationName': station.name,
-      });
-      if (result == true && mounted) {
-        setState(() {
-          _stationTrackingStatus[station.id] = true;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${station.name} 정류장 전체 도착 정보 추적을 시작합니다.'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } on PlatformException catch (e) {
-      logMessage("Failed to start station tracking: '${e.message}'.",
-          level: LogLevel.error);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('정류장 추적 시작 실패: ${e.message}'),
-            backgroundColor: Theme.of(context).colorScheme.errorContainer,
-          ),
-        );
-      }
+  BusArrival _pickArrivalForFavorite(
+      List<BusArrival> arrivals, FavoriteBus favorite) {
+    if (arrivals.isEmpty) {
+      return BusArrival(
+        routeId: favorite.routeId,
+        routeNo: favorite.routeNo,
+        direction: '',
+        busInfoList: const [],
+      );
     }
-  }
 
-  Future<void> _stopStationTracking(BusStop station) async {
-    try {
-      final result =
-          await _stationTrackingChannel.invokeMethod('stopStationTracking');
-      if (result == true && mounted) {
-        setState(() {
-          _stationTrackingStatus[station.id] = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${station.name} 정류장 전체 도착 정보 추적을 중지합니다.'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+    final byRouteId = arrivals.where((item) => item.routeId == favorite.routeId);
+    final byRouteNo = arrivals.where((item) => item.routeNo == favorite.routeNo);
+    final candidates = byRouteId.isNotEmpty ? byRouteId.toList() : byRouteNo.toList();
+    if (candidates.isEmpty) {
+      return BusArrival(
+        routeId: favorite.routeId,
+        routeNo: favorite.routeNo,
+        direction: '',
+        busInfoList: const [],
+      );
+    }
+
+    BusArrival? best;
+    int? bestMinutes;
+    for (final candidate in candidates) {
+      final bus = candidate.firstBus;
+      if (bus == null || bus.isOutOfService) {
+        continue;
       }
-    } on PlatformException catch (e) {
-      logMessage("Failed to stop station tracking: '${e.message}'.",
-          level: LogLevel.error);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('정류장 추적 중지 실패: ${e.message}'),
-            backgroundColor: Theme.of(context).colorScheme.errorContainer,
-          ),
-        );
+      final minutes = bus.getRemainingMinutes();
+      if (minutes < 0) {
+        continue;
+      }
+      if (bestMinutes == null || minutes < bestMinutes) {
+        bestMinutes = minutes;
+        best = candidate;
       }
     }
+
+    return best ?? candidates.first;
   }
 }

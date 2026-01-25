@@ -19,6 +19,8 @@ import '../models/auto_alarm.dart';
 import '../models/bus_route.dart';
 import '../widgets/station_loading_widget.dart';
 import '../widgets/unified_bus_detail_widget.dart';
+import '../models/favorite_bus.dart';
+import '../utils/favorite_bus_store.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -39,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen>
   List<BusArrival> _busArrivals = [];
   final Map<String, List<BusArrival>> _stationArrivals = {};
   final Map<String, BusRouteType> _routeTypeCache = {};
+  List<FavoriteBus> _favoriteBuses = [];
 
   @override
   void initState() {
@@ -73,10 +76,11 @@ class _HomeScreenState extends State<HomeScreen>
       _errorMessage = null;
     });
     try {
+      await _loadFavoriteBuses();
       await _loadBusArrivals();
       _setupPeriodicRefresh();
     } catch (e) {
-      setState(() => _errorMessage = '데이터를 불러오는 중 오류가 발생했습니다: $e');
+      setState(() => _errorMessage = '버스 정보를 불러오는 데 실패했습니다: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -110,6 +114,65 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _loadFavoriteBuses() async {
+    final loaded = await FavoriteBusStore.load();
+    if (!mounted) return;
+    setState(() {
+      _favoriteBuses = loaded;
+    });
+    _loadFavoriteBusArrivals();
+  }
+
+  Future<void> _loadFavoriteBusArrivals() async {
+    final stationIds = _favoriteBuses
+        .map((bus) => bus.stationId)
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    for (final stationId in stationIds) {
+      if (_stationArrivals.containsKey(stationId)) {
+        continue;
+      }
+      try {
+        final arrivals = await ApiService.getStationInfo(stationId);
+        if (mounted) {
+          setState(() => _stationArrivals[stationId] = arrivals);
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _stationArrivals[stationId] = <BusArrival>[]);
+        }
+      }
+    }
+  }
+
+  bool _isFavoriteBus(FavoriteBus bus) {
+    return _favoriteBuses.any((item) => item.key == bus.key);
+  }
+
+  Future<void> _toggleFavoriteBus(BusStop stop, BusArrival arrival) async {
+    final stationId = stop.stationId ?? stop.id;
+    final favorite = FavoriteBus(
+      stationId: stationId,
+      stationName: stop.name,
+      routeId: arrival.routeId,
+      routeNo: arrival.routeNo,
+    );
+    final isAlreadyFavorite = _isFavoriteBus(favorite);
+    final updated = FavoriteBusStore.toggle(_favoriteBuses, favorite);
+    await FavoriteBusStore.save(updated);
+    if (!mounted) return;
+    setState(() {
+      _favoriteBuses = updated;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(isAlreadyFavorite
+            ? '${favorite.routeNo}번 버스 즐겨찾기를 해제했습니다.'
+            : '${favorite.routeNo}번 버스를 즐겨찾기에 추가했습니다.'),
+      ),
+    );
+  }
+
   Future<void> _loadBusArrivals() async {
     if (_selectedStop == null) {
       if (mounted) {
@@ -134,7 +197,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
+          _errorMessage = '버스 도착 정보를 불러오는 데 실패했습니다: $e';
         });
       }
     }
@@ -142,10 +205,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _loadSelectedStationData(String busStationId) async {
     try {
-      // 1단계: 정류장 도착 정보 가져오기
       final stopArrivals = await ApiService.getStationInfo(busStationId);
 
-      // 2단계: 즉시 UI 업데이트 (빠른 응답)
+      // UI 업데이트
       if (mounted && _selectedStop != null) {
         setState(() {
           _stationArrivals[_selectedStop!.id] = stopArrivals;
@@ -154,19 +216,17 @@ class _HomeScreenState extends State<HomeScreen>
         });
       }
 
-      // 3단계: 노선 상세 정보는 백그라운드에서 로드 (UI 블로킹 없음)
       _loadRouteDetailsInBackground(stopArrivals);
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = '버스 도착 정보를 불러오지 못했습니다: $e';
+          _errorMessage = '버스 도착 정보를 불러오는 데 실패했습니다: $e';
         });
       }
     }
   }
 
-  /// 노선 상세 정보를 백그라운드에서 로드 (UI 블로킹 없음)
   Future<void> _loadRouteDetailsInBackground(List<BusArrival> arrivals) async {
     try {
       final routeIds = arrivals.map((a) => a.routeId).toSet();
@@ -175,7 +235,6 @@ class _HomeScreenState extends State<HomeScreen>
 
       if (missingRouteIds.isEmpty) return;
 
-      // 백그라운드에서 노선 상세 정보 로드
       final results = await Future.wait(
         missingRouteIds.map((id) async {
           try {
@@ -187,21 +246,17 @@ class _HomeScreenState extends State<HomeScreen>
         }),
       );
 
-      // 캐시에 추가
       final newTypes = <String, BusRouteType>{};
       for (final entry in results) {
         if (entry != null) newTypes[entry.key] = entry.value;
       }
-
-      // 새로운 노선 타입 정보가 있으면 UI 업데이트 (색상 반영)
       if (newTypes.isNotEmpty && mounted) {
         setState(() {
           _routeTypeCache.addAll(newTypes);
         });
       }
     } catch (e) {
-      // 백그라운드 로드 실패는 무시 (이미 도착 정보는 표시됨)
-      print('노선 상세 정보 백그라운드 로드 실패: $e');
+      print('백그라운드 로드 실패: $e');
     }
   }
 
@@ -247,14 +302,13 @@ class _HomeScreenState extends State<HomeScreen>
       BuildContext context, BusArrival arrival, bool isLowFloor) {
     final routeType = _routeTypeCache[arrival.routeId];
 
-    // 색각이상 사용자를 위해 더 구별되는 색상 사용
     if (routeType == BusRouteType.express || arrival.routeNo.contains('급행')) {
-      return const Color(0xFFE53935); // 강한 빨간색 (accessibleRed)
+      return const Color(0xFFE53935);
     }
     if (isLowFloor) {
-      return const Color(0xFF2196F3); // 강한 파란색 (accessibleBlue)
+      return const Color(0xFF2196F3);
     }
-    return const Color(0xFF757575); // 중성 회색 (accessibleGrey)
+    return const Color(0xFF757575);
   }
 
   @override
@@ -274,10 +328,9 @@ class _HomeScreenState extends State<HomeScreen>
                   Expanded(
                     child: Semantics(
                       label: '정류장 검색',
-                      hint: '탭하여 정류장을 검색하세요',
+                      hint: '정류장 이름을 입력해 검색합니다',
                       child: GestureDetector(
                         onTap: () async {
-                          // 햅틱 피드백 추가
                           HapticFeedback.lightImpact();
 
                           final result = await Navigator.push(
@@ -331,10 +384,10 @@ class _HomeScreenState extends State<HomeScreen>
                   const SizedBox(width: 12),
                   Semantics(
                     label: '설정',
-                    hint: '앱 설정을 열려면 탭하세요',
+                    hint: '설정화면으로 이동',
                     child: IconButton.filledTonal(
                       onPressed: () {
-                        // 햅틱 피드백 추가
+                        // 터치 피드백
                         HapticFeedback.lightImpact();
 
                         Navigator.push(
@@ -353,8 +406,8 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
             Semantics(
-              label: '메인 탭 메뉴',
-              hint: '지도, 노선도, 홈, 알람, 즐겨찾기 탭을 선택할 수 있습니다',
+              label: '메인 메뉴',
+              hint: '지도, 노선도, 홈, 알람, 즐겨찾기 탭',
               child: TabBar(
                 controller: _tabController,
                 labelColor: colorScheme.primary,
@@ -372,7 +425,7 @@ class _HomeScreenState extends State<HomeScreen>
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                physics: const NeverScrollableScrollPhysics(), // 슬라이드 비활성화
+                physics: const NeverScrollableScrollPhysics(),
                 children: [
                   const MapScreen(),
                   _buildMapTab(),
@@ -414,7 +467,14 @@ class _HomeScreenState extends State<HomeScreen>
                       onSelectedStopChanged: _onSelectedStopChanged,
                       selectedStop: _selectedStop,
                       favoriteStops: _favoriteStops,
+                      showSelectors: false,
                     ),
+                  ),
+                  _buildFavoriteBusList(),
+                  _buildNearbyStopsRow(
+                    title: '주변 정류장',
+                    stops: _nearbyStops,
+                    maxItems: 8,
                   ),
                   _buildMainStationCard(),
                 ],
@@ -435,11 +495,10 @@ class _HomeScreenState extends State<HomeScreen>
       top: true,
       bottom: false,
       child: FavoritesScreen(
-        favoriteStops: _favoriteStops,
-        onStopSelected: (stop) {
-          // Handle stop selection from favorites
+        favoriteBuses: _favoriteBuses,
+        onFavoritesUpdated: (updated) {
+          setState(() => _favoriteBuses = updated);
         },
-        onFavoriteToggle: _toggleFavorite,
       ),
     );
   }
@@ -452,8 +511,7 @@ class _HomeScreenState extends State<HomeScreen>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(
-          horizontal: 16, vertical: 4), // vertical 패딩 축소
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -462,17 +520,17 @@ class _HomeScreenState extends State<HomeScreen>
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: colorScheme.onSurface,
-              fontSize: 16, // 폰트 크기 축소
+              fontSize: 16,
             ),
           ),
-          const SizedBox(height: 4), // 간격 축소
+          const SizedBox(height: 4),
           if (alarms.isEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4), // 패딩 축소
-              child: Text('설정된 알람이 없습니다.',
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text('자동 알람이 없습니다.',
                   style: TextStyle(
                       color: colorScheme.onSurfaceVariant,
-                      fontSize: 13)), // 폰트 크기 축소
+                      fontSize: 13)),
             )
           else
             SingleChildScrollView(
@@ -485,11 +543,11 @@ class _HomeScreenState extends State<HomeScreen>
                   children: alarms.whereType<AutoAlarm>().map((alarm) {
                     final isSelected = _selectedStop?.name == alarm.stationName;
                     return Padding(
-                      padding: const EdgeInsets.only(right: 6), // 간격 축소
+                      padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(
                         label: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start, // 왼쪽 정렬
-                          mainAxisSize: MainAxisSize.min, // 최소 크기로 설정
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                                 '${alarm.routeNo}  ${alarm.hour.toString().padLeft(2, '0')}:${alarm.minute.toString().padLeft(2, '0')}',
@@ -498,14 +556,14 @@ class _HomeScreenState extends State<HomeScreen>
                                       ? colorScheme.onPrimary
                                       : colorScheme.onSurface,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 12, // 폰트 크기 축소
+                                  fontSize: 12,
                                 )),
                             Text(alarm.stationName,
                                 style: TextStyle(
                                   color: isSelected
                                       ? colorScheme.onPrimary
                                       : colorScheme.onSurface,
-                                  fontSize: 11, // 폰트 크기 축소
+                                  fontSize: 11,
                                 )),
                             Text(
                               alarm.repeatDays
@@ -523,7 +581,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 color: isSelected
                                     ? colorScheme.onPrimary
                                     : colorScheme.onSurfaceVariant,
-                                fontSize: 10, // 폰트 크기 축소
+                                fontSize: 10,
                               ),
                             ),
                           ],
@@ -550,10 +608,10 @@ class _HomeScreenState extends State<HomeScreen>
                           width: isSelected ? 2 : 1,
                         ),
                         labelPadding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2), // 패딩 축소
+                            horizontal: 6, vertical: 2),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 2, vertical: 1), // 패딩 축소
-                        showCheckmark: false, // 체크 아이콘 제거
+                            horizontal: 2, vertical: 1), 
+                        showCheckmark: false,
                       ),
                     );
                   }).toList(),
@@ -576,40 +634,359 @@ class _HomeScreenState extends State<HomeScreen>
     
     setState(() {
       if (isCurrentlyFavorite) {
-        // 즐겨찾기에서 제거
+        // 즐겨찾기 제거
         favorites.removeWhere((json) {
           final existing = BusStop.fromJson(jsonDecode(json));
           return existing.id == stop.id;
         });
         _favoriteStops.removeWhere((s) => s.id == stop.id);
         
-        // 현재 선택된 정류장이 즐겨찾기에서 제거된 경우 UI 업데이트
+        // 현재 선택된 정류소가 즐겨찾기 제거된 경우 UI 업데이트
         if (_selectedStop?.id == stop.id) {
           _selectedStop = stop.copyWith(isFavorite: false);
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${stop.name} 즐겨찾기에서 제거되었습니다')),
+          SnackBar(content: Text(' removed from favorites')),
         );
       } else {
-        // 즐겨찾기에 추가
+        // 즐겨찾기 추가
         final favoriteStop = stop.copyWith(isFavorite: true);
         final stopJson = jsonEncode(favoriteStop.toJson());
         favorites.add(stopJson);
         _favoriteStops.add(favoriteStop);
         
-        // 현재 선택된 정류장이 즐겨찾기에 추가된 경우 UI 업데이트
+        // 현재 선택된 정류소가 즐겨찾기 추가된 경우 UI 업데이트
         if (_selectedStop?.id == stop.id) {
           _selectedStop = favoriteStop;
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${stop.name} 즐겨찾기에 추가되었습니다')),
+          SnackBar(content: Text(' added to favorites')),
         );
       }
     });
     
     await prefs.setStringList('favorites', favorites);
+  }
+
+
+  String _formatArrivalTime(BusArrival arrival) {
+    final bus = arrival.firstBus;
+    if (bus == null) return "도착 정보 없음";
+    if (bus.isOutOfService) return "운행 종료";
+    final minutes = bus.getRemainingMinutes();
+    if (minutes < 0) return "운행 종료";
+    if (minutes <= 0) return "곧 도착";
+    return "${minutes}분";
+  }
+
+  Widget _buildFavoriteBusList() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '즐겨찾기',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (_favoriteBuses.isEmpty)
+            Text(
+              '즐겨찾기가 없습니다.',
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            )
+          else
+            Column(
+              children: _favoriteBuses.map((favorite) {
+                final arrivals = _stationArrivals[favorite.stationId] ??
+                    const <BusArrival>[];
+                final arrival = arrivals.firstWhere(
+                  (item) => item.routeId == favorite.routeId,
+                  orElse: () => BusArrival(
+                    routeId: favorite.routeId,
+                    routeNo: favorite.routeNo,
+                    direction: '',
+                    busInfoList: const [],
+                  ),
+                );
+                final bus = arrival.firstBus;
+                final timeText =
+                    bus == null ? '도착 정보 없음' : _formatArrivalTime(arrival);
+                final currentStation = bus?.currentStation ?? '위치 정보 없음';
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 50,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Center(
+                          child: Text(
+                            favorite.routeNo,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              favorite.stationName,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onSurface,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$timeText · $currentStation',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.star,
+                          color: colorScheme.primary,
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          final stop = BusStop(
+                            id: favorite.stationId,
+                            stationId: favorite.stationId,
+                            name: favorite.stationName,
+                            isFavorite: false,
+                          );
+                          _toggleFavoriteBus(stop, arrival);
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStopsSection({
+    required String title,
+    required List<BusStop> stops,
+    required int maxItems,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final visibleStops = stops.take(maxItems).toList();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (visibleStops.isEmpty)
+            Text(
+              "해당 정류장에 도착하는 버스가 없습니다.",
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            )
+          else
+            Column(
+              children: visibleStops.map((stop) {
+                final arrivals = _stationArrivals[stop.id] ?? const <BusArrival>[];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stop.name,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      if (arrivals.isEmpty)
+                        Text(
+                          "해당 정류장에 도착하는 버스가 없습니다.",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        )
+                      else
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: arrivals.take(2).map((arrival) {
+                            final timeText = _formatArrivalTime(arrival);
+                            return InkWell(
+                              onTap: () => _onSelectedStopChanged(stop),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surface,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: colorScheme.outlineVariant.withOpacity(0.4),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      arrival.routeNo,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: colorScheme.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      timeText,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNearbyStopsRow({
+    required String title,
+    required List<BusStop> stops,
+    required int maxItems,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final visibleStops = stops.take(maxItems).toList();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (visibleStops.isEmpty)
+            Text(
+              '주변 정류장이 없습니다.',
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: visibleStops.map((stop) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: InkWell(
+                      onTap: () => _onSelectedStopChanged(stop),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: colorScheme.outlineVariant.withOpacity(0.4),
+                          ),
+                        ),
+                        child: Text(
+                          stop.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildMainStationCard() {
@@ -658,8 +1035,8 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                   onPressed: () => _toggleFavorite(_selectedStop!),
                   tooltip: _isStopFavorite(_selectedStop!)
-                      ? '즐겨찾기에서 제거'
-                      : '즐겨찾기에 추가',
+                      ? '즐겨찾기 제거'
+                      : '즐겨찾기 추가',
                 ),
               ],
             ),
@@ -669,7 +1046,7 @@ class _HomeScreenState extends State<HomeScreen>
             else if (_errorMessage != null)
               Text(_errorMessage!, style: TextStyle(color: colorScheme.error))
             else if (_busArrivals.isEmpty)
-              const Text('도착 예정 버스가 없습니다.')
+              const Text('해당 정류장에 도착하는 버스가 없습니다.')
             else
               Column(
                 children: _busArrivals.map((arrival) {
@@ -685,18 +1062,27 @@ class _HomeScreenState extends State<HomeScreen>
                   if (isOutOfService) {
                     timeText = '운행종료';
                     timeColor = colorScheme.onSurfaceVariant;
+                  } else if (minutes < 0) {
+                    timeText = '운행종료';
+                    timeColor = colorScheme.onSurfaceVariant;
                   } else if (minutes <= 0) {
                     timeText = '곧 도착';
                     timeColor = colorScheme.error;
                   } else if (minutes <= 3) {
-                    timeText = '$minutes분';
+                    timeText = minutes.toString();
                     timeColor = colorScheme.error;
                   } else {
-                    timeText = '$minutes분';
+                    timeText = minutes.toString();
                     timeColor = colorScheme.onSurface;
                   }
                   
-                  final stopsText = !isOutOfService ? '${bus.remainingStops}정거장' : '';
+                  final remainingStops = int.tryParse(
+                        bus.remainingStops.toString(),
+                      ) ??
+                      -1;
+                  final stopsText = !isOutOfService && remainingStops >= 0
+                      ? '${remainingStops}정류장 전'
+                      : '';
                   final routeNo = arrival.routeNo;
                   final routeId = arrival.routeId;
                   final stationName = _selectedStop?.name ?? '';
@@ -704,7 +1090,6 @@ class _HomeScreenState extends State<HomeScreen>
 
                   return InkWell(
                     onTap: () {
-                      // 버스 클릭 시 상세 정보 모달 표시
                       showUnifiedBusDetailModal(
                         context,
                         arrival,
@@ -759,10 +1144,10 @@ class _HomeScreenState extends State<HomeScreen>
                                       fontSize: 16,
                                     ),
                                   ),
-                                  if (!isOutOfService) ...[
+                                  if (!isOutOfService && minutes > 0) ...[
                                     const SizedBox(width: 4),
                                     Text(
-                                      '후',
+                                      '분',
                                       style: TextStyle(
                                         color: colorScheme.onSurfaceVariant,
                                         fontSize: 14,
@@ -790,7 +1175,7 @@ class _HomeScreenState extends State<HomeScreen>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '다음차',
+                                  'Next',
                                   style: TextStyle(
                                     color: colorScheme.onSurfaceVariant,
                                     fontSize: 11,
@@ -818,6 +1203,26 @@ class _HomeScreenState extends State<HomeScreen>
                                 color: colorScheme.primary,
                               ),
                             const SizedBox(width: 4),
+                            IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              icon: Icon(
+                                _isFavoriteBus(FavoriteBus(
+                                  stationId: stationId,
+                                  stationName: stationName,
+                                  routeId: routeId,
+                                  routeNo: routeNo,
+                                ))
+                                    ? Icons.star
+                                    : Icons.star_border,
+                                color: colorScheme.primary,
+                                size: 20,
+                              ),
+                              onPressed: () {
+                                if (_selectedStop == null) return;
+                                _toggleFavoriteBus(_selectedStop!, arrival);
+                              },
+                            ),
                             Selector<AlarmService, bool>(
                               selector: (context, alarmService) =>
                                   alarmService.hasAlarm(routeNo, stationName, routeId),
@@ -846,7 +1251,7 @@ class _HomeScreenState extends State<HomeScreen>
                                         if (mounted) {
                                           scaffoldMessenger.showSnackBar(
                                             SnackBar(
-                                                content: Text('$routeNo번 버스 알람이 해제되었습니다')),
+                                                content: Text(' alarm cancelled')),
                                           );
                                         }
                                       } else {
@@ -854,7 +1259,7 @@ class _HomeScreenState extends State<HomeScreen>
                                           if (mounted) {
                                             scaffoldMessenger.showSnackBar(
                                               const SnackBar(
-                                                  content: Text('버스가 이미 도착했거나 곧 도착합니다')),
+                                                  content: Text('Bus is arriving or already arrived')),
                                             );
                                           }
                                           return;
@@ -872,7 +1277,7 @@ class _HomeScreenState extends State<HomeScreen>
                                         if (mounted) {
                                           scaffoldMessenger.showSnackBar(
                                             SnackBar(
-                                                content: Text('$routeNo번 버스 알람이 설정되었습니다')),
+                                                content: Text(' alarm set')),
                                           );
                                         }
                                       }
@@ -880,7 +1285,7 @@ class _HomeScreenState extends State<HomeScreen>
                                       if (mounted) {
                                         scaffoldMessenger.showSnackBar(
                                           SnackBar(
-                                              content: Text('알람 처리 중 오류가 발생했습니다: $e')),
+                                              content: Text('알람처리 오류가 발생했습니다: $e')),
                                         );
                                       }
                                     }

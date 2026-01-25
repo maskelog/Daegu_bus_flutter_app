@@ -123,7 +123,7 @@ class AlarmManager {
       // 저장
       await _saveAlarms(_cachedAlarms);
 
-      debugPrint('�� [DEBUG] ✅ 모든 알람 취소 완료');
+      debugPrint('🐛 [DEBUG] ✅ 모든 알람 취소 완료');
 
       // 리스너들에게 알림
       _notifyListeners();
