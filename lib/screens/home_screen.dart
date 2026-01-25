@@ -437,7 +437,7 @@ class _HomeScreenState extends State<HomeScreen>
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(32), // Pill shape
+                          borderRadius: BorderRadius.circular(28), // Match search bar radius
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withOpacity(0.15),
@@ -452,14 +452,14 @@ class _HomeScreenState extends State<HomeScreen>
                           ],
                         ),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(32),
+                          borderRadius: BorderRadius.circular(28),
                           child: BackdropFilter(
                             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6), // Reduced padding
                               decoration: BoxDecoration(
                                 color: colorScheme.surface.withOpacity(0.95),
-                                borderRadius: BorderRadius.circular(32),
+                                borderRadius: BorderRadius.circular(28),
                                 border: Border.all(
                                   color: colorScheme.outline.withOpacity(0.2),
                                   width: 1,
@@ -584,12 +584,12 @@ class _HomeScreenState extends State<HomeScreen>
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic,
           margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8), // Reduced padding
           decoration: BoxDecoration(
             color: isSelected 
                 ? colorScheme.primaryContainer
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20), // Slightly reduced inner radius
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -603,10 +603,10 @@ class _HomeScreenState extends State<HomeScreen>
                   color: isSelected 
                       ? colorScheme.onPrimaryContainer
                       : colorScheme.onSurfaceVariant,
-                  size: 26,
+                  size: 24, // Reduced icon size
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2), // Reduced gap
               AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 300),
                 style: TextStyle(
