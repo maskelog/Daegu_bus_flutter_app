@@ -684,10 +684,10 @@ class _BusCardState extends State<BusCard> {
         backgroundColor: Colors.green[600],
         elevation: 2,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(28), // Material 3 Expressive
           side: BorderSide(color: Colors.green.shade800, width: 1),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       ),
     );
   }
@@ -763,19 +763,34 @@ class _BusCardState extends State<BusCard> {
       hint: firstBus.isOutOfService
           ? '운행이 종료된 버스입니다'
           : '$arrivalTimeText에 도착 예정이며, 현재 위치는 $currentStationText입니다',
-      child: Card(
-        margin: const EdgeInsets.only(bottom: 12),
-        elevation: 0,
-        color: Colors.grey[50],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.grey[200]!, width: 1),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 20), // More spacing
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(32), // Very rounded
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 20,
+              offset: const Offset(0, 6),
+              spreadRadius: 0,
+            ),
+          ],
         ),
-        child: InkWell(
+        child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 0, // Elevation is in BoxDecoration shadow
+        color: Theme.of(context).colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(32),
+          side: BorderSide.none, // NO BORDER - Material You
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
           onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(32),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(24), // Generous padding
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               child: Column(

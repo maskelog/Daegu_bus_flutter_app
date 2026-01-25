@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui'; // For BackdropFilter
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,7 +12,6 @@ import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
 import '../services/api_service.dart';
 import 'search_screen.dart';
-import 'favorites_screen.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
 import 'settings_screen.dart';
@@ -46,15 +46,23 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this, initialIndex: 2);
+    _tabController = TabController(length: 4, vsync: this, initialIndex: 2); // 4 tabs: 지도, 노선도, 홈, 알람
+    _tabController.addListener(_handleTabSelection); // 리스너 추가
     final alarmService = Provider.of<AlarmService>(context, listen: false);
     alarmService.initialize();
     alarmService.addListener(_onAlarmChanged);
     _initializeData();
   }
 
+  void _handleTabSelection() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabSelection); // 리스너 제거
     _tabController.dispose();
     Provider.of<AlarmService>(context, listen: false)
         .removeListener(_onAlarmChanged);
@@ -405,33 +413,93 @@ class _HomeScreenState extends State<HomeScreen>
                 ],
               ),
             ),
-            Semantics(
-              label: '메인 메뉴',
-              hint: '지도, 노선도, 홈, 알람, 즐겨찾기 탭',
-              child: TabBar(
-                controller: _tabController,
-                labelColor: colorScheme.primary,
-                unselectedLabelColor: colorScheme.onSurfaceVariant,
-                indicatorColor: colorScheme.primary,
-                tabs: const [
-                  Tab(text: '지도'),
-                  Tab(text: '노선도'),
-                  Tab(text: '홈'),
-                  Tab(text: '알람'),
-                  Tab(text: '즐겨찾기'),
-                ],
-              ),
-            ),
+            // Remove TabBar - will add floating toolbar at bottom
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                physics: const NeverScrollableScrollPhysics(),
+              child: Stack(
                 children: [
-                  const MapScreen(),
-                  _buildMapTab(),
-                  _buildHomeTab(),
-                  _buildAlarmTab(),
-                  _buildFavoritesTab(),
+                  // Main content
+                  TabBarView(
+                    controller: _tabController,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      const MapScreen(),
+                      _buildMapTab(),
+                      _buildHomeTab(),
+                      _buildAlarmTab(),
+                    ],
+                  ),
+                  // ✨ Floating Toolbar (Material 3 Expressive)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 24, // Float above bottom
+                    child: Center(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(32), // Pill shape
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.15),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                            BoxShadow(
+                              color: colorScheme.primary.withOpacity(0.1),
+                              blurRadius: 30,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(32),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surface.withOpacity(0.95),
+                                borderRadius: BorderRadius.circular(32),
+                                border: Border.all(
+                                  color: colorScheme.outline.withOpacity(0.2),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildNavItem(
+                                    icon: Icons.map_rounded,
+                                    label: '지도',
+                                    index: 0,
+                                    colorScheme: colorScheme,
+                                  ),
+                                  _buildNavItem(
+                                    icon: Icons.route_rounded,
+                                    label: '노선도',
+                                    index: 1,
+                                    colorScheme: colorScheme,
+                                  ),
+                                  _buildNavItem(
+                                    icon: Icons.home_rounded,
+                                    label: '홈',
+                                    index: 2,
+                                    colorScheme: colorScheme,
+                                  ),
+                                  _buildNavItem(
+                                    icon: Icons.notifications_active_rounded,
+                                    label: '알람',
+                                    index: 3,
+                                    colorScheme: colorScheme,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -477,6 +545,7 @@ class _HomeScreenState extends State<HomeScreen>
                     maxItems: 8,
                   ),
                   _buildMainStationCard(),
+                  const SizedBox(height: 100), // Bottom padding for floating toolbar
                 ],
               ),
             ),
@@ -490,21 +559,70 @@ class _HomeScreenState extends State<HomeScreen>
     return const SafeArea(top: true, bottom: false, child: RouteMapScreen());
   }
 
-  Widget _buildFavoritesTab() {
-    return SafeArea(
-      top: true,
-      bottom: false,
-      child: FavoritesScreen(
-        favoriteBuses: _favoriteBuses,
-        onFavoritesUpdated: (updated) {
-          setState(() => _favoriteBuses = updated);
-        },
-      ),
-    );
-  }
-
   Widget _buildAlarmTab() {
     return const AlarmScreen();
+  }
+
+  // Material 3 Expressive Floating Navigation Item
+  Widget _buildNavItem({
+    required IconData icon,
+    required String label,
+    required int index,
+    required ColorScheme colorScheme,
+  }) {
+    final isSelected = _tabController.index == index;
+    
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          setState(() {
+            _tabController.animateTo(index);
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+          decoration: BoxDecoration(
+            color: isSelected 
+                ? colorScheme.primaryContainer
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedScale(
+                scale: isSelected ? 1.1 : 1.0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                child: Icon(
+                  icon,
+                  color: isSelected 
+                      ? colorScheme.onPrimaryContainer
+                      : colorScheme.onSurfaceVariant,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(height: 4),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 300),
+                style: TextStyle(
+                  fontSize: isSelected ? 12 : 11,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected 
+                      ? colorScheme.onPrimaryContainer
+                      : colorScheme.onSurfaceVariant,
+                ),
+                child: Text(label),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildAutoAlarmChips(List<dynamic> alarms) {

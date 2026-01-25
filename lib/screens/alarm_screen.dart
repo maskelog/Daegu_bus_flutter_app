@@ -268,22 +268,39 @@ class _AlarmScreenState extends State<AlarmScreen> {
               // 상단 설정/제목/추가 버튼
               SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(24, 20, 20, 16), // More padding
                   child: Row(
                     children: [
                       Text(
                         '버스 알람',
                         style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 32, // Much larger
+                          fontWeight: FontWeight.w900, // Bolder
                           color: colorScheme.onSurface,
+                          letterSpacing: -1.0,
                         ),
                       ),
                       const Spacer(),
-                      IconButton(
-                        icon: Icon(Icons.add, color: colorScheme.primary),
-                        onPressed: _addAutoAlarm,
-                        tooltip: '알람 추가',
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.06),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: IconButton.filledTonal(
+                          icon: Icon(Icons.add_rounded, color: colorScheme.onSurface, size: 28), // Larger icon
+                          onPressed: _addAutoAlarm,
+                          tooltip: '알람 추가',
+                          style: IconButton.styleFrom(
+                            backgroundColor: colorScheme.surfaceContainerHighest,
+                            padding: const EdgeInsets.all(16),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -403,73 +420,74 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                     : SliverList(
                                         delegate: SliverChildBuilderDelegate(
                                           (context, index) {
-                                            final alarm = _autoAlarms[index];
-                                            return GestureDetector(
-                                              onLongPress: () =>
-                                                  _onLongPressAlarm(index),
-                                              onTap: _selectionMode
-                                                  ? () =>
-                                                      _toggleSelectAlarm(index)
-                                                  : () => _editAutoAlarm(index),
-                                              child: Card(
-                                                margin: const EdgeInsets.only(
-                                                    bottom: 8),
+                                             final alarm = _autoAlarms[index];
+                                            return Container(
+                                              margin: const EdgeInsets.only(bottom: 16), // More spacing
+                                              decoration: BoxDecoration(
+                                                borderRadius: BorderRadius.circular(32), // Very rounded
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: Colors.black.withOpacity(0.08),
+                                                    blurRadius: 16,
+                                                    offset: const Offset(0, 4),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: Material(
                                                 color: colorScheme.surface,
-                                                child: Padding(
-                                                  padding:
-                                                      const EdgeInsets.all(8),
+                                                borderRadius: BorderRadius.circular(32),
+                                                child: InkWell(
+                                                  onLongPress: () => _onLongPressAlarm(index),
+                                                  onTap: _selectionMode
+                                                      ? () => _toggleSelectAlarm(index)
+                                                      : () => _editAutoAlarm(index),
+                                                  borderRadius: BorderRadius.circular(32),
+                                                  child: Padding(
+                                                  padding: const EdgeInsets.all(20), // Generous padding
                                                   child: Row(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .center,
+                                                    crossAxisAlignment: CrossAxisAlignment.center,
                                                     children: [
                                                       if (_selectionMode)
-                                                        Checkbox(
-                                                          value: _selectedAlarms
-                                                              .contains(index),
-                                                          onChanged: (_) =>
-                                                              _toggleSelectAlarm(
-                                                                  index),
-                                                          activeColor:
-                                                              colorScheme
-                                                                  .primary,
+                                                        Padding(
+                                                          padding: const EdgeInsets.only(right: 16),
+                                                          child: Checkbox(
+                                                            value: _selectedAlarms.contains(index),
+                                                            onChanged: (_) => _toggleSelectAlarm(index),
+                                                            activeColor: colorScheme.primary,
+                                                          ),
                                                         ),
+                                                      // 버스 번호 뱃지 with gradient
                                                       Container(
-                                                        margin: const EdgeInsets
-                                                            .only(right: 12),
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .symmetric(
-                                                                horizontal: 8,
-                                                                vertical: 4),
-                                                        decoration:
-                                                            BoxDecoration(
-                                                          color: colorScheme
-                                                              .primaryContainer,
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(8),
+                                                        margin: const EdgeInsets.only(right: 16),
+                                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                                        decoration: BoxDecoration(
+                                                          gradient: LinearGradient(
+                                                            colors: [
+                                                              colorScheme.primary,
+                                                              colorScheme.primary.withOpacity(0.8),
+                                                            ],
+                                                            begin: Alignment.topLeft,
+                                                            end: Alignment.bottomRight,
+                                                          ),
+                                                          borderRadius: BorderRadius.circular(20),
+                                                          boxShadow: [
+                                                            BoxShadow(
+                                                              color: colorScheme.primary.withOpacity(0.3),
+                                                              blurRadius: 8,
+                                                              offset: const Offset(0, 2),
+                                                            )
+                                                          ],
                                                         ),
                                                         child: Row(
                                                           children: [
-                                                            Icon(
-                                                                Icons
-                                                                    .directions_bus,
-                                                                size: 18,
-                                                                color: colorScheme
-                                                                    .primary),
-                                                            const SizedBox(
-                                                                width: 4),
+                                                            Icon(Icons.directions_bus, size: 20, color: colorScheme.onPrimary),
+                                                            const SizedBox(width: 6),
                                                             Text(
                                                               alarm.routeNo,
                                                               style: TextStyle(
-                                                                fontSize: 16,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                                color:
-                                                                    colorScheme
-                                                                        .primary,
+                                                                fontSize: 18,
+                                                                fontWeight: FontWeight.w900,
+                                                                color: colorScheme.onPrimary,
                                                               ),
                                                             ),
                                                           ],
@@ -477,97 +495,61 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                       ),
                                                       Expanded(
                                                         child: Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
                                                           children: [
                                                             Text(
                                                               alarm.stationName,
                                                               style: TextStyle(
-                                                                fontSize: 15,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
-                                                                color: colorScheme
-                                                                    .onSurface,
+                                                                fontSize: 17,
+                                                                fontWeight: FontWeight.w700,
+                                                                color: colorScheme.onSurface,
                                                               ),
                                                             ),
-                                                            const SizedBox(
-                                                                height: 2),
+                                                            const SizedBox(height: 6),
                                                             Row(
                                                               children: [
-                                                                Icon(
-                                                                    Icons.alarm,
-                                                                    size: 14,
-                                                                    color: colorScheme
-                                                                        .onSurfaceVariant),
-                                                                const SizedBox(
-                                                                    width: 2),
+                                                                Icon(Icons.alarm, size: 16, color: colorScheme.onSurfaceVariant),
+                                                                const SizedBox(width: 4),
                                                                 Text(
                                                                   '${alarm.hour.toString().padLeft(2, '0')}:${alarm.minute.toString().padLeft(2, '0')}',
-                                                                  style: TextStyle(
-                                                                      fontSize:
-                                                                          13,
-                                                                      color: colorScheme
-                                                                          .onSurfaceVariant),
+                                                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: colorScheme.onSurfaceVariant),
                                                                 ),
-                                                                const SizedBox(
-                                                                    width: 8),
-                                                                Icon(
-                                                                    Icons
-                                                                        .repeat,
-                                                                    size: 14,
-                                                                    color: colorScheme
-                                                                        .onSurfaceVariant),
-                                                                const SizedBox(
-                                                                    width: 2),
-                                                                Text(
-                                                                    _getRepeatDaysText(
-                                                                        alarm),
-                                                                    style: TextStyle(
-                                                                        fontSize:
-                                                                            12,
-                                                                        color: colorScheme
-                                                                            .onSurfaceVariant)),
-                                                                if (alarm
-                                                                        .excludeHolidays ||
-                                                                    alarm
-                                                                        .excludeWeekends) ...[
-                                                                  const SizedBox(
-                                                                      width: 8),
-                                                                  Icon(
-                                                                      Icons
-                                                                          .event_busy,
-                                                                      size: 14,
-                                                                      color: colorScheme
-                                                                          .onSurfaceVariant),
-                                                                  const SizedBox(
-                                                                      width: 2),
-                                                                  Text(
-                                                                      _getExcludeText(
-                                                                          alarm),
-                                                                      style: TextStyle(
-                                                                          fontSize:
-                                                                              12,
-                                                                          color:
-                                                                              colorScheme.onSurfaceVariant)),
-                                                                ],
+                                                                const SizedBox(width: 12),
+                                                                Icon(Icons.repeat, size: 16, color: colorScheme.onSurfaceVariant),
+                                                                const SizedBox(width: 4),
+                                                                Flexible(
+                                                                  child: Text(
+                                                                    _getRepeatDaysText(alarm),
+                                                                    style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                                                                    overflow: TextOverflow.ellipsis,
+                                                                  ),
+                                                                ),
                                                               ],
                                                             ),
+                                                            if (alarm.excludeHolidays || alarm.excludeWeekends) ...[
+                                                              const SizedBox(height: 4),
+                                                              Row(
+                                                                children: [
+                                                                  Icon(Icons.event_busy, size: 14, color: colorScheme.onSurfaceVariant),
+                                                                  const SizedBox(width: 4),
+                                                                  Text(
+                                                                    _getExcludeText(alarm),
+                                                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ],
                                                           ],
                                                         ),
                                                       ),
                                                       Switch(
                                                         value: alarm.isActive,
-                                                        onChanged: (_) =>
-                                                            _toggleAutoAlarm(
-                                                                index),
-                                                        materialTapTargetSize:
-                                                            MaterialTapTargetSize
-                                                                .shrinkWrap,
+                                                        onChanged: (_) => _toggleAutoAlarm(index),
+                                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                                       ),
                                                     ],
                                                   ),
+                                                ),
                                                 ),
                                               ),
                                             );
@@ -575,6 +557,9 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                           childCount: _autoAlarms.length,
                                         ),
                                       ),
+                              ),
+                              SliverToBoxAdapter(
+                                child: SizedBox(height: 100), // Bottom padding for floating toolbar
                               ),
                             ],
                           ),

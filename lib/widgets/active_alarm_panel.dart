@@ -25,10 +25,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     super.initState();
     _progressController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 30),
-    )..addListener(() {
-        if (mounted) setState(() {});
-      });
+      duration: const Duration(seconds: 2), // Faster pulsing
+    )..repeat(reverse: true); // Infinite pulsing animation
     _loadFullAutoAlarms();
     // 알람 변경 시 자동 알람 정보도 새로고침
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -249,79 +247,206 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
   }
 
   Widget _buildManualAlarmItem(BuildContext context, AlarmData alarm) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 1,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.directions_bus,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${alarm.busNo}번 버스',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    alarm.stationName,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16), // More spacing
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28), // Very rounded
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(28),
+        child: InkWell(
+          onTap: () {}, // Add tap handler if needed
+          borderRadius: BorderRadius.circular(28),
+          child: Padding(
+            padding: const EdgeInsets.all(20), // Generous padding
+            child: Row(
               children: [
-                Text(
-                  _getRemainingTimeText(alarm),
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _getRemainingTimeColor(context, alarm),
+                // ✨ Stunning alarm icon with gradient and animation
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        colorScheme.primary,
+                        colorScheme.primary.withOpacity(0.7),
+                        colorScheme.tertiary,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(20), // Squircle-like
+                    boxShadow: [
+                      BoxShadow(
+                        color: colorScheme.primary.withOpacity(0.4),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Pulsing background animation
+                      AnimatedBuilder(
+                        animation: _progressController,
+                        builder: (context, child) {
+                          return Container(
+                            width: 56 + (_progressController.value * 8),
+                            height: 56 + (_progressController.value * 8),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: colorScheme.primary.withOpacity(
+                                  0.3 * (1 - _progressController.value),
+                                ),
+                                width: 2,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      // Main alarm bell icon
+                      Icon(
+                        Icons.notifications_active_rounded, // Better icon than headphones
+                        color: colorScheme.onPrimary,
+                        size: 28,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '남은 시간',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '${alarm.busNo}번',
+                            style: TextStyle(
+                              fontSize: 20, // Larger
+                              fontWeight: FontWeight.w900, // Bolder
+                              color: colorScheme.onSurface,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '버스 알람',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: colorScheme.onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(Icons.location_on_rounded, size: 14, color: colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              alarm.stationName,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Time badge with gradient
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        _getRemainingTimeColor(context, alarm),
+                        _getRemainingTimeColor(context, alarm).withOpacity(0.8),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _getRemainingTimeColor(context, alarm).withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        _getRemainingTimeText(alarm),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        '남은시간',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton.filledTonal(
+                    onPressed: () => _cancelSpecificAlarm(context, alarm),
+                    icon: Icon(Icons.close_rounded, color: colorScheme.onSurface),
+                    tooltip: '알람 취소',
+                    style: IconButton.styleFrom(
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: () => _cancelSpecificAlarm(context, alarm),
-              icon: const Icon(Icons.close),
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              tooltip: '알람 취소',
-              iconSize: 20,
-            ),
-          ],
+          ),
         ),
       ),
     );

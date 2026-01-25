@@ -2139,9 +2139,31 @@ class AlarmService extends ChangeNotifier {
       // --- Send request to Native ---
       try {
         if (shouldForceStopNative) {
-          logMessage('마지막 알람 취소됨, 네이티브 강제 전체 중지 요청', level: LogLevel.debug);
-          await _methodChannel?.invokeMethod('forceStopTracking');
-          logMessage('✅ 네이티브 강제 전체 중지 요청 전송 완료', level: LogLevel.debug);
+          logMessage('✅ 마지막 알람 취소 - 추적 완전 종료', level: LogLevel.warning);
+          
+          // 1. 네이티브 추적 강제 중지
+          try {
+            await _methodChannel?.invokeMethod('forceStopTracking');
+            logMessage('✅ 네이티브 추적 완전 정지 완료', level: LogLevel.warning);
+          } catch (e) {
+            logMessage('❌ 네이티브 추적 정지 실패: $e', level: LogLevel.error);
+          }
+          
+          // 2. TTS 완전 정지
+          try {
+            await _methodChannel?.invokeMethod('stopAllTts');
+            logMessage('✅ TTS 완전 정지 완료', level: LogLevel.warning);
+          } catch (e) {
+            logMessage('❌ TTS 정지 실패 (무시): $e', level: LogLevel.warning);
+          }
+          
+          // 3. 알림 모두 제거
+          try {
+            await _notificationService.cancelOngoingTracking();
+            logMessage('✅ 알림 제거 완료', level: LogLevel.debug);
+          } catch (e) {
+            logMessage('❌ 알림 제거 실패 (무시): $e', level: LogLevel.warning);
+          }
         } else {
           // If not the last alarm, just cancel the specific notification/route tracking
           logMessage(

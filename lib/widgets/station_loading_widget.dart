@@ -132,6 +132,7 @@ class _StationLoadingWidgetState extends State<StationLoadingWidget> {
       if (!mounted) return;
       setState(() {
         _nearbyStops = nearbyStations;
+        _updateFilteredStops();
       });
 
       widget.onNearbyStopsLoaded(nearbyStations);
@@ -145,6 +146,7 @@ class _StationLoadingWidgetState extends State<StationLoadingWidget> {
         setState(() {
           _errorMessage = '주변 정류장을 불러오는 중 오류 발생: ${e.toString()}';
           _nearbyStops = [];
+          _filteredNearbyStops = [];
         });
       }
     } finally {
@@ -161,11 +163,23 @@ class _StationLoadingWidgetState extends State<StationLoadingWidget> {
         : '${(distance / 1000).toStringAsFixed(1)}km';
   }
 
-  List<BusStop> _getFilteredNearbyStops() {
+  List<BusStop> _filteredNearbyStops = [];
+
+  @override
+  void didUpdateWidget(StationLoadingWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.favoriteStops != oldWidget.favoriteStops || _nearbyStops != _nearbyStops) {
+      _updateFilteredStops();
+    }
+  }
+
+  void _updateFilteredStops() {
     final favoriteStopIds = widget.favoriteStops.map((stop) => stop.id).toSet();
-    return _nearbyStops
-        .where((stop) => !favoriteStopIds.contains(stop.id))
-        .toList();
+    setState(() {
+      _filteredNearbyStops = _nearbyStops
+          .where((stop) => !favoriteStopIds.contains(stop.id))
+          .toList();
+    });
   }
 
   @override
@@ -181,7 +195,7 @@ class _StationLoadingWidgetState extends State<StationLoadingWidget> {
       children: [
         _buildStopSelectionButtons(
           '주변 정류장',
-          _getFilteredNearbyStops(),
+          _filteredNearbyStops,
           isLoading: _isLoadingNearby,
           isNearby: true,
         ),
