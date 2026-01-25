@@ -1060,10 +1060,10 @@ class _HomeScreenState extends State<HomeScreen>
                   Color timeColor;
                   
                   if (isOutOfService) {
-                    timeText = '운행종료';
+                    timeText = '운행 종료';
                     timeColor = colorScheme.onSurfaceVariant;
                   } else if (minutes < 0) {
-                    timeText = '운행종료';
+                    timeText = '운행 종료';
                     timeColor = colorScheme.onSurfaceVariant;
                   } else if (minutes <= 0) {
                     timeText = '곧 도착';

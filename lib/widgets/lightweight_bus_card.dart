@@ -181,11 +181,13 @@ class _LightweightBusCardState extends State<LightweightBusCard> {
 
     final remainingTime = _currentBus.getRemainingMinutes();
     final isOutOfService =
-        _currentBus.isOutOfService || _currentBus.estimatedTime == '운행종료';
+        _currentBus.isOutOfService ||
+        _currentBus.estimatedTime == '운행종료' ||
+        _currentBus.estimatedTime == '운행 종료';
 
     String arrivalTimeText;
     if (isOutOfService) {
-      arrivalTimeText = '운행종료';
+      arrivalTimeText = '운행 종료';
     } else if (remainingTime <= 0) {
       arrivalTimeText = '곧 도착';
     } else {

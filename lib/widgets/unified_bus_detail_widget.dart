@@ -668,7 +668,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
 
   // 시간 포맷팅
   String _getFormattedTime() {
-    if (_currentBus.isOutOfService) return '운행종료';
+    if (_currentBus.isOutOfService) return '운행 종료';
     if (_currentBus.estimatedTime == '곧 도착' || _remainingTime == 0) {
       return '곧 도착';
     }
@@ -1068,7 +1068,7 @@ void showUnifiedBusDetailModal(
                                                         .onSurfaceVariant)),
                                       Text(
                                           bus.isOutOfService
-                                              ? '운행종료'
+                                              ? '운행 종료'
                                               : '$remainingMinutes분',
                                           style: Theme.of(
                                                   context)

@@ -146,7 +146,8 @@ class RouteService {
             String estimatedTime = busInfo['도착예정소요시간'] ?? '';
 
             // 운행 종료 여부 확인
-            bool isOutOfService = estimatedTime == '운행종료';
+            bool isOutOfService =
+                estimatedTime == '운행종료' || estimatedTime == '운행 종료';
 
             final info = BusInfo(
               busNumber: busNumber,

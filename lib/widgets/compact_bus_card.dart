@@ -155,7 +155,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
     Color arrivalTextColor;
 
     if (firstBus.isOutOfService) {
-      arrivalTimeText = '운행종료';
+      arrivalTimeText = '운행 종료';
       arrivalTextColor = Colors.grey;
     } else if (remainingMinutes <= 0) {
       arrivalTimeText = '곧 도착';

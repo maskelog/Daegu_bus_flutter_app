@@ -619,7 +619,7 @@ class _StationItemWrapperState extends State<_StationItemWrapper> {
         String formattedTime;
 
         if (bus.isOutOfService) {
-          formattedTime = '운행종료';
+          formattedTime = '운행 종료';
         } else if (bus.estimatedTime == '곧 도착' || remainingTime == 0) {
           formattedTime = '곧 도착';
         } else if (remainingTime == 1) {

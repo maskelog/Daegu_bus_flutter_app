@@ -46,7 +46,8 @@ class BusCacheManager {
             arrival.busInfoList.any((bus) =>
                 !bus.isOutOfService &&
                 bus.estimatedTime.isNotEmpty &&
-                bus.estimatedTime != "운행종료"))
+                bus.estimatedTime != "운행종료" &&
+                bus.estimatedTime != "운행 종료"))
         .toList();
 
     if (validArrivals.isEmpty) return;

@@ -64,6 +64,9 @@ class _BusCardState extends State<BusCard> {
   Timer? _timer;
   Timer? _updateTimer;
   late AlarmService _alarmService;
+  bool _isOutOfServiceText(String value) {
+    return value == '운행종료' || value == '운행 종료';
+  }
 
   @override
   void initState() {
@@ -118,7 +121,7 @@ class _BusCardState extends State<BusCard> {
             // 유효한 정보만 업데이트
             final newFirstBus = updatedBusArrival.busInfoList.first;
             if (!newFirstBus.isOutOfService ||
-                newFirstBus.estimatedTime != "운행종료") {
+                !_isOutOfServiceText(newFirstBus.estimatedTime)) {
               firstBus = newFirstBus;
               remainingTime = firstBus.getRemainingMinutes();
             }
@@ -195,7 +198,7 @@ class _BusCardState extends State<BusCard> {
       // 유효한 버스 정보만 캐시에 저장
       if (!firstBus.isOutOfService &&
           remainingTime > 0 &&
-          firstBus.estimatedTime != "운행종료" &&
+          !_isOutOfServiceText(firstBus.estimatedTime) &&
           firstBus.estimatedTime.isNotEmpty) {
         logMessage(
             '🚌 버스 정보 캐시 업데이트: ${widget.busArrival.routeNo}번, $remainingTime분 후, 상태: ${firstBus.estimatedTime}',
@@ -714,7 +717,7 @@ class _BusCardState extends State<BusCard> {
       final newFirstBus = widget.busArrival.busInfoList.first;
       // 유효한 정보가 있을 때만 업데이트
       if (!newFirstBus.isOutOfService ||
-          (newFirstBus.estimatedTime != "운행종료" &&
+          (!_isOutOfServiceText(newFirstBus.estimatedTime) &&
               newFirstBus.estimatedTime.isNotEmpty)) {
         firstBus = newFirstBus;
         remainingTime = firstBus.getRemainingMinutes();
@@ -731,7 +734,7 @@ class _BusCardState extends State<BusCard> {
 
     String arrivalTimeText;
     if (firstBus.isOutOfService) {
-      arrivalTimeText = '운행종료';
+      arrivalTimeText = '운행 종료';
     } else if (remainingTime <= 0) {
       arrivalTimeText = '곧 도착';
     } else {
@@ -943,7 +946,7 @@ class _BusCardState extends State<BusCard> {
                                         .onSurfaceVariant)),
                             Text(
                               widget.busArrival.busInfoList[1].isOutOfService
-                                  ? '운행종료'
+                                  ? '운행 종료'
                                   : '${widget.busArrival.busInfoList[1].getRemainingMinutes()}분',
                               style: TextStyle(
                                 fontSize: 16,
@@ -1132,7 +1135,7 @@ class _BusCardState extends State<BusCard> {
                                 ),
                                 Text(
                                   isOutOfService
-                                      ? '운행종료'
+                                      ? '운행 종료'
                                       : '$nextRemainingMin분',
                                   style: TextStyle(
                                     fontSize: 18,

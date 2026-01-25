@@ -993,7 +993,9 @@ class _MapScreenState extends State<MapScreen> {
               final bool isLowFloor = busTCd2 == '1';
 
               // 운행 종료 여부 확인
-              final bool isOutOfService = arrState == '운행종료' || arrState == '-';
+              final bool isOutOfService = arrState == '운행종료' ||
+                  arrState == '운행 종료' ||
+                  arrState == '-';
 
               // 도착 예정 시간 처리
               String estimatedTime = arrState;
@@ -1094,7 +1096,8 @@ class _MapScreenState extends State<MapScreen> {
     final busInfoList = bestArrivals.entries.map((entry) {
       final routeNo = entry.key;
       final busInfo = entry.value;
-      String timeInfo = busInfo.isOutOfService ? '운행종료' : busInfo.estimatedTime;
+      String timeInfo =
+          busInfo.isOutOfService ? '운행 종료' : busInfo.estimatedTime;
       return '$routeNo - $timeInfo';
     }).toList();
 
@@ -1112,7 +1115,10 @@ class _MapScreenState extends State<MapScreen> {
 
   // 시간 문자열을 분 단위로 변환하는 헬퍼 함수
   int _parseTimeToMinutes(String timeStr) {
-    if (timeStr.isEmpty || timeStr == '운행종료' || timeStr == '-') {
+    if (timeStr.isEmpty ||
+        timeStr == '운행종료' ||
+        timeStr == '운행 종료' ||
+        timeStr == '-') {
       return 999; // 매우 큰 값으로 설정하여 우선순위 낮춤
     }
 
@@ -1384,7 +1390,7 @@ class _BusInfoListState extends State<_BusInfoList> {
 
           String timeText;
           if (isOutOfService) {
-            timeText = '운행종료';
+            timeText = '운행 종료';
           } else if (minutes <= 0) {
             timeText = '곧 도착';
           } else {

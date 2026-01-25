@@ -160,7 +160,7 @@ class BusArrivalItem extends StatelessWidget {
                   if (firstBus != null)
                     Text(
                       firstBus.isOutOfService
-                          ? '운행종료'
+                          ? '운행 종료'
                           : firstBus.remainingStops,
                       style: TextStyle(
                         fontSize: 12,
@@ -187,7 +187,7 @@ class BusArrivalItem extends StatelessWidget {
                   if (firstBus != null)
                     Text(
                       firstBus.isOutOfService
-                          ? '운행종료'
+                          ? '운행 종료'
                           : '${firstBus.getRemainingMinutes()}분',
                       style: TextStyle(
                         fontSize: 16,

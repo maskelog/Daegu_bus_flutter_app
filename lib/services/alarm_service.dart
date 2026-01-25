@@ -2428,7 +2428,10 @@ class AlarmService extends ChangeNotifier {
     if (timeStr == '곧 도착' || timeStr == '전' || timeStr == '도착') return 0;
 
     // 운행 종료 관련
-    if (timeStr == '운행종료' || timeStr == '-' || timeStr == '운행종료.') return -1;
+    if (timeStr == '운행종료' ||
+        timeStr == '운행 종료' ||
+        timeStr == '-' ||
+        timeStr == '운행종료.') return -1;
 
     // 출발 예정 관련
     if (timeStr.contains('출발예정') || timeStr.contains('기점출발')) return -1;

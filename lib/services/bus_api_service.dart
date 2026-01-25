@@ -416,6 +416,7 @@ class BusApiService {
 
         // 운행 종료 여부 확인 (개선된 조건)
         final bool isOutOfService = arrState == '운행종료' ||
+            arrState == '운행 종료' ||
             arrState == '-' ||
             busTCd3 == '1' ||
             arrState.contains('종료');
@@ -520,7 +521,8 @@ class BusApiService {
       String estimatedTime = busInfo.estimatedTime;
 
       // 운행 종료 여부 확인
-      bool isOutOfService = estimatedTime == '운행종료';
+      bool isOutOfService =
+          estimatedTime == '운행종료' || estimatedTime == '운행 종료';
 
       return BusInfo(
         busNumber: busNumber,
