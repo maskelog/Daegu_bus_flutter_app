@@ -122,6 +122,16 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  void _clearSelectedStop() {
+    if (!mounted) return;
+    setState(() {
+      _selectedStop = null;
+      _busArrivals = [];
+      _errorMessage = null;
+    });
+    _setupPeriodicRefresh();
+  }
+
   Future<void> _loadFavoriteBuses() async {
     final loaded = await FavoriteBusStore.load();
     if (!mounted) return;
@@ -340,7 +350,6 @@ class _HomeScreenState extends State<HomeScreen>
                       child: GestureDetector(
                         onTap: () async {
                           HapticFeedback.lightImpact();
-
                           final result = await Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -373,7 +382,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    "정류장 검색",
+                                    '정류장 검색',
                                     style: theme.textTheme.bodyLarge?.copyWith(
                                       color: colorScheme.onSurfaceVariant,
                                       fontSize: 16,
@@ -392,12 +401,10 @@ class _HomeScreenState extends State<HomeScreen>
                   const SizedBox(width: 12),
                   Semantics(
                     label: '설정',
-                    hint: '설정화면으로 이동',
+                    hint: '설정 화면으로 이동',
                     child: IconButton.filledTonal(
                       onPressed: () {
-                        // 터치 피드백
                         HapticFeedback.lightImpact();
-
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -413,11 +420,9 @@ class _HomeScreenState extends State<HomeScreen>
                 ],
               ),
             ),
-            // Remove TabBar - will add floating toolbar at bottom
             Expanded(
               child: Stack(
                 children: [
-                  // Main content
                   TabBarView(
                     controller: _tabController,
                     physics: const NeverScrollableScrollPhysics(),
@@ -428,16 +433,15 @@ class _HomeScreenState extends State<HomeScreen>
                       _buildAlarmTab(),
                     ],
                   ),
-                  // ✨ Floating Toolbar (Material 3 Expressive)
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: 24, // Float above bottom
+                    bottom: 24,
                     child: Center(
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(28), // Match search bar radius
+                          borderRadius: BorderRadius.circular(28),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withOpacity(0.15),
@@ -456,7 +460,8 @@ class _HomeScreenState extends State<HomeScreen>
                           child: BackdropFilter(
                             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6), // Reduced padding
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 6),
                               decoration: BoxDecoration(
                                 color: colorScheme.surface.withOpacity(0.95),
                                 borderRadius: BorderRadius.circular(28),
@@ -510,52 +515,64 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildHomeTab() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Builder(
-          builder: (context) {
-            final alarms = Provider.of<AlarmService>(context).activeAlarms;
-            return _buildAutoAlarmChips(alarms);
-          },
-        ),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _initializeData,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: StationLoadingWidget(
-                      onNearbyStopsLoaded: _onNearbyStopsLoaded,
-                      onFavoriteStopsLoaded: _onFavoriteStopsLoaded,
-                      onSelectedStopChanged: _onSelectedStopChanged,
-                      selectedStop: _selectedStop,
-                      favoriteStops: _favoriteStops,
-                      showSelectors: false,
-                    ),
-                  ),
-                  _buildFavoriteBusList(),
-                  _buildNearbyStopsRow(
-                    title: '주변 정류장',
-                    stops: _nearbyStops,
-                    maxItems: 8,
-                  ),
-                  _buildMainStationCard(),
-                  const SizedBox(height: 100), // Bottom padding for floating toolbar
-                ],
+    final alarms = Provider.of<AlarmService>(context).activeAlarms;
+    final colorScheme = Theme.of(context).colorScheme;
+    return RefreshIndicator(
+      onRefresh: _initializeData,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          _buildAutoAlarmChips(alarms),
+          const SizedBox(height: 8),
+          StationLoadingWidget(
+            onNearbyStopsLoaded: _onNearbyStopsLoaded,
+            onFavoriteStopsLoaded: _onFavoriteStopsLoaded,
+            onSelectedStopChanged: _onSelectedStopChanged,
+            selectedStop: _selectedStop,
+            favoriteStops: _favoriteStops,
+            showSelectors: false,
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              '근처 정류장',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          _buildNearbyStopsRow(
+            stops: _nearbyStops,
+            maxItems: 8,
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              '즐겨찾기',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _buildFavoriteBusList(),
+          const SizedBox(height: 8),
+          _buildMainStationCard(),
+          const SizedBox(height: 100),
+        ],
+      ),
     );
   }
 
   Widget _buildMapTab() {
+
     return const SafeArea(top: true, bottom: false, child: RouteMapScreen());
   }
 
@@ -633,23 +650,8 @@ class _HomeScreenState extends State<HomeScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '자동 알람',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onSurface,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 4),
           if (alarms.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text('자동 알람이 없습니다.',
-                  style: TextStyle(
-                      color: colorScheme.onSurfaceVariant,
-                      fontSize: 13)),
-            )
+            const SizedBox.shrink()
           else
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -685,15 +687,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 )),
                             Text(
                               alarm.repeatDays
-                                  .map((d) => [
-                                        "월",
-                                        "화",
-                                        "수",
-                                        "목",
-                                        "금",
-                                        "토",
-                                        "일"
-                                      ][d - 1])
+                                  .map((d) => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][d - 1])
                                   .join(","),
                               style: TextStyle(
                                 color: isSelected
@@ -796,33 +790,18 @@ class _HomeScreenState extends State<HomeScreen>
     final minutes = bus.getRemainingMinutes();
     if (minutes < 0) return "운행 종료";
     if (minutes <= 0) return "곧 도착";
-    return "${minutes}분";
+    return "${minutes} min";
   }
 
   Widget _buildFavoriteBusList() {
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '즐겨찾기',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 6),
           if (_favoriteBuses.isEmpty)
-            Text(
-              '즐겨찾기가 없습니다.',
-              style: TextStyle(
-                color: colorScheme.onSurfaceVariant,
-                fontSize: 12,
-              ),
-            )
+            const SizedBox.shrink()
           else
             Column(
               children: _favoriteBuses.map((favorite) {
@@ -995,107 +974,44 @@ class _HomeScreenState extends State<HomeScreen>
     final colorScheme = Theme.of(context).colorScheme;
     final visibleStops = stops.take(maxItems).toList();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 6),
           if (visibleStops.isEmpty)
-            Text(
-              "해당 정류장에 도착하는 버스가 없습니다.",
-              style: TextStyle(
-                color: colorScheme.onSurfaceVariant,
-                fontSize: 12,
-              ),
-            )
+            const SizedBox.shrink()
           else
-            Column(
-              children: visibleStops.map((stop) {
-                final arrivals = _stationArrivals[stop.id] ?? const <BusArrival>[];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        stop.name,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.onSurface,
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: visibleStops.map((stop) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: InkWell(
+                      onTap: () => _onSelectedStopChanged(stop),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: colorScheme.outlineVariant.withOpacity(0.4),
+                          ),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      if (arrivals.isEmpty)
-                        Text(
-                          "해당 정류장에 도착하는 버스가 없습니다.",
+                        child: Text(
+                          stop.name,
                           style: TextStyle(
                             fontSize: 12,
-                            color: colorScheme.onSurfaceVariant,
+                            color: colorScheme.onSurface,
                           ),
-                        )
-                      else
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          children: arrivals.take(2).map((arrival) {
-                            final timeText = _formatArrivalTime(arrival);
-                            return InkWell(
-                              onTap: () => _onSelectedStopChanged(stop),
-                              borderRadius: BorderRadius.circular(10),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.surface,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: colorScheme.outlineVariant.withOpacity(0.4),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      arrival.routeNo,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: colorScheme.primary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      timeText,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }).toList(),
                         ),
-                    ],
-                  ),
-                );
-              }).toList(),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
         ],
       ),
@@ -1103,34 +1019,18 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildNearbyStopsRow({
-    required String title,
     required List<BusStop> stops,
     required int maxItems,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final visibleStops = stops.take(maxItems).toList();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 6),
           if (visibleStops.isEmpty)
-            Text(
-              '주변 정류장이 없습니다.',
-              style: TextStyle(
-                color: colorScheme.onSurfaceVariant,
-                fontSize: 12,
-              ),
-            )
+            const SizedBox.shrink()
           else
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -1173,7 +1073,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (_selectedStop == null) return const SizedBox.shrink();
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       elevation: 3,
       color: colorScheme.surfaceContainerHighest,
@@ -1208,15 +1108,11 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 IconButton(
                   icon: Icon(
-                    _isStopFavorite(_selectedStop!)
-                        ? Icons.star
-                        : Icons.star_border,
-                    color: colorScheme.primary,
+                    Icons.close_rounded,
+                    color: colorScheme.onSurfaceVariant,
                   ),
-                  onPressed: () => _toggleFavorite(_selectedStop!),
-                  tooltip: _isStopFavorite(_selectedStop!)
-                      ? '즐겨찾기 제거'
-                      : '즐겨찾기 추가',
+                  onPressed: _clearSelectedStop,
+                  tooltip: 'Close',
                 ),
               ],
             ),
@@ -1261,7 +1157,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ) ??
                       -1;
                   final stopsText = !isOutOfService && remainingStops >= 0
-                      ? '${remainingStops}정류장 전'
+                      ? '${remainingStops} stops'
                       : '';
                   final routeNo = arrival.routeNo;
                   final routeId = arrival.routeId;
@@ -1327,7 +1223,7 @@ class _HomeScreenState extends State<HomeScreen>
                                   if (!isOutOfService && minutes > 0) ...[
                                     const SizedBox(width: 4),
                                     Text(
-                                      '분',
+                                      'min',
                                       style: TextStyle(
                                         color: colorScheme.onSurfaceVariant,
                                         fontSize: 14,
