@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="notification_track_width">220dp</dimen>
+    <dimen name="notification_track_height">24dp</dimen>
+    <dimen name="notification_bus_icon_size">20dp</dimen>
+    <dimen name="notification_padding_horizontal">16dp</dimen>
+    <dimen name="notification_padding_vertical">10dp</dimen>
+</resources>

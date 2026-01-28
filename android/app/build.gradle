@@ -8,7 +8,8 @@ plugins {
 
 android {
     namespace = "com.example.daegu_bus_app"
-    compileSdk = flutter.compileSdkVersion
+    // Android 16 Live Updates 지원을 위해 SDK 36 필요
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -28,7 +29,8 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // Android 16 Live Updates 지원을 위해 targetSdk 36 필요
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         // multidex 활성화 (필요한 경우)
@@ -94,8 +96,8 @@ dependencies {
     // R8 오류 해결을 위한 androidx.window 관련 의존성
     implementation 'androidx.window:window:1.0.0'
 
-    // 포그라운드 서비스 및 알림을 위한 androidx 종속성
-    implementation 'androidx.core:core-ktx:1.9.0'
+    // 포그라운드 서비스 및 알림을 위한 androidx 종속성 (Android 16 Live Updates 지원)
+    implementation 'androidx.core:core-ktx:1.15.0'
 
     // WorkManager
     implementation "androidx.work:work-runtime-ktx:2.8.1"

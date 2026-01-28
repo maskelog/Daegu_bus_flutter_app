@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/notification_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingLeft="@dimen/notification_padding_horizontal"
+    android:paddingRight="@dimen/notification_padding_horizontal"
+    android:paddingTop="@dimen/notification_padding_vertical"
+    android:paddingBottom="@dimen/notification_padding_vertical">
+
+    <TextView
+        android:id="@+id/notification_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/notification_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textColor="@android:color/white"
+        android:textSize="13sp"
+        android:layout_marginTop="2dp" />
+
+    <FrameLayout
+        android:id="@+id/notification_track_container"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/notification_track_height"
+        android:layout_marginTop="8dp">
+
+        <ProgressBar
+            android:id="@+id/notification_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:layout_gravity="center_vertical"
+            android:max="100" />
+
+        <ImageView
+            android:id="@+id/notification_bus_icon"
+            android:layout_width="@dimen/notification_bus_icon_size"
+            android:layout_height="@dimen/notification_bus_icon_size"
+            android:layout_gravity="center_vertical|start"
+            android:contentDescription=""
+            android:src="@drawable/ic_bus_notification" />
+    </FrameLayout>
+</LinearLayout>

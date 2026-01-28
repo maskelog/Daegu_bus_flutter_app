@@ -1,6 +1,7 @@
 package com.example.daegu_bus_app.services
 
 import io.flutter.plugin.common.MethodChannel
+import com.example.daegu_bus_app.R
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -140,7 +141,7 @@ class BusAlertService : Service() {
     // 추적 중지 후 재시작 방지를 위한 플래그
     private var isManuallyStoppedByUser = false
     private var lastManualStopTime = 0L
-    private val RESTART_PREVENTION_DURATION = 30000L // 30초간 재시작 방지
+    private val RESTART_PREVENTION_DURATION = 3000L // 3초간 재시작 방지 (30초 → 3초로 단축)
 
     // Simplified AudioFocusChangeListener
     private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -352,7 +353,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             val notificationId = intent.getIntExtra("notificationId", -1)
             if (notificationId != -1) {
                 Log.i(TAG, "ACTION_CANCEL_NOTIFICATION: notificationId=$notificationId")
-                notificationHandler.cancelNotification(notificationId)
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(notificationId)
 
                 // 알림이 지속적인 추적 알림인 경우 서비스도 중지
                 if (notificationId == ONGOING_NOTIFICATION_ID) {
@@ -893,7 +895,9 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         var lastTtsAnnouncedStation: String? = null,
         // [추가] 자동알람 플래그 - 자동알람인 경우 버스가 지나가도 계속 추적
         var isAutoAlarm: Boolean = false,
-        var alarmId: Int? = null
+        var alarmId: Int? = null,
+        // [추가] 버스 타입 정보 (1: 급행, 2: 좌석, 3: 일반, 4: 지선/마을)
+        var routeTCd: String? = null
     )
 
     private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false, alarmId: Int? = null) {
@@ -908,7 +912,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
     }
 
-    private fun startTrackingInternal(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false, alarmId: Int? = null) {
+    private suspend fun startTrackingInternal(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false, alarmId: Int? = null) {
         if (monitoringJobs.containsKey(routeId)) {
             Log.d(TAG, "Tracking already active for route $routeId")
             // 이미 추적 중인 경우 추적 정보만 업데이트
@@ -926,8 +930,26 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
 
         Log.i(TAG, "Starting tracking for route $routeId ($busNo) at station $stationName ($stationId)")
-        val trackingInfo = TrackingInfo(routeId, stationName, busNo, stationId = stationId, isAutoAlarm = isAutoAlarm, alarmId = alarmId)
-        activeTrackings[routeId] = trackingInfo
+    
+    // 버스 타입(routeTCd) 가져오기
+    val routeTCd = try {
+        val routeInfo = busApiService.getBusRouteInfo(routeId)
+        routeInfo?.routeTp
+    } catch (e: Exception) {
+        Log.e(TAG, "노선 정보 조회 오류 ($routeId): ${e.message}")
+        null
+    }
+    
+    val trackingInfo = TrackingInfo(
+        routeId = routeId, 
+        stationName = stationName, 
+        busNo = busNo, 
+        stationId = stationId, 
+        isAutoAlarm = isAutoAlarm, 
+        alarmId = alarmId,
+        routeTCd = routeTCd // routeTCd 저장
+    )
+    activeTrackings[routeId] = trackingInfo
 
         monitoringJobs[routeId] = serviceScope.launch {
             try {
@@ -1048,7 +1070,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                             if (currentInfo.consecutiveErrors >= 3) {
                                 if (!currentInfo.isAutoAlarm) {
                                     Log.e(TAG, "Stopping tracking for $routeId due to errors.")
-                                    notificationHandler.sendErrorNotification(routeId, currentInfo.busNo, currentInfo.stationName, "정보 조회 실패")
+                                    // notificationHandler.sendErrorNotification(routeId, currentInfo.busNo, currentInfo.stationName, "정보 조회 실패")
                                     stopTrackingForRoute(routeId, cancelNotification = true)
                                 } else {
                                     Log.w(TAG, "⚠️ 자동 알람 ($routeId) 연속 오류 발생. 다음 버스 추적을 위해 서비스 유지.")
@@ -2619,9 +2641,19 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // [ADD] Show a notification for bus arriving soon
     fun showBusArrivingSoon(busNo: String, stationName: String, currentStation: String?) {
         try {
-            val notification = notificationHandler.buildArrivingSoonNotification(busNo, stationName, currentStation)
+            val builder = NotificationCompat.Builder(this, CHANNEL_ID_ALERT)
+                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setContentTitle("$busNo 버스 곧 도착")
+                .setContentText("$busNo bus is arriving at $stationName.")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+            
+            if (currentStation != null) {
+                builder.setStyle(NotificationCompat.BigTextStyle().bigText("Current location: $currentStation"))
+            }
+
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(NotificationHandler.ARRIVING_SOON_NOTIFICATION_ID, notification)
+            notificationManager.notify(9998, builder.build())
             Log.d(TAG, "Arriving soon notification shown: $busNo, $stationName, $currentStation")
         } catch (e: Exception) {
             Log.e(TAG, "Error showing arriving soon notification: ${e.message}", e)
