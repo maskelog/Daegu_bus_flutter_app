@@ -275,3 +275,87 @@ private val RESTART_PREVENTION_DURATION = 3000L
 
 #### 결과
 - 알람 해제 후 3초 후에 바로 다른 버스 알람 시작 가능
+
+---
+
+## 2026-01-28 (4차): 홈 화면 및 즐겨찾기 화면 UI 개선
+
+### 목표
+Material 3 디자인 원칙에 따라 홈 화면과 즐겨찾기 화면의 UI를 개선하여 더 직관적이고 시각적으로 풍부한 사용자 경험 제공
+
+### 수정된 파일
+
+#### 1. `lib/screens/home_screen.dart`
+
+##### 섹션 헤더 개선
+아이콘과 함께 섹션 제목 표시:
+```dart
+Widget _buildSectionHeader({
+  required String title,
+  required IconData icon,
+  required Color iconColor,
+}) {
+  return Row(
+    children: [
+      Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: iconColor.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, size: 16, color: iconColor),
+      ),
+      const SizedBox(width: 10),
+      Text(title, style: TextStyle(fontWeight: FontWeight.w700)),
+    ],
+  );
+}
+```
+
+##### 근처 정류장 카드 개선
+- 빈 상태: 로딩 인디케이터와 메시지 표시
+- 선택된 정류장 하이라이트 (primaryContainer 배경, 그림자 효과)
+- 각 정류장 카드에 첫 번째 버스 도착 정보 미리보기 표시
+- 애니메이션 효과 (AnimatedContainer)
+
+##### 즐겨찾기 버스 목록 개선
+- 빈 상태: 그라데이션 배경 + 아이콘 + 안내 메시지
+- 카드 진입 애니메이션 (TweenAnimationBuilder, staggered effect)
+- 그라데이션 노선 번호 배지 + 그림자 효과
+- 3분 이내 도착 버스 강조 표시 (빨간색 테두리 + 배지)
+- 햅틱 피드백 (HapticFeedback.lightImpact)
+- 이어폰 알람 아이콘 변경 (schedule → headphones_rounded)
+
+#### 2. `lib/screens/favorites_screen.dart`
+
+##### 헤더 섹션 개선
+- 그라데이션 별 아이콘 배지 + 그림자 효과
+- 즐겨찾기 개수 표시
+- FilledButton.tonalIcon 스타일 "추가" 버튼
+
+##### 빈 상태 디자인
+- 동심원 원형 배경 + 별 아이콘
+- 안내 메시지 + "버스 추가하기" 버튼
+
+##### 즐겨찾기 카드 개선
+- 2행 레이아웃: 노선/정류장 정보 + 시간/액션
+- 카드 진입 애니메이션 (TweenAnimationBuilder)
+- 그라데이션 노선 배지 + 그림자
+- 시간 표시 컨테이너:
+  - 도착 임박: errorContainer 배경
+  - 운행 종료: surfaceContainerHigh 배경
+  - 일반: primaryContainer 배경
+- 위치 아이콘과 함께 현재 정류장 표시
+- 액션 버튼 배경색 추가
+
+##### 한글 인코딩 수정
+- `'?? ?? ??'` → `'도착 정보 없음'`
+- `'?? ??'` → `'운행 종료'`
+- `'? ??'` → `'곧 도착'`
+- `'${minutes}?'` → `'$minutes분'`
+
+### 디자인 특징
+1. **시각적 계층**: 섹션별 아이콘 헤더, 그라데이션 배지
+2. **상태 피드백**: 도착 임박 강조, 빈 상태 안내
+3. **애니메이션**: 카드 진입 효과, 선택 하이라이트
+4. **접근성**: 햅틱 피드백, 충분한 터치 영역

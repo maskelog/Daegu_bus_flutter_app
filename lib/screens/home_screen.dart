@@ -532,40 +532,63 @@ class _HomeScreenState extends State<HomeScreen>
             favoriteStops: _favoriteStops,
             showSelectors: false,
           ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              '근처 정류장',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
+          const SizedBox(height: 12),
+          // Nearby stops section with improved design
+          _buildSectionHeader(
+            title: '근처 정류장',
+            icon: Icons.location_on_rounded,
+            iconColor: colorScheme.tertiary,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           _buildNearbyStopsRow(
             stops: _nearbyStops,
             maxItems: 8,
           ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              '즐겨찾기',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
+          const SizedBox(height: 20),
+          // Favorites section with improved design
+          _buildSectionHeader(
+            title: '즐겨찾기',
+            icon: Icons.star_rounded,
+            iconColor: colorScheme.primary,
           ),
-          const SizedBox(height: 6),
-          _buildFavoriteBusList(),
           const SizedBox(height: 8),
+          _buildFavoriteBusList(),
+          const SizedBox(height: 12),
           _buildMainStationCard(),
           const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: iconColor),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: colorScheme.onSurface,
+              letterSpacing: -0.3,
+            ),
+          ),
         ],
       ),
     );
@@ -795,173 +818,327 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildFavoriteBusList() {
     final colorScheme = Theme.of(context).colorScheme;
+
+    if (_favoriteBuses.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                colorScheme.primaryContainer.withOpacity(0.3),
+                colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: colorScheme.outlineVariant.withOpacity(0.3),
+            ),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.star_outline_rounded,
+                  size: 28,
+                  color: colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '즐겨찾기한 버스가 없습니다',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '정류장에서 버스를 선택하여 추가하세요',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_favoriteBuses.isEmpty)
-            const SizedBox.shrink()
-          else
-            Column(
-              children: _favoriteBuses.map((favorite) {
-                final arrivals = _stationArrivals[favorite.stationId] ??
-                    const <BusArrival>[];
-                final arrival = arrivals.firstWhere(
-                  (item) => item.routeId == favorite.routeId,
-                  orElse: () => BusArrival(
-                    routeId: favorite.routeId,
-                    routeNo: favorite.routeNo,
-                    direction: '',
-                    busInfoList: const [],
+        children: _favoriteBuses.asMap().entries.map((entry) {
+          final index = entry.key;
+          final favorite = entry.value;
+          final arrivals = _stationArrivals[favorite.stationId] ??
+              const <BusArrival>[];
+          final arrival = arrivals.firstWhere(
+            (item) => item.routeId == favorite.routeId,
+            orElse: () => BusArrival(
+              routeId: favorite.routeId,
+              routeNo: favorite.routeNo,
+              direction: '',
+              busInfoList: const [],
+            ),
+          );
+          final bus = arrival.firstBus;
+          final timeText = bus == null ? '도착 정보 없음' : _formatArrivalTime(arrival);
+          final currentStation = bus?.currentStation ?? '위치 정보 없음';
+          final minutes = bus?.getRemainingMinutes() ?? -1;
+          final isArriving = minutes >= 0 && minutes <= 3;
+
+          return TweenAnimationBuilder<double>(
+            key: ValueKey(favorite.key),
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: Duration(milliseconds: 200 + (index * 50)),
+            curve: Curves.easeOutCubic,
+            builder: (context, value, child) {
+              return Transform.translate(
+                offset: Offset(0, 20 * (1 - value)),
+                child: Opacity(opacity: value, child: child),
+              );
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(16),
+                border: isArriving
+                    ? Border.all(color: colorScheme.error.withOpacity(0.4), width: 1.5)
+                    : null,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
-                );
-                final bus = arrival.firstBus;
-                final timeText =
-                    bus == null ? '도착 정보 없음' : _formatArrivalTime(arrival);
-                final currentStation = bus?.currentStation ?? '위치 정보 없음';
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: InkWell(
-                    onTap: () {
-                      showUnifiedBusDetailModal(
-                        context,
-                        arrival,
-                        favorite.stationId,
-                        favorite.stationName,
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 50,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: colorScheme.primary,
-                              borderRadius: BorderRadius.circular(6),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    showUnifiedBusDetailModal(
+                      context,
+                      arrival,
+                      favorite.stationId,
+                      favorite.stationName,
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        // Route number badge with gradient
+                        Container(
+                          width: 54,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                colorScheme.primary,
+                                colorScheme.primary.withOpacity(0.8),
+                              ],
                             ),
-                            child: Center(
-                              child: Text(
-                                favorite.routeNo,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(
+                                color: colorScheme.primary.withOpacity(0.3),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Text(
+                              favorite.routeNo,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        // Station and time info
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                favorite.stationName,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: colorScheme.onSurface,
+                                  letterSpacing: -0.2,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                            ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  if (isArriving)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      margin: const EdgeInsets.only(right: 6),
+                                      decoration: BoxDecoration(
+                                        color: colorScheme.errorContainer,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        timeText,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: colorScheme.onErrorContainer,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Text(
+                                      timeText,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  if (!isArriving) ...[
+                                    Text(
+                                      ' · ',
+                                      style: TextStyle(
+                                        color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        currentStation,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  favorite.stationName,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: colorScheme.onSurface,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '$timeText · $currentStation',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+                        ),
+                        // Action buttons
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildActionButton(
+                              icon: Icons.headphones_rounded,
+                              color: colorScheme.tertiary,
+                              onPressed: () => _handleEarphoneAlarm(favorite, arrival),
                             ),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.headset,
+                            const SizedBox(width: 4),
+                            _buildActionButton(
+                              icon: Icons.star_rounded,
                               color: colorScheme.primary,
-                              size: 20,
-                            ),
-                            tooltip: '이어폰 알람',
-                            onPressed: () async {
-                              final bus = arrival.firstBus;
-                              if (bus == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text('도착 정보가 없습니다.')),
+                              onPressed: () {
+                                final stop = BusStop(
+                                  id: favorite.stationId,
+                                  stationId: favorite.stationId,
+                                  name: favorite.stationName,
+                                  isFavorite: false,
                                 );
-                                return;
-                              }
-                              final minutes = bus.getRemainingMinutes();
-                              if (minutes < 0) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text('운행 종료 상태입니다.')),
-                                );
-                                return;
-                              }
-                              final alarmService = Provider.of<AlarmService>(
-                                context,
-                                listen: false,
-                              );
-                              await alarmService.setOneTimeAlarm(
-                                favorite.routeNo,
-                                favorite.stationName,
-                                minutes,
-                                routeId: favorite.routeId,
-                                stationId: favorite.stationId,
-                                useTTS: true,
-                                isImmediateAlarm: true,
-                                earphoneOnlyOverride: true,
-                                currentStation: bus.currentStation,
-                              );
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    '${favorite.routeNo}번 버스 이어폰 알람을 설정했습니다.',
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.star,
-                              color: colorScheme.primary,
-                              size: 20,
+                                _toggleFavoriteBus(stop, arrival);
+                              },
                             ),
-                            onPressed: () {
-                              final stop = BusStop(
-                                id: favorite.stationId,
-                                stationId: favorite.stationId,
-                                name: favorite.stationName,
-                                isFavorite: false,
-                              );
-                              _toggleFavoriteBus(stop, arrival);
-                            },
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                );
-              }).toList(),
+                ),
+              ),
             ),
-        ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onPressed();
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 20, color: color),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleEarphoneAlarm(FavoriteBus favorite, BusArrival arrival) async {
+    final bus = arrival.firstBus;
+    if (bus == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('도착 정보가 없습니다.')),
+      );
+      return;
+    }
+    final minutes = bus.getRemainingMinutes();
+    if (minutes < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('운행 종료 상태입니다.')),
+      );
+      return;
+    }
+    final alarmService = Provider.of<AlarmService>(context, listen: false);
+    await alarmService.setOneTimeAlarm(
+      favorite.routeNo,
+      favorite.stationName,
+      minutes,
+      routeId: favorite.routeId,
+      stationId: favorite.stationId,
+      useTTS: true,
+      isImmediateAlarm: true,
+      earphoneOnlyOverride: true,
+      currentStation: bus.currentStation,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${favorite.routeNo}번 버스 이어폰 알람을 설정했습니다.'),
       ),
     );
   }
@@ -1024,47 +1201,149 @@ class _HomeScreenState extends State<HomeScreen>
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final visibleStops = stops.take(maxItems).toList();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (visibleStops.isEmpty)
-            const SizedBox.shrink()
-          else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: visibleStops.map((stop) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: InkWell(
-                      onTap: () => _onSelectedStopChanged(stop),
-                      borderRadius: BorderRadius.circular(18),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: colorScheme.outlineVariant.withOpacity(0.4),
-                          ),
-                        ),
-                        child: Text(
-                          stop.name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
+
+    if (visibleStops.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: colorScheme.outlineVariant.withOpacity(0.3),
+              strokeAlign: BorderSide.strokeAlignInside,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.location_searching_rounded,
+                size: 20,
+                color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '주변 정류장을 찾는 중...',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.8),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 72,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: visibleStops.length,
+        itemBuilder: (context, index) {
+          final stop = visibleStops[index];
+          final isSelected = _selectedStop?.id == stop.id;
+          final arrivals = _stationArrivals[stop.id] ?? [];
+          final topBus = arrivals.isNotEmpty ? arrivals.first : null;
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _onSelectedStopChanged(stop),
+                borderRadius: BorderRadius.circular(16),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutCubic,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? colorScheme.primaryContainer
+                        : colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isSelected
+                          ? colorScheme.primary.withOpacity(0.5)
+                          : colorScheme.outlineVariant.withOpacity(0.3),
+                      width: isSelected ? 1.5 : 1,
                     ),
-                  );
-                }).toList(),
+                    boxShadow: isSelected ? [
+                      BoxShadow(
+                        color: colorScheme.primary.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ] : null,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        stop.name,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      if (topBus != null)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? colorScheme.primary.withOpacity(0.2)
+                                    : colorScheme.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                topBus.routeNo,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _formatArrivalTime(topBus),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isSelected
+                                    ? colorScheme.onPrimaryContainer.withOpacity(0.8)
+                                    : colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Text(
+                          '도착 정보 없음',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
-        ],
+          );
+        },
       ),
     );
   }
