@@ -385,3 +385,54 @@ Widget _buildSectionHeader({
 
 ### 결과
 이제 홈 화면의 즐겨찾기 목록과 정류장 상세 화면의 리스트 디자인이 통일되어, 사용자에게 일관된 경험을 제공합니다. 정류장 상세 화면에서도 바로 즐겨찾기를 추가할 수 있습니다.
+
+---
+
+## 2026-01-29~30: 즐겨찾기 여백 조정 + 버스 알림/추적 리팩터링
+
+### 목표
+- 즐겨찾기 화면 좌우 여백을 홈 화면 비율로 통일
+- 버스 알림 서비스의 거대 파일 분리 및 성능/안정성 개선
+- 폴링/타이머 과다 사용 완화 및 안전성 강화
+
+### 수정된 파일/주요 변경
+
+#### UI/여백
+- `lib/screens/favorites_screen.dart`
+  - 리스트 좌우 패딩을 홈 화면과 맞춤 (16 기준).
+  - 카드 내부 좌우 패딩 정렬.
+- `lib/widgets/compact_bus_card.dart`
+  - 카드 내부 좌우 패딩 조정 (즐겨찾기 전광판 라인 정렬).
+
+#### 성능/안정성
+- `lib/services/alarm_service.dart`
+  - 알람 로드 주기 완화(15초마다 무조건 로드 → 2분 간격 스로틀).
+- `lib/widgets/bus_card.dart`, `lib/widgets/compact_bus_card.dart`
+  - 카드별 주기 타이머 폴링 제거(중앙 갱신 로직에 의존).
+- `lib/screens/map_screen.dart`
+  - `Future.delayed` 콜백에 `mounted` 체크 추가.
+
+#### Android 서비스 리팩터링
+- `android/app/src/main/kotlin/com/example/daegu_bus_app/services/BusAlertService.kt`
+  - 대형 로직을 모듈로 분리하고 서비스는 조정/위임 역할로 축소.
+- 신규 추가
+  - `BusAlertTtsController.kt`: TTS/오디오 포커스/헤드셋 체크 분리
+  - `BusAlertNotificationUpdater.kt`: 알림 생성/포그라운드 갱신 분리
+  - `BusAlertTrackingManager.kt`: 추적 루프/폴링/오류 처리 분리
+  - `BusAlertParsers.kt`: JSON 파서 분리
+  - `TrackingInfo.kt`: 추적 데이터 모델 분리
+- `android/app/src/main/kotlin/com/example/daegu_bus_app/utils/NotificationHandler.kt`
+  - `TrackingInfo` 타입 참조 갱신
+- `android/app/src/main/kotlin/com/example/daegu_bus_app/utils/RouteTracker.kt`
+  - `TrackingInfo` 타입 참조 갱신
+
+### 빌드 확인
+- `flutter build apk` 성공 (WSL 환경 기준).
+
+### 주의/보류 사항 (추가 작업 필요)
+1. `RouteTracker.kt` 파서 통합 완료  
+   → 공용 파서(`BusAlertParsers.kt`) 사용으로 정리됨.
+2. `android/local.properties`의 `flutter.sdk` 경로 변경은 로컬 환경용  
+   → 커밋하지 말고, 팀 표준 경로/README 안내 필요.
+3. 알림/추적 분리 후 기능 회귀 테스트 필요  
+   - 자동 알람/이어폰 전용 모드/포그라운드 알림 갱신 시나리오.
