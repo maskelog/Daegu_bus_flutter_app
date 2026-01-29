@@ -10,6 +10,7 @@ import 'screens/home_screen.dart';
 import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
 import 'services/permission_service.dart';
+import 'screens/startup_screen.dart';
 import 'services/settings_service.dart';
 import 'services/alarm_manager.dart';
 import 'services/cache_cleanup_service.dart';
@@ -538,13 +539,7 @@ Future<void> main() async {
         '[${record.level.name}] ${record.time}: ${record.loggerName}: ${record.message}');
   });
 
-  // WorkManager 및 권한 초기화 (웹이 아닌 경우)
-  if (!kIsWeb) {
-    // 모든 권한 요청
-    await PermissionService.requestAllPermissions();
-
-    
-  }
+  // WorkManager 및 권한 초기화는 앱 UI 진입 후 처리
 
   // 서비스 초기화
   final settingsService = SettingsService();
@@ -609,7 +604,7 @@ class MyApp extends StatelessWidget {
           theme: adjustedLightTheme,
           darkTheme: adjustedDarkTheme,
           themeMode: settingsService.themeMode,
-          home: const HomeScreen(),
+          home: const StartupScreen(),
           debugShowCheckedModeBanner: false,
         );
       },
