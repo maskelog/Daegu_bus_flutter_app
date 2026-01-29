@@ -180,7 +180,7 @@ class NotificationHandler(private val context: Context) {
 
     // --- Ongoing Notification ---
 
-    fun buildOngoingNotification(activeTrackings: Map<String, BusAlertService.TrackingInfo>): Notification {
+    fun buildOngoingNotification(activeTrackings: Map<String, com.example.daegu_bus_app.services.TrackingInfo>): Notification {
         val startTime = System.currentTimeMillis()
         val currentTimeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         var shouldVibrateOnChange = false
@@ -662,7 +662,7 @@ class NotificationHandler(private val context: Context) {
     private fun buildTrackingRemoteViews(
         title: String,
         contentText: String,
-        trackingInfo: BusAlertService.TrackingInfo?
+        trackingInfo: com.example.daegu_bus_app.services.TrackingInfo?
     ): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.notification_tracking)
         views.setTextViewText(R.id.notification_title, title)

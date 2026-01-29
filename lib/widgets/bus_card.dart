@@ -62,7 +62,6 @@ class _BusCardState extends State<BusCard> {
   late int remainingTime;
   final NotificationService _notificationService = NotificationService();
   Timer? _timer;
-  Timer? _updateTimer;
   late AlarmService _alarmService;
   bool _isOutOfServiceText(String value) {
     return value == '운행종료' || value == '운행 종료';
@@ -78,14 +77,6 @@ class _BusCardState extends State<BusCard> {
       remainingTime = _calculateRemainingTime();
       _updateAlarmServiceCache();
 
-      // 타이머 간격을 60초로 증가하여 리소스 절약
-      _updateTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
-        if (mounted) {
-          _updateBusArrivalInfo();
-        } else {
-          timer.cancel();
-        }
-      });
     }
 
     _alarmService.addListener(_updateAlarmState);
@@ -280,7 +271,6 @@ class _BusCardState extends State<BusCard> {
   @override
   void dispose() {
     _timer?.cancel();
-    _updateTimer?.cancel();
     _alarmService.removeListener(_updateAlarmState);
     super.dispose();
     logMessage('타이머 취소 및 리소스 해제', level: LogLevel.debug);

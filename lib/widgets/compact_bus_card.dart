@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:flutter/material.dart';
@@ -6,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
 import '../services/alarm_service.dart';
-import '../services/api_service.dart';
 import 'package:daegu_bus_app/utils/tts_switcher.dart' show TtsSwitcher;
 import 'package:daegu_bus_app/services/settings_service.dart';
 
@@ -31,109 +29,6 @@ class CompactBusCard extends StatefulWidget {
 class _CompactBusCardState extends State<CompactBusCard> {
   bool _cacheUpdated = false;
   final int defaultPreNotificationMinutes = 3; // 기본 알람 시간 (분)
-  Timer? _updateTimer;
-  bool _isUpdating = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.busArrival.busInfoList.isNotEmpty) {
-      // 60초마다 주기적으로 버스 정보 업데이트 (부하 감소)
-      _updateTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
-        if (mounted) {
-          _updateBusArrivalInfo();
-        } else {
-          timer.cancel();
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _updateTimer?.cancel();
-    logMessage('컴팩트 버스 카드 타이머 취소', level: LogLevel.debug);
-    super.dispose();
-  }
-
-  Future<void> _updateBusArrivalInfo() async {
-    if (_isUpdating) return;
-    setState(() => _isUpdating = true);
-
-    try {
-      final updatedBusArrivals = await ApiService.getBusArrivalByRouteId(
-        widget.busArrival.routeId.split('_').last, // stationId 추출
-        widget.busArrival.routeId,
-      );
-
-      if (mounted &&
-          updatedBusArrivals.isNotEmpty &&
-          updatedBusArrivals[0].busInfoList.isNotEmpty) {
-        setState(() {
-          // 업데이트된 버스 정보로 위젯 새로 그리기
-          widget.busArrival.busInfoList.clear();
-          widget.busArrival.busInfoList
-              .addAll(updatedBusArrivals[0].busInfoList);
-          logMessage(
-              'CompactBusCard - 업데이트된 남은 시간: ${widget.busArrival.busInfoList.first.getRemainingMinutes()}',
-              level: LogLevel.debug);
-
-          // 알람 서비스 캐시 업데이트
-          if (widget.busArrival.busInfoList.isNotEmpty) {
-            final alarmService =
-                Provider.of<AlarmService>(context, listen: false);
-            final firstBus = widget.busArrival.busInfoList.first;
-            final remainingMinutes = firstBus.getRemainingMinutes();
-            alarmService.updateBusInfoCache(
-              widget.busArrival.routeNo,
-              widget.busArrival.routeId,
-              firstBus,
-              remainingMinutes,
-            );
-            // [추가] 알람이 있으면 Notification도 함께 갱신
-            if (widget.stationName != null &&
-                alarmService.hasAlarm(
-                  widget.busArrival.routeNo,
-                  widget.stationName!,
-                  widget.busArrival.routeId,
-                )) {
-              logMessage(
-                '[CompactBusCard] updateBusTrackingNotification 호출: busNo=${widget.busArrival.routeNo}, stationName=${widget.stationName}, remainingMinutes=[1m$remainingMinutes\u001b[0m, currentStation=${firstBus.currentStation}, routeId=${widget.busArrival.routeId}',
-                level: LogLevel.info,
-              );
-              final alarmService = context.read<AlarmService>();
-              final bool hasActiveTracking = alarmService.hasAlarm(
-                widget.busArrival.routeNo,
-                widget.stationName!,
-                widget.busArrival.routeId,
-              );
-
-              if (hasActiveTracking) {
-                // 이미 추적 중인 경우만 알림 업데이트 (중복 방지)
-                NotificationService().updateBusTrackingNotification(
-                  busNo: widget.busArrival.routeNo,
-                  stationName: widget.stationName!,
-                  remainingMinutes: remainingMinutes,
-                  currentStation: firstBus.currentStation,
-                  routeId: widget.busArrival.routeId,
-                  stationId: widget.stationId,
-                );
-              } else {
-                NotificationService().cancelOngoingTracking();
-              }
-            }
-          }
-        });
-      }
-    } catch (e) {
-      logMessage('컴팩트 버스 카드 정보 업데이트 오류: $e', level: LogLevel.error);
-    } finally {
-      if (mounted) {
-        setState(() => _isUpdating = false);
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     // 첫 번째 버스 정보 추출

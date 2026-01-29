@@ -327,6 +327,7 @@ class _MapScreenState extends State<MapScreen> {
 
     // 잠시 후 마커 추가 (지도 초기화 완료 대기)
     Future.delayed(const Duration(milliseconds: 1000), () {
+      if (!mounted) return;
       debugPrint('지연 후 마커 추가 시작');
       _addMarkers();
 
@@ -339,6 +340,7 @@ class _MapScreenState extends State<MapScreen> {
 
     // 3초 후에도 주변 정류장이 없으면 추가 검색
     Future.delayed(const Duration(milliseconds: 3000), () {
+      if (!mounted) return;
       if (_nearbyStations.isEmpty) {
         debugPrint('3초 후에도 주변 정류장이 없어서 추가 검색을 시도합니다');
         _searchNearbyStations();
@@ -361,6 +363,7 @@ class _MapScreenState extends State<MapScreen> {
 
     // 지도 초기화 후 자동으로 주변 정류장 검색 시작 (더 빠르게)
     Future.delayed(const Duration(milliseconds: 1000), () {
+      if (!mounted) return;
       if (_nearbyStations.isEmpty) {
         debugPrint('지도 초기화 후 자동 주변 정류장 검색 시작');
         _searchNearbyStations();
@@ -369,6 +372,7 @@ class _MapScreenState extends State<MapScreen> {
 
     // 추가로 3초 후에도 검색 (지도 완전 로드 후)
     Future.delayed(const Duration(milliseconds: 3000), () {
+      if (!mounted) return;
       if (_nearbyStations.isEmpty) {
         debugPrint('지도 완전 로드 후 추가 주변 정류장 검색');
         _searchNearbyStations();

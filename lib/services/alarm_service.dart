@@ -71,6 +71,8 @@ class AlarmService extends ChangeNotifier {
   String? _trackedRouteId;
   final Set<String> _processedNotifications = {};
   Timer? _refreshTimer;
+  DateTime _lastRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _alarmRefreshInterval = Duration(minutes: 2);
 
   // 자동 알람 제어 플래그
   bool _autoAlarmEnabled = true;
@@ -429,7 +431,11 @@ class AlarmService extends ChangeNotifier {
       _alarmCheckTimer?.cancel();
       // 5초 → 15초로 완화하여 불필요한 빈번한 작업 감소
       _alarmCheckTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-        refreshAlarms();
+        final now = DateTime.now();
+        if (now.difference(_lastRefreshAt) >= _alarmRefreshInterval) {
+          _lastRefreshAt = now;
+          refreshAlarms();
+        }
         _checkAutoAlarms(); // 자동 알람 체크 추가 (5초마다 정밀 체크)
 
         // 디버깅: 현재 자동 알람 상태 출력 (30초마다)

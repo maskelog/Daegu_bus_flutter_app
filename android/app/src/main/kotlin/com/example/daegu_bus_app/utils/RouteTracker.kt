@@ -8,15 +8,16 @@ import kotlinx.coroutines.*
 import com.example.daegu_bus_app.models.BusInfo
 import com.example.daegu_bus_app.services.BusApiService
 import com.example.daegu_bus_app.services.BusAlertService
+import com.example.daegu_bus_app.services.TrackingInfo
 import com.example.daegu_bus_app.services.TTSService
 
 class RouteTracker(
     private val context: Context,
     private val busApiService: BusApiService,
-    private val trackingInfo: BusAlertService.TrackingInfo,
+    private val trackingInfo: TrackingInfo,
     private val coroutineScope: CoroutineScope, // Use the service's scope
     private val ttsSettingsProvider: () -> Boolean, // Lambda to get current TTS setting
-    private val onUpdate: suspend (BusAlertService.TrackingInfo) -> Unit, // Callback for updates
+    private val onUpdate: suspend (TrackingInfo) -> Unit, // Callback for updates
     private val onError: suspend (String, String, String, String) -> Unit, // Callback for errors
     private val onStop: suspend (String) -> Unit, // Callback when stopping this tracker
     private val calculateDelay: (Int?) -> Long // Pass the delay calculation logic
