@@ -20,8 +20,8 @@ class BusInfo {
   factory BusInfo.fromJson(Map<String, dynamic> json) {
     final estTime = (json['estimatedTime'] ?? '').toString();
     final busTCd3 = json['busTCd3']?.toString();
-    final outOfService = estTime.contains('운행종료') ||
-        estTime.contains('운행 종료') ||
+    final outOfService = estTime.contains('\uc6b4\ud589\uc885\ub8cc') ||
+        estTime.contains('\uc6b4\ud589 \uc885\ub8cc') ||
         estTime == '-' ||
         json['isOutOfService'] == true ||
         busTCd3 == '1';
@@ -56,19 +56,19 @@ class BusInfo {
     final time = estimatedTime.trim();
     if (time.isEmpty) return 0;
 
-    if (time.contains('곧 도착') ||
-        time.contains('곧도착') ||
-        time.contains('진입') ||
+    if (time.contains('\uace7 \ub3c4\ucc29') ||
+        time.contains('\uace7\ub3c4\ucc29') ||
+        time.contains('\uc9c4\uc785') ||
         time == '0' ||
-        time == '0분') {
+        time == '0\ubd84') {
       return 0;
     }
 
-    if (time.contains('운행종료') ||
-        time.contains('운행 종료') ||
+    if (time.contains('\uc6b4\ud589\uc885\ub8cc') ||
+        time.contains('\uc6b4\ud589 \uc885\ub8cc') ||
         time == '-' ||
-        time.contains('출발예정') ||
-        time.contains('기점출발')) {
+        time.contains('\ucd9c\ubc1c\uc608\uc815') ||
+        time.contains('\uae30\uc810\ucd9c\ubc1c')) {
       return -1;
     }
 
@@ -87,21 +87,21 @@ class BusInfo {
 
   String getRemainingTimeText() {
     if (isOutOfService) {
-      return '운행 종료';
+      return '\uc6b4\ud589 \uc885\ub8cc';
     }
 
     final minutes = getRemainingMinutes();
     if (minutes < 0) {
-      return '운행 종료';
+      return '\uc6b4\ud589 \uc885\ub8cc';
     }
     if (minutes == 0) {
-      return '곧 도착';
+      return '\uace7 \ub3c4\ucc29';
     }
-    return '${minutes}분';
+    return '${minutes}\ubd84';
   }
 
   String getLowFloorText() {
-    return isLowFloor ? '[저상]' : '';
+    return isLowFloor ? '[\uc800\uc0c1]' : '';
   }
 
   BusInfo copyWith({
@@ -147,6 +147,6 @@ class BusInfo {
 
   @override
   String toString() {
-    return 'BusInfo{busNumber: $busNumber, remainingTime: ${getRemainingMinutes()}분, currentStation: $currentStation, isLowFloor: $isLowFloor}';
+    return 'BusInfo{busNumber: $busNumber, remainingTime: ${getRemainingMinutes()}\ubd84, currentStation: $currentStation, isLowFloor: $isLowFloor}';
   }
 }

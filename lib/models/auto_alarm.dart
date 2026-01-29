@@ -12,19 +12,19 @@ class Weekday {
   static String getName(int weekday) {
     switch (weekday) {
       case monday:
-        return '월';
+        return '\uc6d4';
       case tuesday:
-        return '화';
+        return '\ud654';
       case wednesday:
-        return '수';
+        return '\uc218';
       case thursday:
-        return '목';
+        return '\ubaa9';
       case friday:
-        return '금';
+        return '\uae08';
       case saturday:
-        return '토';
+        return '\ud1a0';
       case sunday:
-        return '일';
+        return '\uc77c';
       default:
         return '?';
     }

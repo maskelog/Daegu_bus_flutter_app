@@ -2,7 +2,26 @@
   "permissions": {
     "allow": [
       "Bash(flutter analyze:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl:*)",
+      "Bash(flutter build:*)",
+      "Bash(./gradlew assembleDebug:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter --version:*)",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\sh953\\\\documents\\\\code\\\\daegu_bus_app && flutter --version\")",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\sh953\\\\documents\\\\code\\\\daegu_bus_app && flutter build apk --debug 2>&1\")",
+      "WebSearch",
+      "Bash(ls:*)",
+      "Bash(echo:*)",
+      "Bash(/c/src/flutter/bin/flutter build:*)",
+      "Bash(./gradlew clean:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Android 16 Live Update with ProgressStyle and bus tracker icon\n\n- Add ic_bus_tracker.xml \\(72dp blue bus vector drawable\\)\n- Implement Notification.ProgressStyle for moving bus icon on progress bar\n- Add setProgressTrackerIcon, setProgressSegments, setProgressPoints\n- Reduce alarm restart prevention from 30s to 3s for faster re-alarm\n- Update AGENTS.md with development notes\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(gh repo view:*)",
+      "Bash(dir:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

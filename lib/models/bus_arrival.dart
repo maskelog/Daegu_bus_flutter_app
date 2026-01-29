@@ -41,8 +41,8 @@ class BusArrival {
 
   bool get hasLowFloorBus => busInfoList.any((bus) => bus.isLowFloor);
 
-  bool get hasArrivalInfo => busInfoList
-      .any((bus) => !bus.isOutOfService && bus.getRemainingMinutes() > 0);
+  bool get hasArrivalInfo =>
+      busInfoList.any((bus) => !bus.isOutOfService && bus.getRemainingMinutes() > 0);
 
   int getFirstArrivalMinutes() {
     return firstBus?.getRemainingMinutes() ?? 0;
@@ -51,21 +51,21 @@ class BusArrival {
   String getFirstArrivalTimeText() {
     final first = firstBus;
     if (first == null) {
-      return '도착 정보 없음';
+      return '\ub3c4\ucc29 \uc815\ubcf4 \uc5c6\uc74c';
     }
 
     if (first.isOutOfService) {
-      return '운행 종료';
+      return '\uc6b4\ud589 \uc885\ub8cc';
     }
 
     final minutes = first.getRemainingMinutes();
     if (minutes < 0) {
-      return '운행 종료';
+      return '\uc6b4\ud589 \uc885\ub8cc';
     }
     if (minutes == 0) {
-      return '곧 도착';
+      return '\uace7 \ub3c4\ucc29';
     }
-    return '${minutes}분';
+    return '${minutes}\ubd84';
   }
 
   String getSecondArrivalTimeText() {
@@ -75,22 +75,22 @@ class BusArrival {
     }
 
     if (second.isOutOfService) {
-      return '운행 종료';
+      return '\uc6b4\ud589 \uc885\ub8cc';
     }
 
     final minutes = second.getRemainingMinutes();
     if (minutes < 0) {
-      return '운행 종료';
+      return '\uc6b4\ud589 \uc885\ub8cc';
     }
     if (minutes == 0) {
-      return '곧 도착';
+      return '\uace7 \ub3c4\ucc29';
     }
-    return '${minutes}분';
+    return '${minutes}\ubd84';
   }
 
   String getSummaryText() {
     if (!hasArrival) {
-      return '도착 예정 버스 없음';
+      return '\ub3c4\ucc29 \uc608\uc815 \ubc84\uc2a4 \uc5c6\uc74c';
     }
 
     final first = getFirstArrivalTimeText();
@@ -118,6 +118,6 @@ class BusArrival {
 
   @override
   String toString() {
-    return 'BusArrival{routeNo: $routeNo, direction: $direction, buses: ${busInfoList.length}}';
+    return 'BusArrival{routeNo: $routeNo, routeId: $routeId, busCount: \${busInfoList.length}}';
   }
 }

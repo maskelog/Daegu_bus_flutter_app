@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
+import '../models/favorite_bus.dart';
 import '../services/alarm_service.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
+import '../utils/favorite_bus_store.dart';
 import '../utils/simple_tts_helper.dart';
 
 /// 통합된 버스 상세정보 위젯 (최적화 버전)
@@ -39,12 +42,65 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
   late int _remainingTime;
   bool _isVisible = true;
 
+  List<FavoriteBus> _favoriteBuses = [];
+  bool _isLoadingFavorites = true;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeBusInfo();
     _startOptimizedPeriodicUpdate();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    final loaded = await FavoriteBusStore.load();
+    if (mounted) {
+      setState(() {
+        _favoriteBuses = loaded;
+        _isLoadingFavorites = false;
+      });
+    }
+  }
+
+  bool _isFavorite() {
+    if (_isLoadingFavorites) return false;
+    final favorite = FavoriteBus(
+      stationId: widget.stationId,
+      stationName: widget.stationName,
+      routeId: widget.busArrival.routeId,
+      routeNo: widget.busArrival.routeNo,
+    );
+    return _favoriteBuses.any((item) => item.key == favorite.key);
+  }
+
+  Future<void> _toggleFavorite() async {
+    HapticFeedback.lightImpact();
+    final favorite = FavoriteBus(
+      stationId: widget.stationId,
+      stationName: widget.stationName,
+      routeId: widget.busArrival.routeId,
+      routeNo: widget.busArrival.routeNo,
+    );
+    final wasFavorite = _isFavorite();
+    final updated = FavoriteBusStore.toggle(_favoriteBuses, favorite);
+    await FavoriteBusStore.save(updated);
+
+    if (!mounted) return;
+    setState(() {
+      _favoriteBuses = updated;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          wasFavorite
+              ? '${widget.busArrival.routeNo}번 버스 즐겨찾기를 해제했습니다.'
+              : '${widget.busArrival.routeNo}번 버스를 즐겨찾기에 추가했습니다.',
+        ),
+      ),
+    );
   }
 
   @override
@@ -816,33 +872,38 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
                       ),
                       const SizedBox(width: 16),
 
-                      // 알람 설정/해제 버튼
+                      // 액션 버튼들 (알람, 즐겨찾기)
                       Column(
                         children: [
-                          ElevatedButton.icon(
+                          FilledButton.icon(
                             onPressed: _toggleAlarm,
                             icon: Icon(
                               hasAlarm
                                   ? Icons.notifications_off
                                   : Icons.notifications_active,
-                              size: 20,
+                              size: 18,
                             ),
                             label: Text(hasAlarm ? '알람 해제' : '승차 알람'),
-                            style: ElevatedButton.styleFrom(
+                            style: FilledButton.styleFrom(
                               backgroundColor: hasAlarm
                                   ? Theme.of(context).colorScheme.errorContainer
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .primaryContainer,
+                                  : Theme.of(context).colorScheme.primaryContainer,
                               foregroundColor: hasAlarm
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .onErrorContainer
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .onPrimaryContainer,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
+                                  ? Theme.of(context).colorScheme.onErrorContainer
+                                  : Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          FilledButton.icon(
+                            onPressed: _toggleFavorite,
+                            icon: Icon(
+                              _isFavorite() ? Icons.star : Icons.star_border,
+                              size: 18,
+                            ),
+                            label: Text(_isFavorite() ? '즐겨찾기 해제' : '즐겨찾기 추가'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                              foregroundColor: Theme.of(context).colorScheme.onTertiaryContainer,
                             ),
                           ),
                         ],
@@ -870,245 +931,484 @@ void showUnifiedBusDetailModal(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     backgroundColor: Theme.of(context).colorScheme.surface,
     barrierColor: Theme.of(context).colorScheme.scrim.withAlpha(138),
     builder: (context) {
-      return DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        minChildSize: 0.5,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (context, scrollController) {
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // 드래그 핸들
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    height: 5,
-                    width: 40,
-                    decoration: BoxDecoration(
-                      color:
-                          Theme.of(context).colorScheme.onSurface.withAlpha(76),
-                      borderRadius: BorderRadius.circular(2.5),
-                    ),
-                  ),
-                ),
-                // 헤더
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${busArrival.routeNo}번 버스',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color:
-                                        Theme.of(context).colorScheme.onSurface,
-                                  )),
-                          Text('$stationName → ${busArrival.direction}',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant)),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.close,
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: ListView(
-                    controller: scrollController,
-                    padding: EdgeInsets.zero,
-                    children: [
-                      UnifiedBusDetailWidget(
-                        busArrival: BusArrival(
-                          routeNo: busArrival.routeNo,
-                          routeId: busArrival.routeId,
-                          busInfoList: busArrival.busInfoList.isNotEmpty
-                              ? [busArrival.busInfoList.first]
-                              : [],
-                          direction: busArrival.direction,
-                        ),
-                        stationId: stationId,
-                        stationName: stationName,
-                        isCompact: false,
-                      ),
-                      if (busArrival.busInfoList.length > 1) ...[
-                        const SizedBox(height: 24),
-                        Text('다음 버스 정보',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color:
-                                      Theme.of(context).colorScheme.onSurface,
-                                )),
-                        const SizedBox(height: 16),
-                        ...busArrival.busInfoList.skip(1).map((bus) {
-                          final remainingMinutes = bus.getRemainingMinutes();
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            elevation: 1,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(
-                                  color: Theme.of(context).dividerColor),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Text(busArrival.routeNo,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .titleMedium
-                                                    ?.copyWith(
-                                                        color: bus
-                                                                .isOutOfService
-                                                            ? Theme.of(context)
-                                                                .colorScheme
-                                                                .onSurfaceVariant
-                                                            : Theme.of(context)
-                                                                .colorScheme
-                                                                .primary,
-                                                        fontWeight:
-                                                            FontWeight.bold)),
-                                            if (bus.isLowFloor)
-                                              Container(
-                                                margin: const EdgeInsets.only(
-                                                    left: 8),
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .tertiaryContainer,
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: Text('저상',
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .labelSmall
-                                                        ?.copyWith(
-                                                            color: Theme.of(
-                                                                    context)
-                                                                .colorScheme
-                                                                .onTertiaryContainer,
-                                                            fontWeight:
-                                                                FontWeight
-                                                                    .w500)),
-                                              ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(bus.currentStation,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyMedium
-                                                ?.copyWith(
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant)),
-                                        Text(bus.remainingStops,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall
-                                                ?.copyWith(
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant)),
-                                      ],
-                                    ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      if (!bus.isOutOfService)
-                                        Text('도착예정',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelSmall
-                                                ?.copyWith(
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant)),
-                                      Text(
-                                          bus.isOutOfService
-                                              ? '운행 종료'
-                                              : '$remainingMinutes분',
-                                          style: Theme.of(
-                                                  context)
-                                              .textTheme
-                                              .titleMedium
-                                              ?.copyWith(
-                                                  color:
-                                                      bus
-                                                              .isOutOfService
-                                                          ? Theme.of(context)
-                                                              .colorScheme
-                                                              .onSurfaceVariant
-                                                          : (remainingMinutes <=
-                                                                  3
-                                                              ? Theme.of(
-                                                                      context)
-                                                                  .colorScheme
-                                                                  .error
-                                                              : Theme.of(
-                                                                      context)
-                                                                  .colorScheme
-                                                                  .primary),
-                                                  fontWeight: FontWeight.bold)),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }),
-                      ],
-                      const SizedBox(height: 100), // 하단 여백
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+      return _BusDetailModalContent(
+        busArrival: busArrival,
+        stationId: stationId,
+        stationName: stationName,
       );
     },
   );
 }
+
+/// 버스 상세 모달 내용 (StatefulWidget for favorite toggle)
+class _BusDetailModalContent extends StatefulWidget {
+  final BusArrival busArrival;
+  final String stationId;
+  final String stationName;
+
+  const _BusDetailModalContent({
+    required this.busArrival,
+    required this.stationId,
+    required this.stationName,
+  });
+
+  @override
+  State<_BusDetailModalContent> createState() => _BusDetailModalContentState();
+}
+
+class _BusDetailModalContentState extends State<_BusDetailModalContent> {
+  List<FavoriteBus> _favoriteBuses = [];
+  bool _isLoadingFavorites = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    final loaded = await FavoriteBusStore.load();
+    if (mounted) {
+      setState(() {
+        _favoriteBuses = loaded;
+        _isLoadingFavorites = false;
+      });
+    }
+  }
+
+  bool _isFavorite() {
+    final favorite = FavoriteBus(
+      stationId: widget.stationId,
+      stationName: widget.stationName,
+      routeId: widget.busArrival.routeId,
+      routeNo: widget.busArrival.routeNo,
+    );
+    return _favoriteBuses.any((item) => item.key == favorite.key);
+  }
+
+  Future<void> _toggleFavorite() async {
+    HapticFeedback.lightImpact();
+    final favorite = FavoriteBus(
+      stationId: widget.stationId,
+      stationName: widget.stationName,
+      routeId: widget.busArrival.routeId,
+      routeNo: widget.busArrival.routeNo,
+    );
+    final wasFavorite = _isFavorite();
+    final updated = FavoriteBusStore.toggle(_favoriteBuses, favorite);
+    await FavoriteBusStore.save(updated);
+
+    if (!mounted) return;
+    setState(() {
+      _favoriteBuses = updated;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          wasFavorite
+              ? '${widget.busArrival.routeNo}번 버스 즐겨찾기를 해제했습니다.'
+              : '${widget.busArrival.routeNo}번 버스를 즐겨찾기에 추가했습니다.',
+        ),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+      ),
+    );
+  }
+
+  Future<void> _handleAlarmToggle(
+      BuildContext context, bool hasAlarm, BusInfo? bus) async {
+    HapticFeedback.lightImpact();
+    if (!mounted) return;
+
+    final alarmService = Provider.of<AlarmService>(context, listen: false);
+    final remainingMinutes = bus?.getRemainingMinutes() ?? -1;
+
+    if (hasAlarm) {
+      await alarmService.cancelAlarmByRoute(
+        widget.busArrival.routeNo,
+        widget.stationName,
+        widget.busArrival.routeId,
+      );
+      await NotificationService().cancelOngoingTracking();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('승차 알람이 해제되었습니다'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      if (remainingMinutes <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('버스가 이미 도착했거나 곧 도착합니다'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      await alarmService.setOneTimeAlarm(
+        widget.busArrival.routeNo,
+        widget.stationName,
+        remainingMinutes,
+        routeId: widget.busArrival.routeId,
+        stationId: widget.stationId,
+        useTTS: true,
+        isImmediateAlarm: true,
+        currentStation: bus?.currentStation ?? '',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('승차 알람이 설정되었습니다'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final bus = widget.busArrival.firstBus;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (context, scrollController) {
+        return Column(
+          children: [
+            // 드래그 핸들
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              height: 4,
+              width: 36,
+              decoration: BoxDecoration(
+                color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // 헤더 영역
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 12, 0),
+              child: Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          colorScheme.primary,
+                          colorScheme.primary.withOpacity(0.8),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorScheme.primary.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.directions_bus_rounded,
+                            size: 20, color: Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          widget.busArrival.routeNo,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.stationName,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: colorScheme.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (widget.busArrival.direction.isNotEmpty)
+                          Text(
+                            '→ ${widget.busArrival.direction}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close_rounded,
+                        color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+
+            // 메인 콘텐츠
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                children: [
+                  // 현재 버스 정보
+                  if (bus != null)
+                    _buildBusInfoRow(context, bus, isMainBus: true)
+                  else
+                    const Text("도착 정보가 없습니다."),
+
+                  const SizedBox(height: 20),
+
+                  // 액션 버튼
+                  Row(
+                    children: [
+                      // 승차 알람 버튼
+                      Expanded(
+                        child: Selector<AlarmService, bool>(
+                          selector: (context, alarmService) =>
+                              alarmService.hasAlarm(
+                            widget.busArrival.routeNo,
+                            widget.stationName,
+                            widget.busArrival.routeId,
+                          ),
+                          builder: (context, hasAlarm, child) {
+                            return FilledButton.tonalIcon(
+                              onPressed: () =>
+                                  _handleAlarmToggle(context, hasAlarm, bus),
+                              icon: Icon(
+                                hasAlarm
+                                    ? Icons.notifications_off_rounded
+                                    : Icons.notifications_active_rounded,
+                                size: 20,
+                              ),
+                              label: Text(hasAlarm ? '알람 해제' : '승차 알람'),
+                              style: FilledButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                backgroundColor: hasAlarm
+                                    ? colorScheme.errorContainer
+                                    : colorScheme.primaryContainer,
+                                foregroundColor: hasAlarm
+                                    ? colorScheme.onErrorContainer
+                                    : colorScheme.onPrimaryContainer,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // 즐겨찾기 버튼
+                      Expanded(
+                        child: FilledButton.tonalIcon(
+                          onPressed: _toggleFavorite,
+                          icon: Icon(
+                            _isFavorite()
+                                ? Icons.star_rounded
+                                : Icons.star_outline_rounded,
+                            size: 20,
+                          ),
+                          label: Text(_isFavorite() ? '즐겨찾기' : '즐겨찾기'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            backgroundColor: _isFavorite() ? colorScheme.secondaryContainer : colorScheme.surfaceContainer,
+                            foregroundColor: _isFavorite() ? colorScheme.onSecondaryContainer : colorScheme.onSurfaceVariant,
+                          ),
+                          
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // 다음 버스 정보
+                  if (widget.busArrival.busInfoList.length > 1) ...[
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color:
+                                colorScheme.secondaryContainer.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.schedule_rounded,
+                              size: 16, color: colorScheme.secondary),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          '다음 버스',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ...widget.busArrival.busInfoList
+                        .skip(1)
+                        .map((nextBus) => _buildBusInfoRow(context, nextBus))
+                        .toList(),
+                  ],
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildBusInfoRow(BuildContext context, BusInfo bus,
+      {bool isMainBus = false}) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final minutes = bus.getRemainingMinutes();
+    final isArriving = minutes >= 0 && minutes <= 3;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isMainBus
+            ? colorScheme.primaryContainer.withOpacity(0.4)
+            : colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isMainBus
+              ? colorScheme.primary.withOpacity(0.4)
+              : colorScheme.outlineVariant.withOpacity(0.3),
+          width: isMainBus ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          // 시간
+          Container(
+            width: 60,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: bus.isOutOfService
+                  ? colorScheme.surfaceContainerHigh
+                  : isArriving
+                      ? colorScheme.errorContainer
+                      : colorScheme.primaryContainer.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  bus.isOutOfService
+                      ? '종료'
+                      : (minutes == 0 ? '곧' : '$minutes'),
+                  style: (isMainBus
+                          ? theme.textTheme.headlineSmall
+                          : theme.textTheme.titleMedium)
+                      ?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: bus.isOutOfService
+                        ? colorScheme.onSurfaceVariant
+                        : isArriving
+                            ? colorScheme.error
+                            : colorScheme.primary,
+                  ),
+                ),
+                if (!bus.isOutOfService)
+                  Text(
+                    minutes == 0 ? '도착' : '분',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: isArriving
+                          ? colorScheme.error.withOpacity(0.7)
+                          : colorScheme.primary.withOpacity(0.7),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          // 위치 정보
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  bus.currentStation,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurface,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  bus.remainingStops,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // 저상버스 표시
+          if (bus.isLowFloor)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.accessible,
+                      size: 14, color: colorScheme.onSecondaryContainer),
+                  const SizedBox(width: 4),
+                  Text(
+                    '저상',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSecondaryContainer,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+

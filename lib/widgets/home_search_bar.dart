@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 class HomeSearchBar extends StatelessWidget {
   final VoidCallback onSearchTap;
   final VoidCallback onSettingsTap;
+  final String hintText;
 
   const HomeSearchBar({
     super.key,
     required this.onSearchTap,
     required this.onSettingsTap,
+    required this.hintText,
   });
 
   @override
@@ -19,81 +21,73 @@ class HomeSearchBar extends StatelessWidget {
       children: [
         Expanded(
           child: Semantics(
-            label: '정류장 검색',
-            hint: '정류장 이름을 입력해 검색합니다',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onSearchTap,
-                borderRadius: BorderRadius.circular(32), // Very rounded for Material You
-                child: Container(
-                  height: 60, // Taller for prominence
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(32),
-                    // No border - Material You style
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
-                        blurRadius: 12,
-                        offset: const Offset(0, 3),
-                      ),
+            label: hintText,
+            hint: '탭하여 검색 화면으로 이동합니다',
+            child: GestureDetector(
+              onTap: onSearchTap,
+              child: Container(
+                height: 64, // Increased height for a bolder look
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      colorScheme.surfaceContainer,
+                      colorScheme.surfaceContainerHigh,
                     ],
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.search_rounded,
-                          color: colorScheme.onSurfaceVariant,
-                          size: 28, // Larger icon
-                        ),
-                        const SizedBox(width: 18),
-                        Expanded(
-                          child: Text(
-                            "정류장 검색",
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 18, // Larger text
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                  borderRadius:
+                      BorderRadius.circular(32), // Pill shape
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.shadow.withOpacity(0.1),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
                     ),
+                  ],
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.search_rounded,
+                        color: colorScheme.primary,
+                        size: 30, // Larger icon
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          hintText,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 8),
         Semantics(
           label: '설정',
           hint: '설정화면으로 이동',
-          child: Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+          child: FilledButton(
+            onPressed: onSettingsTap,
+            style: FilledButton.styleFrom(
+              shape: const CircleBorder(),
+              padding: const EdgeInsets.all(16),
+              backgroundColor: colorScheme.surfaceContainer,
             ),
-            child: IconButton.filledTonal(
-              onPressed: onSettingsTap,
-              icon: Icon(Icons.settings_outlined, color: colorScheme.onSurface, size: 26),
-              tooltip: '설정',
-              style: IconButton.styleFrom(
-                backgroundColor: colorScheme.surfaceContainerHighest,
-                padding: const EdgeInsets.all(16),
-              ),
-            ),
+            child: Icon(Icons.settings_rounded,
+                color: colorScheme.onSurfaceVariant),
           ),
         ),
       ],
