@@ -204,7 +204,7 @@ class _CompactBusCardState extends State<CompactBusCard> {
         onTap: widget.onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Row(
             children: [
               // 위치 아이콘
