@@ -26,12 +26,19 @@ class NotificationService extends ChangeNotifier {
     required String busNo,
     required String stationName,
     required String routeId,
+    String? stationId,
   }) {
     stopAutoAlarmUpdates(); // 기존 타이머가 있다면 중지
     _currentAutoAlarmId = id;
     _currentBusNo = busNo;
     _currentStationName = stationName;
     _currentRouteId = routeId;
+    _currentStationId = stationId;
+    if (_currentStationId == null) {
+      debugPrint('⚠️ 자동 알람 갱신 시작 실패: stationId가 없습니다');
+      stopAutoAlarmUpdates();
+      return;
+    }
     // 즉시 1회 실행 후 1분마다 반복
     _updateAutoAlarmNotification();
     _autoAlarmTimer = Timer.periodic(const Duration(minutes: 1), (_) async {
@@ -59,7 +66,8 @@ class NotificationService extends ChangeNotifier {
     if (_currentAutoAlarmId == null ||
         _currentBusNo == null ||
         _currentStationName == null ||
-        _currentRouteId == null) {
+        _currentRouteId == null ||
+        _currentStationId == null) {
       debugPrint('⚠️ 자동 알람 정보 부족으로 갱신 중단');
       stopAutoAlarmUpdates();
       return;

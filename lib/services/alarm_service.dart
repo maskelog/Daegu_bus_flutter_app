@@ -86,7 +86,9 @@ class AlarmService extends ChangeNotifier {
   // 사용자 수동 중지 후 재시작 방지를 위한 플래그
   bool _userManuallyStopped = false;
   int _lastManualStopTime = 0;
-  static const int _restartPreventionDuration = 30000; // 30초간 재시작 방지
+  static const int _restartPreventionDuration = 3000; // 3초간 재시작 방지
+  @visibleForTesting
+  int get restartPreventionDurationMs => _restartPreventionDuration;
 
   List<alarm_model.AlarmData> get activeAlarms {
     final allAlarms = <alarm_model.AlarmData>{};

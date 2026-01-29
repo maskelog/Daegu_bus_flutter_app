@@ -30,6 +30,7 @@ class BusApiService {
     'bus_api_service',
     delay: const Duration(milliseconds: 800),
   );
+  final List<Completer<List<StationSearchResult>>> _pendingSearchCompleters = [];
 
   /// 캐시 매니저 초기화
   Future<void> _initializeCacheManager() async {
@@ -88,18 +89,37 @@ class BusApiService {
 
   // 기존 메소드 호환성 유지 (디바운싱 적용)
   Future<List<StationSearchResult>> searchStations(String searchText) async {
-    // 디바운싱된 검색
+    // ????? ??
     final completer = Completer<List<StationSearchResult>>();
+    _pendingSearchCompleters.add(completer);
 
     _debouncer.call(() async {
-      final result = await searchStationsWithResult(searchText);
-      completer.complete(result.dataOrDefault([]));
+      final pending = List<Completer<List<StationSearchResult>>>.from(
+        _pendingSearchCompleters,
+      );
+      _pendingSearchCompleters.clear();
+
+      try {
+        final result = await searchStationsWithResult(searchText);
+        final data = result.dataOrDefault([]);
+        for (final pendingCompleter in pending) {
+          if (!pendingCompleter.isCompleted) {
+            pendingCompleter.complete(data);
+          }
+        }
+      } catch (e) {
+        for (final pendingCompleter in pending) {
+          if (!pendingCompleter.isCompleted) {
+            pendingCompleter.complete(<StationSearchResult>[]);
+          }
+        }
+      }
     });
 
     return completer.future;
   }
 
-  // 정류장 도착 정보 조회 메소드 (캐싱 및 에러 처리 개선)
+// 정류장 도착 정보 조회 메소드 (캐싱 및 에러 처리 개선)
   Future<BusApiResult<List<BusArrival>>> getStationInfoWithResult(
       String stationId) async {
     try {
