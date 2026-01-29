@@ -23,6 +23,8 @@ import '../widgets/station_loading_widget.dart';
 import '../widgets/unified_bus_detail_widget.dart';
 import '../models/favorite_bus.dart';
 import '../utils/favorite_bus_store.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../services/permission_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -44,6 +46,8 @@ class _HomeScreenState extends State<HomeScreen>
   final Map<String, List<BusArrival>> _stationArrivals = {};
   final Map<String, BusRouteType> _routeTypeCache = {};
   List<FavoriteBus> _favoriteBuses = [];
+  bool _mapPermissionGranted = false;
+  bool _isCheckingMapPermission = true;
 
   @override
   void initState() {
@@ -54,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen>
     alarmService.initialize();
     alarmService.addListener(_onAlarmChanged);
     _initializeData();
+    _checkMapPermission();
   }
 
   void _handleTabSelection() {
@@ -78,6 +83,15 @@ class _HomeScreenState extends State<HomeScreen>
     if (mounted) {
       setState(() {});
     }
+  }
+
+  Future<void> _checkMapPermission() async {
+    final granted = await Permission.locationWhenInUse.isGranted;
+    if (!mounted) return;
+    setState(() {
+      _mapPermissionGranted = granted;
+      _isCheckingMapPermission = false;
+    });
   }
 
   Future<void> _initializeData() async {
@@ -378,7 +392,7 @@ class _HomeScreenState extends State<HomeScreen>
                     controller: _tabController,
                     physics: const NeverScrollableScrollPhysics(),
                     children: [
-                      const MapScreen(),
+                      _buildMapScreen(),
                       _buildMapTab(),
                       _buildHomeTab(),
                       _buildAlarmTab(),
@@ -548,6 +562,74 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildMapTab() {
 
     return const SafeArea(top: true, bottom: false, child: RouteMapScreen());
+  }
+
+  Widget _buildMapScreen() {
+    if (_isCheckingMapPermission) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_mapPermissionGranted) {
+      return const MapScreen();
+    }
+    return _buildMapRestrictedView();
+  }
+
+  Widget _buildMapRestrictedView() {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.location_off_rounded,
+                size: 56,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '위치 권한이 필요합니다',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '지도 기능은 위치 권한이 허용된 경우에만 사용할 수 있어요.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  OutlinedButton(
+                    onPressed: () async {
+                      await openAppSettings();
+                      _checkMapPermission();
+                    },
+                    child: const Text('설정 열기'),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton(
+                    onPressed: () async {
+                      await PermissionService.requestLocationPermission();
+                      _checkMapPermission();
+                    },
+                    child: const Text('권한 허용'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildAlarmTab() {
