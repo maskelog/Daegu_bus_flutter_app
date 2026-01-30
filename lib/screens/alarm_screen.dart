@@ -6,11 +6,15 @@ import 'dart:convert';
 import '../models/bus_stop.dart';
 
 import '../models/auto_alarm.dart';
+import '../models/favorite_bus.dart';
 import '../services/alarm_service.dart';
 import '../services/settings_service.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 import '../main.dart' show logMessage, LogLevel;
+import '../utils/favorite_bus_store.dart';
+
+enum _AutoAlarmSource { search, favorite }
 
 class AlarmScreen extends StatefulWidget {
   const AlarmScreen({super.key});
@@ -98,34 +102,129 @@ class _AlarmScreenState extends State<AlarmScreen> {
   }
 
   void _addAutoAlarm() async {
-    final result = await Navigator.push(
+    final source = await _selectAutoAlarmSource();
+    if (!mounted || source == null) return;
+
+    BusStop? selectedStation;
+    FavoriteBus? selectedFavoriteBus;
+
+    if (source == _AutoAlarmSource.search) {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const SearchScreen()),
+      );
+
+      if (!mounted || result == null || result is! BusStop) return;
+      selectedStation = result;
+    } else {
+      selectedFavoriteBus = await _selectFavoriteBus();
+      if (!mounted || selectedFavoriteBus == null) return;
+      selectedStation = BusStop(
+        id: selectedFavoriteBus.stationId,
+        name: selectedFavoriteBus.stationName,
+        isFavorite: true,
+      );
+    }
+
+    final alarmResult = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const SearchScreen()),
+      MaterialPageRoute(
+        builder: (context) => AutoAlarmEditScreen(
+          key: UniqueKey(),
+          autoAlarm: null,
+          selectedStation: selectedStation,
+          selectedFavoriteBus: selectedFavoriteBus,
+        ),
+      ),
     );
 
     if (!mounted) return;
 
-    if (result != null && result is BusStop) {
-      final alarmResult = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => AutoAlarmEditScreen(
-            key: UniqueKey(),
-            autoAlarm: null,
-            selectedStation: result,
-          ),
-        ),
-      );
-
-      if (!mounted) return;
-
-      if (alarmResult != null && alarmResult is AutoAlarm) {
-        setState(() {
-          _autoAlarms.add(alarmResult);
-          _saveAutoAlarms();
-        });
-      }
+    if (alarmResult != null && alarmResult is AutoAlarm) {
+      setState(() {
+        _autoAlarms.add(alarmResult);
+        _saveAutoAlarms();
+      });
     }
+  }
+
+  Future<_AutoAlarmSource?> _selectAutoAlarmSource() {
+    return showModalBottomSheet<_AutoAlarmSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.search),
+                title: const Text('정류장 검색'),
+                subtitle: const Text('정류장 검색 화면에서 선택'),
+                onTap: () => Navigator.pop(context, _AutoAlarmSource.search),
+              ),
+              ListTile(
+                leading: const Icon(Icons.star_rounded),
+                title: const Text('즐겨찾기 버스'),
+                subtitle: const Text('즐겨찾기한 버스로 빠르게 설정'),
+                onTap: () => Navigator.pop(context, _AutoAlarmSource.favorite),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<FavoriteBus?> _selectFavoriteBus() async {
+    final favorites = await FavoriteBusStore.load();
+    if (!mounted) return null;
+
+    return showModalBottomSheet<FavoriteBus>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        if (favorites.isEmpty) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.star_border_rounded, size: 36),
+                  const SizedBox(height: 12),
+                  const Text('즐겨찾기된 버스가 없습니다'),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('닫기'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SafeArea(
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: favorites.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final bus = favorites[index];
+              return ListTile(
+                leading: const Icon(Icons.directions_bus_filled),
+                title: Text('${bus.routeNo}번'),
+                subtitle: Text(bus.stationName),
+                onTap: () => Navigator.pop(context, bus),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   void _editAutoAlarm(int index) async {
@@ -258,6 +357,10 @@ class _AlarmScreenState extends State<AlarmScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    const floatingNavHeight = 68.0;
+    const floatingNavBottom = 24.0;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final toolbarBottom = floatingNavHeight + floatingNavBottom + bottomInset;
 
     return Consumer<SettingsService>(
       builder: (context, settingsService, child) {
@@ -559,7 +662,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                       ),
                               ),
                               SliverToBoxAdapter(
-                                child: SizedBox(height: 100), // Bottom padding for floating toolbar
+                                child: SizedBox(height: toolbarBottom + 16), // Bottom padding for floating toolbar
                               ),
                             ],
                           ),
@@ -567,7 +670,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                             Positioned(
                               left: 0,
                               right: 0,
-                              bottom: 0,
+                              bottom: toolbarBottom,
                               child: Container(
                                 color: colorScheme.surface,
                                 padding: const EdgeInsets.symmetric(
@@ -619,11 +722,13 @@ class _AlarmScreenState extends State<AlarmScreen> {
 class AutoAlarmEditScreen extends StatefulWidget {
   final AutoAlarm? autoAlarm;
   final BusStop? selectedStation;
+  final FavoriteBus? selectedFavoriteBus;
 
   const AutoAlarmEditScreen({
     super.key,
     this.autoAlarm,
     this.selectedStation,
+    this.selectedFavoriteBus,
   });
 
   @override
@@ -659,8 +764,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
     if (widget.autoAlarm != null) {
       final alarm = widget.autoAlarm!;
       _hour = alarm.hour;
-      // 분 값을 5분 단위로 조정
-      _minute = (alarm.minute ~/ 5) * 5;
+      _minute = alarm.minute;
       _repeatDays = List.from(alarm.repeatDays);
       _excludeWeekends = alarm.excludeWeekends;
       _excludeHolidays = alarm.excludeHolidays;
@@ -675,10 +779,24 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
     } else {
       final now = DateTime.now();
       _hour = now.hour;
-      // 현재 분을 5분 단위로 조정
-      _minute = (now.minute ~/ 5) * 5;
+      _minute = now.minute;
       _repeatDays = [1, 2, 3, 4, 5];
-      if (widget.selectedStation != null) {
+      if (widget.selectedFavoriteBus != null) {
+        final favorite = widget.selectedFavoriteBus!;
+        _selectedStation = BusStop(
+          id: favorite.stationId,
+          name: favorite.stationName,
+          isFavorite: true,
+        );
+        _selectedRouteId = favorite.routeId;
+        _selectedRouteNo = favorite.routeNo;
+        _stationController.text = favorite.stationName;
+        _routeController.text = favorite.routeNo;
+        _routeOptions = [
+          {'id': favorite.routeId, 'routeNo': favorite.routeNo},
+        ];
+        _loadRouteOptions();
+      } else if (widget.selectedStation != null) {
         _selectedStation = widget.selectedStation;
         _stationController.text = _selectedStation!.name;
         _loadRouteOptions();
@@ -713,6 +831,16 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       if (mounted) {
         setState(() {
           _routeOptions = uniqueRoutes.values.toList();
+          if (_routeOptions.isNotEmpty) {
+            final hasSelected = _selectedRouteId != null &&
+                _routeOptions.any((route) => route['id'] == _selectedRouteId);
+            if (!hasSelected) {
+              final first = _routeOptions.first;
+              _selectedRouteId = first['id'];
+              _selectedRouteNo = first['routeNo'];
+              _routeController.text = first['routeNo'] ?? '';
+            }
+          }
           _isLoadingRoutes = false;
         });
       }
@@ -785,6 +913,10 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    const floatingNavHeight = 68.0;
+    const floatingNavBottom = 24.0;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final toolbarBottom = floatingNavHeight + floatingNavBottom + bottomInset;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -813,67 +945,40 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                     fontWeight: FontWeight.bold,
                     color: colorScheme.onSurface)),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: colorScheme.outline),
-                      borderRadius: BorderRadius.circular(8),
-                      color: colorScheme.surfaceContainerLowest,
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: _hour,
-                        items: List.generate(24, (index) {
-                          return DropdownMenuItem(
-                            value: index,
-                            child: Text('${index.toString().padLeft(2, '0')}시',
-                                style: TextStyle(color: colorScheme.onSurface)),
-                          );
-                        }),
-                        onChanged: (value) =>
-                            setState(() => _hour = value ?? _hour),
-                        isExpanded: true,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        dropdownColor: colorScheme.surfaceContainer,
-                        iconEnabledColor: colorScheme.onSurfaceVariant,
-                        style: TextStyle(color: colorScheme.onSurface),
-                      ),
-                    ),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: colorScheme.outline),
+                borderRadius: BorderRadius.circular(8),
+                color: colorScheme.surfaceContainerLowest,
+              ),
+              child: ListTile(
+                leading: Icon(Icons.access_time, color: colorScheme.primary),
+                title: Text(
+                  '${_hour.toString().padLeft(2, '0')}:${_minute.toString().padLeft(2, '0')}',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: colorScheme.outline),
-                      borderRadius: BorderRadius.circular(8),
-                      color: colorScheme.surfaceContainerLowest,
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: _minute,
-                        items: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
-                            .map((minute) {
-                          return DropdownMenuItem(
-                            value: minute,
-                            child: Text('${minute.toString().padLeft(2, '0')}분',
-                                style: TextStyle(color: colorScheme.onSurface)),
-                          );
-                        }).toList(),
-                        onChanged: (value) =>
-                            setState(() => _minute = value ?? _minute),
-                        isExpanded: true,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        dropdownColor: colorScheme.surfaceContainer,
-                        iconEnabledColor: colorScheme.onSurfaceVariant,
-                        style: TextStyle(color: colorScheme.onSurface),
-                      ),
-                    ),
-                  ),
+                subtitle: Text(
+                  '탭해서 시간 선택',
+                  style: TextStyle(color: colorScheme.onSurfaceVariant),
                 ),
-              ],
+                trailing: Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                    context: context,
+                    initialTime: TimeOfDay(hour: _hour, minute: _minute),
+                  );
+                  if (picked != null && mounted) {
+                    setState(() {
+                      _hour = picked.hour;
+                      _minute = picked.minute;
+                    });
+                  }
+                },
+              ),
             ),
             const SizedBox(height: 24),
             Text('반복 요일',
@@ -1001,7 +1106,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
               readOnly: true,
               style: TextStyle(color: colorScheme.onSurface),
               decoration: InputDecoration(
-                hintText: 'SearchScreen에서 정류장을 선택하세요',
+                hintText: '정류장 검색 또는 즐겨찾기에서 선택하세요',
                 hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
                 border:
                     OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
