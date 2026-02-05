@@ -17,6 +17,13 @@ class PermissionService {
     final sdkVersion = androidInfo.version.sdkInt;
 
     if (sdkVersion >= 33) {
+      // 이미 허용된 권한은 요청하지 않음
+      final currentStatus = await Permission.notification.status;
+      if (currentStatus.isGranted) {
+        logMessage('🔔 알림 권한 이미 허용됨', level: LogLevel.debug);
+        return;
+      }
+
       final status = await Permission.notification.request();
 
       if (status.isGranted) {
@@ -28,16 +35,7 @@ class PermissionService {
         logMessage('❌ 알림 권한 거부됨', level: LogLevel.warning);
       }
 
-      // flutter_local_notifications에서도 확인
-      final androidPlugin =
-          flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-      final bool? granted =
-          await androidPlugin?.requestNotificationsPermission();
 
-      logMessage(
-          'flutter_local_notifications 권한 상태: ${granted == true ? "OK" : "거부"}',
-          level: LogLevel.info);
     } else {
       logMessage('ℹ️ Android 12 이하 → 알림 권한 요청 생략됨 (SDK: $sdkVersion)',
           level: LogLevel.debug);
@@ -46,6 +44,13 @@ class PermissionService {
 
   /// 위치 권한 요청 (Foreground)
   static Future<void> requestLocationPermission() async {
+    // 이미 허용된 권한은 요청하지 않음
+    final currentStatus = await Permission.locationWhenInUse.status;
+    if (currentStatus.isGranted) {
+      logMessage('📍 위치 권한 이미 허용됨', level: LogLevel.debug);
+      return;
+    }
+
     final status = await Permission.locationWhenInUse.request();
 
     if (status.isGranted) {
@@ -81,6 +86,13 @@ class PermissionService {
       final sdkVersion = androidInfo.version.sdkInt;
 
       if (sdkVersion >= 31) {
+        // 이미 허용된 권한은 요청하지 않음
+        final currentStatus = await Permission.scheduleExactAlarm.status;
+        if (currentStatus.isGranted) {
+          logMessage('⏰ 정확한 알람 권한 이미 허용됨', level: LogLevel.debug);
+          return;
+        }
+
         // Android 12+
         final status = await Permission.scheduleExactAlarm.request();
 
@@ -108,6 +120,13 @@ class PermissionService {
     try {
       // 폴백: permission_handler를 먼저 사용 (더 안정적)
       try {
+        // 이미 허용된 권한은 요청하지 않음
+        final currentStatus = await Permission.ignoreBatteryOptimizations.status;
+        if (currentStatus.isGranted) {
+          logMessage('🔋 배터리 최적화 제외 이미 허용됨', level: LogLevel.debug);
+          return;
+        }
+
         final status = await Permission.ignoreBatteryOptimizations.request();
         if (status.isGranted) {
           logMessage('🔋 배터리 최적화 제외 승인됨', level: LogLevel.info);
@@ -195,18 +214,14 @@ class PermissionService {
     // 단계별로 권한 요청하고 각각 완료 대기
     try {
       await requestNotificationPermission();
-      await Future.delayed(const Duration(milliseconds: 500)); // 권한 간 지연
       
       await requestLocationPermission();
-      await Future.delayed(const Duration(milliseconds: 500));
       
       // await requestBackgroundLocationPermission(); // 필요시 활성화
       
       await requestExactAlarmPermission();
-      await Future.delayed(const Duration(milliseconds: 500));
       
       await requestIgnoreBatteryOptimizations();
-      await Future.delayed(const Duration(milliseconds: 500));
       
       await checkAutoStartPermission();
       

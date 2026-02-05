@@ -6,6 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logging/logging.dart';
 import 'package:provider/provider.dart';
 
+import 'dart:io';
 import 'screens/home_screen.dart';
 import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
@@ -14,6 +15,9 @@ import 'screens/startup_screen.dart';
 import 'services/settings_service.dart';
 import 'services/alarm_manager.dart';
 import 'services/cache_cleanup_service.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // 전역 AlarmService 인스턴스 (노티피케이션 취소 처리용)
 AlarmService? _globalAlarmService;
@@ -575,42 +579,37 @@ class MyApp extends StatelessWidget {
   // const 제거
   const MyApp({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<SettingsService>(
-      builder: (context, settingsService, child) {
-        // 선택된 컬러 스키마로 테마 생성
-        final lightColorScheme = AppTheme.getColorScheme(
-          settingsService.colorScheme,
-          Brightness.light,
-        );
-        final darkColorScheme = AppTheme.getColorScheme(
-          settingsService.colorScheme,
-          Brightness.dark,
-        );
-
-        // 폰트 크기 배율을 적용한 테마 생성
-        final adjustedLightTheme = AppTheme.lightTheme.copyWith(
-          colorScheme: lightColorScheme,
-          textTheme: _scaleTextTheme(AppTheme.lightTheme.textTheme, settingsService.fontSizeMultiplier),
-        );
-        final adjustedDarkTheme = AppTheme.darkTheme.copyWith(
-          colorScheme: darkColorScheme,
-          textTheme: _scaleTextTheme(AppTheme.darkTheme.textTheme, settingsService.fontSizeMultiplier),
-        );
-
-        return MaterialApp(
-          title: '대구버스',
-          theme: adjustedLightTheme,
-          darkTheme: adjustedDarkTheme,
-          themeMode: settingsService.themeMode,
-          home: const StartupScreen(),
-          debugShowCheckedModeBanner: false,
-        );
-      },
-    );
+  /// 권한이 이미 허용되어 있는지 확인
+  static Future<bool> _hasCorePermissions() async {
+    // 위치 권한 확인
+    final location = await Permission.locationWhenInUse.isGranted;
+    
+    // 알림 권한 확인 (Android 13 이상만 체크)
+    bool notificationGranted = true;
+    if (Platform.isAndroid) {
+      try {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        final sdkVersion = androidInfo.version.sdkInt;
+        if (sdkVersion >= 33) {
+          // Android 13 이상만 알림 권한 체크
+          notificationGranted = await Permission.notification.isGranted;
+        }
+        // Android 12 이하는 알림 권한이 자동으로 허용되므로 true로 간주
+      } catch (e) {
+        // 오류 발생 시 기본값 사용
+        notificationGranted = true;
+      }
+    }
+    
+    return location && notificationGranted;
   }
-  
+
+  /// 권한이 이전에 허용되었는지 확인
+  static Future<bool> _wasPermissionsGrantedBefore() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('permissions_granted_once') ?? false;
+  }
+
   // 텍스트 테마에 폰트 크기 배율 적용
   static TextTheme _scaleTextTheme(TextTheme textTheme, double scaleFactor) {
     return TextTheme(
@@ -660,6 +659,102 @@ class MyApp extends StatelessWidget {
         fontSize: (textTheme.labelSmall?.fontSize ?? 11) * scaleFactor,
       ),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<SettingsService>(
+      builder: (context, settingsService, child) {
+        // 선택된 컬러 스키마로 테마 생성
+        final lightColorScheme = AppTheme.getColorScheme(
+          settingsService.colorScheme,
+          Brightness.light,
+        );
+        final darkColorScheme = AppTheme.getColorScheme(
+          settingsService.colorScheme,
+          Brightness.dark,
+        );
+
+        // 폰트 크기 배율을 적용한 테마 생성
+        final adjustedLightTheme = AppTheme.lightTheme.copyWith(
+          colorScheme: lightColorScheme,
+          textTheme: _scaleTextTheme(AppTheme.lightTheme.textTheme, settingsService.fontSizeMultiplier),
+        );
+        final adjustedDarkTheme = AppTheme.darkTheme.copyWith(
+          colorScheme: darkColorScheme,
+          textTheme: _scaleTextTheme(AppTheme.darkTheme.textTheme, settingsService.fontSizeMultiplier),
+        );
+
+        return MaterialApp(
+          title: '대구버스',
+          theme: adjustedLightTheme,
+          darkTheme: adjustedDarkTheme,
+          themeMode: settingsService.themeMode,
+          // 권한 상태를 확인하여 적절한 화면 표시
+          home: _InitialScreen(),
+          debugShowCheckedModeBanner: false,
+        );
+      },
+    );
+  }
+}
+
+/// 앱 시작 시 권한을 확인하고 적절한 화면을 표시하는 위젯
+class _InitialScreen extends StatefulWidget {
+  const _InitialScreen();
+
+  @override
+  State<_InitialScreen> createState() => _InitialScreenState();
+}
+
+class _InitialScreenState extends State<_InitialScreen> {
+  Widget? _initialScreen;
+  bool _isChecking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissions();
+  }
+
+  Future<void> _checkPermissions() async {
+    // 이전에 권한이 허용되었는지 확인
+    final prefs = await SharedPreferences.getInstance();
+    final wasGranted = prefs.getBool('permissions_granted_once') ?? false;
+    
+    if (wasGranted) {
+      // 이전에 권한이 허용되었으면 현재 권한 상태 확인
+      final hasPermissions = await MyApp._hasCorePermissions();
+      
+      if (hasPermissions && mounted) {
+        // 권한이 이미 허용되어 있으면 바로 HomeScreen으로
+        setState(() {
+          _initialScreen = const HomeScreen();
+          _isChecking = false;
+        });
+        return;
+      }
+    }
+    
+    // 권한이 없거나 이전에 허용되지 않았으면 StartupScreen 표시
+    if (mounted) {
+      setState(() {
+        _initialScreen = const StartupScreen();
+        _isChecking = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 권한 확인 중이면 최소한의 로딩 화면 (거의 보이지 않음)
+    if (_isChecking || _initialScreen == null) {
+      return const Scaffold(
+        body: SizedBox.shrink(), // 빈 화면 (로딩 스피너 없음)
+      );
+    }
+    
+    return _initialScreen!;
   }
 }
 
