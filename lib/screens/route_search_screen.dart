@@ -125,7 +125,7 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
         return ListTile(
           leading: CircleAvatar(child: Text(route.routeNo.substring(0, 1))),
           title: Text(route.routeNo),
-          subtitle: Text('${route.startNodeName} ↔ ${route.endNodeName}'),
+          subtitle: Text('${route.startPoint} ↔ ${route.endPoint}'),
           onTap: () {
             Navigator.of(context).pop(route);
           },

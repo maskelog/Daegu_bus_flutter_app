@@ -1175,6 +1175,42 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.error("TTS_ERROR", "startTtsTracking failed: ${e.message}", null)
                     }
                 }
+                "updateBusInfo" -> {
+                    // Flutter에서 버스 정보 업데이트 수신
+                    val routeId = call.argument<String>("routeId") ?: ""
+                    val busNo = call.argument<String>("busNo") ?: ""
+                    val stationName = call.argument<String>("stationName") ?: ""
+                    val remainingMinutes = call.argument<Int>("remainingMinutes") ?: 0
+                    val currentStation = call.argument<String>("currentStation")
+                    val estimatedTime = call.argument<String>("estimatedTime")
+                    val isLowFloor = call.argument<Boolean>("isLowFloor") ?: false
+                    
+                    if (routeId.isEmpty() || busNo.isEmpty() || stationName.isEmpty()) {
+                        result.error("INVALID_ARGUMENT", "updateBusInfo requires routeId, busNo, stationName", null)
+                        return@setMethodCallHandler
+                    }
+                    
+                    try {
+                        Log.d(TAG, "🔄 Flutter에서 버스 정보 업데이트 수신: $busNo, $stationName, ${remainingMinutes}분")
+                        
+                        // BusAlertService에 버스 정보 업데이트 전달
+                        busAlertService?.updateBusInfoFromFlutter(
+                            routeId = routeId,
+                            busNo = busNo,
+                            stationName = stationName,
+                            remainingMinutes = remainingMinutes,
+                            currentStation = currentStation,
+                            estimatedTime = estimatedTime,
+                            isLowFloor = isLowFloor
+                        )
+                        
+                        Log.d(TAG, "✅ BusAlertService에 버스 정보 전달 완료")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 버스 정보 업데이트 오류: ${e.message}", e)
+                        result.error("UPDATE_ERROR", "버스 정보 업데이트 실패: ${e.message}", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -1694,8 +1730,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
             }
 
-            // 권한 요청 처리
-            checkAndRequestPermissions()
+
 
             // 배터리 최적화 예외 요청
             requestBatteryOptimizationExemption()

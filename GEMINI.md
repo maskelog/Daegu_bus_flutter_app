@@ -359,3 +359,437 @@ Widget _buildSectionHeader({
 2. **상태 피드백**: 도착 임박 강조, 빈 상태 안내
 3. **애니메이션**: 카드 진입 효과, 선택 하이라이트
 4. **접근성**: 햅틱 피드백, 충분한 터치 영역
+
+---
+
+## 2026-02-05: 홈 화면과 노티피케이션 버스 정보 동기화 문제
+
+### 🚨 문제 상황
+홈 스크린에 표시되는 버스 도착 시간과 알림(Notification)에 표시되는 버스 도착 시간이 서로 다름
+- **홈 스크린**: Flutter에서 실시간 API로 가져온 최신 데이터
+- **노티피케이션**: Android Native (BusAlertService.kt)에서 별도로 관리하는 데이터
+
+### 🔍 원인 분석
+1. **데이터 소스 분리**
+   - Flutter: `BusApiService` (Dart)로 버스 정보 fetch
+   - Native: `BusApiService` (Kotlin)로 버스 정보 fetch
+   - 두 서비스가 독립적으로 API 호출 → **동기화 안 됨**
+
+2. **업데이트 타이밍 불일치**
+   - Flutter: 화면이 보일 때마다 refresh
+   - Native: 백그라운드 주기적 업데이트 (독립 타이머)
+   - **같은 시점에 다른 데이터 표시 가능**
+
+3. **캐싱 전략 차이**
+   - Flutter: UI 즉시 업데이트
+   - Native: `TrackingInfo.lastBusInfo` 캐시 사용
+   - **캐시 불일치로 구버전 데이터 표시**
+
+### 🎯 해결 방안
+
+#### 방안 1: Flutter → Native 실시간 업데이트 (권장)
+Flutter에서 버스 정보를 가져올 때마다 Native로 업데이트 전송
+
+**장점:**
+- Flutter가 단일 진실 공급원(Single Source of Truth)
+- Native는 최신 정보만 표시
+- Native API 호출 횟수 감소 (배터리 절약)
+
+**구현 방법:**
+```dart
+// lib/screens/home_screen.dart 또는 bus_info 갱신 지점
+Future<void> _refreshBusArrivals() async {
+  final arrivals = await busApiService.getBusArrivalInfo(...);
+  
+  // 각 버스 정보를 Native로 전송
+  for (var arrival in arrivals) {
+    await _methodChannel.invokeMethod('updateBusInfo', {
+      'routeId': arrival.routeId,
+      'busNo': arrival.routeNo,
+      'stationName': stationName,
+      'remainingMinutes': arrival.remainingMinutes,
+      'currentStation': arrival.currentStation,
+      'estimatedTime': arrival.estimatedTime,
+      'isLowFloor': arrival.isLowFloor,
+    });
+  }
+}
+```
+
+```kotlin
+// BusAlertService.kt
+fun updateBusInfoFromFlutter(
+    routeId: String,
+    busNo: String,
+    stationName: String,
+    remainingMinutes: Int,
+    currentStation: String?,
+    estimatedTime: String?,
+    isLowFloor: Boolean
+) {
+    val trackingInfo = activeTrackings[routeId] ?: return
+    
+    // BusInfo 업데이트
+    trackingInfo.lastBusInfo = BusInfo(
+        currentStation = currentStation ?: "정보 없음",
+        estimatedTime = estimatedTime ?: "${remainingMinutes}분",
+        remainingStops = "0",
+        busNumber = busNo,
+        isLowFloor = isLowFloor
+    )
+    
+    // 노티피케이션 즉시 갱신
+    updateForegroundNotification()
+    
+    Log.d(TAG, "✅ Flutter에서 버스 정보 업데이트: $busNo, $remainingMinutes분")
+}
+```
+
+#### 방안 2: 공통 데이터 소스 사용
+Native API만 사용하고 Flutter는 Native에서 데이터 가져오기
+
+**장점:**
+- 단일 API 호출로 일관성 보장
+- 데이터 흐름이 단순함
+
+**단점:**
+- Flutter UI가 Native에 의존
+- 화면 갱신이 느릴 수 있음
+
+#### 방안 3: 이벤트 기반 동기화
+Native가 업데이트하면 Flutter에 이벤트 전송, Flutter가 업데이트하면 Native에 이벤트 전송
+
+**장점:**
+- 양방향 동기화
+- 실시간성 보장
+
+**단점:**
+- 구현 복잡도 증가
+- 순환 업데이트 위험
+
+### ✅ 권장 솔루션: 방안 1 구현
+1. **Flutter 측 수정**
+   - `bus_api_service.dart`에서 버스 정보 fetch 후 Native로 전송
+   - `home_screen.dart`, `favorites_screen.dart` 등 버스 정보 표시 화면 모두 적용
+
+2. **Native 측 수정**
+   - `MainActivity.kt`에 `updateBusInfo` 메서드 추가
+   - `BusAlertService.kt`에 `updateBusInfoFromFlutter()` 함수 추가
+   - 받은 데이터로 `activeTrackings[routeId].lastBusInfo` 업데이트
+   - 즉시 `updateForegroundNotification()` 호출
+
+3. **나우바(Now Bar) 지원**
+   - Android 16의 Now Bar는 Live Update 알림을 우선 표시
+   - `setRequestPromotedOngoing(true)` 이미 설정됨
+   - 최신 버스 정보만 제공하면 Now Bar에 자동 반영
+
+### 📝 구현 체크리스트
+- [x] Flutter `BusApiService`에 Native 업데이트 로직 추가
+- [x] `MainActivity.kt`에 `updateBusInfo` 메서드 채널 핸들러 추가
+- [x] `BusAlertService.kt`에 `updateBusInfoFromFlutter()` 구현
+- [ ] 홈 스크린 버스 정보 갱신 시 Native 호출 추가 (getBusArrivalByRouteId에서 자동 호출)
+- [ ] 즐겨찾기 화면 버스 정보 갱신 시 Native 호출 추가 (getBusArrivalByRouteId 사용 시 자동 호출)
+- [ ] 자동 알람 갱신 시 Native 호출 추가
+- [ ] 테스트: 홈 화면과 노티피케이션 시간 일치 확인
+- [ ] 테스트: Now Bar 표시 확인 (Android 16+)
+
+### 🎯 기대 효과
+1. **데이터 일관성**: 모든 화면에서 동일한 버스 정보 표시
+2. **사용자 신뢰**: 홈 화면과 알림이 항상 일치
+3. **Now Bar 지원**: Android 16+에서 최신 정보 실시간 표시
+4. **배터리 절약**: Native API 호출 감소 (Flutter가 대신 호출)
+
+---
+
+## 2026-02-05 (2차): Now Bar 상태 칩 카운트다운 수정
+
+### 문제
+- Android 16 Now Bar에서 상태 칩이 표시되지 않음
+- 버스 도착 시간 카운트다운이 작동하지 않음
+
+### 원인
+1. **setWhen() 설정 오류**: 현재 시간으로 설정되어 카운트다운 불가
+   - 공식 문서: "when 시간이 현재 시간보다 2분 이상 후여야 카운트다운 표시"
+2. **API 호출 순서**: `setRequestPromotedOngoing`을 ProgressStyle 설정 후에 호출
+
+### 해결 방법
+
+#### 1. `setWhen()` 수정 - 버스 도착 예정 시간으로 설정
+```kotlin
+// 수정 전
+.setWhen(System.currentTimeMillis())
+
+// 수정 후
+val remainingMinutes = busInfo?.getRemainingMinutes() ?: 0
+val arrivalTimeMillis = if (remainingMinutes > 0) {
+    System.currentTimeMillis() + (remainingMinutes * 60 * 1000L)
+} else {
+    System.currentTimeMillis() + 60000L // 1분 후 (곧 도착)
+}
+nativeBuilder.setWhen(arrivalTimeMillis)
+```
+
+#### 2. API 호출 순서 최적화
+```kotlin
+// 올바른 순서:
+// 1. setWhen() 설정
+// 2. setRequestPromotedOngoing(true)
+// 3. setShortCriticalText()
+// 4. ProgressStyle 설정
+
+nativeBuilder.setWhen(arrivalTimeMillis)  // ①
+
+setRequestPromotedOngoingMethod.invoke(nativeBuilder, true)  // ②
+setShortCriticalTextMethod.invoke(nativeBuilder, chipText)   // ③
+
+// ProgressStyle 설정  // ④
+val progressStyle = progressStyleClass.getConstructor().newInstance()
+...
+```
+
+### Now Bar 작동 조건 (Android 16+)
+✅ **필수 조건**:
+1. `setOngoing(true)` - 진행 중인 알림
+2. `setRequestPromotedOngoing(true)` - Live Update 승격 요청
+3. `setWhen(미래 시간)` - 현재 시간보다 2분 이상 후
+4. `setShortCriticalText()` - 상태 칩 텍스트
+5. `setSmallIcon()` - 상태 칩 아이콘 (필수)
+6. `setCategory(CATEGORY_PROGRESS)` - 진행 중 카테고리
+
+📊 **상태 칩 표시 규칙**:
+- 7자 미만: 전체 텍스트 표시
+- 텍스트 절반 미만 표시 가능: 아이콘만 표시
+- 텍스트 절반 이상 표시 가능: 최대한 많은 텍스트 표시
+- 최대 너비: 96dp
+
+⏰ **카운트다운 표시 규칙**:
+- `when` 시간이 현재보다 2분 이상 후: "5분" 형식으로 표시
+- `when` 시간이 과거: 텍스트 표시 안 됨
+- `setUsesChronometer(true)` + `setChronometerCountdown(true)`: 타이머 표시
+
+### 참고 자료
+- [실시간 업데이트 알림 만들기 | Android Developers](https://developer.android.com/develop/ui/views/notifications/live-update?hl=ko)
+
+---
+
+## 2026-02-05 (3차): Live Update 알림 승격 가능성 확인 및 설정 바로가기 추가
+
+### 목표
+- Android 16 Live Update 알림의 승격 가능 여부를 확인하고 로깅하여 디버깅 정보 강화
+- 사용자가 앱의 Live Update 기능을 비활성화한 경우, 설정으로 바로 이동할 수 있는 액션 추가
+
+### 수정된 파일
+#### `android/app/src/main/kotlin/com/example/daegu_bus_app/utils/NotificationHandler.kt`
+
+##### 1. Live Update 승격 가능성 로깅 추가
+- `NotificationManager.canPostPromotedNotifications()`: 앱이 승격 알림을 게시할 수 있는지 (사용자 설정 여부) 확인하여 로그에 출력
+- `Notification.hasPromotableCharacteristics()`: 생성된 알림 객체가 승격될 수 있는 특성을 가졌는지 확인하여 로그에 출력
+
+```kotlin
+// ... (setShortCriticalText 호출 후)
+                    // --- Live Update Promotable Characteristics Checks ---
+                    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    val canPostPromoted = try {
+                        val method = notificationManager.javaClass.getMethod("canPostPromotedNotifications")
+                        method.invoke(notificationManager) as Boolean
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ canPostPromotedNotifications 호출 실패: ${e.message}")
+                        false
+                    }
+                    Log.d(TAG, "📋 NotificationManager.canPostPromotedNotifications(): $canPostPromoted")
+// ... (builtNotification 생성 후)
+                val builtNotification = nativeBuilder.build()
+                val hasPromotableCharacteristics = try {
+                    val method = builtNotification.javaClass.getMethod("hasPromotableCharacteristics")
+                    method.invoke(builtNotification) as Boolean
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ hasPromotableCharacteristics 호출 실패: ${e.message}")
+                    false
+                }
+                Log.d(TAG, "📋 builtNotification.hasPromotableCharacteristics(): $hasPromotableCharacteristics")
+```
+
+##### 2. 승격 불가 시 '알림 설정' 액션 추가
+- `NotificationManager.canPostPromotedNotifications()` 결과가 `false`일 경우, 알림에 "알림 설정" 액션 버튼을 추가
+- 이 버튼 클릭 시 `Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS` 인텐트를 통해 앱의 프로모션 알림 설정 화면으로 사용자를 바로 안내
+
+```kotlin
+// ... (자동알람 중지 액션 추가 후)
+                // Add action to manage promoted notifications if they can't be posted
+                if (!canPostPromoted) {
+                    try {
+                        val manageSettingsIntent = Intent(android.provider.Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS).apply {
+                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                        }
+                        val manageSettingsPendingIntent = PendingIntent.getActivity(
+                            context,
+                            9997, // Unique request code
+                            manageSettingsIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        nativeBuilder.addAction(Notification.Action.Builder(
+                            android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_cancel), // Temporary icon
+                            "알림 설정", // "Notification Settings"
+                            manageSettingsPendingIntent
+                        ).build())
+                        Log.d(TAG, "⚙️ '알림 설정' 액션 추가됨 (Promoted Notifications 비활성화됨)")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ '알림 설정' 액션 추가 실패: ${e.message}")
+                    }
+                }
+```
+
+#### 4. Samsung One UI 7 및 Android 16 Live Updates 관련 추가 분석
+
+- **삼성 One UI 7 Live Notifications (나우 바)의 제한**: 삼성 One UI 7에 도입된 Live Notifications 및 나우 바 기능은 현재 삼성 화이트리스트 앱 또는 시스템 기능에만 허용됩니다. 일반 앱은 해당 기능을 직접 활용할 수 없습니다.
+- **미디어 재생 앱 예외**: AndroidX Media3의 `MediaSessionService`를 사용하는 미디어 재생 앱은 Live Notifications 및 나우 바를 자동으로 지원합니다.
+- **Android 16과의 통합**: 삼성은 Android 16의 Live Updates API가 출시되면, 이러한 기능이 플랫폼의 표준 API를 통해 자동으로 지원될 것이라고 언급했습니다. 이는 삼성 고유의 `meta-data` 및 `extras` 설정이 향후에는 필요 없거나, Android 16 기본 API에 통합될 것임을 시사합니다.
+- **현재 구현의 정당성**: `NotificationHandler.kt`에서 Android 16의 `setRequestPromotedOngoing()`, `setShortCriticalText()`, `Notification.ProgressStyle` 등 표준 Live Updates API를 리플렉션을 통해 사용하는 현재의 접근 방식은 미래의 Android 표준에 부합하며, Android 16 정식 출시 시 자동으로 삼성 One UI에서도 해당 기능을 활용할 수 있게 될 것입니다. 따라서 현재로서는 삼성 One UI 7에 특화된 별도 구현은 불필요합니다.
+
+---
+
+## 2026-02-05 (4차): Samsung One UI 7 Live Notifications 및 Now Bar 지원 추가
+
+### 목표
+- Samsung One UI 7의 Live Notifications 및 Now Bar 지원 추가
+- Android 16 표준 API와 Samsung 전용 API를 모두 구현하여 최대 호환성 확보
+
+### 참고 자료
+- [Live Notifications and Now Bar in Samsung One UI 7: As developer](https://akexorcist.dev/live-notifications-and-now-bar-in-samsung-one-ui-7-as-developer-en/)
+
+### 구현 내용
+
+#### 1. AndroidManifest.xml - Samsung 지원 선언
+```xml
+<!-- Samsung One UI 7 Live Notifications and Now Bar 지원 -->
+<meta-data android:name="com.samsung.android.support.ongoing_activity" android:value="true" />
+```
+
+#### 2. NotificationHandler.kt - Samsung extras Bundle 추가
+
+Samsung One UI 7은 알림에 특별한 extras Bundle을 요구합니다:
+
+```kotlin
+val samsungExtras = android.os.Bundle().apply {
+    // 필수: Samsung Live Notifications 활성화
+    putInt("android.ongoingActivityNoti.style", 1)
+    
+    // Primary Info (주요 텍스트)
+    putString("android.ongoingActivityNoti.primaryInfo", busNo)
+    
+    // Secondary Info (부가 정보)
+    putString("android.ongoingActivityNoti.secondaryInfo", "$stationName: $timeStr")
+    
+    // Chip 설정 (상태 바 상단 칩)
+    putString("android.ongoingActivityNoti.chipExpandedText", timeStr)
+    putInt("android.ongoingActivityNoti.chipBgColor", busTypeColor)
+    val chipIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_notification)
+    putParcelable("android.ongoingActivityNoti.chipIcon", chipIcon)
+    
+    // Progress 정보
+    putInt("android.ongoingActivityNoti.progress", progress)
+    putInt("android.ongoingActivityNoti.progressMax", maxMinutes)
+    
+    // Progress 트래커 아이콘
+    val trackerIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_tracker)
+    putParcelable("android.ongoingActivityNoti.progressSegments.icon", trackerIcon)
+    putInt("android.ongoingActivityNoti.progressSegments.progressColor", busTypeColor)
+    
+    // Now Bar 설정 (잠금 화면)
+    putString("android.ongoingActivityNoti.nowbarPrimaryInfo", busNo)
+    putString("android.ongoingActivityNoti.nowbarSecondaryInfo", timeStr)
+    
+    // Action 버튼 표시 설정
+    putInt("android.ongoingActivityNoti.actionType", 1)
+    putInt("android.ongoingActivityNoti.actionPrimarySet", 0)
+}
+
+// Notification Builder에 extras 적용
+nativeBuilder.setExtras(samsungExtras)
+```
+
+### Samsung One UI 7 vs Android 16 Live Updates
+
+#### Samsung One UI 7 (현재)
+- **화이트리스트 앱만**: 삼성이 승인한 앱만 사용 가능
+- **전용 API**: `android.ongoingActivityNoti.*` extras 사용
+- **meta-data 필수**: AndroidManifest에 선언 필요
+- **지원 기기**: Samsung Galaxy S25 등 (One UI 7)
+
+#### Android 16 Live Updates (미래)
+- **모든 앱 지원**: 표준 플랫폼 API
+- **표준 API**: `setRequestPromotedOngoing()`, `setShortCriticalText()`, `ProgressStyle`
+- **자동 지원**: 별도 설정 불필요
+- **지원 기기**: Android 16+ 모든 기기 (출시 예정)
+
+### 통합 전략
+
+현재 구현은 **두 가지 방식을 모두 지원**하여 최대 호환성을 확보합니다:
+
+1. **Samsung One UI 7 사용자**: extras Bundle을 통해 Live Notifications 지원
+2. **Android 16+ 사용자**: 표준 Live Updates API 사용
+3. **Samsung + Android 16**: One UI 8에서 표준 API로 자동 통합 예정
+
+```kotlin
+// 1. Samsung One UI 7 방식
+val samsungExtras = Bundle().apply { /* ... */ }
+nativeBuilder.setExtras(samsungExtras)
+
+// 2. Android 16 표준 방식
+nativeBuilder.setWhen(arrivalTimeMillis)
+setRequestPromotedOngoingMethod.invoke(nativeBuilder, true)
+setShortCriticalTextMethod.invoke(nativeBuilder, chipText)
+
+// ProgressStyle 설정
+val progressStyle = progressStyleClass.getConstructor().newInstance()
+// ...
+```
+
+### 주요 차이점
+
+| 기능 | Samsung One UI 7 | Android 16 |
+|------|------------------|------------|
+| **활성화 방식** | extras Bundle | Reflection API |
+| **Progress** | `android.ongoingActivityNoti.progress*` | `Notification.ProgressStyle` |
+| **트래커** | `progressSegments.icon` | `setProgressTrackerIcon()` |
+| **상태 칩** | `chipExpandedText` | `setShortCriticalText()` |
+| **Now Bar** | `nowbar*` extras | 자동 (같은 API) |
+
+### 제한 사항
+
+⚠️ **Samsung One UI 7 화이트리스트 제한**:
+- 일반 앱은 현재 Samsung Live Notifications 사용 불가
+- 삼성 내장 앱 또는 승인된 앱만 사용 가능
+- **미디어 재생 앱 예외**: `MediaSessionService` 사용 시 자동 지원
+
+✅ **Android 16 출시 시**:
+- One UI 8부터 표준 API로 자동 전환 예정
+- 별도의 Samsung 전용 코드 불필요
+- 현재 구현한 Android 16 API가 그대로 작동
+
+### 테스트 방법
+
+#### Samsung One UI 7 기기:
+1. Galaxy S25 등 One UI 7 기기 준비
+2. 앱 설치 후 버스 알림 시작
+3. 알림 드로어에서 Live Notifications 섹션 확인
+4. 상태 바 상단 칩 확인
+5. 잠금 화면에서 Now Bar 확인
+
+#### Android 16+ 기기:
+1. Android 16 베타/정식 기기 준비
+2. 앱 설치 후 버스 알림 시작
+3. Live Updates 알림 확인
+4. 상태 칩 카운트다운 확인
+
+### 로그 확인
+```
+📱 Samsung One UI 7 extras Bundle 생성 완료
+📱 Samsung One UI 7 extras 적용 완료
+⏰ setWhen 설정: 5분 후 (...)
+✅ setRequestPromotedOngoing(true) 호출 성공
+✅ setShortCriticalText('5분') 호출 성공
+🎯 Live Update 설정 완료
+```
+
+---

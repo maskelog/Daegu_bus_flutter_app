@@ -1025,6 +1025,47 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
     }
 
+    // Flutter에서 버스 정보 업데이트 수신 (공개 함수)
+    fun updateBusInfoFromFlutter(
+        routeId: String,
+        busNo: String,
+        stationName: String,
+        remainingMinutes: Int,
+        currentStation: String?,
+        estimatedTime: String?,
+        isLowFloor: Boolean
+    ) {
+        try {
+            Log.d(TAG, "🔄 Flutter에서 버스 정보 업데이트 수신: $busNo, $stationName, ${remainingMinutes}분")
+            
+            // 추적 정보가 없으면 무시
+            val trackingInfo = activeTrackings[routeId]
+            if (trackingInfo == null) {
+                Log.w(TAG, "⚠️ 추적 정보 없음 (routeId: $routeId). 업데이트 무시")
+                return
+            }
+            
+            // BusInfo 업데이트
+            val updatedBusInfo = BusInfo(
+                currentStation = currentStation ?: "정보 없음",
+                estimatedTime = estimatedTime ?: "${remainingMinutes}분",
+                remainingStops = trackingInfo.lastBusInfo?.remainingStops ?: "0",
+                busNumber = busNo,
+                isLowFloor = isLowFloor
+            )
+            
+            trackingInfo.lastBusInfo = updatedBusInfo
+            trackingInfo.consecutiveErrors = 0 // 성공적으로 업데이트되었으므로 오류 카운트 리셋
+            
+            // 노티피케이션 즉시 갱신
+            updateForegroundNotification()
+            
+            Log.d(TAG, "✅ Flutter 버스 정보 업데이트 완료: $busNo, 현재 위치: ${updatedBusInfo.currentStation}, 예상 시간: ${updatedBusInfo.estimatedTime}")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Flutter 버스 정보 업데이트 오류: ${e.message}", e)
+        }
+    }
+
     fun initialize() {
         Log.d(TAG, "Service initialize called")
         busApiService = BusApiService(applicationContext)

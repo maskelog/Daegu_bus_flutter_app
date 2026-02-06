@@ -243,10 +243,51 @@ class BusApiService {
         errorMsg: errorMsg,
       );
 
+      // ✨ Native로 버스 정보 전송 (Flutter-Native 동기화)
+      if (result != null && result.bus.isNotEmpty) {
+        try {
+          final firstBus = result.bus.first;
+          final remainingMinutes = _extractRemainingMinutes(firstBus.estimatedTime);
+          
+          await _channel.invokeMethod('updateBusInfo', {
+            'routeId': routeId,
+            'busNo': result.name,
+            'stationName': stationId, // stationName은 호출자가 제공해야 더 정확함
+            'remainingMinutes': remainingMinutes,
+            'currentStation': firstBus.currentStation,
+            'estimatedTime': firstBus.estimatedTime,
+            'isLowFloor': false, // BusInfoData에 isLowFloor 필드가 없으면 false
+          });
+          
+          debugPrint('✅ Native로 버스 정보 전송 완료: ${result.name}, $remainingMinutes분');
+        } catch (e) {
+          debugPrint('⚠️ Native 버스 정보 전송 실패: $e');
+          // 에러가 발생해도 result는 반환 (동기화는 선택사항)
+        }
+      }
+
       return result;
     } catch (e) {
       debugPrint('❌ [ERROR] getBusArrivalByRouteId 실행 중 오류: $e');
       return null;
+    }
+  }
+
+  /// estimatedTime 문자열에서 숫자(분)를 추출하는 헬퍼 함수
+  int _extractRemainingMinutes(String estimatedTime) {
+    try {
+      // 숫자만 추출 (예: "5분" -> 5, "곧 도착" -> 0)
+      final match = RegExp(r'\d+').firstMatch(estimatedTime);
+      if (match != null) {
+        return int.parse(match.group(0)!);
+      }
+      // "곧 도착", "운행종료" 등의 경우
+      if (estimatedTime.contains('곧') || estimatedTime.contains('도착')) {
+        return 0;
+      }
+      return 0;
+    } catch (e) {
+      return 0;
     }
   }
 

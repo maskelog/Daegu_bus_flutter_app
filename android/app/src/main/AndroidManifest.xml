@@ -14,6 +14,9 @@
 
     <!-- 알림 권한 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    
+    <!-- Android 16 Live Updates 권한 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
 
     <!-- 진동 권한-->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -43,6 +46,8 @@
     <application android:label="대구 버스" android:name="${applicationName}" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:networkSecurityConfig="@xml/network_security_config">
         <!-- <meta-data android:name="com.kakao.sdk.AppKey" android:value="${BuildConfig.KAKAO_NATIVE_APP_KEY}"/> -->
 
+        <!-- Samsung One UI 7 Live Notifications and Now Bar 지원 -->
+        <meta-data android:name="com.samsung.android.support.ongoing_activity" android:value="true" />
 
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize" android:screenOrientation="unspecified" android:resizeableActivity="true">
             <!-- Specifies an Android theme to apply to this Activity as soon as

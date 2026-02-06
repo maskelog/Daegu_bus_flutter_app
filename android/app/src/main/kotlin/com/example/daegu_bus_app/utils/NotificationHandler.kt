@@ -25,6 +25,8 @@ import com.example.daegu_bus_app.MainActivity
 import com.example.daegu_bus_app.R
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
+import android.net.Uri
+import android.provider.Settings
 
 class NotificationHandler(private val context: Context) {
 
@@ -373,6 +375,15 @@ class NotificationHandler(private val context: Context) {
             )
         }
 
+        // Android 버전 및 Live Updates 지원 여부 로깅
+        Log.d(TAG, "📱 ===== Android 버전 정보 =====")
+        Log.d(TAG, "📱 SDK Version: ${Build.VERSION.SDK_INT}")
+        Log.d(TAG, "📱 Release: ${Build.VERSION.RELEASE}")
+        Log.d(TAG, "📱 Manufacturer: ${Build.MANUFACTURER}")
+        Log.d(TAG, "📱 Model: ${Build.MODEL}")
+        Log.d(TAG, "📱 Live Updates API 지원: ${if (Build.VERSION.SDK_INT >= 36) "✅ YES (Android 16+)" else "❌ NO (Android ${Build.VERSION.RELEASE})"}")
+        Log.d(TAG, "📱 ================================")
+
         // Android 16+ (API 36)에서는 Notification.Builder를 사용하여 Live Update 지원
         val notification = if (Build.VERSION.SDK_INT >= 36) {
             try {
@@ -402,6 +413,64 @@ class NotificationHandler(private val context: Context) {
                     } + if (activeTrackings.size > 4) " +${activeTrackings.size - 4}" else ""
                 } else null
 
+                // ===== Samsung One UI 7 Live Notifications extras Bundle =====
+                // Android 16 출시 전 Samsung 기기에서도 Live Notifications 지원하기 위한 extras
+                val samsungExtras = android.os.Bundle().apply {
+                    // 필수: Samsung Live Notifications 활성화
+                    putInt("android.ongoingActivityNoti.style", 1)
+                    
+                    if (firstTracking != null) {
+                        val busInfo = firstTracking.lastBusInfo
+                        val busNo = firstTracking.busNo
+                        val stationName = firstTracking.stationName
+                        
+                        // 상태 정보
+                        val remainingMinutes = busInfo?.getRemainingMinutes() ?: 0
+                        val timeStr = when {
+                            busInfo == null -> "정보 없음"
+                            busInfo.estimatedTime == "운행종료" -> "운행종료"
+                            busInfo.estimatedTime == "곧 도착" -> "곧 도착"
+                            busInfo.estimatedTime.contains("분") -> busInfo.estimatedTime
+                            else -> "${remainingMinutes}분"
+                        }
+                        
+                        // Primary Info (주요 텍스트)
+                        putString("android.ongoingActivityNoti.primaryInfo", busNo)
+                        
+                        // Secondary Info (부가 정보)
+                        putString("android.ongoingActivityNoti.secondaryInfo", "$stationName: $timeStr")
+                        
+                        // Chip 설정 (상태 바 상단 칩)
+                        putString("android.ongoingActivityNoti.chipExpandedText", timeStr)
+                        putInt("android.ongoingActivityNoti.chipBgColor", busTypeColor)
+                        val chipIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_notification)
+                        putParcelable("android.ongoingActivityNoti.chipIcon", chipIcon)
+                        
+                        // Progress 정보
+                        if (remainingMinutes > 0) {
+                            val maxMinutes = 30
+                            val progress = maxMinutes - remainingMinutes.coerceIn(0, maxMinutes)
+                            putInt("android.ongoingActivityNoti.progress", progress)
+                            putInt("android.ongoingActivityNoti.progressMax", maxMinutes)
+                            
+                            // Progress 트래커 아이콘
+                            val trackerIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_tracker)
+                            putParcelable("android.ongoingActivityNoti.progressSegments.icon", trackerIcon)
+                            putInt("android.ongoingActivityNoti.progressSegments.progressColor", busTypeColor)
+                        }
+                        
+                        // Now Bar 설정 (잠금 화면)
+                        putString("android.ongoingActivityNoti.nowbarPrimaryInfo", busNo)
+                        putString("android.ongoingActivityNoti.nowbarSecondaryInfo", timeStr)
+                        
+                        // Action 버튼 표시 설정
+                        putInt("android.ongoingActivityNoti.actionType", 1)
+                        putInt("android.ongoingActivityNoti.actionPrimarySet", 0)
+                    }
+                }
+                
+                Log.d(TAG, "📱 Samsung One UI 7 extras Bundle 생성 완료")
+
                 @Suppress("NewApi")
                 val nativeBuilder = Notification.Builder(context, CHANNEL_ID_ONGOING)
                     .setContentTitle(title)
@@ -414,7 +483,6 @@ class NotificationHandler(private val context: Context) {
                     .setAutoCancel(false)
                     .setOnlyAlertOnce(true)
                     .setShowWhen(true)
-                    .setWhen(System.currentTimeMillis())
                     .setColor(busTypeColor) // 버스 타입별 동적 색상
                     .setColorized(true)
                     .setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -424,10 +492,29 @@ class NotificationHandler(private val context: Context) {
                         stopPendingIntent
                     ).build())
 
+                // Samsung One UI 7 extras 설정
+                nativeBuilder.setExtras(samsungExtras)
+                Log.d(TAG, "📱 Samsung One UI 7 extras 적용 완료")
+
                 // subText에 다른 버스 정보 표시
                 if (summaryText != null) {
                     nativeBuilder.setSubText(summaryText)
                 }
+
+                // --- Live Update Promotable Characteristics Checks ---
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                @Suppress("NewApi")
+                val canPostPromoted = if (Build.VERSION.SDK_INT >= 36) {
+                    try {
+                        notificationManager.canPostPromotedNotifications()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ canPostPromotedNotifications 호출 실패: ${e.message}")
+                        false
+                    }
+                } else {
+                    false
+                }
+                Log.d(TAG, "📋 NotificationManager.canPostPromotedNotifications(): $canPostPromoted")
 
                 // Live Update 핵심: ProgressStyle + setProgressTrackerIcon
                 if (firstTracking != null) {
@@ -446,94 +533,18 @@ class NotificationHandler(private val context: Context) {
                         else -> "${busInfo.getRemainingMinutes()}분"
                     }
 
-                    // 2. ProgressStyle 설정 (Android 16+ Live Update 핵심)
+                    // 2. setWhen을 버스 도착 예정 시간으로 설정 (Now Bar 카운트다운을 위해)
                     val remainingMinutes = busInfo?.getRemainingMinutes() ?: 0
-                    val maxMinutes = 30
-                    val progress = if (remainingMinutes > 0) {
-                        maxMinutes - remainingMinutes.coerceIn(0, maxMinutes)
+                    val arrivalTimeMillis = if (remainingMinutes > 0) {
+                        System.currentTimeMillis() + (remainingMinutes * 60 * 1000L)
                     } else {
-                        maxMinutes // 도착 임박: 100%
+                        System.currentTimeMillis() + 60000L // 1분 후로 설정 (곧 도착)
                     }
+                    nativeBuilder.setWhen(arrivalTimeMillis)
+                    Log.d(TAG, "⏰ setWhen 설정: ${remainingMinutes}분 후 ($arrivalTimeMillis)")
 
-                    try {
-                        // Notification.ProgressStyle 클래스 가져오기
-                        val progressStyleClass = Class.forName("android.app.Notification\$ProgressStyle")
-                        val progressStyleConstructor = progressStyleClass.getConstructor()
-                        val progressStyle = progressStyleConstructor.newInstance()
-
-                        // setProgress(progress) - 현재 진행도 설정
-                        val setProgressMethod = progressStyleClass.getMethod("setProgress", Int::class.javaPrimitiveType)
-                        setProgressMethod.invoke(progressStyle, progress)
-                        Log.d(TAG, "✅ ProgressStyle.setProgress($progress) 호출 성공")
-
-                        // setProgressTrackerIcon(Icon) - 흰색 버스 아이콘 (배경색에서 잘 보임)
-                        val busIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_tracker)
-                        val setProgressTrackerIconMethod = progressStyleClass.getMethod(
-                            "setProgressTrackerIcon", android.graphics.drawable.Icon::class.java
-                        )
-                        setProgressTrackerIconMethod.invoke(progressStyle, busIcon)
-                        Log.d(TAG, "✅ ProgressStyle.setProgressTrackerIcon() 호출 성공 - 흰색 버스 아이콘, 배경색: ${Integer.toHexString(busTypeColor)}")
-
-                        // setProgressSegments - 구간별 색상 (선택 사항: 교통 상태 표시)
-                        try {
-                            val segmentClass = Class.forName("android.app.Notification\$ProgressStyle\$Segment")
-                            val segmentConstructor = segmentClass.getConstructor(Int::class.javaPrimitiveType)
-                            val setColorMethod = segmentClass.getMethod("setColor", Int::class.javaPrimitiveType)
-
-                            // 구간 생성: 초록(여유) -> 파랑(진행 중)
-                            val segment1 = segmentConstructor.newInstance(progress)
-                            setColorMethod.invoke(segment1, busTypeColor)
-
-                            val segment2 = segmentConstructor.newInstance(maxMinutes - progress)
-                            setColorMethod.invoke(segment2, 0xFFE0E0E0.toInt()) // 회색 (남은 구간)
-
-                            val segments = listOf(segment1, segment2)
-                            val setProgressSegmentsMethod = progressStyleClass.getMethod("setProgressSegments", List::class.java)
-                            setProgressSegmentsMethod.invoke(progressStyle, segments)
-                            Log.d(TAG, "✅ ProgressStyle.setProgressSegments() 호출 성공")
-                        } catch (e: Exception) {
-                            Log.w(TAG, "⚠️ setProgressSegments 설정 실패 (선택 사항): ${e.message}")
-                        }
-
-                        // setProgressPoints - 출발/도착 지점 표시 (선택 사항)
-                        try {
-                            val pointClass = Class.forName("android.app.Notification\$ProgressStyle\$Point")
-                            val pointConstructor = pointClass.getConstructor(Int::class.javaPrimitiveType)
-                            val setPointColorMethod = pointClass.getMethod("setColor", Int::class.javaPrimitiveType)
-
-                            // 시작점 (0)
-                            val startPoint = pointConstructor.newInstance(0)
-                            setPointColorMethod.invoke(startPoint, 0xFF4CAF50.toInt()) // 초록색
-
-                            // 끝점 (도착 - maxMinutes)
-                            val endPoint = pointConstructor.newInstance(maxMinutes)
-                            setPointColorMethod.invoke(endPoint, 0xFFFF5722.toInt()) // 주황색 (도착)
-
-                            val points = listOf(startPoint, endPoint)
-                            val setProgressPointsMethod = progressStyleClass.getMethod("setProgressPoints", List::class.java)
-                            setProgressPointsMethod.invoke(progressStyle, points)
-                            Log.d(TAG, "✅ ProgressStyle.setProgressPoints() 호출 성공")
-                        } catch (e: Exception) {
-                            Log.w(TAG, "⚠️ setProgressPoints 설정 실패 (선택 사항): ${e.message}")
-                        }
-
-                        // nativeBuilder.setStyle(progressStyle)
-                        val setStyleMethod = nativeBuilder.javaClass.getMethod("setStyle", Notification.Style::class.java)
-                        setStyleMethod.invoke(nativeBuilder, progressStyle)
-                        Log.d(TAG, "✅ nativeBuilder.setStyle(ProgressStyle) 호출 성공")
-
-                    } catch (e: ClassNotFoundException) {
-                        Log.w(TAG, "⚠️ ProgressStyle 클래스 없음 (Android 16 미만) - 일반 진행 바 사용")
-                        // Fallback: 일반 진행 바
-                        nativeBuilder.setProgress(maxMinutes, progress, false)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ ProgressStyle 설정 실패: ${e.message}")
-                        e.printStackTrace()
-                        // Fallback: 일반 진행 바
-                        nativeBuilder.setProgress(maxMinutes, progress, false)
-                    }
-
-                    // 3. Live Update API 호출 (setRequestPromotedOngoing, setShortCriticalText)
+                    // 3. setRequestPromotedOngoing - Android 16 공식 API
+                    // 3. setRequestPromotedOngoing 먼저 호출 (ProgressStyle 전에) - Reflection 사용
                     try {
                         val setRequestPromotedOngoingMethod = nativeBuilder.javaClass.getMethod(
                             "setRequestPromotedOngoing", Boolean::class.javaPrimitiveType
@@ -546,16 +557,78 @@ class NotificationHandler(private val context: Context) {
                         Log.e(TAG, "❌ setRequestPromotedOngoing 호출 실패: ${e.message}")
                     }
 
-                    try {
-                        val setShortCriticalTextMethod = nativeBuilder.javaClass.getMethod(
-                            "setShortCriticalText", CharSequence::class.java
-                        )
-                        setShortCriticalTextMethod.invoke(nativeBuilder, chipText)
-                        Log.d(TAG, "✅ setShortCriticalText('$chipText') 호출 성공")
-                    } catch (e: NoSuchMethodException) {
-                        Log.w(TAG, "⚠️ setShortCriticalText 메서드 없음 (Android 16 미만)")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ setShortCriticalText 호출 실패: ${e.message}")
+                    // 4. setShortCriticalText - Android 16 공식 API
+                    @Suppress("NewApi")
+                    if (Build.VERSION.SDK_INT >= 36) {
+                        try {
+                            nativeBuilder.setShortCriticalText(chipText)
+                            Log.d(TAG, "✅ setShortCriticalText('$chipText') 호출 성공 (공식 API)")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ setShortCriticalText 호출 실패: ${e.message}")
+                        }
+                    }
+
+                    // 5. ProgressStyle 설정 (Android 16+ Live Update 핵심)
+                    val maxMinutes = 30
+                    val progress = if (remainingMinutes > 0) {
+                        maxMinutes - remainingMinutes.coerceIn(0, maxMinutes)
+                    } else {
+                        maxMinutes // 도착 임박: 100%
+                    }
+
+                    @Suppress("NewApi")
+                    if (Build.VERSION.SDK_INT >= 36) {
+                        try {
+                            // Android 16 공식 ProgressStyle API
+                            val progressStyle = Notification.ProgressStyle()
+                                .setProgress(progress)
+                            
+                            // setProgressTrackerIcon - 버스 아이콘 (진행 바 위에서 이동)
+                            val busIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_tracker)
+                            progressStyle.setProgressTrackerIcon(busIcon)
+                            Log.d(TAG, "✅ ProgressStyle.setProgressTrackerIcon() 호출 성공 (공식 API)")
+
+                            // setProgressSegments - 구간별 색상
+                            try {
+                                val segment1 = Notification.ProgressStyle.Segment(progress)
+                                    .setColor(busTypeColor)
+                                
+                                val segment2 = Notification.ProgressStyle.Segment(maxMinutes - progress)
+                                    .setColor(0xFFE0E0E0.toInt()) // 회색 (남은 구간)
+
+                                progressStyle.setProgressSegments(listOf(segment1, segment2))
+                                Log.d(TAG, "✅ ProgressStyle.setProgressSegments() 호출 성공 (공식 API)")
+                            } catch (e: Exception) {
+                                Log.w(TAG, "⚠️ setProgressSegments 설정 실패: ${e.message}")
+                            }
+
+                            // setProgressPoints - 출발/도착 지점 표시
+                            try {
+                                val startPoint = Notification.ProgressStyle.Point(0)
+                                    .setColor(0xFF4CAF50.toInt()) // 초록색 (출발)
+                                
+                                val endPoint = Notification.ProgressStyle.Point(maxMinutes)
+                                    .setColor(0xFFFF5722.toInt()) // 주황색 (도착)
+
+                                progressStyle.setProgressPoints(listOf(startPoint, endPoint))
+                                Log.d(TAG, "✅ ProgressStyle.setProgressPoints() 호출 성공 (공식 API)")
+                            } catch (e: Exception) {
+                                Log.w(TAG, "⚠️ setProgressPoints 설정 실패: ${e.message}")
+                            }
+
+                            // nativeBuilder에 ProgressStyle 적용
+                            nativeBuilder.setStyle(progressStyle)
+                            Log.d(TAG, "✅ nativeBuilder.setStyle(ProgressStyle) 호출 성공 (공식 API)")
+
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ ProgressStyle 설정 실패: ${e.message}")
+                            e.printStackTrace()
+                            nativeBuilder.setProgress(maxMinutes, progress, false)
+                        }
+                    } else {
+                        // Android 15 이하: 일반 진행 바
+                        nativeBuilder.setProgress(maxMinutes, progress, false)
+                        Log.w(TAG, "⚠️ Android 16 미만 - 일반 진행 바 사용")
                     }
 
                     Log.d(TAG, "🎯 Live Update 설정 완료:")
@@ -574,13 +647,52 @@ class NotificationHandler(private val context: Context) {
                     ).build())
                 }
 
+                // Add action to manage promoted notifications if they can't be posted
+                if (!canPostPromoted) {
+                    try {
+                        // Android 16+ Settings action (문자열로 직접 사용)
+                        val manageSettingsIntent = Intent("android.settings.MANAGE_APP_PROMOTED_NOTIFICATIONS").apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        val manageSettingsPendingIntent = PendingIntent.getActivity(
+                            context,
+                            9997, // Unique request code
+                            manageSettingsIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        nativeBuilder.addAction(Notification.Action.Builder(
+                            android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_cancel),
+                            "알림 설정",
+                            manageSettingsPendingIntent
+                        ).build())
+                        Log.d(TAG, "⚙️ '알림 설정' 액션 추가됨 (Promoted Notifications 비활성화됨)")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ '알림 설정' 액션 추가 실패: ${e.message}")
+                    }
+                }
+
                 val builtNotification = nativeBuilder.build()
 
+                @Suppress("NewApi")
+                val hasPromotableCharacteristics = if (Build.VERSION.SDK_INT >= 36) {
+                    try {
+                        builtNotification.hasPromotableCharacteristics()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ hasPromotableCharacteristics 호출 실패: ${e.message}")
+                        false
+                    }
+                } else {
+                    false
+                }
+                Log.d(TAG, "📋 builtNotification.hasPromotableCharacteristics(): $hasPromotableCharacteristics")
+
                 // Android 16 Live Update를 위한 플래그 설정
+                @Suppress("NewApi")
                 val liveUpdateFlags = Notification.FLAG_ONGOING_EVENT or
                     Notification.FLAG_NO_CLEAR or
                     Notification.FLAG_FOREGROUND_SERVICE or
-                    0x00000080 // FLAG_PROMOTED_ONGOING (Android 16+)
+                    if (Build.VERSION.SDK_INT >= 36) Notification.FLAG_PROMOTED_ONGOING else 0
+
                 builtNotification.flags = builtNotification.flags or liveUpdateFlags
 
                 Log.d(TAG, "✅ Android 16 Live Update 알림 생성 완료 (FLAGS: ${Integer.toHexString(builtNotification.flags)})")

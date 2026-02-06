@@ -26,43 +26,46 @@ class HomeSearchBar extends StatelessWidget {
             child: GestureDetector(
               onTap: onSearchTap,
               child: Container(
-                height: 64, // Increased height for a bolder look
+                height: 56,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      colorScheme.surfaceContainer,
-                      colorScheme.surfaceContainerHigh,
-                    ],
+                  color: colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant,
+                    width: 1,
                   ),
-                  borderRadius:
-                      BorderRadius.circular(32), // Pill shape
-                  boxShadow: [
+                  boxShadow: const [
                     BoxShadow(
-                      color: colorScheme.shadow.withOpacity(0.1),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
+                      color: Color.fromRGBO(0, 0, 0, 0.08),
+                      blurRadius: 12,
+                      offset: Offset(0, 2),
                     ),
                   ],
                 ),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.search_rounded,
-                        color: colorScheme.primary,
-                        size: 30, // Larger icon
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.search_rounded,
+                          color: colorScheme.onPrimaryContainer,
+                          size: 22,
+                        ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 14),
                       Expanded(
                         child: Text(
                           hintText,
-                          style: theme.textTheme.titleMedium?.copyWith(
+                          style: theme.textTheme.bodyLarge?.copyWith(
                             color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.2,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -75,19 +78,35 @@ class HomeSearchBar extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Semantics(
           label: '설정',
           hint: '설정화면으로 이동',
-          child: FilledButton(
-            onPressed: onSettingsTap,
-            style: FilledButton.styleFrom(
-              shape: const CircleBorder(),
-              padding: const EdgeInsets.all(16),
-              backgroundColor: colorScheme.surfaceContainer,
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Color.fromRGBO(0, 0, 0, 0.08),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
-            child: Icon(Icons.settings_rounded,
-                color: colorScheme.onSurfaceVariant),
+            child: FilledButton(
+              onPressed: onSettingsTap,
+              style: FilledButton.styleFrom(
+                shape: const CircleBorder(),
+                padding: const EdgeInsets.all(14),
+                backgroundColor: colorScheme.surfaceContainerHigh,
+                elevation: 0,
+              ),
+              child: Icon(
+                Icons.settings_rounded,
+                color: colorScheme.onSurfaceVariant,
+                size: 22,
+              ),
+            ),
           ),
         ),
       ],

@@ -204,13 +204,13 @@ class _StartupScreenState extends State<StartupScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
-                _PermissionItem(
+                const _PermissionItem(
                   icon: Icons.my_location_rounded,
                   title: '위치 권한',
                   subtitle: '주변 정류장 및 지도 기능',
                 ),
                 const SizedBox(height: 8),
-                _PermissionItem(
+                const _PermissionItem(
                   icon: Icons.notifications_active_rounded,
                   title: '알림 권한',
                   subtitle: '도착 알림 및 자동 알람',

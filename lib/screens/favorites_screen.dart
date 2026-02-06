@@ -533,21 +533,33 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         ),
                       ),
                       const SizedBox(width: 14),
-                      // Station info
+                      // Station info (정류장 위치 - 같은 버스라도 방향/정류장별 구분)
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              favorite.stationName,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: colorScheme.onSurface,
-                                letterSpacing: -0.3,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.place_outlined,
+                                  size: 14,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    favorite.stationName,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: colorScheme.onSurface,
+                                      letterSpacing: -0.3,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 4),
                             Row(
