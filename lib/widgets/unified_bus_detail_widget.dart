@@ -963,7 +963,6 @@ class _BusDetailModalContent extends StatefulWidget {
 
 class _BusDetailModalContentState extends State<_BusDetailModalContent> {
   List<FavoriteBus> _favoriteBuses = [];
-  bool _isLoadingFavorites = true;
 
   @override
   void initState() {
@@ -976,7 +975,6 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
     if (mounted) {
       setState(() {
         _favoriteBuses = loaded;
-        _isLoadingFavorites = false;
       });
     }
   }
@@ -1093,7 +1091,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
               height: 4,
               width: 36,
               decoration: BoxDecoration(
-                color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                color: colorScheme.onSurfaceVariant.withAlpha(102),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1112,13 +1110,13 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                         end: Alignment.bottomRight,
                         colors: [
                           colorScheme.primary,
-                          colorScheme.primary.withOpacity(0.8),
+                          colorScheme.primary.withAlpha(204),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: colorScheme.primary.withOpacity(0.3),
+                          color: colorScheme.primary.withAlpha(77),
                           blurRadius: 8,
                           offset: const Offset(0, 3),
                         ),
@@ -1259,7 +1257,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
                             color:
-                                colorScheme.secondaryContainer.withOpacity(0.5),
+                                colorScheme.secondaryContainer.withAlpha(128),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Icon(Icons.schedule_rounded,
@@ -1278,8 +1276,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                     const SizedBox(height: 12),
                     ...widget.busArrival.busInfoList
                         .skip(1)
-                        .map((nextBus) => _buildBusInfoRow(context, nextBus))
-                        .toList(),
+                        .map((nextBus) => _buildBusInfoRow(context, nextBus)),
                   ],
                   const SizedBox(height: 40),
                 ],
@@ -1303,13 +1300,13 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isMainBus
-            ? colorScheme.primaryContainer.withOpacity(0.4)
+            ? colorScheme.primaryContainer.withAlpha(102)
             : colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isMainBus
-              ? colorScheme.primary.withOpacity(0.4)
-              : colorScheme.outlineVariant.withOpacity(0.3),
+              ? colorScheme.primary.withAlpha(102)
+              : colorScheme.outlineVariant.withAlpha(77),
           width: isMainBus ? 1.5 : 1,
         ),
       ),
@@ -1324,7 +1321,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                   ? colorScheme.surfaceContainerHigh
                   : isArriving
                       ? colorScheme.errorContainer
-                      : colorScheme.primaryContainer.withOpacity(0.5),
+                      : colorScheme.primaryContainer.withAlpha(128),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -1350,8 +1347,8 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                     minutes == 0 ? '도착' : '분',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: isArriving
-                          ? colorScheme.error.withOpacity(0.7)
-                          : colorScheme.primary.withOpacity(0.7),
+                          ? colorScheme.error.withAlpha(179)
+                          : colorScheme.primary.withAlpha(179),
                     ),
                   ),
               ],

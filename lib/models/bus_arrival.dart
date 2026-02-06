@@ -65,7 +65,7 @@ class BusArrival {
     if (minutes == 0) {
       return '\uace7 \ub3c4\ucc29';
     }
-    return '${minutes}\ubd84';
+    return '$minutes\ubd84';
   }
 
   String getSecondArrivalTimeText() {
@@ -85,7 +85,7 @@ class BusArrival {
     if (minutes == 0) {
       return '\uace7 \ub3c4\ucc29';
     }
-    return '${minutes}\ubd84';
+    return '$minutes\ubd84';
   }
 
   String getSummaryText() {

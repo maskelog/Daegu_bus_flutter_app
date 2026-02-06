@@ -172,7 +172,7 @@ class AlarmService extends ChangeNotifier {
             );
 
             if (fallbackKey.isNotEmpty) {
-              final removedAlarm = _alarmFacade.activeAlarmsMap.remove(fallbackKey);
+              _alarmFacade.activeAlarmsMap.remove(fallbackKey);
               logMessage(
                 '🔔 [노티피케이션] 알람 취소 감지 및 제거 (RouteId 기반): $fallbackKey',
                 level: LogLevel.info,
@@ -1664,7 +1664,9 @@ class AlarmService extends ChangeNotifier {
     if (timeStr == '운행종료' ||
         timeStr == '운행 종료' ||
         timeStr == '-' ||
-        timeStr == '운행종료.') return -1;
+        timeStr == '운행종료.') {
+      return -1;
+    }
 
     // 출발 예정 관련
     if (timeStr.contains('출발예정') || timeStr.contains('기점출발')) return -1;

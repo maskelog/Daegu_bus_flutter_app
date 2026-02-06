@@ -3,8 +3,9 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/services.dart';
-import 'package:daegu_bus_app/widgets/home_search_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../main.dart' show logMessage, LogLevel;
+import 'package:daegu_bus_app/widgets/home_search_bar.dart';
 
 import 'package:daegu_bus_app/screens/alarm_screen.dart';
 import 'package:daegu_bus_app/screens/map_screen.dart';
@@ -146,6 +147,38 @@ class _HomeScreenState extends State<HomeScreen>
       _errorMessage = null;
     });
     _setupPeriodicRefresh();
+  }
+
+  Future<void> _removeFavoriteStop(BusStop stop) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final favorites = prefs.getStringList('favorites') ?? [];
+
+      favorites.removeWhere((json) {
+        final data = jsonDecode(json);
+        final existingStop = BusStop.fromJson(data);
+        return existingStop.id == stop.id;
+      });
+
+      await prefs.setStringList('favorites', favorites);
+
+      if (!mounted) return;
+      setState(() {
+        _favoriteStops.removeWhere((s) => s.id == stop.id);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${stop.name} 즐겨찾기가 해제되었습니다'),
+          action: SnackBarAction(
+            label: '확인',
+            onPressed: () {},
+          ),
+        ),
+      );
+    } catch (e) {
+      logMessage('즐겨찾기 제거 오류: $e', level: LogLevel.error);
+    }
   }
 
   Future<void> _loadFavoriteBuses() async {
@@ -290,7 +323,7 @@ class _HomeScreenState extends State<HomeScreen>
         });
       }
     } catch (e) {
-      print('백그라운드 로드 실패: $e');
+      logMessage('백그라운드 로드 실패: $e', level: LogLevel.error);
     }
   }
 
@@ -409,12 +442,12 @@ class _HomeScreenState extends State<HomeScreen>
                           borderRadius: BorderRadius.circular(28),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.15),
+                              color: Colors.black.withAlpha(38),
                               blurRadius: 20,
                               offset: const Offset(0, 8),
                             ),
                             BoxShadow(
-                              color: colorScheme.primary.withOpacity(0.1),
+                              color: colorScheme.primary.withAlpha(26),
                               blurRadius: 30,
                               offset: const Offset(0, 4),
                             ),
@@ -428,10 +461,10 @@ class _HomeScreenState extends State<HomeScreen>
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 6, vertical: 6),
                               decoration: BoxDecoration(
-                                color: colorScheme.surface.withOpacity(0.95),
+                                color: colorScheme.surface.withAlpha(242),
                                 borderRadius: BorderRadius.circular(28),
                                 border: Border.all(
-                                  color: colorScheme.outline.withOpacity(0.2),
+                                  color: colorScheme.outline.withAlpha(51),
                                   width: 1,
                                 ),
                               ),
@@ -513,10 +546,29 @@ class _HomeScreenState extends State<HomeScreen>
             onStopSelected: _onSelectedStopChanged,
             formatArrivalTime: _formatArrivalTime,
           ),
+          // 즐겨찾기 정류장 섹션
+          if (_favoriteStops.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const HomeSectionHeader(
+              title: '즐겨찾기 정류장',
+              icon: Icons.bookmark_rounded,
+              iconColor: Colors.amber,
+            ),
+            const SizedBox(height: 8),
+            HomeFavoriteStopsRow(
+              favoriteStops: _favoriteStops,
+              maxItems: 4,
+              selectedStop: _selectedStop,
+              stationArrivals: _stationArrivals,
+              onStopSelected: _onSelectedStopChanged,
+              formatArrivalTime: _formatArrivalTime,
+              onRemoveFavorite: _removeFavoriteStop,
+            ),
+          ],
           const SizedBox(height: 20),
-          // Favorites section with improved design
+          // 즐겨찾기 버스 섹션
           HomeSectionHeader(
-            title: '즐겨찾기',
+            title: '즐겨찾기 버스',
             icon: Icons.star_rounded,
             iconColor: colorScheme.primary,
           ),
@@ -779,54 +831,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  bool _isStopFavorite(BusStop stop) =>
-      _favoriteStops.any((s) => s.id == stop.id);
-
-  Future<void> _toggleFavorite(BusStop stop) async {
-    final prefs = await SharedPreferences.getInstance();
-    final favorites = prefs.getStringList('favorites') ?? [];
-    
-    final isCurrentlyFavorite = _favoriteStops.any((s) => s.id == stop.id);
-    
-    setState(() {
-      if (isCurrentlyFavorite) {
-        // 즐겨찾기 제거
-        favorites.removeWhere((json) {
-          final existing = BusStop.fromJson(jsonDecode(json));
-          return existing.id == stop.id;
-        });
-        _favoriteStops.removeWhere((s) => s.id == stop.id);
-        
-        // 현재 선택된 정류소가 즐겨찾기 제거된 경우 UI 업데이트
-        if (_selectedStop?.id == stop.id) {
-          _selectedStop = stop.copyWith(isFavorite: false);
-        }
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(' removed from favorites')),
-        );
-      } else {
-        // 즐겨찾기 추가
-        final favoriteStop = stop.copyWith(isFavorite: true);
-        final stopJson = jsonEncode(favoriteStop.toJson());
-        favorites.add(stopJson);
-        _favoriteStops.add(favoriteStop);
-        
-        // 현재 선택된 정류소가 즐겨찾기 추가된 경우 UI 업데이트
-        if (_selectedStop?.id == stop.id) {
-          _selectedStop = favoriteStop;
-        }
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(' added to favorites')),
-        );
-      }
-    });
-    
-    await prefs.setStringList('favorites', favorites);
-  }
-
-
   String _formatArrivalTime(BusArrival arrival) {
     final bus = arrival.firstBus;
     if (bus == null) return "도착 정보 없음";
@@ -834,7 +838,7 @@ class _HomeScreenState extends State<HomeScreen>
     final minutes = bus.getRemainingMinutes();
     if (minutes < 0) return "운행 종료";
     if (minutes <= 0) return "곧 도착";
-    return "${minutes}분";
+    return "$minutes분";
   }
 
   Future<void> _handleAlarmClick(

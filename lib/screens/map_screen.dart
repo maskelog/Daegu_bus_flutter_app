@@ -38,7 +38,6 @@ class _MapScreenState extends State<MapScreen> {
   Timer? _busPositionTimer;
   bool _isLoading = true;
   bool _mapReady = false;
-  bool _isSearchingNearby = false;
   String? _errorMessage;
   String? _htmlContent;
 
@@ -178,9 +177,6 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    // final colorScheme = theme.colorScheme; // 사용되지 않음
-
     return Scaffold(
       body: Stack(
         children: [
@@ -1093,10 +1089,6 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    setState(() {
-      _isSearchingNearby = true;
-    });
-
     try {
       // 로딩 표시
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1125,7 +1117,6 @@ class _MapScreenState extends State<MapScreen> {
 
       setState(() {
         _nearbyStations = stations;
-        _isSearchingNearby = false;
       });
 
       // 지도에 마커 업데이트
@@ -1157,10 +1148,6 @@ class _MapScreenState extends State<MapScreen> {
         }
       }
     } catch (e) {
-      setState(() {
-        _isSearchingNearby = false;
-      });
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

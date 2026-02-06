@@ -132,7 +132,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         Card(
           elevation: 1,
           margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           child: Container(
             width: 140, // Increased width for better layout
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
@@ -190,7 +191,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withAlpha(26),
                     blurRadius: 4,
                     offset: const Offset(1, 1),
                   )
@@ -200,8 +201,10 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
               child: Icon(
                 Icons.cancel,
                 size: 20,
-                color:
-                    Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.8),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurfaceVariant
+                    .withAlpha(204),
               ),
             ),
           ),
@@ -230,7 +233,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('자동 알람 중지 중 오류가 발생했습니다.'),
-              duration: const Duration(seconds: 2)),
+              duration: Duration(seconds: 2)),
         );
       }
     }
@@ -248,14 +251,14 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
 
   Widget _buildManualAlarmItem(BuildContext context, AlarmData alarm) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16), // More spacing
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28), // Very rounded
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withAlpha(20),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -279,7 +282,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                     gradient: LinearGradient(
                       colors: [
                         colorScheme.primary,
-                        colorScheme.primary.withOpacity(0.7),
+                        colorScheme.primary.withAlpha(179),
                         colorScheme.tertiary,
                       ],
                       begin: Alignment.topLeft,
@@ -288,7 +291,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                     borderRadius: BorderRadius.circular(20), // Squircle-like
                     boxShadow: [
                       BoxShadow(
-                        color: colorScheme.primary.withOpacity(0.4),
+                        color: colorScheme.primary.withAlpha(102),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -307,8 +310,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: colorScheme.primary.withOpacity(
-                                  0.3 * (1 - _progressController.value),
+                                color: colorScheme.primary.withAlpha(
+                                  (77 * (1 - _progressController.value)).round(),
                                 ),
                                 width: 2,
                               ),
@@ -318,7 +321,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                       ),
                       // Main alarm bell icon
                       Icon(
-                        Icons.notifications_active_rounded, // Better icon than headphones
+                        Icons
+                            .notifications_active_rounded, // Better icon than headphones
                         color: colorScheme.onPrimary,
                         size: 28,
                       ),
@@ -343,7 +347,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                           ),
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: colorScheme.primaryContainer,
                               borderRadius: BorderRadius.circular(12),
@@ -362,7 +367,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          Icon(Icons.location_on_rounded, size: 14, color: colorScheme.onSurfaceVariant),
+                          Icon(Icons.location_on_rounded,
+                              size: 14, color: colorScheme.onSurfaceVariant),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
@@ -383,12 +389,13 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                 const SizedBox(width: 12),
                 // Time badge with gradient
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
                         _getRemainingTimeColor(context, alarm),
-                        _getRemainingTimeColor(context, alarm).withOpacity(0.8),
+                        _getRemainingTimeColor(context, alarm).withAlpha(204),
                       ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
@@ -396,7 +403,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: _getRemainingTimeColor(context, alarm).withOpacity(0.3),
+                        color: _getRemainingTimeColor(context, alarm)
+                            .withAlpha(77),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -406,7 +414,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                     children: [
                       Text(
                         _getRemainingTimeText(alarm),
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
                           color: Colors.white,
@@ -417,7 +425,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withAlpha(230),
                         ),
                       ),
                     ],
@@ -429,7 +437,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
+                        color: Colors.black.withAlpha(15),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -437,7 +445,8 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
                   ),
                   child: IconButton.filledTonal(
                     onPressed: () => _cancelSpecificAlarm(context, alarm),
-                    icon: Icon(Icons.close_rounded, color: colorScheme.onSurface),
+                    icon:
+                        Icon(Icons.close_rounded, color: colorScheme.onSurface),
                     tooltip: '알람 취소',
                     style: IconButton.styleFrom(
                       backgroundColor: colorScheme.surfaceContainerHighest,
@@ -498,16 +507,5 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
     if (remaining.inMinutes < 1) return Theme.of(context).colorScheme.error;
     if (remaining.inMinutes < 5) return Theme.of(context).colorScheme.tertiary;
     return Theme.of(context).colorScheme.primary;
-  }
-
-  String _getRepeatDaysText(List<int> days) {
-    const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
-    if (days.isEmpty) return '반복 없음';
-    if (days.length == 7) return '매일';
-    if (days.length == 5 && days.toSet().containsAll([1, 2, 3, 4, 5])) {
-      return '평일';
-    }
-    if (days.length == 2 && days.toSet().containsAll([6, 7])) return '주말';
-    return days.map((day) => weekdays[day - 1]).join(',');
   }
 }

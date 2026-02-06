@@ -10,7 +10,6 @@ import '../models/favorite_bus.dart';
 import '../services/alarm_service.dart';
 import '../services/settings_service.dart';
 import 'search_screen.dart';
-import 'settings_screen.dart';
 import '../main.dart' show logMessage, LogLevel;
 import '../utils/favorite_bus_store.dart';
 
@@ -389,7 +388,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.06),
+                              color: Colors.black.withAlpha(15),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -530,7 +529,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                 borderRadius: BorderRadius.circular(32), // Very rounded
                                                 boxShadow: [
                                                   BoxShadow(
-                                                    color: Colors.black.withOpacity(0.08),
+                                                    color: Colors.black.withAlpha(20),
                                                     blurRadius: 16,
                                                     offset: const Offset(0, 4),
                                                   ),
@@ -567,7 +566,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                           gradient: LinearGradient(
                                                             colors: [
                                                               colorScheme.primary,
-                                                              colorScheme.primary.withOpacity(0.8),
+                                                              colorScheme.primary.withAlpha(204),
                                                             ],
                                                             begin: Alignment.topLeft,
                                                             end: Alignment.bottomRight,
@@ -575,7 +574,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                           borderRadius: BorderRadius.circular(20),
                                                           boxShadow: [
                                                             BoxShadow(
-                                                              color: colorScheme.primary.withOpacity(0.3),
+                                                              color: colorScheme.primary.withAlpha(77),
                                                               blurRadius: 8,
                                                               offset: const Offset(0, 2),
                                                             )
@@ -913,10 +912,6 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    const floatingNavHeight = 68.0;
-    const floatingNavBottom = 24.0;
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-    final toolbarBottom = floatingNavHeight + floatingNavBottom + bottomInset;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -1270,7 +1265,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
                     trailing: Switch(
                       value: _useTTS,
                       onChanged: (value) => setState(() => _useTTS = value),
-                      activeColor: colorScheme.primary,
+                      activeThumbColor: colorScheme.primary,
                       activeTrackColor: colorScheme.primaryContainer,
                       inactiveThumbColor: colorScheme.outline,
                       inactiveTrackColor: colorScheme.surfaceContainerHighest,

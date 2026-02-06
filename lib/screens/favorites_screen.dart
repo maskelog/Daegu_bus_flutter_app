@@ -10,6 +10,7 @@ import '../services/alarm_service.dart';
 import '../services/api_service.dart';
 import '../utils/favorite_bus_store.dart';
 import '../widgets/unified_bus_detail_widget.dart';
+import '../widgets/android16_progress_bar.dart';
 import 'search_screen.dart';
 import 'package:provider/provider.dart';
 
@@ -215,7 +216,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       );
                     },
                   );
-                }).toList(),
+                }),
               ],
             ),
           ),
@@ -251,13 +252,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                               end: Alignment.bottomRight,
                               colors: [
                                 colorScheme.primary,
-                                colorScheme.primary.withOpacity(0.7),
+                                colorScheme.primary.withAlpha(179),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
-                                color: colorScheme.primary.withOpacity(0.3),
+                                color: colorScheme.primary.withAlpha(77),
                                 blurRadius: 8,
                                 offset: const Offset(0, 3),
                               ),
@@ -374,13 +375,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: colorScheme.primaryContainer.withOpacity(0.3),
+                color: colorScheme.primaryContainer.withAlpha(77),
                 shape: BoxShape.circle,
               ),
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer.withOpacity(0.5),
+                  color: colorScheme.primaryContainer.withAlpha(128),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -456,16 +457,16 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           borderRadius: BorderRadius.circular(20),
           border: isArriving
               ? Border.all(
-                  color: colorScheme.error.withOpacity(0.5),
+                  color: colorScheme.error.withAlpha(128),
                   width: 2,
                 )
               : Border.all(
-                  color: colorScheme.outlineVariant.withOpacity(0.2),
+                  color: colorScheme.outlineVariant.withAlpha(51),
                   width: 1,
                 ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withAlpha(13),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -506,13 +507,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             end: Alignment.bottomRight,
                             colors: [
                               colorScheme.primary,
-                              colorScheme.primary.withOpacity(0.8),
+                              colorScheme.primary.withAlpha(204),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(10),
                           boxShadow: [
                             BoxShadow(
-                              color: colorScheme.primary.withOpacity(0.3),
+                              color: colorScheme.primary.withAlpha(77),
                               blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),
@@ -575,7 +576,20 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  // Android 16 스타일 진행 바 추가
+                  if (!isOutOfService && minutes >= 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12, bottom: 8),
+                      child: CompactAndroid16ProgressBar(
+                        currentMinutes: minutes,
+                        maxMinutes: 30,
+                        progressColor: isArriving
+                            ? colorScheme.error
+                            : colorScheme.primary,
+                        height: 6,
+                      ),
+                    ),
+                  SizedBox(height: isOutOfService ? 14 : 6),
                   // Bottom section with time and actions
                   Row(
                     children: [
@@ -591,7 +605,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                                 ? colorScheme.errorContainer
                                 : isOutOfService
                                     ? colorScheme.surfaceContainerHigh
-                                    : colorScheme.primaryContainer.withOpacity(0.4),
+                                    : colorScheme.primaryContainer.withAlpha(102),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Row(
@@ -655,9 +669,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     required Color color,
     required VoidCallback onPressed,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
     return Material(
-      color: color.withOpacity(0.1),
+      color: color.withAlpha((255 * 0.1).round()),
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: () {

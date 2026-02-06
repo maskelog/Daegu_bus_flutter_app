@@ -681,7 +681,8 @@ String getBusTtsMessage(String busNo, String stationName, int remainingMinutes,
     {bool outOfService = false}) {
   if (outOfService) return getBusOutOfServiceMessage(busNo);
   if (remainingMinutes <= 0) return '$busNo번 버스가 $stationName 정류장에 곧 도착합니다.';
-  if (remainingMinutes == 1)
+  if (remainingMinutes == 1) {
     return '$busNo번 버스가 $stationName 정류장에 약 1분 후 도착 예정입니다.';
+  }
   return '$busNo번 버스가 $stationName 정류장에 약 $remainingMinutes분 후 도착 예정입니다.';
 }

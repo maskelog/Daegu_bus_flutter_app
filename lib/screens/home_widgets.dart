@@ -55,7 +55,7 @@ class HomeSectionHeader extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.1),
+              color: iconColor.withAlpha(26),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, size: 20, color: iconColor),
@@ -104,10 +104,10 @@ class HomeNearbyStopsRow extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+            color: colorScheme.surfaceContainerHighest.withAlpha(128),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: colorScheme.outlineVariant.withOpacity(0.3),
+              color: colorScheme.outlineVariant.withAlpha(77),
               strokeAlign: BorderSide.strokeAlignInside,
             ),
           ),
@@ -117,14 +117,14 @@ class HomeNearbyStopsRow extends StatelessWidget {
               Icon(
                 Icons.location_searching_rounded,
                 size: 20,
-                color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                color: colorScheme.onSurfaceVariant.withAlpha(153),
               ),
               const SizedBox(width: 10),
               Text(
                 '주변 정류장을 찾는 중...',
                 style: TextStyle(
                   fontSize: 13,
-                  color: colorScheme.onSurfaceVariant.withOpacity(0.8),
+                  color: colorScheme.onSurfaceVariant.withAlpha(204),
                 ),
               ),
             ],
@@ -164,14 +164,14 @@ class HomeNearbyStopsRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: isSelected
-                          ? colorScheme.primary.withOpacity(0.5)
-                          : colorScheme.outlineVariant.withOpacity(0.3),
+                          ? colorScheme.primary.withAlpha(128)
+                          : colorScheme.outlineVariant.withAlpha(77),
                       width: isSelected ? 1.5 : 1,
                     ),
                     boxShadow: isSelected
                         ? [
                             BoxShadow(
-                              color: colorScheme.primary.withOpacity(0.15),
+                              color: colorScheme.primary.withAlpha(38),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -204,8 +204,8 @@ class HomeNearbyStopsRow extends StatelessWidget {
                                   horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? colorScheme.primary.withOpacity(0.2)
-                                    : colorScheme.primary.withOpacity(0.1),
+                                    ? colorScheme.primary.withAlpha(51)
+                                    : colorScheme.primary.withAlpha(26),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
@@ -224,7 +224,7 @@ class HomeNearbyStopsRow extends StatelessWidget {
                                 fontSize: 11,
                                 color: isSelected
                                     ? colorScheme.onPrimaryContainer
-                                        .withOpacity(0.8)
+                                        .withAlpha(204)
                                     : colorScheme.onSurfaceVariant,
                               ),
                             ),
@@ -235,13 +235,317 @@ class HomeNearbyStopsRow extends StatelessWidget {
                           '도착 정보 없음',
                           style: TextStyle(
                             fontSize: 11,
-                            color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                            color: colorScheme.onSurfaceVariant.withAlpha(153),
                           ),
                         ),
                     ],
                   ),
                 ),
               ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 즐겨찾기 정류장을 작은 칩 형태로 표시하고,
+/// 클릭하면 해당 정류장을 선택, "전체 보기"로 모달 표시
+class HomeFavoriteStopsRow extends StatelessWidget {
+  const HomeFavoriteStopsRow({
+    super.key,
+    required this.favoriteStops,
+    required this.maxItems,
+    required this.selectedStop,
+    required this.stationArrivals,
+    required this.onStopSelected,
+    required this.formatArrivalTime,
+    required this.onRemoveFavorite,
+  });
+
+  final List<BusStop> favoriteStops;
+  final int maxItems;
+  final BusStop? selectedStop;
+  final Map<String, List<BusArrival>> stationArrivals;
+  final ValueChanged<BusStop> onStopSelected;
+  final ArrivalTimeFormatter formatArrivalTime;
+  final ValueChanged<BusStop> onRemoveFavorite;
+
+  void _showAllFavoriteStops(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withAlpha(26),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.bookmark_rounded,
+                        color: Colors.amber,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '즐겨찾기 정류장',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                          Text(
+                            '${favoriteStops.length}개의 정류장',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // List
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: favoriteStops.length,
+                  itemBuilder: (context, index) {
+                    final stop = favoriteStops[index];
+                    final isSelected = selectedStop?.id == stop.id;
+                    final arrivals = stationArrivals[stop.id] ?? [];
+                    final topBus = arrivals.isNotEmpty ? arrivals.first : null;
+
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 4,
+                      ),
+                      leading: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? colorScheme.primaryContainer
+                              : colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.directions_bus_rounded,
+                          color: isSelected
+                              ? colorScheme.primary
+                              : colorScheme.onSurfaceVariant,
+                          size: 22,
+                        ),
+                      ),
+                      title: Text(
+                        stop.name,
+                        style: TextStyle(
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                          color: isSelected
+                              ? colorScheme.primary
+                              : colorScheme.onSurface,
+                        ),
+                      ),
+                      subtitle: topBus != null
+                          ? Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primary.withAlpha(26),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    topBus.routeNo,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: colorScheme.primary,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  formatArrivalTime(topBus),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Text(
+                              '도착 정보 없음',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colorScheme.onSurfaceVariant.withAlpha(153),
+                              ),
+                            ),
+                      trailing: IconButton(
+                        icon: Icon(
+                          Icons.bookmark_remove_outlined,
+                          color: colorScheme.error.withAlpha(179),
+                          size: 22,
+                        ),
+                        onPressed: () {
+                          onRemoveFavorite(stop);
+                          Navigator.pop(context);
+                        },
+                      ),
+                      onTap: () {
+                        onStopSelected(stop);
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    if (favoriteStops.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final visibleStops = favoriteStops.take(maxItems).toList();
+    final hasMore = favoriteStops.length > maxItems;
+
+    return SizedBox(
+      height: 40,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: visibleStops.length + (hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          // "더 보기" 버튼
+          if (index == visibleStops.length) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ActionChip(
+                avatar: Icon(
+                  Icons.expand_more_rounded,
+                  size: 18,
+                  color: colorScheme.primary,
+                ),
+                label: Text(
+                  '+${favoriteStops.length - maxItems}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                  ),
+                ),
+                backgroundColor: colorScheme.primaryContainer.withAlpha(77),
+                side: BorderSide.none,
+                onPressed: () => _showAllFavoriteStops(context),
+              ),
+            );
+          }
+
+          final stop = visibleStops[index];
+          final isSelected = selectedStop?.id == stop.id;
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilterChip(
+              avatar: Icon(
+                Icons.bookmark_rounded,
+                size: 16,
+                color: isSelected ? colorScheme.onPrimary : Colors.amber,
+              ),
+              label: Text(
+                stop.name.length > 10 ? '${stop.name.substring(0, 10)}...' : stop.name,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected
+                      ? colorScheme.onPrimary
+                      : colorScheme.onSurface,
+                ),
+              ),
+              selected: isSelected,
+              selectedColor: colorScheme.primary,
+              backgroundColor: colorScheme.surfaceContainerHighest,
+              checkmarkColor: colorScheme.onPrimary,
+              showCheckmark: false,
+              side: BorderSide(
+                color: isSelected
+                    ? colorScheme.primary
+                    : colorScheme.outlineVariant.withAlpha(77),
+              ),
+              onSelected: (_) => onStopSelected(stop),
+              onDeleted: favoriteStops.length <= 1
+                  ? null  // 마지막 하나는 삭제 불가
+                  : () => _showAllFavoriteStops(context),
+              deleteIcon: favoriteStops.length > 1
+                  ? Icon(
+                      Icons.more_horiz,
+                      size: 16,
+                      color: isSelected
+                          ? colorScheme.onPrimary.withAlpha(179)
+                          : colorScheme.onSurfaceVariant,
+                    )
+                  : null,
             ),
           );
         },
@@ -286,13 +590,13 @@ class HomeFavoriteBusList extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    colorScheme.primaryContainer.withOpacity(0.4),
-                    colorScheme.secondaryContainer.withOpacity(0.2),
+                    colorScheme.primaryContainer.withAlpha(102),
+                    colorScheme.secondaryContainer.withAlpha(51),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: colorScheme.primary.withOpacity(0.2),
+                  color: colorScheme.primary.withAlpha(51),
                 ),
               ),
               child: Column(
@@ -300,7 +604,7 @@ class HomeFavoriteBusList extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: colorScheme.primary.withOpacity(0.1),
+                      color: colorScheme.primary.withAlpha(26),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -566,10 +870,10 @@ class HomeRouteItem extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+            color: colorScheme.surfaceContainerHighest.withAlpha(77),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: colorScheme.outlineVariant.withOpacity(0.3),
+              color: colorScheme.outlineVariant.withAlpha(77),
             ),
           ),
           child: Row(

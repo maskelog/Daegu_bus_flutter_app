@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -10,7 +9,6 @@ import 'dart:io';
 import 'screens/home_screen.dart';
 import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
-import 'services/permission_service.dart';
 import 'screens/startup_screen.dart';
 import 'services/settings_service.dart';
 import 'services/alarm_manager.dart';
@@ -212,8 +210,8 @@ class AppTheme {
     // Card Theme - Material 3 Expressive: NO BORDERS, Strong elevation, Clean
     cardTheme: CardThemeData(
       elevation: 4, // MUCH stronger elevation - no borders needed
-      shadowColor: Colors.black.withOpacity(0.08),
-      surfaceTintColor: AppColorScheme.primaryLight.withOpacity(0.05),
+      shadowColor: Colors.black.withAlpha(20), // 255 * 0.08 = 20.4
+      surfaceTintColor: AppColorScheme.primaryLight.withAlpha((255 * 0.05).round()),
       color: AppColorScheme.surfaceLight,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
@@ -261,7 +259,7 @@ class AppTheme {
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         elevation: 4, // Stronger elevation
-        shadowColor: AppColorScheme.primaryLight.withOpacity(0.4),
+        shadowColor: AppColorScheme.primaryLight.withAlpha((255 * 0.4).round()),
         backgroundColor: AppColorScheme.primaryLight,
         foregroundColor: AppColorScheme.onPrimaryLight,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
@@ -302,7 +300,7 @@ class AppTheme {
       labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       elevation: 2,
-      selectedShadowColor: AppColorScheme.primaryLight.withOpacity(0.5),
+      selectedShadowColor: AppColorScheme.primaryLight.withAlpha((255 * 0.5).round()),
     ),
 
     // Navigation Bar - Clean and prominent
@@ -310,9 +308,9 @@ class AppTheme {
       elevation: 4, // Stronger elevation
       height: 88, // Taller for more impact
       backgroundColor: AppColorScheme.surfaceLight,
-      surfaceTintColor: AppColorScheme.primaryLight.withOpacity(0.05),
+      surfaceTintColor: AppColorScheme.primaryLight.withAlpha((255 * 0.05).round()),
       indicatorColor: AppColorScheme.primaryLight, // Bold indicator
-      shadowColor: Colors.black.withOpacity(0.1),
+      shadowColor: Colors.black.withAlpha((255 * 0.1).round()),
       indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
@@ -352,7 +350,7 @@ class AppTheme {
     cardTheme: lightTheme.cardTheme.copyWith(
       color: AppColorScheme.surfaceVariantDark,
       elevation: 2, // Slightly more elevation in dark mode for better depth perception
-      shadowColor: Colors.black.withOpacity(0.4),
+      shadowColor: Colors.black.withAlpha((255 * 0.4).round()),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
         side: BorderSide.none, // Cleaner in dark mode
@@ -380,7 +378,7 @@ class AppTheme {
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         elevation: 2,
-        shadowColor: AppColorScheme.primaryDark.withOpacity(0.4),
+        shadowColor: AppColorScheme.primaryDark.withAlpha((255 * 0.4).round()),
         backgroundColor: AppColorScheme.primaryDark,
         foregroundColor: AppColorScheme.onPrimaryDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
@@ -604,12 +602,6 @@ class MyApp extends StatelessWidget {
     return location && notificationGranted;
   }
 
-  /// 권한이 이전에 허용되었는지 확인
-  static Future<bool> _wasPermissionsGrantedBefore() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('permissions_granted_once') ?? false;
-  }
-
   // 텍스트 테마에 폰트 크기 배율 적용
   static TextTheme _scaleTextTheme(TextTheme textTheme, double scaleFactor) {
     return TextTheme(
@@ -691,7 +683,7 @@ class MyApp extends StatelessWidget {
           darkTheme: adjustedDarkTheme,
           themeMode: settingsService.themeMode,
           // 권한 상태를 확인하여 적절한 화면 표시
-          home: _InitialScreen(),
+          home: const _InitialScreen(),
           debugShowCheckedModeBanner: false,
         );
       },

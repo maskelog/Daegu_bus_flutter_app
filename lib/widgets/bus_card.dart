@@ -759,7 +759,7 @@ class _BusCardState extends State<BusCard> {
           borderRadius: BorderRadius.circular(32), // Very rounded
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withAlpha((255 * 0.08).round()),
               blurRadius: 20,
               offset: const Offset(0, 6),
               spreadRadius: 0,
@@ -767,26 +767,26 @@ class _BusCardState extends State<BusCard> {
           ],
         ),
         child: Card(
-        margin: EdgeInsets.zero,
-        elevation: 0, // Elevation is in BoxDecoration shadow
-        color: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(32),
-          side: BorderSide.none, // NO BORDER - Material You
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-          onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(32),
-          child: Padding(
-            padding: const EdgeInsets.all(24), // Generous padding
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
+          margin: EdgeInsets.zero,
+          elevation: 0, // Elevation is in BoxDecoration shadow
+          color: Theme.of(context).colorScheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(32),
+            side: BorderSide.none, // NO BORDER - Material You
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(32),
+              child: Padding(
+                padding: const EdgeInsets.all(24), // Generous padding
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -1085,9 +1085,10 @@ class _BusCardState extends State<BusCard> {
                         color: Colors.blue[50],
                         borderRadius: BorderRadius.circular(8),
                       ),
+                      child: const SizedBox.shrink(),
                     ),
                     const SizedBox(height: 16),
-                    ...widget.busArrival.busInfoList.skip(1).map((bus) {
+                    ...widget.busArrival.busInfoList.skip(1).map<Widget>((bus) {
                       final int nextRemainingMin = bus.getRemainingMinutes();
                       final bool isOutOfService = bus.isOutOfService;
 
@@ -1174,6 +1175,8 @@ class _BusCardState extends State<BusCard> {
               ),
             ),
           ),
+        ),
+      ),
         ),
       ),
     );
