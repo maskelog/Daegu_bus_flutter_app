@@ -134,6 +134,15 @@ class SettingsService extends ChangeNotifier {
   Future<void> setAlarmSound(String sound) async {
     _alarmSound = sound;
     await _prefs.setString(_alarmSoundKey, sound);
+
+    // 네이티브 코드에 알람 소리 설정 전달
+    try {
+      await _ttsChannel.invokeMethod('setAlarmSound', {'soundId': sound});
+      debugPrint('✅ 네이티브 알람 소리 설정 성공: $sound');
+    } catch (e) {
+      debugPrint('❌ 네이티브 알람 소리 설정 실패: $e');
+    }
+
     notifyListeners();
   }
 
@@ -150,6 +159,15 @@ class SettingsService extends ChangeNotifier {
 
     _useTts = value;
     await _prefs.setBool(_useTtsKey, value);
+
+    // 네이티브 코드에 TTS 사용 설정 전달
+    try {
+      await _ttsChannel.invokeMethod('setUseTts', {'useTts': value});
+      debugPrint('✅ 네이티브 TTS 사용 설정 성공: $value');
+    } catch (e) {
+      debugPrint('❌ 네이티브 TTS 사용 설정 실패: $e');
+    }
+
     notifyListeners();
   }
 

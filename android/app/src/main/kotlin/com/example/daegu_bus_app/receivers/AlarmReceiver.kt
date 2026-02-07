@@ -60,41 +60,50 @@ class AlarmReceiver : BroadcastReceiver() {
                 return
             }
 
-            // 예정 시간보다 너무 이른 경우(> 5초)에는 보정: 정확한 시각에 다시 울리도록 재설정하고 즉시 종료
-            if (scheduledTime > 0 && (scheduledTime - currentTime) > 5000L) {
-                val earlySec = (scheduledTime - currentTime) / 1000
-                Log.w(TAG, "⚠️ 알람이 ${earlySec}초 일찍 도착함. 정확한 시각으로 재설정합니다.")
+            // 예정 시간보다 이른 경우 보정
+            val earlyMs = scheduledTime - currentTime
+            if (scheduledTime > 0 && earlyMs > 1500L) {
+                val earlySec = earlyMs / 1000
+                Log.w(TAG, "⚠️ 알람이 ${earlySec}초 일찍 도착함.")
 
-                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-                val pendingIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                    android.app.PendingIntent.getBroadcast(
-                        context,
-                        intent.getIntExtra("alarmId", 0),
-                        intent,
-                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-                    )
+                if (earlyMs <= 10000L) {
+                    // 10초 이내 이른 도착: Thread.sleep으로 대기 (재스케줄링 반복 방지)
+                    Log.d(TAG, "⏰ ${earlyMs}ms 대기 후 실행합니다.")
+                    try { Thread.sleep(earlyMs) } catch (_: InterruptedException) {}
                 } else {
-                    android.app.PendingIntent.getBroadcast(
-                        context,
-                        intent.getIntExtra("alarmId", 0),
-                        intent,
-                        android.app.PendingIntent.FLAG_UPDATE_CURRENT
-                    )
-                }
+                    // 10초 초과 이른 도착: 정확한 시각으로 재스케줄링
+                    Log.w(TAG, "⏰ 정확한 시각으로 재설정합니다.")
+                    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                    val pendingIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        android.app.PendingIntent.getBroadcast(
+                            context,
+                            intent.getIntExtra("alarmId", 0),
+                            intent,
+                            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                        )
+                    } else {
+                        android.app.PendingIntent.getBroadcast(
+                            context,
+                            intent.getIntExtra("alarmId", 0),
+                            intent,
+                            android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                        )
+                    }
 
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                    alarmManager.setAlarmClock(
-                        android.app.AlarmManager.AlarmClockInfo(scheduledTime, pendingIntent),
-                        pendingIntent
-                    )
-                } else {
-                    alarmManager.setExact(
-                        android.app.AlarmManager.RTC_WAKEUP,
-                        scheduledTime,
-                        pendingIntent
-                    )
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        alarmManager.setAlarmClock(
+                            android.app.AlarmManager.AlarmClockInfo(scheduledTime, pendingIntent),
+                            pendingIntent
+                        )
+                    } else {
+                        alarmManager.setExact(
+                            android.app.AlarmManager.RTC_WAKEUP,
+                            scheduledTime,
+                            pendingIntent
+                        )
+                    }
+                    return
                 }
-                return
             }
 
             // 배터리 절약을 위한 경량화된 TTS 처리
@@ -128,6 +137,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("stationId", stationId)
                 putExtra("remainingMinutes", -1) // 초기값 -1로 설정 (데이터 없음)
                 putExtra("currentStation", "")
+                putExtra("useTTS", useTTS)
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -259,6 +269,11 @@ class AlarmReceiver : BroadcastReceiver() {
                 Log.e(TAG, "❌ 다음 알람 시간을 찾을 수 없습니다")
                 return
             }
+
+            // 사전 추적: 설정 시간 5분 전부터 추적 시작 (버스 놓침 방지)
+            val EARLY_TRACKING_MINUTES = 5
+            calendar.add(java.util.Calendar.MINUTE, -EARLY_TRACKING_MINUTES)
+            Log.d(TAG, "⏰ 사전 추적: 원래 시간 ${hour}:${minute}, 실제 알람 ${calendar.time} (${EARLY_TRACKING_MINUTES}분 전)")
 
             // AlarmManager로 다음 알람 설정
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager

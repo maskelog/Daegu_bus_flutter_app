@@ -894,10 +894,7 @@ class AlarmService extends ChangeNotifier {
       // 새로고침 타이머 중지
       _alarmFacade.cancelRefreshTimer();
 
-      // 버스 모니터링 서비스 중지
-      await _notificationService.cancelOngoingTracking();
-
-      // 알림 취소
+      // 버스 모니터링 서비스 및 알림 취소
       await _notificationService.cancelOngoingTracking();
 
       // 자동 알람 목록에서 제거
@@ -1290,17 +1287,18 @@ class AlarmService extends ChangeNotifier {
         );
       }
 
-      // 자동 알람 목록에서도 제거
-      final autoAlarmIndex = _alarmFacade.autoAlarmsList.indexWhere(
+      // 자동 알람 스케줄이 있으면 당일 재실행만 방지 (스케줄 자체는 보존)
+      final hasAutoAlarmSchedule = _alarmFacade.autoAlarmsList.any(
         (alarm) =>
             alarm.busNo == busNo &&
             alarm.stationName == stationName &&
             alarm.routeId == routeId,
       );
-      if (autoAlarmIndex != -1) {
-        _alarmFacade.autoAlarmsList.removeAt(autoAlarmIndex);
+      if (hasAutoAlarmSchedule) {
+        _alarmFacade.state.manuallyStoppedAlarms.add(alarmKey);
+        _alarmFacade.state.manuallyStoppedTimestamps[alarmKey] = DateTime.now();
         logMessage(
-          '[$busNo] Flutter autoAlarms 목록에서 완전 제거',
+          '[$busNo] 자동 알람 실행 취소 (스케줄 보존, 당일 재실행 방지)',
           level: LogLevel.debug,
         );
       }
@@ -1312,27 +1310,22 @@ class AlarmService extends ChangeNotifier {
       if (_alarmFacade.trackedRouteId == routeId) {
         _alarmFacade.trackedRouteId = null;
         logMessage('추적 Route ID 즉시 초기화됨 (취소된 알람과 일치)', level: LogLevel.debug);
-        if (_alarmFacade.activeAlarmsMap.isEmpty && _alarmFacade.autoAlarmsList.isEmpty) {
-          // 모든 알람이 없는 경우
+        if (_alarmFacade.activeAlarmsMap.isEmpty) {
           _alarmFacade.isTrackingMode = false;
-          shouldForceStopNative = true; // Last tracked alarm removed
-          logMessage('추적 모드 즉시 비활성화 (모든 알람 없음)', level: LogLevel.debug);
+          shouldForceStopNative = true;
+          logMessage('추적 모드 즉시 비활성화 (활성 알람 없음)', level: LogLevel.debug);
         } else {
           _alarmFacade.isTrackingMode = true;
           logMessage('다른 활성 알람 존재, 추적 모드 유지', level: LogLevel.debug);
-          // Decide if we need to start tracking the next alarm? For now, no.
         }
-      } else if (_alarmFacade.activeAlarmsMap.isEmpty && _alarmFacade.autoAlarmsList.isEmpty) {
-        // 모든 알람이 없는 경우
-        // If the cancelled alarm wasn't the tracked one, but it was the *last* one
+      } else if (_alarmFacade.activeAlarmsMap.isEmpty) {
         _alarmFacade.isTrackingMode = false;
         _alarmFacade.trackedRouteId = null;
-        shouldForceStopNative = true; // Last alarm overall removed
+        shouldForceStopNative = true;
         logMessage('마지막 알람 취소됨, 추적 모드 비활성화', level: LogLevel.debug);
       }
 
       await _saveAlarms(); // Persist the removal immediately
-      await _alarmFacade.saveAutoAlarms(); // 자동 알람 상태도 저장
       notifyListeners(); // Update UI immediately
       logMessage(
         '[$alarmKey] Flutter 상태 즉시 업데이트 및 리스너 알림 완료',

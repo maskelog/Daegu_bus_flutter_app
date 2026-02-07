@@ -166,7 +166,8 @@ class NotificationHandler(private val context: Context) {
                 // 자동알람은 전체 자동알람 모드 종료 액션 제공
                 BusAlertService.ACTION_STOP_AUTO_ALARM
             } else {
-                BusAlertService.ACTION_STOP_TRACKING
+                // 일반 알람도 개별 중지 액션 사용 (전체 추적 중지가 아닌 특정 알람만 중지)
+                BusAlertService.ACTION_STOP_SPECIFIC_ROUTE_TRACKING
             }
             putExtra("routeId", routeId)
             putExtra("busNo", busNo)
@@ -309,49 +310,13 @@ class NotificationHandler(private val context: Context) {
             .setLocalOnly(false) // 웨어러블 기기에도 표시
 
         val firstTracking = activeTrackings.values.firstOrNull()
-        val trackingRemoteViews = buildTrackingRemoteViews(title, contentText, firstTracking)
+        val smallViews = buildTrackingSmallRemoteViews(title, contentText)
+        val bigViews = buildTrackingRemoteViews(title, contentText, firstTracking)
         notificationBuilder
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomContentView(trackingRemoteViews)
-            .setCustomBigContentView(trackingRemoteViews)
+            .setCustomContentView(smallViews)
+            .setCustomBigContentView(bigViews)
 
-
-        // Android 16 (API 36) Live Update Notification 지원
-        if (Build.VERSION.SDK_INT >= 36) {
-            try {
-                // 가장 가까운 버스의 도착 시간을 상태 칩에 표시
-                val firstTracking = activeTrackings.values.firstOrNull()
-                if (firstTracking != null) {
-                    val busInfo = firstTracking.lastBusInfo
-                    val chipText = when {
-                        busInfo == null -> "정보 없음"
-                        busInfo.estimatedTime == "운행종료" -> "운행종료"
-                        busInfo.estimatedTime == "곧 도착" -> "곧 도착"
-                        busInfo.estimatedTime.contains("분") -> {
-                            val minutes = busInfo.estimatedTime.replace("[^0-9]".toRegex(), "").toIntOrNull()
-                            if (minutes != null && minutes > 0) {
-                                "${minutes}분" // 7자 미만으로 유지
-                            } else "곧 도착"
-                        }
-                        busInfo.getRemainingMinutes() <= 0 -> "곧 도착"
-                        else -> "${busInfo.getRemainingMinutes()}분"
-                    }
-                    
-                    // Reflection을 사용하여 setShortCriticalText 메서드 호출 (Android 16+ API)
-                    try {
-                        val method = notificationBuilder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
-                        method.invoke(notificationBuilder, chipText)
-                        Log.d(TAG, "🎯 Live Update 활성화: 상태 칩 텍스트 = $chipText")
-                    } catch (e: NoSuchMethodException) {
-                        Log.w(TAG, "⚠️ setShortCriticalText 메서드를 찾을 수 없습니다 (AndroidX 업데이트 필요)")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Live Update 설정 오류: ${e.message}")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Live Update 설정 오류: ${e.message}")
-            }
-        }
 
         // 추적 중지 버튼 추가
         Log.d(TAG, "🔔🔔🔔 '추적 중지' 버튼 추가 시작 🔔🔔🔔")
@@ -423,46 +388,61 @@ class NotificationHandler(private val context: Context) {
                         val busInfo = firstTracking.lastBusInfo
                         val busNo = firstTracking.busNo
                         val stationName = firstTracking.stationName
-                        
+
                         // 상태 정보
                         val remainingMinutes = busInfo?.getRemainingMinutes() ?: 0
+                        val stopsInt = busInfo?.remainingStops
+                            ?.filter { it.isDigit() }?.toIntOrNull() ?: 0
                         val timeStr = when {
                             busInfo == null -> "정보 없음"
                             busInfo.estimatedTime == "운행종료" -> "운행종료"
-                            busInfo.estimatedTime == "곧 도착" -> "곧 도착"
+                            busInfo.estimatedTime == "곧 도착" || remainingMinutes <= 0 -> {
+                                if (stopsInt > 0) "곧 도착 (${stopsInt}전)" else "곧 도착"
+                            }
+                            stopsInt > 0 -> "${remainingMinutes}분 (${stopsInt}전)"
                             busInfo.estimatedTime.contains("분") -> busInfo.estimatedTime
                             else -> "${remainingMinutes}분"
                         }
-                        
+                        // 칩용 짧은 텍스트 (7자 제한)
+                        val samsungChipText = when {
+                            busInfo == null -> "정보 없음"
+                            busInfo.estimatedTime == "운행종료" -> "운행종료"
+                            remainingMinutes <= 0 -> {
+                                if (stopsInt > 0) "곧·${stopsInt}전" else "곧도착"
+                            }
+                            stopsInt > 0 -> "${remainingMinutes}분·${stopsInt}전"
+                            else -> "${remainingMinutes}분"
+                        }
+
                         // Primary Info (주요 텍스트)
                         putString("android.ongoingActivityNoti.primaryInfo", busNo)
-                        
-                        // Secondary Info (부가 정보)
+
+                        // Secondary Info (부가 정보: 정류장명 + 시간 + 남은 정류장)
                         putString("android.ongoingActivityNoti.secondaryInfo", "$stationName: $timeStr")
-                        
+
                         // Chip 설정 (상태 바 상단 칩)
-                        putString("android.ongoingActivityNoti.chipExpandedText", timeStr)
+                        putString("android.ongoingActivityNoti.chipExpandedText", samsungChipText)
                         putInt("android.ongoingActivityNoti.chipBgColor", busTypeColor)
                         val chipIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_notification)
                         putParcelable("android.ongoingActivityNoti.chipIcon", chipIcon)
-                        
+
                         // Progress 정보
                         if (remainingMinutes > 0) {
                             val maxMinutes = 30
                             val progress = maxMinutes - remainingMinutes.coerceIn(0, maxMinutes)
                             putInt("android.ongoingActivityNoti.progress", progress)
                             putInt("android.ongoingActivityNoti.progressMax", maxMinutes)
-                            
+
                             // Progress 트래커 아이콘
                             val trackerIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_tracker)
                             putParcelable("android.ongoingActivityNoti.progressSegments.icon", trackerIcon)
                             putInt("android.ongoingActivityNoti.progressSegments.progressColor", busTypeColor)
                         }
-                        
-                        // Now Bar 설정 (잠금 화면)
+
+                        // Now Bar 설정 (잠금 화면: 버스번호 + 도착시간·정류장)
                         putString("android.ongoingActivityNoti.nowbarPrimaryInfo", busNo)
-                        putString("android.ongoingActivityNoti.nowbarSecondaryInfo", timeStr)
-                        
+                        putString("android.ongoingActivityNoti.nowbarSecondaryInfo", samsungChipText)
+
                         // Action 버튼 표시 설정
                         putInt("android.ongoingActivityNoti.actionType", 1)
                         putInt("android.ongoingActivityNoti.actionPrimarySet", 0)
@@ -520,17 +500,24 @@ class NotificationHandler(private val context: Context) {
                 if (firstTracking != null) {
                     val busInfo = firstTracking.lastBusInfo
 
-                    // 1. 상태 칩에 표시될 짧은 텍스트
+                    // 1. 상태 칩에 표시될 핵심 정보 (Notification.Builder#setShortCriticalText)
+                    //    7자 제한: "5분·3전", "곧도착", "운행종료" 형태
+                    val remainingStopsInt = busInfo?.remainingStops
+                        ?.filter { it.isDigit() }?.toIntOrNull() ?: 0
+                    val timeMinutes = when {
+                        busInfo == null -> -1
+                        busInfo.estimatedTime.contains("분") ->
+                            busInfo.estimatedTime.replace("[^0-9]".toRegex(), "").toIntOrNull() ?: busInfo.getRemainingMinutes()
+                        else -> busInfo.getRemainingMinutes()
+                    }
                     val chipText = when {
                         busInfo == null -> "정보 없음"
                         busInfo.estimatedTime == "운행종료" -> "운행종료"
-                        busInfo.estimatedTime == "곧 도착" -> "곧 도착"
-                        busInfo.estimatedTime.contains("분") -> {
-                            val minutes = busInfo.estimatedTime.replace("[^0-9]".toRegex(), "").toIntOrNull()
-                            if (minutes != null && minutes > 0) "${minutes}분" else "곧 도착"
+                        busInfo.estimatedTime == "곧 도착" || timeMinutes <= 0 -> {
+                            if (remainingStopsInt > 0) "곧·${remainingStopsInt}전" else "곧도착"
                         }
-                        busInfo.getRemainingMinutes() <= 0 -> "곧 도착"
-                        else -> "${busInfo.getRemainingMinutes()}분"
+                        remainingStopsInt > 0 -> "${timeMinutes}분·${remainingStopsInt}전"
+                        else -> "${timeMinutes}분"
                     }
 
                     // 2. setWhen을 버스 도착 예정 시간으로 설정 (Now Bar 카운트다운을 위해)
@@ -771,6 +758,16 @@ class NotificationHandler(private val context: Context) {
 
 
     
+    private fun buildTrackingSmallRemoteViews(
+        title: String,
+        contentText: String
+    ): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.notification_tracking_small)
+        views.setTextViewText(R.id.notification_title, title)
+        views.setTextViewText(R.id.notification_content, contentText)
+        return views
+    }
+
     private fun buildTrackingRemoteViews(
         title: String,
         contentText: String,

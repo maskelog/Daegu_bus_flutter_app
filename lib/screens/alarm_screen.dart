@@ -13,8 +13,6 @@ import 'search_screen.dart';
 import '../main.dart' show logMessage, LogLevel;
 import '../utils/favorite_bus_store.dart';
 
-enum _AutoAlarmSource { search, favorite }
-
 class AlarmScreen extends StatefulWidget {
   const AlarmScreen({super.key});
 
@@ -101,28 +99,237 @@ class _AlarmScreenState extends State<AlarmScreen> {
   }
 
   void _addAutoAlarm() async {
-    final source = await _selectAutoAlarmSource();
-    if (!mounted || source == null) return;
+    final favorites = await FavoriteBusStore.load();
+    if (!mounted) return;
+
+    // 이미 알람이 설정된 즐겨찾기 버스의 키 세트
+    final existingAlarmKeys = _autoAlarms
+        .map((a) => '${a.stationId}|${a.routeId}')
+        .toSet();
+
+    final result = await showModalBottomSheet<dynamic>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 헤더
+                Text(
+                  '알람 추가',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // 즐겨찾기 섹션
+                if (favorites.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Icon(Icons.star_rounded,
+                          size: 18, color: Colors.amber.shade700),
+                      const SizedBox(width: 6),
+                      Text(
+                        '즐겨찾기 버스',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: favorites.length > 4 ? 240 : double.infinity,
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      physics: favorites.length > 4
+                          ? const AlwaysScrollableScrollPhysics()
+                          : const NeverScrollableScrollPhysics(),
+                      itemCount: favorites.length,
+                      itemBuilder: (context, index) {
+                        final bus = favorites[index];
+                        final alreadySet =
+                            existingAlarmKeys.contains(bus.key);
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Material(
+                            color: alreadySet
+                                ? colorScheme.surfaceContainerHighest
+                                : colorScheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(16),
+                            child: InkWell(
+                              onTap: alreadySet
+                                  ? null
+                                  : () => Navigator.pop(context, bus),
+                              borderRadius: BorderRadius.circular(16),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 14),
+                                child: Row(
+                                  children: [
+                                    // 버스 뱃지
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: alreadySet
+                                            ? colorScheme.outlineVariant
+                                            : colorScheme.primary,
+                                        borderRadius:
+                                            BorderRadius.circular(10),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.directions_bus,
+                                            size: 16,
+                                            color: alreadySet
+                                                ? colorScheme
+                                                    .onSurfaceVariant
+                                                : colorScheme.onPrimary,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            bus.routeNo,
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800,
+                                              color: alreadySet
+                                                  ? colorScheme
+                                                      .onSurfaceVariant
+                                                  : colorScheme.onPrimary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    // 정류장명
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            bus.stationName,
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                              color: alreadySet
+                                                  ? colorScheme
+                                                      .onSurfaceVariant
+                                                  : colorScheme.onSurface,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (alreadySet)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme
+                                              .secondaryContainer,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '설정됨',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                            color: colorScheme
+                                                .onSecondaryContainer,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        color:
+                                            colorScheme.onSurfaceVariant,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Divider(color: colorScheme.outlineVariant.withAlpha(128)),
+                  const SizedBox(height: 4),
+                ],
+
+                // 검색 버튼
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(context, 'search'),
+                    icon: const Icon(Icons.search_rounded, size: 20),
+                    label: const Text('정류장 검색으로 추가'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || result == null) return;
 
     BusStop? selectedStation;
     FavoriteBus? selectedFavoriteBus;
 
-    if (source == _AutoAlarmSource.search) {
-      final result = await Navigator.push(
+    if (result == 'search') {
+      // 정류장 검색 경로
+      final searchResult = await Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const SearchScreen()),
       );
-
-      if (!mounted || result == null || result is! BusStop) return;
-      selectedStation = result;
-    } else {
-      selectedFavoriteBus = await _selectFavoriteBus();
-      if (!mounted || selectedFavoriteBus == null) return;
+      if (!mounted || searchResult == null || searchResult is! BusStop) return;
+      selectedStation = searchResult;
+    } else if (result is FavoriteBus) {
+      // 즐겨찾기 버스 선택 경로
+      selectedFavoriteBus = result;
       selectedStation = BusStop(
-        id: selectedFavoriteBus.stationId,
-        name: selectedFavoriteBus.stationName,
+        id: result.stationId,
+        name: result.stationName,
         isFavorite: true,
       );
+    } else {
+      return;
     }
 
     final alarmResult = await Navigator.push(
@@ -144,86 +351,21 @@ class _AlarmScreenState extends State<AlarmScreen> {
         _autoAlarms.add(alarmResult);
         _saveAutoAlarms();
       });
-    }
-  }
-
-  Future<_AutoAlarmSource?> _selectAutoAlarmSource() {
-    return showModalBottomSheet<_AutoAlarmSource>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.search),
-                title: const Text('정류장 검색'),
-                subtitle: const Text('정류장 검색 화면에서 선택'),
-                onTap: () => Navigator.pop(context, _AutoAlarmSource.search),
-              ),
-              ListTile(
-                leading: const Icon(Icons.star_rounded),
-                title: const Text('즐겨찾기 버스'),
-                subtitle: const Text('즐겨찾기한 버스로 빠르게 설정'),
-                onTap: () => Navigator.pop(context, _AutoAlarmSource.favorite),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<FavoriteBus?> _selectFavoriteBus() async {
-    final favorites = await FavoriteBusStore.load();
-    if (!mounted) return null;
-
-    return showModalBottomSheet<FavoriteBus>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) {
-        if (favorites.isEmpty) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.star_border_rounded, size: 36),
-                  const SizedBox(height: 12),
-                  const Text('즐겨찾기된 버스가 없습니다'),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('닫기'),
-                  ),
-                ],
-              ),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text('${alarmResult.routeNo}번 버스 알람이 추가되었습니다.'),
+              ],
             ),
-          );
-        }
-
-        return SafeArea(
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: favorites.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final bus = favorites[index];
-              return ListTile(
-                leading: const Icon(Icons.directions_bus_filled),
-                title: Text('${bus.routeNo}번'),
-                subtitle: Text(bus.stationName),
-                onTap: () => Navigator.pop(context, bus),
-              );
-            },
+            backgroundColor: Theme.of(context).colorScheme.primary,
           ),
         );
-      },
-    );
+      }
+    }
   }
 
   void _editAutoAlarm(int index) async {
@@ -244,6 +386,20 @@ class _AlarmScreenState extends State<AlarmScreen> {
         _autoAlarms[index] = result;
         _saveAutoAlarms();
       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text('${result.routeNo}번 버스 알람이 수정되었습니다.'),
+              ],
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+          ),
+        );
+      }
     }
   }
 
@@ -268,6 +424,30 @@ class _AlarmScreenState extends State<AlarmScreen> {
       );
     }
     _saveAutoAlarms(); // 상태 저장
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                newIsActive ? Icons.notifications_active : Icons.notifications_off,
+                color: Colors.white,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(newIsActive
+                  ? '${currentAlarm.routeNo}번 알람이 켜졌습니다.'
+                  : '${currentAlarm.routeNo}번 알람이 꺼졌습니다.'),
+            ],
+          ),
+          backgroundColor: newIsActive
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   void _toggleSelectAlarm(int index) {
@@ -307,10 +487,12 @@ class _AlarmScreenState extends State<AlarmScreen> {
   }
 
   void _deleteSelectedAlarms() async {
-    // async 추가
     final alarmService = Provider.of<AlarmService>(context, listen: false);
-    final alarmsToDelete = _autoAlarms
-        .where((alarm) => _selectedAlarms.contains(_autoAlarms.indexOf(alarm)))
+    // 인덱스로 삭제 대상을 먼저 수집 (역순 정렬로 인덱스 밀림 방지)
+    final sortedIndices = _selectedAlarms.toList()..sort((a, b) => b.compareTo(a));
+    final alarmsToDelete = sortedIndices
+        .where((i) => i < _autoAlarms.length)
+        .map((i) => _autoAlarms[i])
         .toList();
 
     for (var alarm in alarmsToDelete) {
@@ -322,8 +504,11 @@ class _AlarmScreenState extends State<AlarmScreen> {
     }
 
     setState(() {
-      _autoAlarms.removeWhere(
-          (alarm) => _selectedAlarms.contains(_autoAlarms.indexOf(alarm)));
+      for (var index in sortedIndices) {
+        if (index < _autoAlarms.length) {
+          _autoAlarms.removeAt(index);
+        }
+      }
       _saveAutoAlarms();
       _selectedAlarms.clear();
       _selectionMode = false;
@@ -742,9 +927,6 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   bool _excludeHolidays = false;
   bool _useTTS = true;
 
-  late final TextEditingController _stationController;
-  late final TextEditingController _routeController;
-
   BusStop? _selectedStation;
   String? _selectedRouteId;
   String? _selectedRouteNo;
@@ -754,11 +936,12 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
 
   final List<String> _weekdays = ['월', '화', '수', '목', '금', '토', '일'];
 
+  /// 즐겨찾기에서 진입한 경우 (노선이 이미 결정됨)
+  bool get _isFromFavorite => widget.selectedFavoriteBus != null;
+
   @override
   void initState() {
     super.initState();
-    _stationController = TextEditingController();
-    _routeController = TextEditingController();
 
     if (widget.autoAlarm != null) {
       final alarm = widget.autoAlarm!;
@@ -768,8 +951,6 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       _excludeWeekends = alarm.excludeWeekends;
       _excludeHolidays = alarm.excludeHolidays;
       _useTTS = alarm.useTTS;
-      _stationController.text = alarm.stationName;
-      _routeController.text = alarm.routeNo;
       _selectedStation = BusStop(
           id: alarm.stationId, name: alarm.stationName, isFavorite: false);
       _selectedRouteId = alarm.routeId;
@@ -789,25 +970,15 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
         );
         _selectedRouteId = favorite.routeId;
         _selectedRouteNo = favorite.routeNo;
-        _stationController.text = favorite.stationName;
-        _routeController.text = favorite.routeNo;
         _routeOptions = [
           {'id': favorite.routeId, 'routeNo': favorite.routeNo},
         ];
         _loadRouteOptions();
       } else if (widget.selectedStation != null) {
         _selectedStation = widget.selectedStation;
-        _stationController.text = _selectedStation!.name;
         _loadRouteOptions();
       }
     }
-  }
-
-  @override
-  void dispose() {
-    _stationController.dispose();
-    _routeController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadRouteOptions() async {
@@ -837,7 +1008,6 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
               final first = _routeOptions.first;
               _selectedRouteId = first['id'];
               _selectedRouteNo = first['routeNo'];
-              _routeController.text = first['routeNo'] ?? '';
             }
           }
           _isLoadingRoutes = false;
@@ -862,16 +1032,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
     setState(() {
       _selectedRouteId = routeId;
       _selectedRouteNo = routeNo;
-      _routeController.text = routeNo;
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$routeNo 노선이 선택되었습니다'),
-        duration: const Duration(seconds: 1),
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      ),
-    );
   }
 
   void _saveAlarm() {
@@ -908,6 +1069,23 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
     Navigator.pop(context, alarm);
   }
 
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _hour, minute: _minute),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _hour = picked.hour;
+        _minute = picked.minute;
+      });
+    }
+  }
+
+  void _setPresetDays(List<int> days) {
+    setState(() => _repeatDays = days);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -923,374 +1101,417 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
         backgroundColor: colorScheme.surface,
         elevation: 0,
         actions: [
-          TextButton(
-            onPressed: _saveAlarm,
-            child: Text('저장', style: TextStyle(color: colorScheme.primary)),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton(
+              onPressed: _saveAlarm,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+              ),
+              child: const Text('저장'),
+            ),
           ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('알림 시간',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: colorScheme.outline),
-                borderRadius: BorderRadius.circular(8),
-                color: colorScheme.surfaceContainerLowest,
-              ),
-              child: ListTile(
-                leading: Icon(Icons.access_time, color: colorScheme.primary),
-                title: Text(
-                  '${_hour.toString().padLeft(2, '0')}:${_minute.toString().padLeft(2, '0')}',
+            // 1) 버스 정보 카드
+            if (_selectedStation != null) _buildBusInfoCard(colorScheme),
+            const SizedBox(height: 24),
+
+            // 2) 시간 표시 (큰 폰트, 중앙)
+            _buildTimeDisplay(colorScheme),
+            const SizedBox(height: 32),
+
+            // 3) 요일 선택 (원형 토글)
+            _buildDaySelector(theme, colorScheme),
+            const SizedBox(height: 28),
+
+            // 4) 추가 설정 카드
+            _buildSettingsCard(theme, colorScheme),
+            const SizedBox(height: 28),
+
+            // 5) 노선 선택 (검색 진입 시만)
+            if (!_isFromFavorite && widget.autoAlarm == null)
+              _buildRouteSelector(theme, colorScheme),
+
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 버스 정보 카드 — 버스 뱃지 + 정류장명
+  Widget _buildBusInfoCard(ColorScheme colorScheme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          // 버스 뱃지
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: colorScheme.primary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.directions_bus, size: 18, color: colorScheme.onPrimary),
+                const SizedBox(width: 4),
+                Text(
+                  _selectedRouteNo ?? '?',
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: colorScheme.onPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // 정류장명
+          Expanded(
+            child: Text(
+              _selectedStation!.name,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onPrimaryContainer,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 시간 표시 — 큰 폰트 중앙 배치, 탭하면 TimePicker
+  Widget _buildTimeDisplay(ColorScheme colorScheme) {
+    final hourStr = _hour.toString().padLeft(2, '0');
+    final minuteStr = _minute.toString().padLeft(2, '0');
+
+    return Center(
+      child: InkWell(
+        onTap: _pickTime,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    hourStr,
+                    style: TextStyle(
+                      fontSize: 56,
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      ':',
+                      style: TextStyle(
+                        fontSize: 48,
+                        fontWeight: FontWeight.w400,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    minuteStr,
+                    style: TextStyle(
+                      fontSize: 56,
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '탭해서 변경',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 요일 선택 — 원형 토글 + 프리셋 칩
+  Widget _buildDaySelector(ThemeData theme, ColorScheme colorScheme) {
+    // 현재 프리셋 상태 확인
+    final isWeekdays = _repeatDays.length == 5 &&
+        _repeatDays.every((d) => [1, 2, 3, 4, 5].contains(d));
+    final isWeekend = _repeatDays.length == 2 &&
+        _repeatDays.every((d) => [6, 7].contains(d));
+    final isEveryDay = _repeatDays.length == 7;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '반복 요일',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 12),
+        // 원형 토글 버튼
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: List.generate(7, (index) {
+            final dayNum = index + 1;
+            final isSelected = _repeatDays.contains(dayNum);
+            final isWeekendDay = dayNum == 6 || dayNum == 7;
+
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  if (isSelected) {
+                    _repeatDays.remove(dayNum);
+                  } else {
+                    _repeatDays.add(dayNum);
+                    _repeatDays.sort();
+                  }
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isSelected
+                      ? colorScheme.primary
+                      : colorScheme.surfaceContainerHighest,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  _weekdays[index],
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected
+                        ? colorScheme.onPrimary
+                        : isWeekendDay
+                            ? colorScheme.error
+                            : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 12),
+        // 프리셋 칩
+        Row(
+          children: [
+            _buildPresetChip('평일', isWeekdays, () => _setPresetDays([1, 2, 3, 4, 5]), colorScheme),
+            const SizedBox(width: 8),
+            _buildPresetChip('주말', isWeekend, () => _setPresetDays([6, 7]), colorScheme),
+            const SizedBox(width: 8),
+            _buildPresetChip('매일', isEveryDay, () => _setPresetDays([1, 2, 3, 4, 5, 6, 7]), colorScheme),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPresetChip(String label, bool isActive, VoidCallback onTap, ColorScheme colorScheme) {
+    return ActionChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+          color: isActive ? colorScheme.onSecondaryContainer : colorScheme.onSurfaceVariant,
+        ),
+      ),
+      onPressed: onTap,
+      backgroundColor: isActive ? colorScheme.secondaryContainer : null,
+      side: BorderSide(
+        color: isActive ? colorScheme.secondary : colorScheme.outlineVariant,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  /// 추가 설정 카드 — 공휴일 제외 + 음성 알림
+  Widget _buildSettingsCard(ThemeData theme, ColorScheme colorScheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '추가 설정',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              // 공휴일 제외
+              SwitchListTile(
+                secondary: Icon(
+                  Icons.event_busy_rounded,
+                  color: _excludeHolidays
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                  size: 22,
+                ),
+                title: Text(
+                  '공휴일 제외',
+                  style: TextStyle(
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: colorScheme.onSurface,
                   ),
                 ),
-                subtitle: Text(
-                  '탭해서 시간 선택',
-                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                value: _excludeHolidays,
+                onChanged: (value) => setState(() => _excludeHolidays = value),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                trailing: Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
-                onTap: () async {
-                  final picked = await showTimePicker(
-                    context: context,
-                    initialTime: TimeOfDay(hour: _hour, minute: _minute),
-                  );
-                  if (picked != null && mounted) {
-                    setState(() {
-                      _hour = picked.hour;
-                      _minute = picked.minute;
-                    });
-                  }
-                },
               ),
-            ),
-            const SizedBox(height: 24),
-            Text('반복 요일',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: List.generate(7, (index) {
-                final isSelected = _repeatDays.contains(index + 1);
-                return FilterChip(
-                  label: Text(
-                    _weekdays[index],
-                    style: TextStyle(
-                      color: isSelected
-                          ? colorScheme.onSecondaryContainer
-                          : colorScheme.onSurfaceVariant,
-                      fontWeight:
-                          isSelected ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        _repeatDays.add(index + 1);
-                      } else {
-                        _repeatDays.remove(index + 1);
-                      }
-                    });
-                  },
-                  backgroundColor: colorScheme.surface,
-                  selectedColor: colorScheme.secondaryContainer,
-                  checkmarkColor: colorScheme.onSecondaryContainer,
-                  side: BorderSide(
-                    color: isSelected
-                        ? colorScheme.secondary
-                        : colorScheme.outline,
-                    width: isSelected ? 2 : 1,
-                  ),
-                  elevation: isSelected ? 2 : 0,
-                  shadowColor: colorScheme.shadow,
-                  surfaceTintColor: colorScheme.surfaceTint,
-                  showCheckmark: true,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.comfortable,
-                );
-              }),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              children: [
-                TextButton(
-                  onPressed: () =>
-                      setState(() => _repeatDays = [1, 2, 3, 4, 5]),
-                  child:
-                      Text('평일', style: TextStyle(color: colorScheme.primary)),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _repeatDays = [6, 7]),
-                  child:
-                      Text('주말', style: TextStyle(color: colorScheme.primary)),
-                ),
-                TextButton(
-                  onPressed: () =>
-                      setState(() => _repeatDays = [1, 2, 3, 4, 5, 6, 7]),
-                  child:
-                      Text('매일', style: TextStyle(color: colorScheme.primary)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text('제외 설정',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            CheckboxListTile(
-              title:
-                  Text('주말 제외', style: TextStyle(color: colorScheme.onSurface)),
-              value: _excludeWeekends,
-              onChanged: (value) =>
-                  setState(() => _excludeWeekends = value ?? false),
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              activeColor: colorScheme.primary,
-              checkColor: colorScheme.onPrimary,
-              fillColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return colorScheme.primary;
-                }
-                return colorScheme.outline;
-              }),
-            ),
-            CheckboxListTile(
-              title: Text('공휴일 제외',
-                  style: TextStyle(color: colorScheme.onSurface)),
-              value: _excludeHolidays,
-              onChanged: (value) =>
-                  setState(() => _excludeHolidays = value ?? false),
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              activeColor: colorScheme.primary,
-              checkColor: colorScheme.onPrimary,
-              fillColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return colorScheme.primary;
-                }
-                return colorScheme.outline;
-              }),
-            ),
-            const SizedBox(height: 24),
-            Text('정류장',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _stationController,
-              readOnly: true,
-              style: TextStyle(color: colorScheme.onSurface),
-              decoration: InputDecoration(
-                hintText: '정류장 검색 또는 즐겨찾기에서 선택하세요',
-                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: colorScheme.outline),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: colorScheme.primary, width: 2),
-                ),
-                filled: true,
-                fillColor: colorScheme.surfaceContainerLowest,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              Divider(
+                height: 1,
+                indent: 56,
+                color: colorScheme.outlineVariant.withAlpha(128),
               ),
-            ),
-            const SizedBox(height: 24),
-            Text('노선',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _routeController,
-              readOnly: true,
-              enabled: false,
-              style: TextStyle(
-                color: _selectedRouteId != null
-                    ? colorScheme.onPrimaryContainer
-                    : colorScheme.onSurfaceVariant,
-              ),
-              decoration: InputDecoration(
-                hintText: '아래 노선 목록에서 선택하세요',
-                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                    color: _selectedRouteId != null
-                        ? colorScheme.primary
-                        : colorScheme.outline,
+              // 음성 알림
+              SwitchListTile(
+                secondary: Icon(
+                  Icons.volume_up_rounded,
+                  color: _useTTS
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                  size: 22,
+                ),
+                title: Text(
+                  '음성 알림',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
                   ),
                 ),
-                disabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                    color: _selectedRouteId != null
-                        ? colorScheme.primary
-                        : colorScheme.outline,
-                  ),
-                ),
-                filled: true,
-                fillColor: _selectedRouteId != null
-                    ? colorScheme.primaryContainer.withValues(alpha: 0.3)
-                    : colorScheme.surfaceContainerLowest,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-            ),
-            if (_isLoadingRoutes)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: CircularProgressIndicator(color: colorScheme.primary),
-                ),
-              ),
-            if (!_isLoadingRoutes && _routeOptions.isNotEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 12),
-                  Text('노선 목록',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: colorScheme.primary,
-                      )),
-                  const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: colorScheme.outline),
-                      borderRadius: BorderRadius.circular(8),
-                      color: colorScheme.surfaceContainerLowest,
-                    ),
-                    height: _routeOptions.length > 4 ? 200 : null,
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      physics: _routeOptions.length > 4
-                          ? const AlwaysScrollableScrollPhysics()
-                          : const NeverScrollableScrollPhysics(),
-                      itemCount: _routeOptions.length,
-                      separatorBuilder: (context, index) =>
-                          Divider(height: 1, color: colorScheme.outlineVariant),
-                      itemBuilder: (context, index) {
-                        final route = _routeOptions[index];
-                        final isSelected = _selectedRouteId == route['id'];
-                        return ListTile(
-                          title: Text(route['routeNo']!,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? colorScheme.onPrimaryContainer
-                                    : colorScheme.onSurface,
-                                fontWeight: isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                              )),
-                          selected: isSelected,
-                          selectedTileColor: colorScheme.primaryContainer,
-                          dense: true,
-                          visualDensity: VisualDensity.compact,
-                          onTap: () =>
-                              _selectRoute(route['id']!, route['routeNo']!),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            const SizedBox(height: 24),
-            Text('알림 설정',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Text(
-              '버스 도착 정보를 알림과 음성으로 알려드립니다',
-              style: TextStyle(
-                fontSize: 14,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: colorScheme.outline),
-                borderRadius: BorderRadius.circular(12),
-                color: colorScheme.surfaceContainerLowest,
-              ),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: Icon(
-                      Icons.volume_up,
-                      color: _useTTS
-                          ? colorScheme.primary
-                          : colorScheme.onSurfaceVariant,
-                    ),
-                    title: Text('음성 알림',
-                        style: TextStyle(color: colorScheme.onSurface)),
-                    subtitle: Text(
-                      '버스 도착 정보를 음성으로 알려드립니다',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    trailing: Switch(
-                      value: _useTTS,
-                      onChanged: (value) => setState(() => _useTTS = value),
-                      activeThumbColor: colorScheme.primary,
-                      activeTrackColor: colorScheme.primaryContainer,
-                      inactiveThumbColor: colorScheme.outline,
-                      inactiveTrackColor: colorScheme.surfaceContainerHighest,
-                    ),
-                  ),
-                  if (_useTTS)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      child: Text(
-                        '예시: "대구 101번 버스가 3분 후에 도착합니다"',
+                subtitle: _useTTS
+                    ? Text(
+                        '버스 도착 정보를 음성으로 안내',
                         style: TextStyle(
                           fontSize: 12,
                           color: colorScheme.onSurfaceVariant,
-                          fontStyle: FontStyle.italic,
                         ),
-                      ),
-                    ),
-                ],
+                      )
+                    : null,
+                value: _useTTS,
+                onChanged: (value) => setState(() => _useTTS = value),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-          ],
+            ],
+          ),
         ),
-      ),
+      ],
+    );
+  }
+
+  /// 노선 선택 — 검색에서 진입한 경우만 표시
+  Widget _buildRouteSelector(ThemeData theme, ColorScheme colorScheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '노선 선택',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (_isLoadingRoutes)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: CircularProgressIndicator(),
+            ),
+          )
+        else if (_routeOptions.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _routeOptions.map((route) {
+              final isSelected = _selectedRouteId == route['id'];
+              return ChoiceChip(
+                label: Text(
+                  route['routeNo']!,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected
+                        ? colorScheme.onPrimaryContainer
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                selected: isSelected,
+                onSelected: (_) => _selectRoute(route['id']!, route['routeNo']!),
+                selectedColor: colorScheme.primaryContainer,
+                backgroundColor: colorScheme.surfaceContainerLow,
+                side: BorderSide(
+                  color: isSelected ? colorScheme.primary : colorScheme.outlineVariant,
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              );
+            }).toList(),
+          )
+        else
+          Text(
+            '노선 정보를 불러오는 중...',
+            style: TextStyle(
+              fontSize: 14,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+      ],
     );
   }
 }

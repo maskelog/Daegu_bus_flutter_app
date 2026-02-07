@@ -164,6 +164,17 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
                 }
             }
 
+            // 사전 추적: 설정 시간 5분 전부터 추적 시작 (버스 놓침 방지)
+            val EARLY_TRACKING_MINUTES = 5
+            val originalTimeMs = calendar.timeInMillis
+            calendar.add(Calendar.MINUTE, -EARLY_TRACKING_MINUTES)
+            // 사전 추적 시간이 현재보다 과거이면 즉시 실행 (원본 시간이 미래인 경우만)
+            val nowCheck = Calendar.getInstance()
+            if (calendar.timeInMillis < nowCheck.timeInMillis && originalTimeMs > nowCheck.timeInMillis) {
+                calendar.timeInMillis = nowCheck.timeInMillis + 3000 // 3초 후 실행
+            }
+            Log.d(TAG, "⏰ 사전 추적: 원래 시간 ${hour}:${minute}, 실제 알람 ${calendar.time} (${EARLY_TRACKING_MINUTES}분 전)")
+
             val alarmIntent = Intent(applicationContext, AlarmReceiver::class.java).apply {
                 action = "com.example.daegu_bus_app.AUTO_ALARM"
                 putExtra("alarmId", alarmId)
@@ -175,7 +186,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
                 putExtra("hour", hour)
                 putExtra("minute", minute)
                 putExtra("repeatDays", repeatDays)
-                putExtra("scheduledTime", calendar.timeInMillis) // 스케줄된 시간 추가
+                putExtra("scheduledTime", calendar.timeInMillis) // 사전 추적 시간
             }
             
             val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

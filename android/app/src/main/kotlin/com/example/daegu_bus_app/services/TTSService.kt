@@ -116,29 +116,28 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 if (isBackup) {
                     Log.d(TAG, "🔊 백업 TTS 요청 ($backupNumber 번째): $busNo 번, $stationName")
                 } else {
-                    Log.d(TAG, "🔊 TTS 요청: $busNo 번, $stationName (자동알람: $isAutoAlarm)")
+                    Log.d(TAG, "🔊 TTS 요청: $busNo 번, $stationName (자동알람: $isAutoAlarm, forceSpeaker: $forceSpeaker)")
                 }
 
-                // 자동 알람인 경우 배터리 최적화된 처리
-                if (isAutoAlarm) {
-                    Log.d(TAG, "🔊 자동 알람 TTS 요청 - 배터리 최적화 모드")
+                // 자동 알람이거나 forceSpeaker인 경우 이어폰 체크 우회
+                if (isAutoAlarm || forceSpeaker) {
+                    Log.d(TAG, "🔊 자동 알람/강제 스피커 TTS 요청 - 이어폰 체크 우회")
                     isAutoAlarmMode = true
 
-                if (isInitialized) {
-                    handleAutoAlarmTTS(customMessage)
-                } else {
-                    initializeTTS()
-                    // 초기화 후 발화 시도
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        if (isInitialized) {
-                            handleAutoAlarmTTS(customMessage)
-                        }
-                    }, 1000)
-                }
+                    if (isInitialized) {
+                        handleAutoAlarmTTS(customMessage)
+                    } else {
+                        initializeTTS()
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (isInitialized) {
+                                handleAutoAlarmTTS(customMessage)
+                            }
+                        }, 1000)
+                    }
                     return START_STICKY
                 }
 
-                // 일반 알람인 경우 기존 로직 유지
+                // 일반 알람인 경우 이어폰 모드 체크
                 val audioOutputMode = getAudioOutputMode()
                 val headsetConnected = isHeadsetConnected()
                 Log.d(TAG, "🔴 onStartCommand [REPEAT_TTS_ALERT] - audioOutputMode=$audioOutputMode, headsetConnected=$headsetConnected")
@@ -367,7 +366,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         // TTS 파라미터 설정
         val streamType = if (forceSpeaker) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
         val utteranceId = "tts_${System.currentTimeMillis()}"
-        val volume = if (forceSpeaker) 1.0f else getTtsVolume()
+        val volume = getTtsVolume()
 
         val params = android.os.Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)

@@ -485,17 +485,17 @@ class HomeFavoriteStopsRow extends StatelessWidget {
                 avatar: Icon(
                   Icons.expand_more_rounded,
                   size: 18,
-                  color: colorScheme.primary,
+                  color: Colors.amber.shade800,
                 ),
                 label: Text(
                   '+${favoriteStops.length - maxItems}',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: colorScheme.primary,
+                    color: Colors.amber.shade800,
                   ),
                 ),
-                backgroundColor: colorScheme.primaryContainer.withAlpha(77),
+                backgroundColor: Colors.amber.withAlpha(26),
                 side: BorderSide.none,
                 onPressed: () => _showAllFavoriteStops(context),
               ),
@@ -525,13 +525,13 @@ class HomeFavoriteStopsRow extends StatelessWidget {
               ),
               selected: isSelected,
               selectedColor: colorScheme.primary,
-              backgroundColor: colorScheme.surfaceContainerHighest,
+              backgroundColor: Colors.amber.withAlpha(26),
               checkmarkColor: colorScheme.onPrimary,
               showCheckmark: false,
               side: BorderSide(
                 color: isSelected
                     ? colorScheme.primary
-                    : colorScheme.outlineVariant.withAlpha(77),
+                    : Colors.amber.withAlpha(102),
               ),
               onSelected: (_) => onStopSelected(stop),
               onDeleted: favoriteStops.length <= 1

@@ -11,6 +11,11 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.net.Uri
+import android.widget.RemoteViews
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
@@ -130,6 +135,9 @@ class BusAlertService : Service() {
     private var isAutoAlarmMode = false
     private var autoAlarmStartTime = 0L
     private var autoAlarmTimeoutMs = 1800000L // 기본 30분, 설정으로 변경 가능
+
+    // 알람 사운드 재생용 MediaPlayer
+    private var alarmMediaPlayer: MediaPlayer? = null
     
     // 추적 중지 후 재시작 방지를 위한 플래그
     private var isManuallyStoppedByUser = false
@@ -183,17 +191,38 @@ class BusAlertService : Service() {
     private fun loadSettings() {
         try {
             val prefs = applicationContext.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+            // Flutter SharedPreferences에서도 읽기 (Flutter 설정과 동기화)
+            val flutterPrefs = applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+
             currentAlarmSound = prefs.getString(PREF_ALARM_SOUND_FILENAME, DEFAULT_ALARM_SOUND) ?: DEFAULT_ALARM_SOUND
-            useTextToSpeech = prefs.getBoolean(PREF_ALARM_USE_TTS, true)
+
+            // TTS 설정: AppSettings 우선, 없으면 Flutter SharedPreferences에서 읽기
+            // Flutter는 'flutter.use_tts' 키로 저장, 알람 사운드가 'tts'이면 TTS 사용
+            val flutterAlarmSound = flutterPrefs.getString("flutter.alarm_sound", null)
+            val flutterUseTts = flutterPrefs.getBoolean("flutter.use_tts", true)
+            useTextToSpeech = if (prefs.contains(PREF_ALARM_USE_TTS)) {
+                prefs.getBoolean(PREF_ALARM_USE_TTS, true)
+            } else {
+                // AppSettings에 없으면 Flutter 설정 참조
+                flutterUseTts || flutterAlarmSound == "tts"
+            }
             ttsController.setUseTts(useTextToSpeech)
-            audioOutputMode = prefs.getInt(PREF_SPEAKER_MODE, OUTPUT_MODE_AUTO)
+
+            // 스피커 모드: AppSettings 우선, 없으면 Flutter SharedPreferences에서 읽기
+            audioOutputMode = if (prefs.contains(PREF_SPEAKER_MODE)) {
+                prefs.getInt(PREF_SPEAKER_MODE, OUTPUT_MODE_AUTO)
+            } else {
+                // Flutter는 'flutter.speaker_mode' 키 사용 (Long으로 저장됨)
+                flutterPrefs.getLong("flutter.speaker_mode", OUTPUT_MODE_HEADSET.toLong()).toInt()
+            }
             ttsController.setAudioOutputMode(audioOutputMode)
+
             notificationDisplayMode = prefs.getInt(PREF_NOTIFICATION_DISPLAY_MODE_KEY, DISPLAY_MODE_ALARMED_ONLY)
             ttsVolume = prefs.getFloat(PREF_TTS_VOLUME, 1.0f).coerceIn(0f, 1f)
             ttsController.setTtsVolume(ttsVolume)
             // 자동알람 타임아웃(ms) 로드, 기본 30분
             autoAlarmTimeoutMs = prefs.getLong("auto_alarm_timeout_ms", 1800000L).coerceIn(300000L, 7200000L)
-            Log.d(TAG, "⚙️ Settings loaded - TTS: $useTextToSpeech, Sound: $currentAlarmSound, NotifMode: $notificationDisplayMode, Output: $audioOutputMode, Volume: ${ttsVolume * 100}%")
+            Log.d(TAG, "⚙️ Settings loaded - TTS: $useTextToSpeech, Sound: $currentAlarmSound, NotifMode: $notificationDisplayMode, Output: $audioOutputMode, Volume: ${ttsVolume * 100}%, FlutterUseTts: $flutterUseTts, FlutterAlarmSound: $flutterAlarmSound")
         } catch (e: Exception) {
             Log.e(TAG, "⚙️ Error loading settings: ${e.message}")
         }
@@ -208,8 +237,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return START_NOT_STICKY
     }
 
-    // 서비스가 비활성 상태인 경우 초기화 시도 (STOP_TRACKING 제외)
-    if (!isServiceActive && intent?.action != ACTION_STOP_TRACKING) {
+    // 서비스가 비활성 상태인 경우 초기화 시도 (STOP 계열 액션 제외)
+    if (!isServiceActive && intent?.action != ACTION_STOP_TRACKING && intent?.action != ACTION_STOP_AUTO_ALARM && intent?.action != ACTION_STOP_SPECIFIC_ROUTE_TRACKING) {
         Log.w(TAG, "서비스가 비활성 상태입니다. 초기화 시도: ${intent?.action}")
         try {
             initialize()
@@ -589,16 +618,29 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             val currentStation = intent.getStringExtra("currentStation") ?: ""
             val routeId = intent.getStringExtra("routeId") ?: ""
             val stationId = intent.getStringExtra("stationId") ?: ""
+            val useTTS = intent.getBooleanExtra("useTTS", true)
 
-            Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $busNo 번, $stationName")
-            handleAutoAlarmLightweight(busNo, stationName, remainingMinutes, currentStation, routeId, stationId)
+            Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $busNo 번, $stationName, TTS=$useTTS")
+            handleAutoAlarmLightweight(busNo, stationName, remainingMinutes, currentStation, routeId, stationId, useTTS)
         }
         ACTION_STOP_AUTO_ALARM -> {
-            Log.i(TAG, "ACTION_STOP_AUTO_ALARM received")
+            Log.i(TAG, "🛑 ACTION_STOP_AUTO_ALARM received")
+
+            // 사용자 수동 중지 플래그 설정 (자동 알람 재시작 방지)
+            isManuallyStoppedByUser = true
+            lastManualStopTime = System.currentTimeMillis()
+            Log.w(TAG, "🛑 사용자 수동 중지 플래그 설정 (자동알람 중지)")
+
             // 자동알람 전체 종료: 경량화 알림 + 모든 추적 중지
             try {
                 stopAutoAlarmLightweight()
             } catch (_: Exception) { }
+
+            // Flutter에 취소 이벤트 전달
+            try {
+                sendAllCancellationBroadcast()
+            } catch (_: Exception) { }
+
             stopAllBusTracking()
             return START_NOT_STICKY
         }
@@ -877,15 +919,12 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         isServiceActive = false
         instance = null
 
+        // 알람 사운드 정리
+        stopAlarmSound()
+
         // 모든 리소스 정리
         stopAllTracking()
         ttsController.cleanupTts()
-        
-        // 오디오 포커스 해제
-        try {
-        } catch (e: Exception) {
-            Log.e(TAG, "오디오 포커스 해제 오류: ${e.message}")
-        }
 
         super.onDestroy()
     }
@@ -900,13 +939,18 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
     private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false, alarmId: Int? = null) {
         serviceScope.launch {
-            var realStationId = stationId
-            if (stationId.length < 10 || !stationId.startsWith("7")) {
-                // 변환 필요
-                realStationId = busApiService.getStationIdFromBsId(stationId) ?: stationId
-                Log.d(TAG, "stationId 변환: $stationId → $realStationId")
+            try {
+                Log.d(TAG, "🚀 startTracking 코루틴 시작: $busNo ($routeId), stationId=$stationId, isAutoAlarm=$isAutoAlarm")
+                var realStationId = stationId
+                if (stationId.length < 10 || !stationId.startsWith("7")) {
+                    // 변환 필요
+                    realStationId = busApiService.getStationIdFromBsId(stationId) ?: stationId
+                    Log.d(TAG, "stationId 변환: $stationId → $realStationId")
+                }
+                startTrackingInternal(routeId, realStationId, stationName, busNo, isAutoAlarm, alarmId)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ startTracking 코루틴 오류: $busNo ($routeId): ${e.message}", e)
             }
-            startTrackingInternal(routeId, realStationId, stationName, busNo, isAutoAlarm, alarmId)
         }
     }
 
@@ -1280,6 +1324,19 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 } catch (_: Exception) {}
             }, 1000)
 
+            // 자동알람 모드일 때 자동알람 알림도 실시간 업데이트
+            if (isAutoAlarmMode) {
+                val busInfo = activeTrackings.values.firstOrNull()?.lastBusInfo
+                updateAutoAlarmNotificationWithData(
+                    busNo = busNo,
+                    stationName = stationName,
+                    remainingMinutes = busInfo?.getRemainingMinutes() ?: remainingMinutes,
+                    remainingStops = busInfo?.remainingStops ?: "0",
+                    currentStation = currentStationFinal,
+                    routeTCd = activeTrackings.values.firstOrNull()?.routeTCd
+                )
+            }
+
         } catch (e: Exception) {
             Log.e(TAG, "❌ 알림 ${if(isIndividualAlarm) "생성" else "업데이트"} 오류: ${e.message}", e)
             if (!isIndividualAlarm) { // 개별 알람이 아닐 때만 포그라운드 알림 업데이트 시도
@@ -1639,35 +1696,41 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
 
         if (remainingMinutes >= 0 && remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES) {
-            // 자동알람 및 일반 알람 모두 시간이 변경되면 TTS 발화 (사용자 요청: 실시간 업데이트)
-            val shouldNotifyTts = trackingInfo.lastNotifiedMinutes != remainingMinutes
+            // 시간 변경 또는 버스 위치(정류장) 변경 시 TTS 발화
+            val minutesChanged = trackingInfo.lastNotifiedMinutes != remainingMinutes
+            val stationChanged = busInfo.currentStation.isNotBlank() &&
+                trackingInfo.lastTtsAnnouncedStation != busInfo.currentStation
+            val shouldNotifyTts = minutesChanged || stationChanged
             if (shouldNotifyTts) {
+                // 자동알람은 이어폰 체크 우회 (일반 알람처럼 스피커로 발화)
+                val forceSpeaker = trackingInfo.isAutoAlarm
                 try {
                     ttsController.startTtsServiceSpeak(
                         busNo = trackingInfo.busNo,
                         stationName = trackingInfo.stationName,
                         routeId = trackingInfo.routeId,
                         stationId = trackingInfo.stationId,
-                        remainingMinutes = remainingMinutes, // 실제 남은 시간 전달
+                        remainingMinutes = remainingMinutes,
+                        forceSpeaker = forceSpeaker,
                         currentStation = busInfo.currentStation
                     )
 
-                    // hasNotifiedTts 로직 제거 (매 분마다 알림)
                     trackingInfo.lastNotifiedMinutes = remainingMinutes
+                    trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
 
                     Log.d(
                         TAG,
-                        "📢 TTS 발화 시도 성공: ${trackingInfo.busNo}번 버스, ${trackingInfo.stationName} (남은시간: $remainingMinutes)"
+                        "📢 TTS 발화: ${trackingInfo.busNo}번 버스, ${remainingMinutes}분 후 도착, 현재 위치: ${busInfo.currentStation} (시간변경=$minutesChanged, 위치변경=$stationChanged, forceSpeaker=$forceSpeaker)"
                     )
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ TTS 발화 시도 오류: ${e.message}", e)
+                    Log.e(TAG, "❌ TTS 발화 오류: ${e.message}", e)
 
-                    // TTSService 실패 시 백업으로 내부 TTS 시도
                     val message =
                         "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
-                    ttsController.speakTts(message)
+                    ttsController.speakTts(message, forceSpeaker = forceSpeaker)
 
                     trackingInfo.lastNotifiedMinutes = remainingMinutes
+                    trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
                 }
             }
 
@@ -2248,19 +2311,106 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     private var currentAutoAlarmRouteId: String = ""
 
     /**
+     * 알람 사운드 재생 (STREAM_ALARM 사용 — 무음/진동 모드에서도 울림)
+     */
+    private fun playAlarmSound() {
+        try {
+            stopAlarmSound() // 기존 재생 중인 사운드 정리
+
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+
+            alarmMediaPlayer = MediaPlayer().apply {
+                setAudioAttributes(audioAttributes)
+
+                // res/raw/alarm_sound.mp3 사용, 없으면 시스템 기본 알람음
+                try {
+                    val resUri = Uri.parse("android.resource://${packageName}/${R.raw.alarm_sound}")
+                    setDataSource(applicationContext, resUri)
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ alarm_sound.mp3 로드 실패, 시스템 기본 알람음 사용", e)
+                    reset()
+                    setAudioAttributes(audioAttributes)
+                    val defaultAlarmUri = android.media.RingtoneManager.getDefaultUri(
+                        android.media.RingtoneManager.TYPE_ALARM
+                    ) ?: android.media.RingtoneManager.getDefaultUri(
+                        android.media.RingtoneManager.TYPE_NOTIFICATION
+                    )
+                    if (defaultAlarmUri != null) {
+                        setDataSource(applicationContext, defaultAlarmUri)
+                    } else {
+                        Log.e(TAG, "❌ 기본 알람음도 없음")
+                        return@apply
+                    }
+                }
+
+                isLooping = true
+
+                // 알람 볼륨 설정
+                val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
+                // 알람 스트림 볼륨이 0이면 최대의 70%로 설정
+                if (currentVolume == 0) {
+                    audioManager.setStreamVolume(
+                        AudioManager.STREAM_ALARM,
+                        (maxVolume * 0.7).toInt().coerceAtLeast(1),
+                        0
+                    )
+                }
+
+                prepare()
+                start()
+                Log.d(TAG, "🔊 알람 사운드 재생 시작 (STREAM_ALARM)")
+            }
+
+            // 60초 후 자동 정지 (무한 재생 방지)
+            Handler(Looper.getMainLooper()).postDelayed({
+                stopAlarmSound()
+            }, 60000L)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 알람 사운드 재생 오류: ${e.message}", e)
+            stopAlarmSound()
+        }
+    }
+
+    /**
+     * 알람 사운드 정지 및 리소스 해제
+     */
+    private fun stopAlarmSound() {
+        try {
+            alarmMediaPlayer?.let { player ->
+                if (player.isPlaying) {
+                    player.stop()
+                }
+                player.reset()
+                player.release()
+                Log.d(TAG, "🔇 알람 사운드 정지")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ 알람 사운드 정지 중 오류: ${e.message}")
+        } finally {
+            alarmMediaPlayer = null
+        }
+    }
+
+    /**
      * 배터리 절약을 위한 자동알람 경량화 모드
      * - Foreground Service 사용 안함 (하지만 추적을 위해 필요하다면 사용)
      * - 간단한 알림만 표시
      * - 5분 후 자동 종료
      */
-    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String, routeId: String, stationId: String) {
+    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String, routeId: String, stationId: String, useTTS: Boolean = true) {
         try {
-            Log.d(TAG, "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName, routeId=$routeId, stationId=$stationId")
+            Log.d(TAG, "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName, routeId=$routeId, stationId=$stationId, TTS=$useTTS")
 
             // 자동알람 모드 활성화
             isAutoAlarmMode = true
             autoAlarmStartTime = System.currentTimeMillis()
-            
+
             // 정보 저장
             currentAutoAlarmBusNo = busNo
             currentAutoAlarmStationName = stationName
@@ -2268,9 +2418,14 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             // 경량화된 알림 표시
             showAutoAlarmLightweightNotification(busNo, stationName, remainingMinutes, currentStation)
-            
-            // 📌 중요: 실시간 데이터 업데이트를 위해 실제 추적 시작
-            // 기존에는 알림만 표시하고 추적을 안 해서 TTS가 갱신되지 않았음
+
+            // 🔊 TTS 미사용 시 알람 사운드만 재생 (TTS는 실제 데이터 도착 후 발화)
+            if (!useTTS) {
+                playAlarmSound()
+            }
+
+            // 📌 핵심: 실시간 추적 시작 → 첫 API 응답 시 실제 도착 정보로 TTS 발화
+            // (기존: 의미 없는 "알람이 시작되었습니다" 멘트 제거 → 실제 "N분 후 도착" 발화)
             if (routeId.isNotBlank() && stationId.isNotBlank()) {
                 Log.d(TAG, "🔔 자동알람: 실시간 추적 시작 ($routeId, $stationId)")
                 addMonitoredRoute(routeId, stationId, stationName)
@@ -2305,70 +2460,372 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     /**
      * 자동알람용 경량화된 알림 표시
      */
-    private fun showAutoAlarmLightweightNotification(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String) {
-        try {
+    /**
+     * 자동알람 전용 채널 생성 (한 번만 호출)
+     */
+    private fun ensureAutoAlarmChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-            // 자동알람 전용 채널 생성
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (notificationManager.getNotificationChannel(CHANNEL_ID_AUTO_ALARM) == null) {
                 val channel = NotificationChannel(
                     CHANNEL_ID_AUTO_ALARM,
                     CHANNEL_NAME_AUTO_ALARM,
-                    NotificationManager.IMPORTANCE_DEFAULT
+                    NotificationManager.IMPORTANCE_HIGH
                 ).apply {
-                    description = "자동 알람 경량화 알림"
-                    enableLights(false)
-                    enableVibration(false)
-                    setShowBadge(false)
+                    description = "자동 알람 (무음/진동 모드에서도 울림)"
+                    enableVibration(true)
+                    vibrationPattern = longArrayOf(0, 500, 300, 500, 300, 500)
+                    enableLights(true)
+                    lightColor = 0xFF2196F3.toInt()
+                    setShowBadge(true)
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    setBypassDnd(true)
+                    setSound(null, null) // 사운드는 MediaPlayer로 직접 재생
                 }
                 notificationManager.createNotificationChannel(channel)
             }
+        }
+    }
 
-            // 알림 내용 생성
-            val contentText = if (remainingMinutes >= 0) {
-                when {
-                    remainingMinutes <= 0 -> "$busNo 번 버스가 곧 도착합니다."
-                    remainingMinutes == 1 -> "$busNo 번 버스가 약 1분 후 도착 예정입니다."
-                    else -> "$busNo 번 버스가 약 ${remainingMinutes}분 후 도착 예정입니다."
-                }
-            } else {
-                "$busNo 번 버스 정보를 확인해주세요."
+    /**
+     * 자동알람 초기 알림 표시 (추적 데이터 수신 전 — "확인 중" 상태)
+     */
+    private fun showAutoAlarmLightweightNotification(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String) {
+        try {
+            ensureAutoAlarmChannel()
+
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // 접힌 뷰: 버스번호 + "도착 정보 확인 중..." + 정류장명
+            val smallView = RemoteViews(packageName, R.layout.notification_auto_alarm_small).apply {
+                setTextViewText(R.id.tv_bus_no, busNo)
+                setTextViewText(R.id.tv_arrival_info, "도착 정보 확인 중...")
+                setTextViewText(R.id.tv_station_name, stationName)
             }
 
-            val bigText = if (currentStation.isNotBlank() && currentStation != "정보 없음") {
-                "$contentText\n현재 위치: $currentStation"
-            } else {
-                contentText
+            // 펼친 뷰: 버스번호 + "확인 중" + 정류장명 (진행바 0%)
+            val bigView = RemoteViews(packageName, R.layout.notification_auto_alarm_big).apply {
+                setTextViewText(R.id.tv_bus_no, busNo)
+                setTextViewText(R.id.tv_arrival_time, "확인 중")
+                setTextViewText(R.id.tv_remaining_stops, "")
+                setTextViewText(R.id.tv_station_name, stationName)
+                setProgressBar(R.id.progress_bar, 100, 0, true) // indeterminate
+                setViewVisibility(R.id.tv_current_location, android.view.View.GONE)
             }
 
             // 앱 실행 인텐트
-            val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            val appIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             }
-            val pendingIntent = intent?.let {
+            val contentPendingIntent = appIntent?.let {
                 PendingIntent.getActivity(this, AUTO_ALARM_NOTIFICATION_ID, it,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             }
 
-            // 경량화된 알림 생성
-            val notification = NotificationCompat.Builder(this, CHANNEL_ID_AUTO_ALARM)
-                .setContentTitle("$busNo 번 버스 알람")
-                .setContentText(contentText)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent)
+            // 종료 버튼 인텐트
+            val stopIntent = Intent(this, BusAlertService::class.java).apply {
+                action = ACTION_STOP_AUTO_ALARM
+            }
+            val stopPendingIntent = PendingIntent.getService(
+                this, AUTO_ALARM_NOTIFICATION_ID + 1, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // 초기 알림은 진동 없는 추적 채널 사용 (실제 도착 데이터 수신 시에만 진동)
+            val notification = NotificationCompat.Builder(this, "bus_tracking_ongoing")
+                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+                .setCustomContentView(smallView)
+                .setCustomBigContentView(bigView)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setAutoCancel(false)
+                .setOngoing(true)
+                .setContentIntent(contentPendingIntent)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setOnlyAlertOnce(true) // 중복 알림 방지
+                .addAction(R.drawable.ic_cancel, "알람 끄기", stopPendingIntent)
+                .setColor(ContextCompat.getColor(this, R.color.tracking_color))
+                .setSilent(true)
+                .build()
+
+            // startForegroundService()로 시작된 경우 반드시 startForeground() 호출 필요
+            // notify()만 사용하면 5초 내에 Android가 서비스를 강제 종료함
+            if (!isInForeground) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(
+                            ONGOING_NOTIFICATION_ID,
+                            notification,
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                        )
+                    } else {
+                        startForeground(ONGOING_NOTIFICATION_ID, notification)
+                    }
+                    isInForeground = true
+                    Log.d(TAG, "✅ 자동알람: 포그라운드 서비스 시작")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 포그라운드 서비스 시작 실패, notify 사용: ${e.message}")
+                    notificationManager.notify(AUTO_ALARM_NOTIFICATION_ID, notification)
+                }
+            } else {
+                notificationManager.notify(AUTO_ALARM_NOTIFICATION_ID, notification)
+            }
+            Log.d(TAG, "✅ 자동알람 초기 알림 표시: $busNo ($stationName)")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 자동알람 초기 알림 실패: ${e.message}", e)
+        }
+    }
+
+    /**
+     * 자동알람 알림 실시간 업데이트 (추적 데이터 수신 시 호출)
+     * - Android < 16: "623번 16분 후 도착 (승차 13번째 전)" 형식
+     * - Android 16+: ProgressStyle Live Update (버스 이동 표시)
+     */
+    private fun updateAutoAlarmNotificationWithData(
+        busNo: String,
+        stationName: String,
+        remainingMinutes: Int,
+        remainingStops: String,
+        currentStation: String,
+        routeTCd: String? = null
+    ) {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // 앱 실행 인텐트
+            val appIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            val contentPendingIntent = appIntent?.let {
+                PendingIntent.getActivity(this, AUTO_ALARM_NOTIFICATION_ID, it,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            }
+
+            // 종료 버튼 인텐트
+            val stopIntent = Intent(this, BusAlertService::class.java).apply {
+                action = ACTION_STOP_AUTO_ALARM
+            }
+            val stopPendingIntent = PendingIntent.getService(
+                this, AUTO_ALARM_NOTIFICATION_ID + 1, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // 컨텐츠 텍스트 생성: "623번 16분 후 도착 (승차 13번째 전)"
+            val stopsInt = remainingStops.filter { it.isDigit() }.toIntOrNull() ?: 0
+            val contentText = when {
+                remainingMinutes <= 0 -> "$busNo 번 곧 도착 (승차 ${stopsInt}번째 전)"
+                else -> "$busNo 번 ${remainingMinutes}분 후 도착 (승차 ${stopsInt}번째 전)"
+            }
+
+            // 버스 타입별 색상
+            val busTypeColor = when (routeTCd) {
+                "1" -> 0xFFDC2626.toInt() // 급행: 빨간색
+                "2" -> 0xFFF59E0B.toInt() // 좌석: 주황색
+                "3" -> 0xFF2563EB.toInt() // 일반: 파란색
+                "4" -> 0xFF10B981.toInt() // 지선: 초록색
+                else -> ContextCompat.getColor(this, R.color.tracking_color)
+            }
+
+            // Android 16+ (API 36): Notification.Builder + ProgressStyle Live Update
+            if (Build.VERSION.SDK_INT >= 36) {
+                try {
+                    @Suppress("NewApi")
+                    val nativeBuilder = android.app.Notification.Builder(this, CHANNEL_ID_AUTO_ALARM)
+                        .setContentTitle("⏰ $busNo 번 버스 알람")
+                        .setContentText(contentText)
+                        .setSmallIcon(R.drawable.ic_bus_notification)
+                        .setCategory(android.app.Notification.CATEGORY_PROGRESS)
+                        .setContentIntent(contentPendingIntent)
+                        .setOngoing(true)
+                        .setAutoCancel(false)
+                        .setOnlyAlertOnce(true)
+                        .setShowWhen(true)
+                        .setColor(busTypeColor)
+                        .setColorized(true)
+                        .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+                        .addAction(android.app.Notification.Action.Builder(
+                            android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_cancel),
+                            "알람 끄기",
+                            stopPendingIntent
+                        ).build())
+
+                    // setWhen: 도착 예정 시간 (카운트다운)
+                    val arrivalTimeMillis = if (remainingMinutes > 0) {
+                        System.currentTimeMillis() + (remainingMinutes * 60 * 1000L)
+                    } else {
+                        System.currentTimeMillis() + 60000L
+                    }
+                    nativeBuilder.setWhen(arrivalTimeMillis)
+
+                    // setRequestPromotedOngoing
+                    @Suppress("NewApi")
+                    try {
+                        val method = nativeBuilder.javaClass.getMethod(
+                            "setRequestPromotedOngoing", Boolean::class.javaPrimitiveType
+                        )
+                        method.invoke(nativeBuilder, true)
+                    } catch (_: Exception) {}
+
+                    // setShortCriticalText — 상태 칩 (도착시간·남은 정류장)
+                    @Suppress("NewApi")
+                    val chipText = when {
+                        remainingMinutes <= 0 && stopsInt > 0 -> "곧·${stopsInt}전"
+                        remainingMinutes <= 0 -> "곧도착"
+                        stopsInt > 0 -> "${remainingMinutes}분·${stopsInt}전"
+                        else -> "${remainingMinutes}분"
+                    }
+                    try {
+                        nativeBuilder.setShortCriticalText(chipText)
+                    } catch (_: Exception) {}
+
+                    // ProgressStyle — 버스 이동 표시
+                    val maxMinutes = 30
+                    val progress = if (remainingMinutes > 0) {
+                        maxMinutes - remainingMinutes.coerceIn(0, maxMinutes)
+                    } else {
+                        maxMinutes
+                    }
+
+                    @Suppress("NewApi")
+                    try {
+                        val progressStyle = android.app.Notification.ProgressStyle()
+                            .setProgress(progress)
+
+                        // 버스 트래커 아이콘
+                        val busIcon = android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_bus_tracker)
+                        progressStyle.setProgressTrackerIcon(busIcon)
+
+                        // 색상 세그먼트
+                        try {
+                            val seg1 = android.app.Notification.ProgressStyle.Segment(progress)
+                                .setColor(busTypeColor)
+                            val seg2 = android.app.Notification.ProgressStyle.Segment(maxMinutes - progress)
+                                .setColor(0xFFE0E0E0.toInt())
+                            progressStyle.setProgressSegments(listOf(seg1, seg2))
+                        } catch (_: Exception) {}
+
+                        // 출발/도착 포인트
+                        try {
+                            val startPt = android.app.Notification.ProgressStyle.Point(0)
+                                .setColor(0xFF4CAF50.toInt())
+                            val endPt = android.app.Notification.ProgressStyle.Point(maxMinutes)
+                                .setColor(0xFFFF5722.toInt())
+                            progressStyle.setProgressPoints(listOf(startPt, endPt))
+                        } catch (_: Exception) {}
+
+                        nativeBuilder.setStyle(progressStyle)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ 자동알람 ProgressStyle 설정 실패: ${e.message}")
+                        nativeBuilder.setProgress(maxMinutes, progress, false)
+                    }
+
+                    // Samsung One UI 7 extras
+                    val detailText = when {
+                        remainingMinutes <= 0 && stopsInt > 0 -> "곧 도착 (${stopsInt}전)"
+                        remainingMinutes <= 0 -> "곧 도착"
+                        stopsInt > 0 -> "${remainingMinutes}분 (${stopsInt}전)"
+                        else -> "${remainingMinutes}분"
+                    }
+                    val samsungExtras = android.os.Bundle().apply {
+                        putInt("android.ongoingActivityNoti.style", 1)
+                        putString("android.ongoingActivityNoti.primaryInfo", busNo)
+                        putString("android.ongoingActivityNoti.secondaryInfo", "$stationName: $detailText")
+                        putString("android.ongoingActivityNoti.chipExpandedText", chipText)
+                        putInt("android.ongoingActivityNoti.chipBgColor", busTypeColor)
+                        val chipIcon = android.graphics.drawable.Icon.createWithResource(this@BusAlertService, R.drawable.ic_bus_notification)
+                        putParcelable("android.ongoingActivityNoti.chipIcon", chipIcon)
+                        if (remainingMinutes > 0) {
+                            putInt("android.ongoingActivityNoti.progress", progress)
+                            putInt("android.ongoingActivityNoti.progressMax", maxMinutes)
+                        }
+                        putString("android.ongoingActivityNoti.nowbarPrimaryInfo", busNo)
+                        putString("android.ongoingActivityNoti.nowbarSecondaryInfo", chipText)
+                    }
+                    nativeBuilder.setExtras(samsungExtras)
+
+                    val builtNotification = nativeBuilder.build()
+                    @Suppress("NewApi")
+                    builtNotification.flags = builtNotification.flags or
+                        android.app.Notification.FLAG_ONGOING_EVENT or
+                        android.app.Notification.FLAG_NO_CLEAR or
+                        (if (Build.VERSION.SDK_INT >= 36) android.app.Notification.FLAG_PROMOTED_ONGOING else 0)
+
+                    notificationManager.notify(AUTO_ALARM_NOTIFICATION_ID, builtNotification)
+                    Log.d(TAG, "✅ 자동알람 Live Update 알림 갱신: $busNo, ${chipText}, 위치=$currentStation")
+                    return
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 자동알람 Android 16 알림 오류, fallback 사용: ${e.message}")
+                    // Fall through to NotificationCompat
+                }
+            }
+
+            // Android 15 이하: 맞춤 RemoteViews 레이아웃 사용
+            val arrivalInfoText = when {
+                remainingMinutes <= 0 -> "곧 도착"
+                else -> "${remainingMinutes}분 후 도착"
+            }
+            val arrivalTimeText = when {
+                remainingMinutes <= 0 -> "곧 도착"
+                else -> "${remainingMinutes}분"
+            }
+            val stopsText = if (stopsInt > 0) "${stopsInt}번째 전" else ""
+
+            // 접힌 뷰 (진행바 없음): 버스번호 + 도착 정보 + 정류장명
+            val smallView = RemoteViews(packageName, R.layout.notification_auto_alarm_small).apply {
+                setTextViewText(R.id.tv_bus_no, busNo)
+                setTextViewText(R.id.tv_arrival_info, "$arrivalInfoText ($stopsText)")
+                setTextViewText(R.id.tv_station_name, stationName)
+            }
+
+            // 펼친 뷰 (진행바 포함): 버스번호 + 도착시간 + 남은 정류장 + 정류장명 + 진행바 + 현재위치
+            val maxStops = 30
+            val progressPercent = if (stopsInt > 0) {
+                ((maxStops - stopsInt.coerceIn(0, maxStops)) * 100) / maxStops
+            } else if (remainingMinutes > 0) {
+                ((30 - remainingMinutes.coerceIn(0, 30)) * 100) / 30
+            } else {
+                100
+            }
+
+            val bigView = RemoteViews(packageName, R.layout.notification_auto_alarm_big).apply {
+                setTextViewText(R.id.tv_bus_no, busNo)
+                setTextViewText(R.id.tv_arrival_time, arrivalTimeText)
+                setTextViewText(R.id.tv_remaining_stops, stopsText)
+                setTextViewText(R.id.tv_station_name, stationName)
+                setProgressBar(R.id.progress_bar, 100, progressPercent, false)
+                if (currentStation.isNotBlank() && currentStation != "정보 없음") {
+                    setTextViewText(R.id.tv_current_location, "📍 $currentStation")
+                    setViewVisibility(R.id.tv_current_location, android.view.View.VISIBLE)
+                } else {
+                    setViewVisibility(R.id.tv_current_location, android.view.View.GONE)
+                }
+            }
+
+            val notification = NotificationCompat.Builder(this, CHANNEL_ID_AUTO_ALARM)
+                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+                .setCustomContentView(smallView)
+                .setCustomBigContentView(bigView)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setAutoCancel(false)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true) // 업데이트 시 소리/진동 반복 방지
+                .setContentIntent(contentPendingIntent)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .addAction(R.drawable.ic_cancel, "알람 끄기", stopPendingIntent)
+                .setColor(busTypeColor)
+                .setShowWhen(true)
+                .setWhen(System.currentTimeMillis())
                 .build()
 
             notificationManager.notify(AUTO_ALARM_NOTIFICATION_ID, notification)
-            Log.d(TAG, "✅ 자동알람 경량화 알림 표시 완료: $busNo 번")
+            Log.d(TAG, "✅ 자동알람 맞춤 레이아웃 알림 갱신: $busNo $arrivalInfoText ($stopsText)")
 
         } catch (e: Exception) {
-            Log.e(TAG, "❌ 자동알람 경량화 알림 표시 실패: ${e.message}", e)
+            Log.e(TAG, "❌ 자동알람 알림 업데이트 실패: ${e.message}", e)
         }
     }
 
@@ -2379,12 +2836,39 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
             Log.d("BusAlertService", "🔔 자동알람 경량화 모드 종료")
 
+            // 🔇 알람 사운드 정지
+            stopAlarmSound()
+
+            // TTS 추적 중지
+            try {
+                ttsController.stopTtsServiceTracking()
+                Log.d("BusAlertService", "✅ TTS 추적 중지 완료")
+            } catch (e: Exception) {
+                Log.w("BusAlertService", "⚠️ TTS 추적 중지 오류 (무시): ${e.message}")
+            }
+
+            // 자동알람 추적에 해당하는 모니터링 작업 취소
+            val autoAlarmRouteId = currentAutoAlarmRouteId
+            if (autoAlarmRouteId.isNotBlank()) {
+                try {
+                    monitoringJobs[autoAlarmRouteId]?.cancel()
+                    monitoringJobs.remove(autoAlarmRouteId)
+                    activeTrackings.remove(autoAlarmRouteId)
+                    monitoredRoutes.remove(autoAlarmRouteId)
+                    cachedBusInfo.remove(autoAlarmRouteId)
+                    Log.d("BusAlertService", "✅ 자동알람 모니터링 작업 취소 완료: $autoAlarmRouteId")
+                } catch (e: Exception) {
+                    Log.w("BusAlertService", "⚠️ 자동알람 모니터링 취소 오류 (무시): ${e.message}")
+                }
+            }
+
             isAutoAlarmMode = false
             autoAlarmStartTime = 0L
 
             // 자동알람 알림 제거
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(9999)
+            notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
 
             // Flutter에 종료 알림 전송 (재실행 방지용)
             MainActivity.sendFlutterEvent("onAutoAlarmStopped", mapOf(

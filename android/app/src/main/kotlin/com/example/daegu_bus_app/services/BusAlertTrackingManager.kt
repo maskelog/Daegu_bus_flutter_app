@@ -118,38 +118,15 @@ class BusAlertTrackingManager(
                                     allBusesSummary,
                                 )
                                 updateForegroundNotification()
-                            } else {
-                                currentInfo.lastBusInfo = firstBus
-                                currentInfo.lastUpdateTime = System.currentTimeMillis()
                             }
 
+                            // lastBusInfo는 항상 업데이트 (다음 루프에서 변경 감지용)
+                            currentInfo.lastBusInfo = firstBus
+                            currentInfo.lastUpdateTime = System.currentTimeMillis()
+
+                            // TTS는 checkArrivalAndNotify에서 일괄 처리 (중복 발화 방지)
                             checkArrivalAndNotify(currentInfo, firstBus)
                             checkNextBusAndNotify(currentInfo, firstBus)
-
-                            Log.d(
-                                TAG,
-                                "[TTS] 호출 조건 체크: useTextToSpeech=${useTextToSpeechProvider()}, remainingMinutes=$remainingMinutes, lastNotifiedMinutes=${currentInfo.lastNotifiedMinutes}"
-                            )
-                            if (useTextToSpeechProvider() &&
-                                remainingMinutes <= arrivalThresholdMinutes &&
-                                remainingMinutes >= 0
-                            ) {
-                                val ttsMessage = when (firstBus.estimatedTime) {
-                                    "곧 도착" -> "${currentInfo.busNo}번 버스가 ${currentInfo.stationName} 정류장에 곧 도착합니다."
-                                    "출발예정", "기점출발예정" -> null
-                                    else -> "${currentInfo.busNo}번 버스가 ${currentInfo.stationName} 정류장에 약 ${remainingMinutes}분 후 도착 예정입니다."
-                                }
-                                if (ttsMessage != null) {
-                                    ttsController.speakTts(ttsMessage)
-                                    currentInfo.lastTtsAnnouncedMinutes = remainingMinutes
-                                    currentInfo.lastTtsAnnouncedStation = currentStation
-                                } else {
-                                    Log.d(TAG, "[TTS] TTS 메시지 없음(출발예정 등): estimatedTime=${firstBus.estimatedTime}")
-                                }
-                            } else if (remainingMinutes < 0) {
-                                currentInfo.lastTtsAnnouncedMinutes = null
-                                currentInfo.lastTtsAnnouncedStation = null
-                            }
                         } else {
                             Log.w(TAG, "No available buses for route $routeId at $stationId.")
                             activeTrackings[routeId]?.lastBusInfo = null

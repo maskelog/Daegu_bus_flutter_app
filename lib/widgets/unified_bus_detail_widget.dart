@@ -1075,11 +1075,11 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final bus = widget.busArrival.firstBus;
+    final busList = widget.busArrival.busInfoList;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
+      initialChildSize: 0.55,
+      minChildSize: 0.35,
       maxChildSize: 0.9,
       expand: false,
       builder: (context, scrollController) {
@@ -1096,9 +1096,9 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
               ),
             ),
 
-            // 헤더 영역
+            // 헤더 영역: 버스뱃지 + 정류장명 + 즐겨찾기 + 닫기
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 12, 0),
+              padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
               child: Row(
                 children: [
                   Container(
@@ -1155,7 +1155,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                         ),
                         if (widget.busArrival.direction.isNotEmpty)
                           Text(
-                            '→ ${widget.busArrival.direction}',
+                            '\u2192 ${widget.busArrival.direction}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -1164,6 +1164,19 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                           ),
                       ],
                     ),
+                  ),
+                  // 즐겨찾기 아이콘 버튼
+                  IconButton(
+                    onPressed: _toggleFavorite,
+                    icon: Icon(
+                      _isFavorite()
+                          ? Icons.star_rounded
+                          : Icons.star_outline_rounded,
+                      color: _isFavorite()
+                          ? Colors.amber
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                    tooltip: _isFavorite() ? '즐겨찾기 해제' : '즐겨찾기 추가',
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
@@ -1180,103 +1193,39 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                 controller: scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 children: [
-                  // 현재 버스 정보
-                  if (bus != null)
-                    _buildBusInfoRow(context, bus, isMainBus: true)
-                  else
-                    const Text("도착 정보가 없습니다."),
-
-                  const SizedBox(height: 20),
-
-                  // 액션 버튼
-                  Row(
-                    children: [
-                      // 승차 알람 버튼
-                      Expanded(
-                        child: Selector<AlarmService, bool>(
-                          selector: (context, alarmService) =>
-                              alarmService.hasAlarm(
-                            widget.busArrival.routeNo,
-                            widget.stationName,
-                            widget.busArrival.routeId,
-                          ),
-                          builder: (context, hasAlarm, child) {
-                            return FilledButton.tonalIcon(
-                              onPressed: () =>
-                                  _handleAlarmToggle(context, hasAlarm, bus),
-                              icon: Icon(
-                                hasAlarm
-                                    ? Icons.notifications_off_rounded
-                                    : Icons.notifications_active_rounded,
-                                size: 20,
-                              ),
-                              label: Text(hasAlarm ? '알람 해제' : '승차 알람'),
-                              style: FilledButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
-                                backgroundColor: hasAlarm
-                                    ? colorScheme.errorContainer
-                                    : colorScheme.primaryContainer,
-                                foregroundColor: hasAlarm
-                                    ? colorScheme.onErrorContainer
-                                    : colorScheme.onPrimaryContainer,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // 즐겨찾기 버튼
-                      Expanded(
-                        child: FilledButton.tonalIcon(
-                          onPressed: _toggleFavorite,
-                          icon: Icon(
-                            _isFavorite()
-                                ? Icons.star_rounded
-                                : Icons.star_outline_rounded,
-                            size: 20,
-                          ),
-                          label: Text(_isFavorite() ? '즐겨찾기' : '즐겨찾기'),
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            backgroundColor: _isFavorite() ? colorScheme.secondaryContainer : colorScheme.surfaceContainer,
-                            foregroundColor: _isFavorite() ? colorScheme.onSecondaryContainer : colorScheme.onSurfaceVariant,
-                          ),
-                          
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // 다음 버스 정보
-                  if (widget.busArrival.busInfoList.length > 1) ...[
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color:
-                                colorScheme.secondaryContainer.withAlpha(128),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(Icons.schedule_rounded,
-                              size: 16, color: colorScheme.secondary),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          '다음 버스',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: colorScheme.onSurface,
-                          ),
-                        ),
-                      ],
+                  if (busList.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 20),
+                      child: Text('도착 정보가 없습니다.'),
+                    )
+                  else ...[
+                    // 첫 번째 버스 섹션
+                    _buildSectionLabel(
+                      theme,
+                      colorScheme,
+                      icon: Icons.looks_one_rounded,
+                      label: '첫 번째 버스',
+                      color: colorScheme.primary,
                     ),
-                    const SizedBox(height: 12),
-                    ...widget.busArrival.busInfoList
-                        .skip(1)
-                        .map((nextBus) => _buildBusInfoRow(context, nextBus)),
+                    const SizedBox(height: 8),
+                    _buildBusCard(context, busList[0], isMainBus: true),
+
+                    // 다음 버스 섹션
+                    if (busList.length > 1) ...[
+                      const SizedBox(height: 20),
+                      _buildSectionLabel(
+                        theme,
+                        colorScheme,
+                        icon: Icons.looks_two_rounded,
+                        label: '다음 버스',
+                        color: colorScheme.secondary,
+                      ),
+                      const SizedBox(height: 8),
+                      ...busList
+                          .skip(1)
+                          .map((nextBus) =>
+                              _buildBusCard(context, nextBus, isMainBus: false)),
+                    ],
                   ],
                   const SizedBox(height: 40),
                 ],
@@ -1288,8 +1237,30 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
     );
   }
 
-  Widget _buildBusInfoRow(BuildContext context, BusInfo bus,
-      {bool isMainBus = false}) {
+  Widget _buildSectionLabel(
+    ThemeData theme,
+    ColorScheme colorScheme, {
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBusCard(BuildContext context, BusInfo bus,
+      {required bool isMainBus}) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final minutes = bus.getRemainingMinutes();
@@ -1297,7 +1268,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isMainBus
             ? colorScheme.primaryContainer.withAlpha(102)
@@ -1312,10 +1283,10 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
       ),
       child: Row(
         children: [
-          // 시간
+          // 왼쪽: 시간 표시
           Container(
-            width: 60,
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            width: isMainBus ? 68 : 60,
+            padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
               color: bus.isOutOfService
                   ? colorScheme.surfaceContainerHigh
@@ -1354,55 +1325,117 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
               ],
             ),
           ),
-          const SizedBox(width: 16),
-          // 위치 정보
+          const SizedBox(width: 14),
+          // 가운데: 위치 정보
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  bus.currentStation,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: colorScheme.onSurface,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                // 현재 정류장
+                Row(
+                  children: [
+                    Icon(
+                      Icons.location_on,
+                      size: 16,
+                      color: isMainBus
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        bus.currentStation,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
+                // 남은 정거장
                 Text(
                   bus.remainingStops,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
                 ),
-              ],
-            ),
-          ),
-          // 저상버스 표시
-          if (bus.isLowFloor)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.accessible,
-                      size: 14, color: colorScheme.onSecondaryContainer),
-                  const SizedBox(width: 4),
-                  Text(
-                    '저상',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSecondaryContainer,
-                      fontWeight: FontWeight.w500,
+                // 저상버스 뱃지
+                if (bus.isLowFloor) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.accessible,
+                            size: 12,
+                            color: colorScheme.onSecondaryContainer),
+                        const SizedBox(width: 3),
+                        Text(
+                          '저상',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSecondaryContainer,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ),
+              ],
             ),
+          ),
+          const SizedBox(width: 8),
+          // 오른쪽: 개별 알람 버튼
+          Selector<AlarmService, bool>(
+            selector: (context, alarmService) => alarmService.hasAlarm(
+              widget.busArrival.routeNo,
+              widget.stationName,
+              widget.busArrival.routeId,
+            ),
+            builder: (context, hasAlarm, child) {
+              return Material(
+                color: hasAlarm
+                    ? colorScheme.errorContainer
+                    : colorScheme.primaryContainer.withAlpha(102),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  onTap: () => _handleAlarmToggle(context, hasAlarm, bus),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: hasAlarm
+                            ? colorScheme.error.withAlpha(128)
+                            : colorScheme.primary.withAlpha(77),
+                        width: 1.5,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      hasAlarm
+                          ? Icons.notifications_active_rounded
+                          : Icons.notifications_none_rounded,
+                      size: 22,
+                      color: hasAlarm
+                          ? colorScheme.onErrorContainer
+                          : colorScheme.primary,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );

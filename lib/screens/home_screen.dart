@@ -54,7 +54,6 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this, initialIndex: 2); // 4 tabs: 지도, 노선도, 홈, 알람
-    _tabController.addListener(_handleTabSelection); // 리스너 추가
     final alarmService = Provider.of<AlarmService>(context, listen: false);
     alarmService.initialize();
     alarmService.addListener(_onAlarmChanged);
@@ -62,15 +61,8 @@ class _HomeScreenState extends State<HomeScreen>
     _checkMapPermission();
   }
 
-  void _handleTabSelection() {
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
   @override
   void dispose() {
-    _tabController.removeListener(_handleTabSelection); // 리스너 제거
     _tabController.dispose();
     Provider.of<AlarmService>(context, listen: false)
         .removeListener(_onAlarmChanged);
@@ -856,7 +848,15 @@ class _HomeScreenState extends State<HomeScreen>
         await alarmService.cancelAlarmByRoute(routeNo, stationName, routeId);
         if (mounted) {
           scaffoldMessenger.showSnackBar(
-            const SnackBar(content: Text('알람이 해제되었습니다.')),
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.notifications_off, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Text('$routeNo번 알람이 해제되었습니다.'),
+                ],
+              ),
+            ),
           );
         }
       } else {
@@ -879,8 +879,20 @@ class _HomeScreenState extends State<HomeScreen>
           currentStation: bus.currentStation,
         );
         if (mounted) {
+          final theme = Theme.of(context);
           scaffoldMessenger.showSnackBar(
-            SnackBar(content: Text('$routeNo번 버스 알람이 설정되었습니다.')),
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.notifications_active, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('$routeNo번 버스 $minutes분 후 알람이 설정되었습니다.'),
+                  ),
+                ],
+              ),
+              backgroundColor: theme.colorScheme.primary,
+            ),
           );
         }
       }

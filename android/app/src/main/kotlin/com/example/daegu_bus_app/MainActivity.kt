@@ -1298,6 +1298,43 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.success(true)
                     }
                 }
+                "setUseTts" -> {
+                    val useTts = call.argument<Boolean>("useTts") ?: true
+                    try {
+                        val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+                        prefs.edit().putBoolean("alarm_use_tts", useTts).apply()
+
+                        if (busAlertService != null) {
+                            val soundFile = if (useTts) "tts" else (prefs.getString("alarm_sound_filename", "default") ?: "default")
+                            busAlertService?.setAlarmSound(soundFile, useTts)
+                        }
+                        Log.d(TAG, "TTS 사용 설정: $useTts")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "TTS 사용 설정 오류: ${e.message}")
+                        result.success(true)
+                    }
+                }
+                "setAlarmSound" -> {
+                    val soundId = call.argument<String>("soundId") ?: "tts"
+                    try {
+                        val useTts = soundId == "tts"
+                        val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+                        prefs.edit()
+                            .putString("alarm_sound_filename", soundId)
+                            .putBoolean("alarm_use_tts", useTts)
+                            .apply()
+
+                        if (busAlertService != null) {
+                            busAlertService?.setAlarmSound(soundId, useTts)
+                        }
+                        Log.d(TAG, "알람 소리 설정: $soundId (TTS: $useTts)")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "알람 소리 설정 오류: ${e.message}")
+                        result.success(true)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
