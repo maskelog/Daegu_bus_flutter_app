@@ -97,7 +97,7 @@ dependencies {
     implementation 'androidx.window:window:1.0.0'
 
     // 포그라운드 서비스 및 알림을 위한 androidx 종속성 (Android 16 Live Updates 지원)
-    implementation 'androidx.core:core-ktx:1.15.0'
+    implementation 'androidx.core:core-ktx:1.17.0'
 
     // WorkManager
     implementation "androidx.work:work-runtime-ktx:2.8.1"

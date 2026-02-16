@@ -793,3 +793,151 @@ val progressStyle = progressStyleClass.getConstructor().newInstance()
 ```
 
 ---
+
+## 2026-02-16: 🚨 Live Update 상태 칩 근본 수정 — NotificationCompat.Builder 전환 (핵심!)
+
+### 🚨 문제 상황
+Android 16 (API 36, Samsung Galaxy S25 Ultra / One UI 8 Beta)에서 Live Update 상태 칩의 **텍스트가 표시되지 않음**.
+- 버스 아이콘은 상태 바에 보이지만, 칩 텍스트("5분" 등)가 출력 안 됨
+- `hasPromotableCharacteristics()`: true 반환
+- `canPostPromotedNotifications()`: true 반환
+- 그런데도 상태 칩 텍스트 미표시
+
+### 🔍 근본 원인 발견
+
+Google 공식 샘플 (`platform-samples/samples/user-interface/live-updates`)을 분석하여 **4가지 핵심 차이점** 발견:
+
+| 항목 | Google 공식 샘플 (작동 ✅) | 기존 코드 (미작동 ❌) |
+|------|--------------------------|---------------------|
+| **Builder** | `NotificationCompat.Builder` | `Notification.Builder` (네이티브) |
+| **ProgressStyle** | `NotificationCompat.ProgressStyle` | `Notification.ProgressStyle` (네이티브) |
+| **setShortCriticalText** | `NotificationCompat.Builder` 직접 호출 | Reflection 간접 호출 |
+| **setRequestPromotedOngoing** | `NotificationCompat.Builder` 직접 호출 | Reflection 간접 호출 |
+| **TrackerIcon** | `IconCompat` | `android.graphics.drawable.Icon` |
+| **Settings Intent** | `ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS` | `ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS` (잘못된 값) |
+| **`androidx.core:core-ktx`** | **`1.17.0`** | **`1.15.0`** ← **핵심!** |
+
+> **결정적 원인**: `androidx.core:core-ktx:1.15.0`에는 `NotificationCompat.ProgressStyle`, `setShortCriticalText()`, `setRequestPromotedOngoing()`가 **존재하지 않음**. `1.17.0`부터 추가됨.
+> 이 때문에 네이티브 `Notification.Builder`와 Reflection을 사용했지만, `NotificationCompat`의 호환성 레이어를 우회하여 Live Update 승격이 제대로 처리되지 않았음.
+
+### ✅ 수정 내역
+
+#### 1. 의존성 업그레이드 (3개 파일)
+
+##### `android/gradle/wrapper/gradle-wrapper.properties`
+```diff
+-distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-all.zip
++distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-all.zip
+```
+
+##### `android/settings.gradle.kts`
+```diff
+-id("com.android.application") version "8.7.0" apply false
++id("com.android.application") version "8.9.1" apply false
+```
+
+##### `android/app/build.gradle`
+```diff
+-implementation 'androidx.core:core-ktx:1.15.0'
++implementation 'androidx.core:core-ktx:1.17.0'
+```
+
+**의존성 체인**: `core-ktx:1.17.0` → AGP `8.9.1` 필요 → Gradle `8.11.1` 필요
+
+#### 2. NotificationHandler.kt — 알림 빌더 전면 교체
+
+##### 기존 (Notification.Builder + Reflection) — 제거됨
+```kotlin
+// ❌ 네이티브 빌더 사용 (NotificationCompat 호환성 레이어 우회)
+val nativeBuilder = Notification.Builder(context, CHANNEL_ID_ONGOING)
+    .setOngoing(true)
+    // ...
+
+// ❌ Reflection으로 setRequestPromotedOngoing 호출
+val method = nativeBuilder.javaClass.getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
+method.invoke(nativeBuilder, true)
+
+// ❌ Reflection으로 setShortCriticalText 호출
+val method2 = nativeBuilder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
+method2.invoke(nativeBuilder, chipText)
+
+// ❌ 네이티브 ProgressStyle
+val progressStyle = Notification.ProgressStyle()
+nativeBuilder.setStyle(progressStyle)
+
+// ❌ 플래그 수동 조작
+builtNotification.flags = builtNotification.flags or liveUpdateFlags
+```
+
+##### 변경 후 (NotificationCompat.Builder + 직접 API 호출) — Google 공식 패턴
+```kotlin
+// ✅ NotificationCompat.Builder 사용 (호환성 레이어 활용)
+val liveBuilder = NotificationCompat.Builder(context, CHANNEL_ID_ONGOING)
+    .setSmallIcon(R.drawable.ic_bus_notification)
+    .setContentTitle(title)
+    .setContentText(contentText)
+    .setOngoing(true)
+    .setRequestPromotedOngoing(true)       // ← 직접 호출!
+    .setShortCriticalText(chipText)         // ← 직접 호출!
+    .setCategory(Notification.CATEGORY_PROGRESS)
+    .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+
+// ✅ NotificationCompat.ProgressStyle 사용
+val progressStyle = NotificationCompat.ProgressStyle()
+    .setProgress(progress)
+    .setProgressTrackerIcon(
+        IconCompat.createWithResource(context, R.drawable.ic_bus_tracker) // IconCompat!
+    )
+    .setProgressSegments(segments)
+    .setProgressPoints(points)
+
+liveBuilder.setStyle(progressStyle)
+
+// ✅ 카운트다운 설정
+liveBuilder.setWhen(arrivalTimeMillis)
+liveBuilder.setUsesChronometer(true)
+liveBuilder.setChronometerCountDown(true)
+
+// ✅ 최종 빌드 (1회) — 플래그 수동 조작 없음
+val builtNotification = liveBuilder.build()
+```
+
+##### Samsung One UI extras 변경
+```diff
+-// setExtras — 기존 extras 전체 교체 (NotificationCompat이 설정한 내부 extras 덮어쓰기 위험!)
+-nativeBuilder.setExtras(samsungExtras)
++// addExtras — 기존 extras에 병합 (NotificationCompat 내부 extras 보존)
++liveBuilder.addExtras(samsungExtras)
+```
+
+##### Settings Intent 수정
+```diff
+-val intent = Intent("android.settings.MANAGE_APP_PROMOTED_NOTIFICATIONS")
+-    .apply { data = Uri.fromParts("package", context.packageName, null) }
++val intent = Intent(Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS)
++    .apply { putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName) }
+```
+
+### 🎓 핵심 교훈
+
+1. **`NotificationCompat.Builder`를 사용해야 하는 이유**: 네이티브 `Notification.Builder`를 직접 사용하면 AndroidX의 호환성 레이어를 우회하여, Live Update 승격 정보가 시스템에 올바르게 전달되지 않음
+2. **Reflection은 해결책이 아니다**: `androidx.core:core-ktx` 버전을 올려서 직접 API 호출이 가능한 상태로 만드는 것이 정답
+3. **의존성 버전이 기능 가용성을 결정**: `1.15.0` vs `1.17.0`의 차이가 전체 기능 작동 여부를 결정
+4. **`setExtras()` vs `addExtras()`**: `setExtras()`는 NotificationCompat이 내부적으로 설정한 extras를 덮어쓸 수 있어 위험. 반드시 `addExtras()` 사용
+
+### 📋 의존성 버전 요약 (2026-02-16 기준)
+
+| 항목 | 이전 버전 | 변경 후 |
+|------|----------|---------|
+| `androidx.core:core-ktx` | 1.15.0 | **1.17.0** |
+| Android Gradle Plugin | 8.7.0 | **8.9.1** |
+| Gradle | 8.9 | **8.11.1** |
+| `compileSdk` / `targetSdk` | 36 | 36 (변경 없음) |
+| Kotlin | 2.1.0 | 2.1.0 (변경 없음) |
+
+### 참고 자료
+- [Google platform-samples / live-updates](https://github.com/android/platform-samples/tree/main/samples/user-interface/live-updates/src/main)
+- [NotificationCompat.ProgressStyle API](https://developer.android.com/reference/androidx/core/app/NotificationCompat.ProgressStyle)
+- [실시간 업데이트 알림 만들기 | Android Developers](https://developer.android.com/develop/ui/views/notifications/progress-centric)
+
+---
