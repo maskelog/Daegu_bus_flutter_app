@@ -218,7 +218,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
 
     try {
       final alarmService = context.read<AlarmService>();
-      await alarmService.stopAutoAlarm(
+      await alarmService.deactivateAutoAlarm(
           alarm.busNo, alarm.stationName, alarm.routeId);
 
       if (mounted) {

@@ -6,6 +6,8 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def localFastRelease = (project.findProperty("localFastRelease")?.toString() ?: "false").toBoolean()
+
 android {
     namespace = "com.example.daegu_bus_app"
     // Android 16 Live Updates 지원을 위해 SDK 36 필요
@@ -36,36 +38,32 @@ android {
         // multidex 활성화 (필요한 경우)
         multiDexEnabled true
         buildConfigField "String", "KAKAO_NATIVE_APP_KEY", "\"\""
-        externalNativeBuild {
-            cmake {
-                cppFlags ""
-                arguments "-DANDROID_STL=c++_shared"
-            }
-        }
     }
 
     buildTypes {
         release {
             signingConfig signingConfigs.debug
-            minifyEnabled true
-            shrinkResources true
+            // localFastRelease=true 로 빌드 시 로컬 릴리스 속도 우선(코드 축소/난독화 생략)
+            minifyEnabled !localFastRelease
+            shrinkResources !localFastRelease
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             
             // R8 동작 방식 완화 설정 추가
             crunchPngs false // PNG 최적화 비활성화
             
-            // proguardOptions 블록 제거
-            // 대신 다음과 같이 설정
+            buildConfigField "boolean", "ENABLE_LOGGING", "true"
+            buildConfigField "boolean", "ENABLE_LOGS", "true"
             ndk {
                 abiFilters 'armeabi-v7a', 'arm64-v8a'
             }
-            
-            buildConfigField "boolean", "ENABLE_LOGGING", "true"
-            buildConfigField "boolean", "ENABLE_LOGS", "true"
         }
         
         debug {
             buildConfigField "boolean", "ENABLE_LOGGING", "true"
+            ndk {
+                // 실기기용 아키텍처만 빌드 (x86_64 제외 → CMake 빌드 1개 감소)
+                abiFilters 'armeabi-v7a', 'arm64-v8a'
+            }
         }
     }
 

@@ -57,6 +57,7 @@ class AlarmScheduler {
         'minute': scheduledTime.minute,
         'repeatDays': alarm.repeatDays,
         'isImmediate': isImmediate,
+        'isCommuteAlarm': alarm.isCommuteAlarm,
       });
 
       logMessage(

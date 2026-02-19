@@ -35,6 +35,7 @@ class BusAlertTrackingManager(
         busNo: String,
         isAutoAlarm: Boolean = false,
         alarmId: Int? = null,
+        isCommuteAlarm: Boolean = false,
     ) {
         if (monitoringJobs.containsKey(routeId)) {
             Log.d(TAG, "Tracking already active for route $routeId")
@@ -67,6 +68,7 @@ class BusAlertTrackingManager(
             stationId = stationId,
             isAutoAlarm = isAutoAlarm,
             alarmId = alarmId,
+            isCommuteAlarm = isCommuteAlarm,
             routeTCd = routeTCd,
         )
         activeTrackings[routeId] = trackingInfo

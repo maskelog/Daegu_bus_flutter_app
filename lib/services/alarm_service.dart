@@ -24,6 +24,7 @@ class AlarmService extends ChangeNotifier {
   bool _initialized = false;
   MethodChannel? _methodChannel;
   DateTime _lastRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
+  final Set<String> _pendingAutoAlarmDeactivations = <String>{};
   static const Duration _alarmRefreshInterval = Duration(minutes: 2);
   static const int _restartPreventionDuration = 3000; // 3초간 재시작 방지
   @visibleForTesting
@@ -127,7 +128,7 @@ class AlarmService extends ChangeNotifier {
           );
 
           // 즉시 Flutter 측 상태 동기화 (낙관적 업데이트)
-          final String alarmKey = "${busNo}_${stationName}_$routeId";
+          final String alarmKey = '${busNo}_' + stationName + '_$routeId';
           final removedAlarm = _alarmFacade.activeAlarmsMap.remove(alarmKey);
 
           if (removedAlarm != null) {
@@ -216,20 +217,28 @@ class AlarmService extends ChangeNotifier {
               logMessage(
                   '🔍 [Debug] 자동 알람 검색 시작: busNo=$busNo, stationName=$stationName, routeId=$routeId');
 
-              final autoAlarmIndex = _alarmFacade.autoAlarmsList.indexWhere(
+          final autoAlarmIndex = _alarmFacade.autoAlarmsList.indexWhere(
                 (a) =>
                     a.busNo == busNo &&
                     a.stationName == stationName &&
                     a.routeId == routeId,
               );
 
-              if (autoAlarmIndex != -1) {
-                logMessage(
-                  '🔔 [노티피케이션] 자동 알람 취소 감지: $busNo번, $stationName',
-                  level: LogLevel.info,
-                );
-                await stopAutoAlarm(busNo, stationName, routeId);
-              } else {
+          if (autoAlarmIndex != -1) {
+            final alarmKey = '${busNo}_' + stationName + '_$routeId';
+            logMessage(
+              '🔔 [노티피케이션] 자동 알람 취소 감지: $busNo번, $stationName',
+              level: LogLevel.info,
+            );
+            if (_pendingAutoAlarmDeactivations.contains(alarmKey)) {
+              logMessage(
+                '🛑 자동 알람 중단 요청 무시(이미 처리 중): $alarmKey',
+                level: LogLevel.debug,
+              );
+            } else {
+              await deactivateAutoAlarm(busNo, stationName, routeId);
+            }
+          } else {
                 // 일반 알람이 _activeAlarms에 없더라도, 혹시 모르니 강제로 키를 재구성해서 삭제 시도
                 // (키 생성 로직이 다를 수 있으므로)
                 logMessage(
@@ -313,7 +322,7 @@ class AlarmService extends ChangeNotifier {
 
           // stopAutoAlarm 메서드 호출
           try {
-            final result = await stopAutoAlarm(busNo, stationName, routeId);
+            final result = await deactivateAutoAlarm(busNo, stationName, routeId);
             if (result) {
               logMessage(
                 '✅ 자동알람 중지 완료 (브로드캐스트에 의해): $busNo번',
@@ -339,7 +348,7 @@ class AlarmService extends ChangeNotifier {
           final int timestamp = args['timestamp'] ?? DateTime.now().millisecondsSinceEpoch;
 
           final now = DateTime.fromMillisecondsSinceEpoch(timestamp);
-          final alarmKey = "${busNo}_${stationName}_$routeId";
+          final alarmKey = '${busNo}_' + stationName + '_$routeId';
           final executionKey = "${alarmKey}_${now.hour}:${now.minute}";
 
           _alarmFacade.state.executedAlarms[executionKey] = now;
@@ -353,7 +362,7 @@ class AlarmService extends ChangeNotifier {
           final String routeId = args['routeId'] ?? '';
 
           if (busNo.isNotEmpty && stationName.isNotEmpty && routeId.isNotEmpty) {
-            final alarmKey = "${busNo}_${stationName}_$routeId";
+            final alarmKey = '${busNo}_' + stationName + '_$routeId';
             _alarmFacade.state.manuallyStoppedAlarms.add(alarmKey);
             _alarmFacade.state.manuallyStoppedTimestamps[alarmKey] = DateTime.now();
             logMessage('🚫 [네이티브] 자동 알람 종료 감지 -> 수동 중지 목록 추가 (당일 재실행 방지): $alarmKey', level: LogLevel.info);
@@ -877,60 +886,106 @@ class AlarmService extends ChangeNotifier {
   }
 
   /// 자동 알람 중지 메서드 추가
-  Future<bool> stopAutoAlarm(
+  Future<bool> deactivateAutoAlarm(
+    String busNo,
+    String stationName,
+    String routeId,
+  ) async {
+    final alarmKey = '${busNo}_' + stationName + '_$routeId';
+    _pendingAutoAlarmDeactivations.add(alarmKey);
+
+    try {
+      logMessage(
+        '📋 자동 알람 실행 중단 요청(스케줄 유지): $busNo번, $stationName',
+        level: LogLevel.info,
+      );
+
+      final result = await cancelAlarmByRoute(busNo, stationName, routeId);
+      if (!result) {
+        logMessage(
+          '⚠️ 자동 알람 실행 중단 중 네이티브 동기화 실패: $busNo번',
+          level: LogLevel.warning,
+        );
+        return false;
+      }
+
+      logMessage(
+        '✅ 자동 알람 실행 중단 완료(스케줄 유지): $busNo번',
+        level: LogLevel.info,
+      );
+      return true;
+    } catch (e) {
+      logMessage('❌ 자동 알람 실행 중단 오류: $e', level: LogLevel.error);
+      return false;
+    } finally {
+      _pendingAutoAlarmDeactivations.remove(alarmKey);
+    }
+  }
+
+  /// 자동 알람 스케줄 삭제(실행 중 추적은 중단 후 스케줄 제거)
+  Future<bool> deleteAutoAlarm(
     String busNo,
     String stationName,
     String routeId,
   ) async {
     try {
-      logMessage('📋 자동 알람 중지 요청: $busNo번, $stationName', level: LogLevel.info);
+      logMessage(
+        '🗑️ 자동 알람 스케줄 삭제 요청: $busNo번, $stationName',
+        level: LogLevel.info,
+      );
 
-      // 수동 중지 알람 목록에 추가 (재시작 방지)
-      final alarmKey = "${busNo}_${stationName}_$routeId";
-      _alarmFacade.state.manuallyStoppedAlarms.add(alarmKey);
-      _alarmFacade.state.manuallyStoppedTimestamps[alarmKey] = DateTime.now();
-      logMessage('🚫 수동 중지 알람 추가: $alarmKey', level: LogLevel.info);
+      // 실행 중인 추적이 있다면 먼저 정리
+      final stopped = await deactivateAutoAlarm(busNo, stationName, routeId);
+      if (!stopped) {
+        logMessage(
+          '⚠️ 실행 중 추적 정리 실패했지만 스케줄 삭제는 계속 진행: $busNo번',
+          level: LogLevel.warning,
+        );
+      }
 
-      // 새로고침 타이머 중지
-      _alarmFacade.cancelRefreshTimer();
-
-      // 버스 모니터링 서비스 및 알림 취소
-      await _notificationService.cancelOngoingTracking();
-
-      // 자동 알람 목록에서 제거
+      final alarmKey = '${busNo}_' + stationName + '_$routeId';
+      final removedCount = _alarmFacade.autoAlarmsList.length;
       _alarmFacade.autoAlarmsList.removeWhere(
         (alarm) =>
             alarm.busNo == busNo &&
             alarm.stationName == stationName &&
             alarm.routeId == routeId,
       );
+      final isDeleted =
+          removedCount > _alarmFacade.autoAlarmsList.length;
 
-      // activeAlarms에서도 제거
-      _alarmFacade.activeAlarmsMap.remove(alarmKey);
+      if (isDeleted) {
+        await _alarmFacade.saveAutoAlarms();
+        _alarmFacade.state.manuallyStoppedAlarms.remove(alarmKey);
+        _alarmFacade.state.manuallyStoppedTimestamps.remove(alarmKey);
+        await _saveAlarms();
+        notifyListeners();
+      }
 
-      await _alarmFacade.saveAutoAlarms();
-      await _saveAlarms();
-
-      // TTS 중지 알림 제거 (사용자 요청)
-      // try {
-      //   await SimpleTTSHelper.speak(
-      //     "$busNo번 버스 자동 알람이 중지되었습니다.",
-      //     force: true,
-      //     earphoneOnly: false,
-      //   );
-      // } catch (e) {
-      //   logMessage('❌ TTS 중지 알림 오류: $e', level: LogLevel.error);
-      // }
-
-      logMessage('✅ 자동 알람 중지 완료: $busNo번', level: LogLevel.info);
-
-      notifyListeners();
+      if (isDeleted) {
+        logMessage('✅ 자동 알람 스케줄 삭제 완료: $busNo번', level: LogLevel.info);
+      } else {
+        logMessage(
+          '⚠️ 삭제 대상 자동 알람이 없어 변경 없음: $busNo번',
+          level: LogLevel.warning,
+        );
+      }
       return true;
     } catch (e) {
-      logMessage('❌ 자동 알람 중지 오류: $e', level: LogLevel.error);
+      logMessage('❌ 자동 알람 스케줄 삭제 오류: $e', level: LogLevel.error);
       return false;
     }
   }
+
+  /// 기존 stopAutoAlarm은 하위 호환성용 유지.
+  /// - 실행 중단: deactivateAutoAlarm
+  /// - 영구 삭제: deleteAutoAlarm
+  Future<bool> stopAutoAlarm(
+    String busNo,
+    String stationName,
+    String routeId,
+  ) async =>
+      deactivateAutoAlarm(busNo, stationName, routeId);
 
   /// 알람 해제
   Future<void> stopAlarm(
@@ -1055,7 +1110,7 @@ class AlarmService extends ChangeNotifier {
         '🚌 일반 알람 설정 시작: $busNo번 버스, $stationName, $remainingMinutes분',
       );
 
-      final id = "${busNo}_${stationName}_$routeId";
+      final id = '${busNo}_' + stationName + '_$routeId';
 
       // 알람 데이터 생성
       final alarmData = alarm_model.AlarmData(
@@ -1265,7 +1320,7 @@ class AlarmService extends ChangeNotifier {
       '🚌 [Request] 알람 취소 요청: $busNo번 버스, $stationName, routeId: $routeId',
     );
 
-    final String alarmKey = "${busNo}_${stationName}_$routeId";
+    final String alarmKey = '${busNo}_' + stationName + '_$routeId';
     final String cacheKey = "${busNo}_$routeId";
     bool shouldForceStopNative = false;
 

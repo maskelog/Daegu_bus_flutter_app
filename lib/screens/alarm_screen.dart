@@ -926,6 +926,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
   bool _excludeWeekends = false;
   bool _excludeHolidays = false;
   bool _useTTS = true;
+  bool _isCommuteAlarm = true;
 
   BusStop? _selectedStation;
   String? _selectedRouteId;
@@ -951,6 +952,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       _excludeWeekends = alarm.excludeWeekends;
       _excludeHolidays = alarm.excludeHolidays;
       _useTTS = alarm.useTTS;
+      _isCommuteAlarm = alarm.isCommuteAlarm;
       _selectedStation = BusStop(
           id: alarm.stationId, name: alarm.stationName, isFavorite: false);
       _selectedRouteId = alarm.routeId;
@@ -1063,6 +1065,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       excludeWeekends: _excludeWeekends,
       excludeHolidays: _excludeHolidays,
       useTTS: _useTTS,
+      isCommuteAlarm: _isCommuteAlarm,
       isActive: true,
     );
 
@@ -1134,7 +1137,11 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
             _buildSettingsCard(theme, colorScheme),
             const SizedBox(height: 28),
 
-            // 5) 노선 선택 (검색 진입 시만)
+            // 5) 알람 유형 선택 (출근/퇴근)
+            _buildAlarmTypeSelector(colorScheme),
+            const SizedBox(height: 28),
+
+            // 6) 노선 선택 (검색 진입 시만)
             if (!_isFromFavorite && widget.autoAlarm == null)
               _buildRouteSelector(theme, colorScheme),
 
@@ -1195,6 +1202,51 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAlarmTypeSelector(ColorScheme colorScheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '알람 유형',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment<bool>(
+              value: true,
+              icon: Icon(Icons.volume_up_rounded),
+              label: Text('출근 (스피커)'),
+            ),
+            ButtonSegment<bool>(
+              value: false,
+              icon: Icon(Icons.headphones_rounded),
+              label: Text('퇴근 (이어폰)'),
+            ),
+          ],
+          selected: {_isCommuteAlarm},
+          onSelectionChanged: (selected) {
+            setState(() => _isCommuteAlarm = selected.first);
+          },
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _isCommuteAlarm
+              ? '이어폰 연결 여부와 관계없이 스피커로 알림'
+              : '이어폰 연결 시 TTS 알림, 미연결 시 진동',
+          style: TextStyle(
+            fontSize: 12,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 

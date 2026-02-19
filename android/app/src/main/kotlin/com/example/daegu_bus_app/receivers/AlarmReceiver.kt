@@ -45,6 +45,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val routeId = intent.getStringExtra("routeId") ?: return
             val stationId = intent.getStringExtra("stationId") ?: return
             val useTTS = intent.getBooleanExtra("useTTS", true)
+            val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
 
             Log.d(TAG, "🔔 배터리 최적화된 자동 알람 처리: $busNo 번 버스, $stationName")
 
@@ -138,6 +139,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("remainingMinutes", -1) // 초기값 -1로 설정 (데이터 없음)
                 putExtra("currentStation", "")
                 putExtra("useTTS", useTTS)
+                putExtra("isCommuteAlarm", isCommuteAlarm)
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -168,6 +170,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val routeId = intent.getStringExtra("routeId") ?: return
             val stationId = intent.getStringExtra("stationId") ?: return
             val useTTS = intent.getBooleanExtra("useTTS", true)
+            val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
             val hour = intent.getIntExtra("hour", 0)
             val minute = intent.getIntExtra("minute", 0)
             val repeatDays = intent.getIntArrayExtra("repeatDays") ?: return
@@ -194,6 +197,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 .putString("routeId", routeId)
                 .putString("stationId", stationId)
                 .putBoolean("useTTS", useTTS)
+                .putBoolean("isCommuteAlarm", isCommuteAlarm)
                 .putInt("hour", hour)
                 .putInt("minute", minute)
                 .putIntArray("repeatDays", repeatDays)
@@ -236,6 +240,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val routeId = intent.getStringExtra("routeId") ?: return
             val stationId = intent.getStringExtra("stationId") ?: return
             val useTTS = intent.getBooleanExtra("useTTS", true)
+            val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
             val hour = intent.getIntExtra("hour", 0)
             val minute = intent.getIntExtra("minute", 0)
             val repeatDays = intent.getIntArrayExtra("repeatDays") ?: return
@@ -286,6 +291,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("routeId", routeId)
                 putExtra("stationId", stationId)
                 putExtra("useTTS", useTTS)
+                putExtra("isCommuteAlarm", isCommuteAlarm)
                 putExtra("hour", hour)
                 putExtra("minute", minute)
                 putExtra("repeatDays", repeatDays)

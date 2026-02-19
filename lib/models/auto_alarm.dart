@@ -68,6 +68,7 @@ class AutoAlarm {
 
   /// TTS 사용 여부
   final bool useTTS;
+  final bool isCommuteAlarm;
 
   /// 생성자
   AutoAlarm({
@@ -83,6 +84,7 @@ class AutoAlarm {
     this.excludeHolidays = false,
     this.isActive = true,
     this.useTTS = true,
+    this.isCommuteAlarm = true,
   });
 
   /// JSON에서 객체 생성
@@ -126,6 +128,7 @@ class AutoAlarm {
       excludeHolidays: json['excludeHolidays'] ?? false,
       isActive: json['isActive'] ?? true,
       useTTS: json['useTTS'] ?? true,
+      isCommuteAlarm: json['isCommuteAlarm'] ?? true,
     );
   }
 
@@ -144,6 +147,7 @@ class AutoAlarm {
       'excludeHolidays': excludeHolidays,
       'isActive': isActive,
       'useTTS': useTTS,
+      'isCommuteAlarm': isCommuteAlarm,
       'scheduledTime': getNextAlarmTime()?.toIso8601String(),
     };
   }
@@ -271,6 +275,7 @@ class AutoAlarm {
     bool? excludeHolidays,
     bool? isActive,
     bool? useTTS,
+    bool? isCommuteAlarm,
   }) {
     return AutoAlarm(
       id: id ?? this.id,
@@ -285,6 +290,7 @@ class AutoAlarm {
       excludeHolidays: excludeHolidays ?? this.excludeHolidays,
       isActive: isActive ?? this.isActive,
       useTTS: useTTS ?? this.useTTS,
+      isCommuteAlarm: isCommuteAlarm ?? this.isCommuteAlarm,
     );
   }
 

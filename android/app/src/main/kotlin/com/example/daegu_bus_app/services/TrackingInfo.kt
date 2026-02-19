@@ -17,6 +17,7 @@ data class TrackingInfo(
     // [추가] 자동알람 플래그 - 자동알람인 경우 버스가 지나가도 계속 추적
     var isAutoAlarm: Boolean = false,
     var alarmId: Int? = null,
+    var isCommuteAlarm: Boolean = false,
     // [추가] 버스 타입 정보 (1: 급행, 2: 좌석, 3: 일반, 4: 지선/마을)
     var routeTCd: String? = null
 )

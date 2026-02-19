@@ -863,6 +863,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     val routeId = call.argument<String>("routeId") ?: ""
                     val stationId = call.argument<String>("stationId") ?: ""
                     val useTTS = call.argument<Boolean>("useTTS") ?: true
+                    val isCommuteAlarm = call.argument<Boolean>("isCommuteAlarm") ?: false
                     val hour = call.argument<Int>("hour") ?: 0
                     val minute = call.argument<Int>("minute") ?: 0
                     val repeatDays = call.argument<ArrayList<Int>>("repeatDays")?.toIntArray() ?: intArrayOf()
@@ -885,6 +886,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             .putInt("hour", hour)
                             .putInt("minute", minute)
                             .putIntArray("repeatDays", repeatDays)
+                            .putBoolean("isCommuteAlarm", isCommuteAlarm)
                             .build()
                             
                         val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.daegu_bus_app.workers.BackgroundWorker>()
