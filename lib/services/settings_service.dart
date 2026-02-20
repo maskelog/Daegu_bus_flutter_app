@@ -36,6 +36,7 @@ class SettingsService extends ChangeNotifier {
   static const String _autoAlarmTimeoutMsKey = 'auto_alarm_timeout_ms';
   static const String _fontSizeMultiplierKey = 'font_size_multiplier';
   static const String _earphoneAlarmVibrateKey = 'earphone_alarm_vibrate';
+  static const String _customExcludeDatesKey = 'custom_exclude_dates';
   static const int defaultAutoAlarmTimeoutMinutes = 30; // 기본 30분
   static const int minAutoAlarmTimeoutMinutes = 5; // 최소 5분
   static const int maxAutoAlarmTimeoutMinutes = 120; // 최대 120분
@@ -64,6 +65,7 @@ class SettingsService extends ChangeNotifier {
   bool _isDarkMode = false;
   ColorSchemeType _colorScheme = ColorSchemeType.blue;
   double _fontSizeMultiplier = defaultFontSizeMultiplier;
+  List<DateTime> _customExcludeDates = [];
 
   // 싱글톤 패턴
   static final SettingsService _instance = SettingsService._internal();
@@ -101,6 +103,7 @@ class SettingsService extends ChangeNotifier {
   ColorSchemeType get colorScheme => _colorScheme;
   int get autoAlarmTimeoutMinutes => _autoAlarmTimeoutMinutes;
   double get fontSizeMultiplier => _fontSizeMultiplier;
+  List<DateTime> get customExcludeDates => _customExcludeDates;
 
   bool get isDarkMode => _isDarkMode;
 
@@ -127,6 +130,14 @@ class SettingsService extends ChangeNotifier {
                 (defaultAutoAlarmTimeoutMinutes * 60 * 1000)) ~/
             (60 * 1000))
         .clamp(minAutoAlarmTimeoutMinutes, maxAutoAlarmTimeoutMinutes);
+
+    final excludeDatesStrs = _prefs.getStringList(_customExcludeDatesKey) ?? [];
+    try {
+      _customExcludeDates = excludeDatesStrs.map((e) => DateTime.parse(e)).toList();
+    } catch (_) {
+      _customExcludeDates = [];
+    }
+
     notifyListeners();
   }
 
@@ -255,6 +266,27 @@ class SettingsService extends ChangeNotifier {
       default:
         return '알 수 없음';
     }
+  }
+
+  Future<void> addCustomExcludeDate(DateTime date) async {
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    if (!_customExcludeDates.contains(dateOnly)) {
+      _customExcludeDates.add(dateOnly);
+      await _saveCustomExcludeDates();
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeCustomExcludeDate(DateTime date) async {
+    final dateOnly = DateTime(date.year, date.month, date.day);
+    _customExcludeDates.removeWhere((d) => d.year == dateOnly.year && d.month == dateOnly.month && d.day == dateOnly.day);
+    await _saveCustomExcludeDates();
+    notifyListeners();
+  }
+
+  Future<void> _saveCustomExcludeDates() async {
+    final list = _customExcludeDates.map((e) => e.toIso8601String()).toList();
+    await _prefs.setStringList(_customExcludeDatesKey, list);
   }
 
   // Method to update Notification Display Mode

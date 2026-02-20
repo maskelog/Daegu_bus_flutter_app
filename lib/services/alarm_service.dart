@@ -643,7 +643,8 @@ class AlarmService extends ChangeNotifier {
           final nextTargetMonth = now.month == 12 ? 1 : now.month + 1;
           final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
           final nextMonthHolidays = await getHolidays(nextTargetYear, nextTargetMonth);
-          final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays];
+          final customExcludeDates = SettingsService().customExcludeDates;
+          final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays, ...customExcludeDates];
 
           final nextAlarmTime = autoAlarm.getNextAlarmTime(holidays: allHolidays);
           if (nextAlarmTime == null) {
@@ -1812,7 +1813,8 @@ class AlarmService extends ChangeNotifier {
         final nextTargetMonth = now.month == 12 ? 1 : now.month + 1;
         final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
         final nextMonthHolidays = await getHolidays(nextTargetYear, nextTargetMonth);
-        final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays];
+        final customExcludeDates = SettingsService().customExcludeDates;
+        final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays, ...customExcludeDates];
 
         final DateTime? scheduledTime = alarm.getNextAlarmTime(holidays: allHolidays);
 

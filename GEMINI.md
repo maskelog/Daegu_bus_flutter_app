@@ -977,3 +977,20 @@ val builtNotification = liveBuilder.build()
 - `AlamFacade`에서 `HolidayService`의 `fetchHolidays` 레퍼런스를 `AutoAlarmEngine` 생성자로 전달해 분리된 모듈에서도 휴일 조회가 가능하도록 조치.
 - `AutoAlarmEngine` 및 `AlarmService`에서 `getNextAlarmTime()`을 호출하기 전 현재 달과 다음 달(2개월치)의 공휴일을 `getHolidays()`로 로드한 뒤 매개변수로 전달 구현.
 - AlarmScreen의 `_saveAutoAlarms()` 등에서 정상적으로 SharedPreferences를 통해 전체 CRUD 파이프라인이 구동됨을 검증 완료 (수동 중지 플래그 및 캐싱 정상 적용).
+
+## 2026-02-20 (2차): 기능 강화 - 나만의 알람 예외 날짜 (커스텀 휴일) 설정 추가
+
+### 목표
+자주 변경되지 않는 '나만의 휴일(연차 등 특정 날짜)'을 설정 화면에서 미리 추가해두면, 자동 알람 계산 시 해당 날짜에 알람이 울리지 않도록 예외 처리.
+
+### 수정된 파일
+1. `lib/services/settings_service.dart`
+2. `lib/screens/settings_screen.dart`
+3. `lib/services/alarm/auto_alarm_engine.dart`
+4. `lib/services/alarm_service.dart`
+
+### 수정 내용
+- `SettingsService` 내에 커스텀 예외 날짜 목록(`customExcludeDates`)을 추가하고 `SharedPreferences`를 이용해 영구 저장.
+- 기존 공휴일 API의 `_getHolidays()` 호출 이후에 이 `customExcludeDates` 값을 함께 가져와 `allHolidays` 리스트에 `...customExcludeDates` 형태로 결합하여 반환하도록 조치.
+- 변경된 일정이 `AutoAlarm.getNextAlarmTime()`에서 공휴일(예외 리스트)로 동일하게 처리되어 해당 날짜를 스킵.
+- `SettingsScreen`에 `_buildCustomExcludeDateSelector` 메뉴 및 `_CustomExcludeDatesScreen` UI 추가하여 사용자가 "+" 플로팅 버튼을 통해 특정 날짜를 캘린더 피커(`showDatePicker`)로 직관적으로 선택하고 삭제할 수 있는 기능 추가.

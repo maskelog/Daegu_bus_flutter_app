@@ -119,6 +119,8 @@ class SettingsScreen extends StatelessWidget {
                   _buildAlarmSoundSelector(context, settingsService),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   _buildAutoAlarmTimeoutDropdown(context, settingsService),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  _buildCustomExcludeDateSelector(context, settingsService),
                 ],
               ),
             ],
@@ -354,6 +356,55 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildCustomExcludeDateSelector(
+      BuildContext context, SettingsService settingsService) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final excludeCount = settingsService.customExcludeDates.length;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(
+        Icons.event_busy_outlined,
+        color: colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      title: Text(
+        '나만의 알람 예외 날짜',
+        style: theme.textTheme.bodyLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+          color: colorScheme.onSurface,
+        ),
+      ),
+      subtitle: Text(
+        excludeCount > 0 ? '$excludeCount일 설정됨' : '설정된 날짜 없음',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: colorScheme.secondaryContainer.withAlpha(77),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          Icons.chevron_right,
+          color: colorScheme.onSecondaryContainer,
+          size: 20,
+        ),
+      ),
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const _CustomExcludeDatesScreen(),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _AlarmSoundDialog extends StatelessWidget {
@@ -418,6 +469,136 @@ class _AlarmSoundDialog extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _CustomExcludeDatesScreen extends StatefulWidget {
+  const _CustomExcludeDatesScreen();
+
+  @override
+  State<_CustomExcludeDatesScreen> createState() => _CustomExcludeDatesScreenState();
+}
+
+class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      appBar: AppBar(
+        title: Text(
+          '나만의 예외 날짜 관리',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: Consumer<SettingsService>(
+        builder: (context, settingsService, child) {
+          final dates = List<DateTime>.from(settingsService.customExcludeDates);
+          dates.sort(); // 오름차순 정렬
+
+          if (dates.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.event_available_outlined, size: 64, color: colorScheme.outlineVariant),
+                    const SizedBox(height: 16),
+                    Text(
+                      '나만의 예외 날짜가 없습니다.',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '하단의 + 버튼을 눌러 연차나 휴가 등 자동 알람을 울리지 않을 날짜를 추가해보세요.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: dates.length,
+            itemBuilder: (context, index) {
+              final date = dates[index];
+              final dateStr = '${date.year}년 ${date.month}월 ${date.day}일';
+              final weekdays = ['월', '화', '수', '목', '금', '토', '일'];
+              final weekdayStr = weekdays[date.weekday - 1];
+
+              return Card(
+                elevation: 0,
+                color: colorScheme.surfaceContainerLowest,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: colorScheme.outlineVariant),
+                ),
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: Icon(Icons.calendar_today, color: colorScheme.primary),
+                  title: Text(
+                    '$dateStr ($weekdayStr)',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(Icons.remove_circle_outline, color: colorScheme.error),
+                    onPressed: () {
+                      settingsService.removeCustomExcludeDate(date);
+                    },
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: Consumer<SettingsService>(
+        builder: (context, settingsService, child) {
+          return FloatingActionButton.extended(
+            onPressed: () async {
+              final selectedDate = await showDatePicker(
+                context: context,
+                initialDate: DateTime.now(),
+                firstDate: DateTime.now(),
+                lastDate: DateTime.now().add(const Duration(days: 365)),
+                builder: (context, child) {
+                  return Theme(
+                    data: theme.copyWith(
+                      colorScheme: colorScheme.copyWith(
+                        primary: colorScheme.primary,
+                        onSurface: colorScheme.onSurface,
+                      ),
+                    ),
+                    child: child!,
+                  );
+                },
+              );
+
+              if (selectedDate != null) {
+                settingsService.addCustomExcludeDate(selectedDate);
+              }
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('날짜 추가'),
+          );
+        },
+      ),
     );
   }
 }

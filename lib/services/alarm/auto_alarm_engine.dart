@@ -195,12 +195,12 @@ class AutoAlarmEngine {
 
         _state.autoAlarms.removeWhere((a) => a.id == alarm.id);
 
-        // Fetch current and next month holidays to ensure enough range for calculating the next alarm target date
         final currentMonthHolidays = await _getHolidays(now.year, now.month);
         final nextTargetMonth = now.month == 12 ? 1 : now.month + 1;
         final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
         final nextMonthHolidays = await _getHolidays(nextTargetYear, nextTargetMonth);
-        final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays];
+        final customExcludeDates = SettingsService().customExcludeDates;
+        final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays, ...customExcludeDates];
 
         final nextAlarmTime = autoAlarm.getNextAlarmTime(holidays: allHolidays);
         if (nextAlarmTime != null) {
