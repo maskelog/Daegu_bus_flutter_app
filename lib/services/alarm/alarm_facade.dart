@@ -36,6 +36,7 @@ class AlarmFacade {
       refreshBusInfo: refreshBusInfo,
       saveAlarms: saveAlarms,
       resolveStationId: resolveStationId,
+      getHolidays: holidayService.fetchHolidays,
       restartPreventionDurationMs: restartPreventionDurationMs,
     );
   }

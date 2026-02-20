@@ -23,12 +23,14 @@ class AutoAlarmEngine {
     required Future<bool> Function(AutoAlarm alarm) refreshBusInfo,
     required Future<void> Function() saveAlarms,
     required String Function(String stationName, String routeId) resolveStationId,
+    required Future<List<DateTime>> Function(int year, int month) getHolidays,
     required int restartPreventionDurationMs,
   })  : _state = state,
         _startMonitoring = startMonitoring,
         _refreshBusInfo = refreshBusInfo,
         _saveAlarms = saveAlarms,
         _resolveStationId = resolveStationId,
+        _getHolidays = getHolidays,
         _restartPreventionDurationMs = restartPreventionDurationMs;
 
   final AlarmState _state;
@@ -41,6 +43,7 @@ class AutoAlarmEngine {
   final Future<bool> Function(AutoAlarm alarm) _refreshBusInfo;
   final Future<void> Function() _saveAlarms;
   final String Function(String stationName, String routeId) _resolveStationId;
+  final Future<List<DateTime>> Function(int year, int month) _getHolidays;
   final int _restartPreventionDurationMs;
 
   Timer? refreshTimer;
@@ -192,7 +195,14 @@ class AutoAlarmEngine {
 
         _state.autoAlarms.removeWhere((a) => a.id == alarm.id);
 
-        final nextAlarmTime = autoAlarm.getNextAlarmTime();
+        // Fetch current and next month holidays to ensure enough range for calculating the next alarm target date
+        final currentMonthHolidays = await _getHolidays(now.year, now.month);
+        final nextTargetMonth = now.month == 12 ? 1 : now.month + 1;
+        final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
+        final nextMonthHolidays = await _getHolidays(nextTargetYear, nextTargetMonth);
+        final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays];
+
+        final nextAlarmTime = autoAlarm.getNextAlarmTime(holidays: allHolidays);
         if (nextAlarmTime != null) {
           final nextAlarm = alarm_model.AlarmData(
             id: alarm.id,

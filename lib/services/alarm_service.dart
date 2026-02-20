@@ -637,8 +637,15 @@ class AlarmService extends ChangeNotifier {
           // AutoAlarm 객체 생성하여 올바른 다음 알람 시간 계산
           final autoAlarm = AutoAlarm.fromJson(data);
 
-          // 다음 알람 시간 계산
-          final nextAlarmTime = autoAlarm.getNextAlarmTime();
+          // 다음 알람 시간 계산하기 위해 공휴일 가져오기
+          final now = DateTime.now();
+          final currentMonthHolidays = await getHolidays(now.year, now.month);
+          final nextTargetMonth = now.month == 12 ? 1 : now.month + 1;
+          final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
+          final nextMonthHolidays = await getHolidays(nextTargetYear, nextTargetMonth);
+          final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays];
+
+          final nextAlarmTime = autoAlarm.getNextAlarmTime(holidays: allHolidays);
           if (nextAlarmTime == null) {
             logMessage(
               '⚠️ 자동 알람 다음 시간 계산 실패: ${autoAlarm.routeNo}',
@@ -1800,7 +1807,14 @@ class AlarmService extends ChangeNotifier {
           continue;
         }
 
-        final DateTime? scheduledTime = alarm.getNextAlarmTime();
+        final now = DateTime.now();
+        final currentMonthHolidays = await getHolidays(now.year, now.month);
+        final nextTargetMonth = now.month == 12 ? 1 : now.month + 1;
+        final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
+        final nextMonthHolidays = await getHolidays(nextTargetYear, nextTargetMonth);
+        final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays];
+
+        final DateTime? scheduledTime = alarm.getNextAlarmTime(holidays: allHolidays);
 
         if (scheduledTime == null) {
           logMessage(
@@ -1810,7 +1824,6 @@ class AlarmService extends ChangeNotifier {
           continue;
         }
 
-        final now = DateTime.now();
         final timeUntilAlarm = scheduledTime.difference(now);
         logMessage('  ⏰ 다음 알람까지 ${timeUntilAlarm.inMinutes}분 남음');
 

@@ -5,7 +5,13 @@ import 'package:xml/xml.dart' as xml;
 import '../../main.dart' show logMessage, LogLevel;
 
 class HolidayService {
+  final Map<String, List<DateTime>> _cache = {};
+
   Future<List<DateTime>> fetchHolidays(int year, int month) async {
+    final cacheKey = '$year-${month.toString().padLeft(2, '0')}';
+    if (_cache.containsKey(cacheKey)) {
+      return _cache[cacheKey]!;
+    }
     try {
       final String serviceKey = dotenv.env['SERVICE_KEY'] ?? '';
       if (serviceKey.isEmpty) {
@@ -46,6 +52,7 @@ class HolidayService {
             logMessage(
               '✅ 공휴일 목록 ($year-$month): ${holidays.length}개 공휴일 발견',
             );
+            _cache[cacheKey] = holidays;
             return holidays;
           } catch (e) {
             logMessage('❌ XML 파싱 오류: $e', level: LogLevel.error);

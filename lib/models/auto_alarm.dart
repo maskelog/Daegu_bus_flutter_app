@@ -148,7 +148,7 @@ class AutoAlarm {
       'isActive': isActive,
       'useTTS': useTTS,
       'isCommuteAlarm': isCommuteAlarm,
-      'scheduledTime': getNextAlarmTime()?.toIso8601String(),
+      'scheduledTime': getNextAlarmTime(holidays: null)?.toIso8601String(),
     };
   }
 
@@ -173,8 +173,8 @@ class AutoAlarm {
     return '${getFormattedTime()} [${getFormattedWeekdays()}] $routeNo번 버스, $stationName';
   }
 
-  /// 다음 알람 시간 계산
-  DateTime? getNextAlarmTime() {
+  /// 다음 알람 시간 계산 (공휴일 목록을 선택적으로 받아 처리)
+  DateTime? getNextAlarmTime({List<DateTime>? holidays}) {
     final now = DateTime.now();
 
     if (repeatDays.isEmpty) {
@@ -190,9 +190,21 @@ class AutoAlarm {
         candidate = candidate.add(const Duration(days: 1));
       }
 
-      if (excludeWeekends) {
+      if (excludeWeekends || (excludeHolidays && holidays != null)) {
         for (int i = 0; i < 7; i++) {
-          if (candidate.weekday != 6 && candidate.weekday != 7) {
+          bool isValid = true;
+          
+          if (excludeWeekends && (candidate.weekday == 6 || candidate.weekday == 7)) {
+            isValid = false;
+          }
+          
+          if (excludeHolidays && holidays != null && isValid) {
+            if (holidays.any((h) => h.year == candidate.year && h.month == candidate.month && h.day == candidate.day)) {
+              isValid = false;
+            }
+          }
+
+          if (isValid) {
             return candidate;
           }
           candidate = candidate.add(const Duration(days: 1));
@@ -205,12 +217,17 @@ class AutoAlarm {
     // 오늘 요일이 반복 요일에 포함되는지 확인
     if (repeatDays.contains(now.weekday)) {
       // 주말 제외 옵션 확인
-      if (excludeWeekends && (now.weekday == 6 || now.weekday == 7)) {
-        // 주말이면 다음 평일 찾기
-        return _findNextValidDay(now);
+      // 공휴일 제외 옵션 및 공휴일 여부 확인
+      bool isHoliday = false;
+      if (excludeHolidays && holidays != null) {
+         isHoliday = holidays.any((h) => h.year == now.year && h.month == now.month && h.day == now.day);
       }
 
-      // TODO: 공휴일 체크 로직 필요
+      // 주말이거나 공휴일이면 다음 평일/비휴일 찾기
+      bool isWeekend = now.weekday == 6 || now.weekday == 7;
+      if ((excludeWeekends && isWeekend) || (excludeHolidays && isHoliday)) {
+        return _findNextValidDay(now, holidays: holidays);
+      }
 
       // 오늘 알람 시간 생성
       final todayAlarm = DateTime(
@@ -227,17 +244,17 @@ class AutoAlarm {
       }
     }
 
-    return _findNextValidDay(now);
+    return _findNextValidDay(now, holidays: holidays);
   }
 
   /// 다음 유효한 알람 요일 찾기
-  DateTime? _findNextValidDay(DateTime now) {
-    // 다음 요일 찾기
-    for (int i = 1; i <= 7; i++) {
+  DateTime? _findNextValidDay(DateTime now, {List<DateTime>? holidays}) {
+    // 넉넉하게 30일 이내에서 다음 알람 찾기
+    for (int i = 1; i <= 30; i++) {
       final nextDate = now.add(Duration(days: i));
 
-      // 반복 요일에 포함되는지 확인
-      if (!repeatDays.contains(nextDate.weekday)) {
+      // 반복 요일이 지정되어 있으면 그 요일에 포함되는지 확인
+      if (repeatDays.isNotEmpty && !repeatDays.contains(nextDate.weekday)) {
         continue;
       }
 
@@ -246,7 +263,13 @@ class AutoAlarm {
         continue;
       }
 
-      // TODO: 공휴일 체크 로직 필요
+      // 공휴일 제외 옵션 확인
+      if (excludeHolidays && holidays != null) {
+        bool isHoliday = holidays.any((h) => h.year == nextDate.year && h.month == nextDate.month && h.day == nextDate.day);
+        if (isHoliday) {
+          continue;
+        }
+      }
 
       return DateTime(
         nextDate.year,

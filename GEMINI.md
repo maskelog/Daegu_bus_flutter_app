@@ -956,3 +956,24 @@ val builtNotification = liveBuilder.build()
 - 퇴근 알람(isCommuteAlarm == false)일 때 이어폰이 연결되지 않은 경우, TTS 발화를 건너뛰고 500ms(0.5초) 동안 진동 발생.
 - 기존 TTS 자동알람에서 무조건 스피커가 강제되던 로직을 지우고, `autoAlarmForceSpeaker` 및 `autoAlarmForceEarphone` 인자를 추가하여 퇴근 알람 시 `STREAM_MUSIC`(이어폰 스트림)을 우선 사용하도록 교정.
 - `BusAlertTtsController`를 거치는 `startTtsServiceSpeak`에서 `isAutoAlarm` 플래그를 정상적으로 `TTSService`에 전달하도록 인텐트 옵션 누락 수정.
+
+---
+
+## 2026-02-20: 자동 알람 CRUD 구성 및 공휴일 제외 로직 연동
+
+### 목표
+자동 알람 일정 등록, 수정, 삭제(CRUD) 기능에서 공휴일 제외 로직(`excludeHolidays`)이 정상 동작하도록 `AutoAlarm.getNextAlarmTime()` 및 서비스 연동 구현.
+
+### 수정된 파일
+1. `lib/models/auto_alarm.dart`
+2. `lib/services/alarm_service.dart`
+3. `lib/services/alarm/auto_alarm_engine.dart`
+4. `lib/services/alarm/holiday_service.dart`
+5. `lib/services/alarm/alarm_facade.dart`
+
+### 수정 내용
+- `HolidayService`에 메모리 캐싱 로직 추가 (`_cache`)를 통해 불필요한 공공데이터 포털 API 반복 호출 방지.
+- `AutoAlarm.getNextAlarmTime({List<DateTime>? holidays})` 로 매개변수를 추가하여 공휴일이 전달될 경우 `excludeHolidays` 옵션에 따라 제외한 후 다음 알람 일자를 반환하도록 구현.
+- `AlamFacade`에서 `HolidayService`의 `fetchHolidays` 레퍼런스를 `AutoAlarmEngine` 생성자로 전달해 분리된 모듈에서도 휴일 조회가 가능하도록 조치.
+- `AutoAlarmEngine` 및 `AlarmService`에서 `getNextAlarmTime()`을 호출하기 전 현재 달과 다음 달(2개월치)의 공휴일을 `getHolidays()`로 로드한 뒤 매개변수로 전달 구현.
+- AlarmScreen의 `_saveAutoAlarms()` 등에서 정상적으로 SharedPreferences를 통해 전체 CRUD 파이프라인이 구동됨을 검증 완료 (수동 중지 플래그 및 캐싱 정상 적용).
