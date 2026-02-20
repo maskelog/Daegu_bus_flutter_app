@@ -111,9 +111,10 @@ class BusAlertTtsController(
         remainingMinutes: Int = -1,
         forceSpeaker: Boolean = false,
         currentStation: String? = null,
+        isAutoAlarm: Boolean = false
     ) {
         val isHeadset = isHeadsetConnected()
-        if (!forceSpeaker && audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadset) {
+        if (!forceSpeaker && !isAutoAlarm && audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadset) {
             Log.w(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTSService 호출 안함 (audioOutputMode=$audioOutputMode, isHeadset=$isHeadset)")
             return
         }
@@ -126,6 +127,7 @@ class BusAlertTtsController(
             putExtra("stationId", stationId)
             putExtra("remainingMinutes", remainingMinutes)
             putExtra("currentStation", (currentStation ?: "").toString())
+            putExtra("isAutoAlarm", isAutoAlarm)
             if (forceSpeaker) putExtra("forceSpeaker", true)
         }
         context.startService(ttsIntent)
@@ -171,6 +173,8 @@ class BusAlertTtsController(
 
             val useSpeaker = if (forceSpeaker) {
                 true
+            } else if (earphoneOnly) {
+                false
             } else {
                 when (audioOutputMode) {
                     OUTPUT_MODE_SPEAKER -> true
@@ -182,7 +186,7 @@ class BusAlertTtsController(
 
             val streamType = if (forceSpeaker) {
                 AudioManager.STREAM_ALARM
-            } else if (audioOutputMode == OUTPUT_MODE_HEADSET) {
+            } else if (earphoneOnly || audioOutputMode == OUTPUT_MODE_HEADSET) {
                 AudioManager.STREAM_MUSIC
             } else if (useSpeaker) {
                 AudioManager.STREAM_ALARM

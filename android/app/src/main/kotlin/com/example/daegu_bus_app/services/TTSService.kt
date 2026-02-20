@@ -39,6 +39,8 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
 
     // 배터리 최적화를 위한 자동알람 모드
     private var isAutoAlarmMode = false
+    private var autoAlarmForceSpeaker = false
+    private var autoAlarmForceEarphone = false
     private var singleExecutionMode = false
 
     // Handler for repeating TTS announcements
@@ -46,7 +48,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     private val ttsRunnable = object : Runnable {
         override fun run() {
             if (isTracking && isInitialized) {
-                speakBusAlert()
+                speakBusAlert(forceSpeaker = autoAlarmForceSpeaker, forceEarphone = autoAlarmForceEarphone)
                 ttsHandler.postDelayed(this, SPEAK_INTERVAL)
             }
         }
@@ -123,6 +125,8 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 if (isAutoAlarm || forceSpeaker) {
                     Log.d(TAG, "🔊 자동 알람/강제 스피커 TTS 요청 - 이어폰 체크 우회")
                     isAutoAlarmMode = true
+                    autoAlarmForceSpeaker = forceSpeaker
+                    autoAlarmForceEarphone = isAutoAlarm && !forceSpeaker
 
                     if (isInitialized) {
                         handleAutoAlarmTTS(customMessage)
@@ -234,12 +238,12 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         // 단일 실행 모드인 경우에만 반복 안함 (자동 알람은 반복 허용)
         if (singleExecutionMode) {
             Log.d(TAG, "🔊 단일실행 모드: 반복 TTS 없음")
-            speakBusAlert(forceSpeaker = true)
+            speakBusAlert(forceSpeaker = autoAlarmForceSpeaker, forceEarphone = autoAlarmForceEarphone)
             return
         }
 
         isTracking = true
-        speakBusAlert(forceSpeaker = isAutoAlarmMode) // 자동 알람이면 강제 스피커
+        speakBusAlert(forceSpeaker = autoAlarmForceSpeaker, forceEarphone = autoAlarmForceEarphone) // 자동 알람 설정값 적용
         // schedule periodic announcements
         ttsHandler.removeCallbacks(ttsRunnable)
         ttsHandler.postDelayed(ttsRunnable, SPEAK_INTERVAL)
@@ -299,7 +303,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun speakBusAlert(forceSpeaker: Boolean = false, customMessage: String? = null) {
+    private fun speakBusAlert(forceSpeaker: Boolean = false, forceEarphone: Boolean = false, customMessage: String? = null) {
         // 초기화 확인
         if (!isInitialized) {
             Log.e(TAG, "❌ TTS가 초기화되지 않았습니다. 초기화 시도...")
@@ -338,7 +342,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         lastAnnouncedMinutes = currentRemainingMinutes // 마지막으로 알린 분 업데이트
 
         // 스피커 사용 여부 결정
-        val useSpeaker = forceSpeaker || getAudioOutputMode() == OUTPUT_MODE_SPEAKER
+        val useSpeaker = if (forceEarphone) false else (forceSpeaker || getAudioOutputMode() == OUTPUT_MODE_SPEAKER)
 
         // 오디오 설정
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -364,7 +368,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         }
 
         // TTS 파라미터 설정
-        val streamType = if (forceSpeaker) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
+        val streamType = if (forceSpeaker) AudioManager.STREAM_ALARM else if (forceEarphone) AudioManager.STREAM_MUSIC else if (getAudioOutputMode() == OUTPUT_MODE_SPEAKER) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
         val utteranceId = "tts_${System.currentTimeMillis()}"
         val volume = getTtsVolume()
 
@@ -455,8 +459,8 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         try {
             Log.d(TAG, "🔊 자동알람 TTS 처리 시작")
 
-            // 강제 스피커 모드로 발화
-            speakBusAlert(forceSpeaker = true, customMessage = customMessage)
+            // 자동알람 설정에 맞춰서 발화 (강요스피커/이어폰 등)
+            speakBusAlert(forceSpeaker = autoAlarmForceSpeaker, forceEarphone = autoAlarmForceEarphone, customMessage = customMessage)
 
             // 사용자 피드백 반영: 자동 알람은 사용자가 중지할 때까지 계속되어야 하므로
             // 서비스 종료(stopSelf) 코드를 제거하고, 반복 발화가 유지되도록 함.

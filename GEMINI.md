@@ -941,3 +941,18 @@ val builtNotification = liveBuilder.build()
 - [실시간 업데이트 알림 만들기 | Android Developers](https://developer.android.com/develop/ui/views/notifications/progress-centric)
 
 ---
+
+## 2026-02-20: 출퇴근 알람 TTS 및 진동 로직 개선
+
+### 목표
+자동알람의 출근(스피커 강제)/퇴근(이어폰 전용) 구분에 따라 TTS 발화 및 진동을 정확하게 분기 처리.
+
+### 수정된 파일
+1. `android/app/src/main/kotlin/com/example/daegu_bus_app/services/BusAlertService.kt`
+2. `android/app/src/main/kotlin/com/example/daegu_bus_app/services/BusAlertTtsController.kt`
+3. `android/app/src/main/kotlin/com/example/daegu_bus_app/services/TTSService.kt`
+
+### 수정 내용
+- 퇴근 알람(isCommuteAlarm == false)일 때 이어폰이 연결되지 않은 경우, TTS 발화를 건너뛰고 500ms(0.5초) 동안 진동 발생.
+- 기존 TTS 자동알람에서 무조건 스피커가 강제되던 로직을 지우고, `autoAlarmForceSpeaker` 및 `autoAlarmForceEarphone` 인자를 추가하여 퇴근 알람 시 `STREAM_MUSIC`(이어폰 스트림)을 우선 사용하도록 교정.
+- `BusAlertTtsController`를 거치는 `startTtsServiceSpeak`에서 `isAutoAlarm` 플래그를 정상적으로 `TTSService`에 전달하도록 인텐트 옵션 누락 수정.

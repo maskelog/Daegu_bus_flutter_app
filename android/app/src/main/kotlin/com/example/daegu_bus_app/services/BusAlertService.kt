@@ -1704,35 +1704,58 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 trackingInfo.lastTtsAnnouncedStation != busInfo.currentStation
             val shouldNotifyTts = minutesChanged || stationChanged
             if (shouldNotifyTts) {
-                // 자동알람은 이어폰 체크 우회 (일반 알람처럼 스피커로 발화)
                 val forceSpeaker = trackingInfo.isCommuteAlarm
-                try {
-                    ttsController.startTtsServiceSpeak(
-                        busNo = trackingInfo.busNo,
-                        stationName = trackingInfo.stationName,
-                        routeId = trackingInfo.routeId,
-                        stationId = trackingInfo.stationId,
-                        remainingMinutes = remainingMinutes,
-                        forceSpeaker = forceSpeaker,
-                        currentStation = busInfo.currentStation
-                    )
-
+                
+                // 퇴근 알람 (이어폰 시 TTS, 미연결 시 진동) 처리를 위한 로직 추가
+                val isReturnAlarm = trackingInfo.isAutoAlarm && !trackingInfo.isCommuteAlarm
+                
+                if (isReturnAlarm && !ttsController.isHeadsetConnected()) {
+                    Log.d(TAG, "📳 퇴근 알람: 이어폰 미연결 상태이므로 TTS 건너뛰고 진동 발생")
+                    try {
+                        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            vibrator.vibrate(android.os.VibrationEffect.createOneShot(500, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                        } else {
+                            @Suppress("DEPRECATION")
+                            vibrator.vibrate(500)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "진동 발생 오류: ${e.message}")
+                    }
+                    
                     trackingInfo.lastNotifiedMinutes = remainingMinutes
                     trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
+                } else {
+                    try {
+                        // 자동알람은 이어폰 체크 우회 (단, 퇴근알람이면서 이어폰 연결 유무에 따른 분기는 위에서 처리됨)
+                        ttsController.startTtsServiceSpeak(
+                            busNo = trackingInfo.busNo,
+                            stationName = trackingInfo.stationName,
+                            routeId = trackingInfo.routeId,
+                            stationId = trackingInfo.stationId,
+                            remainingMinutes = remainingMinutes,
+                            forceSpeaker = forceSpeaker,
+                            currentStation = busInfo.currentStation,
+                            isAutoAlarm = trackingInfo.isAutoAlarm
+                        )
 
-                    Log.d(
-                        TAG,
-                        "📢 TTS 발화: ${trackingInfo.busNo}번 버스, ${remainingMinutes}분 후 도착, 현재 위치: ${busInfo.currentStation} (시간변경=$minutesChanged, 위치변경=$stationChanged, forceSpeaker=$forceSpeaker)"
-                    )
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ TTS 발화 오류: ${e.message}", e)
+                        trackingInfo.lastNotifiedMinutes = remainingMinutes
+                        trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
 
-                    val message =
-                        "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
-                    ttsController.speakTts(message, forceSpeaker = forceSpeaker)
+                        Log.d(
+                            TAG,
+                            "📢 TTS 발화: ${trackingInfo.busNo}번 버스, ${remainingMinutes}분 후 도착, 현재 위치: ${busInfo.currentStation} (시간변경=$minutesChanged, 위치변경=$stationChanged, forceSpeaker=$forceSpeaker)"
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ TTS 발화 오류: ${e.message}", e)
 
-                    trackingInfo.lastNotifiedMinutes = remainingMinutes
-                    trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
+                        val message =
+                            "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
+                        ttsController.speakTts(message, forceSpeaker = forceSpeaker)
+
+                        trackingInfo.lastNotifiedMinutes = remainingMinutes
+                        trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
+                    }
                 }
             }
 
