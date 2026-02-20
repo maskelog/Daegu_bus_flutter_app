@@ -21,7 +21,22 @@
       "Bash(git push)",
       "Bash(gh repo view:*)",
       "Bash(dir:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(dart analyze:*)",
+      "Bash(python -c:*)",
+      "Bash(where /r \"%LOCALAPPDATA%\\\\pub\\\\cache\" \"radio_group.dart\")",
+      "Bash(where /r \"C:\\\\flutter\" \"radio_group.dart\")",
+      "Bash(flutter pub deps:*)",
+      "Bash(where:*)",
+      "Bash(where /r \"%LOCALAPPDATA%\\\\Pub\\\\Cache\" \"radio.dart\")",
+      "Bash(findstr:*)",
+      "Bash(where /r \"C:\\\\Users\\\\sh953\" \"radio.dart\")",
+      "Bash(flutter doctor:*)",
+      "Bash(find:*)",
+      "Bash(codex:*)",
+      "Bash(git checkout:*)",
+      "Bash(pkill:*)",
+      "Bash(flutter clean:*)"
     ],
     "deny": [],
     "ask": []
