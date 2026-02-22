@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:logging/logging.dart';
 import 'package:provider/provider.dart';
 
@@ -18,8 +19,54 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+const String _dartDefineServiceKey = String.fromEnvironment(
+  'SERVICE_KEY',
+  defaultValue: '',
+);
+const String _dartDefineKakaoJsApiKey = String.fromEnvironment(
+  'KAKAO_JS_API_KEY',
+  defaultValue: '',
+);
+const String _dartDefineAdmobAppId = String.fromEnvironment(
+  'ADMOB_APP_ID',
+  defaultValue: '',
+);
+
 // 전역 AlarmService 인스턴스 (노티피케이션 취소 처리용)
 AlarmService? _globalAlarmService;
+
+Future<void> _loadRuntimeConfig() async {
+  final mergedEnv = <String, String>{
+    if (_dartDefineServiceKey.isNotEmpty) 'SERVICE_KEY': _dartDefineServiceKey,
+    if (_dartDefineKakaoJsApiKey.isNotEmpty)
+      'KAKAO_JS_API_KEY': _dartDefineKakaoJsApiKey,
+    if (_dartDefineAdmobAppId.isNotEmpty) 'ADMOB_APP_ID': _dartDefineAdmobAppId,
+  };
+
+  try {
+    await dotenv.load(
+      fileName: '.env',
+      mergeWith: mergedEnv,
+      isOptional: true,
+    );
+  } catch (_) {
+    dotenv.testLoad(mergeWith: mergedEnv);
+  }
+
+  if (kReleaseMode) {
+    if (dotenv.env['SERVICE_KEY'] == null || dotenv.env['SERVICE_KEY']!.isEmpty) {
+      debugPrint('❌ [CONFIG] SERVICE_KEY가 비어 있습니다. --dart-define로 주입 필요');
+    }
+    if (dotenv.env['KAKAO_JS_API_KEY'] == null ||
+        dotenv.env['KAKAO_JS_API_KEY']!.isEmpty) {
+      debugPrint('❌ [CONFIG] KAKAO_JS_API_KEY가 비어 있습니다. --dart-define로 주입 필요');
+    }
+    if (dotenv.env['ADMOB_APP_ID'] == null ||
+        dotenv.env['ADMOB_APP_ID']!.isEmpty) {
+      debugPrint('❌ [CONFIG] ADMOB_APP_ID가 비어 있습니다. --dart-define로 주입 필요');
+    }
+  }
+}
 
 /// Material 3 색상 체계 정의
 class AppColorScheme {
@@ -536,8 +583,10 @@ void _setupMethodChannelHandlers() {
 /// 애플리케이션 시작점
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await MobileAds.instance.initialize();
-  await dotenv.load(fileName: ".env");
+  await _loadRuntimeConfig();
+  if (dotenv.env['ADMOB_APP_ID']?.isNotEmpty == true) {
+    await MobileAds.instance.initialize();
+  }
 
   // Android에서 온 알람 취소 이벤트를 처리하기 위한 MethodChannel 핸들러 설정
   _setupMethodChannelHandlers();
@@ -708,8 +757,8 @@ class _InitialScreen extends StatefulWidget {
 }
 
 class _InitialScreenState extends State<_InitialScreen> {
-  Widget? _initialScreen;
-  bool _isChecking = true;
+  Widget _initialScreen = const StartupScreen();
+  bool _isChecking = false;
 
   @override
   void initState() {
@@ -718,43 +767,57 @@ class _InitialScreenState extends State<_InitialScreen> {
   }
 
   Future<void> _checkPermissions() async {
-    // 이전에 권한이 허용되었는지 확인
-    final prefs = await SharedPreferences.getInstance();
-    final wasGranted = prefs.getBool('permissions_granted_once') ?? false;
-    
-    if (wasGranted) {
-      // 이전에 권한이 허용되었으면 현재 권한 상태 확인
-      final hasPermissions = await MyApp._hasCorePermissions();
-      
-      if (hasPermissions && mounted) {
-        // 권한이 이미 허용되어 있으면 바로 HomeScreen으로
-        setState(() {
-          _initialScreen = const HomeScreen();
-          _isChecking = false;
-        });
-        return;
+    try {
+      setState(() {
+        _isChecking = true;
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      final wasGranted = prefs.getBool('permissions_granted_once') ?? false;
+
+      if (wasGranted) {
+        final hasPermissions = await MyApp._hasCorePermissions().timeout(
+          const Duration(seconds: 8),
+          onTimeout: () => false,
+        );
+
+        if (hasPermissions && mounted) {
+          setState(() {
+            _initialScreen = const HomeScreen();
+          });
+          return;
+        }
       }
-    }
-    
-    // 권한이 없거나 이전에 허용되지 않았으면 StartupScreen 표시
-    if (mounted) {
+
       setState(() {
         _initialScreen = const StartupScreen();
-        _isChecking = false;
       });
+    } catch (e) {
+      // 예외 발생 시에도 강제로 앱이 멈추지 않도록 임시적으로 권한 화면 표시
+      if (mounted) {
+        _initialScreen = const StartupScreen();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isChecking = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 권한 확인 중이면 최소한의 로딩 화면 (거의 보이지 않음)
-    if (_isChecking || _initialScreen == null) {
+    // 권한 확인 중이면 최소한의 로딩 화면
+    if (_isChecking) {
       return const Scaffold(
-        body: SizedBox.shrink(), // 빈 화면 (로딩 스피너 없음)
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
       );
     }
-    
-    return _initialScreen!;
+
+    return _initialScreen;
   }
 }
 

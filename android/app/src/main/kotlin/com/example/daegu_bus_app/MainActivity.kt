@@ -93,6 +93,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val TTS_CHANNEL = "com.example.daegu_bus_app/tts"
     private val STATION_TRACKING_CHANNEL = "com.example.daegu_bus_app/station_tracking"
     private val BUS_TRACKING_CHANNEL = "com.example.daegu_bus_app/bus_tracking"
+    private val PERMISSION_CHANNEL = "com.example.daegu_bus_app/permission"
     private val TAG = "MainActivity"
     private val ONGOING_NOTIFICATION_ID = 10000
     private val ALARM_NOTIFICATION_CHANNEL_ID = "bus_alarm_channel"
@@ -107,6 +108,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
     // TTS 채널
     private var _ttsMethodChannel: MethodChannel? = null
+    private var _permissionMethodChannel: MethodChannel? = null
 
     // 서비스 바인딩을 위한 커넥션 객체
     private val serviceConnection = object : ServiceConnection {
@@ -148,6 +150,55 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
             // TTS_CHANNEL 설정
             _ttsMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TTS_CHANNEL)
+
+            // 배터리 최적화 예외 요청 채널
+            _permissionMethodChannel = MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger,
+                PERMISSION_CHANNEL
+            )
+
+            _permissionMethodChannel?.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isIgnoringBatteryOptimizations" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                            val isIgnored = pm.isIgnoringBatteryOptimizations(packageName)
+                            result.success(isIgnored)
+                        } else {
+                            result.success(true)
+                        }
+                    }
+                    "requestIgnoreBatteryOptimizations" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            try {
+                                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                                val packageName = packageName
+                                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = Uri.parse("package:$packageName")
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    val resolveInfo = intent.resolveActivity(packageManager)
+                                    if (resolveInfo == null) {
+                                        result.error("BATTERY_OPTIMIZATION_INTENT_NOT_FOUND", "요청 화면을 열 수 없습니다.", null)
+                                        return@setMethodCallHandler
+                                    }
+                                    startActivity(intent)
+                                    result.success(true)
+                                } else {
+                                    result.success(true)
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "requestIgnoreBatteryOptimizations 실패: ${e.message}", e)
+                                result.error("REQUEST_BATTERY_OPTIMIZATION_ERROR", e.message, null)
+                            }
+                        } else {
+                            result.success(false)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
             Log.d("MainActivity", "✅ MethodChannel 생성 완료 (BUS_API, TTS)")
         } catch (e: Exception) {

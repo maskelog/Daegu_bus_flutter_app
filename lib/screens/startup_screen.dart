@@ -20,6 +20,7 @@ class _StartupScreenState extends State<StartupScreen> {
   String? _errorMessage;
   bool _shouldShowScreen = true; // 화면 표시 여부
   static const String _permissionsGrantedKey = 'permissions_granted_once';
+  bool _autoRequested = false;
 
   @override
   void initState() {
@@ -28,54 +29,52 @@ class _StartupScreenState extends State<StartupScreen> {
   }
 
   Future<void> _checkAndProceed() async {
-    // 먼저 현재 권한 상태를 즉시 확인
-    final granted = await _hasCorePermissions();
-    
-    // 권한이 이미 모두 허용되어 있으면 즉시 홈으로 이동 (화면 렌더링 없이)
+    setState(() {
+      _isLoadingPermissions = true;
+      _errorMessage = null;
+    });
+
+    bool granted;
+    try {
+      granted = await _hasCorePermissions();
+    } catch (e) {
+      granted = false;
+      if (mounted) {
+        setState(() {
+          _errorMessage = '권한 상태 확인 실패로 기본값(미허용) 모드로 진입합니다.';
+        });
+      }
+    }
+
+    // 권한이 이미 모두 허용되어 있으면 바로 홈으로 이동
     if (granted && mounted) {
-      // 권한이 허용되었음을 저장
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_permissionsGrantedKey, true);
-      
-      // 화면을 렌더링하지 않고 바로 홈으로 이동
-      setState(() {
-        _shouldShowScreen = false;
-      });
-      
-      // 다음 프레임에서 홈으로 이동 (화면이 렌더링되기 전에)
+      if (mounted) {
+        setState(() {
+          _shouldShowScreen = false;
+        });
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _goHome();
-        }
+        if (mounted) _goHome();
       });
       return;
     }
 
-    // 권한이 없거나 일부만 허용된 경우에만 UI 표시
-    if (mounted) {
-      setState(() {
-        _isLoadingPermissions = true;
-      });
-    }
-
-    // 약간의 지연 후 권한 상태를 다시 확인 (사용자가 설정에서 권한을 변경했을 수 있음)
-    await Future.delayed(const Duration(milliseconds: 100));
-    final grantedAfterDelay = await _hasCorePermissions();
-
-    // 권한 확인 완료 후 _isLoadingPermissions를 false로 설정
     if (mounted) {
       setState(() {
         _isLoadingPermissions = false;
       });
     }
 
-    // 권한이 모두 허용되어 있으면 바로 홈으로 이동
-    if (grantedAfterDelay && mounted) {
-      // 권한이 허용되었음을 저장
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_permissionsGrantedKey, true);
-      // 즉시 홈으로 이동 (지연 없이)
-      _goHome();
+    // 권한이 없으면 첫 진입에서 즉시 팝업 노출
+    if (!_autoRequested && mounted) {
+      _autoRequested = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _requestPermissions();
+        }
+      });
     }
   }
 
