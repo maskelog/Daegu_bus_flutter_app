@@ -577,17 +577,6 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
                 initialDate: DateTime.now(),
                 firstDate: DateTime.now(),
                 lastDate: DateTime.now().add(const Duration(days: 365)),
-                builder: (context, child) {
-                  return Theme(
-                    data: theme.copyWith(
-                      colorScheme: colorScheme.copyWith(
-                        primary: colorScheme.primary,
-                        onSurface: colorScheme.onSurface,
-                      ),
-                    ),
-                    child: child!,
-                  );
-                },
               );
 
               if (selectedDate != null) {

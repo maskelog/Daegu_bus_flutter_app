@@ -347,6 +347,12 @@ class AppTheme {
     colorScheme: AppColorScheme.darkColorScheme,
     scaffoldBackgroundColor: AppColorScheme.backgroundDark,
     
+    // 이 부분이 핵심: lightTheme의 검은색 텍스트를 다크모드용 흰색/회색(onSurfaceDark)으로 덮어씌움
+    textTheme: lightTheme.textTheme.apply(
+      bodyColor: AppColorScheme.onSurfaceDark,
+      displayColor: AppColorScheme.onSurfaceDark,
+    ),
+    
     cardTheme: lightTheme.cardTheme.copyWith(
       color: AppColorScheme.surfaceVariantDark,
       elevation: 2, // Slightly more elevation in dark mode for better depth perception
