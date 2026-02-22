@@ -16,6 +16,7 @@ import 'services/cache_cleanup_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 // 전역 AlarmService 인스턴스 (노티피케이션 취소 처리용)
 AlarmService? _globalAlarmService;
@@ -535,6 +536,7 @@ void _setupMethodChannelHandlers() {
 /// 애플리케이션 시작점
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await MobileAds.instance.initialize();
   await dotenv.load(fileName: ".env");
 
   // Android에서 온 알람 취소 이벤트를 처리하기 위한 MethodChannel 핸들러 설정

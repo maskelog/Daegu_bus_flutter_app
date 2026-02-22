@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -49,6 +50,11 @@ class _HomeScreenState extends State<HomeScreen>
   List<FavoriteBus> _favoriteBuses = [];
   bool _mapPermissionGranted = false;
   bool _isCheckingMapPermission = true;
+  BannerAd? _bannerAd;
+  bool _isBannerAdLoaded = false;
+
+  // 테스트 배너 ID (실서비스 전 실제 AdMob ID로 교체 필요)
+  static const String _bannerAdUnitId = 'ca-app-pub-3940256099942544/9214589741';
 
   @override
   void initState() {
@@ -59,6 +65,24 @@ class _HomeScreenState extends State<HomeScreen>
     alarmService.addListener(_onAlarmChanged);
     _initializeData();
     _checkMapPermission();
+    _loadBannerAd();
+  }
+
+  void _loadBannerAd() {
+    _bannerAd = BannerAd(
+      adUnitId: _bannerAdUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (_) {
+          if (mounted) setState(() => _isBannerAdLoaded = true);
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          _bannerAd = null;
+        },
+      ),
+    )..load();
   }
 
   @override
@@ -68,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen>
         .removeListener(_onAlarmChanged);
     _searchController.dispose();
     _refreshTimer?.cancel();
-
+    _bannerAd?.dispose();
     super.dispose();
   }
 
@@ -435,7 +459,7 @@ class _HomeScreenState extends State<HomeScreen>
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: 24,
+                    bottom: 74,
                     child: Center(
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -507,6 +531,12 @@ class _HomeScreenState extends State<HomeScreen>
                 ],
               ),
             ),
+            if (_isBannerAdLoaded && _bannerAd != null)
+              SizedBox(
+                width: _bannerAd!.size.width.toDouble(),
+                height: _bannerAd!.size.height.toDouble(),
+                child: AdWidget(ad: _bannerAd!),
+              ),
           ],
         ),
       ),
