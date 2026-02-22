@@ -13,6 +13,35 @@ import '../models/route_station.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
 import 'map_widgets.dart';
+import '../utils/debouncer.dart';
+
+const String _kakaoJsApiKeyFromDefine = String.fromEnvironment(
+  'KAKAO_JS_API_KEY',
+  defaultValue: '',
+);
+const String _kakaoNativeAppKeyFromDefine = String.fromEnvironment(
+  'KAKAO_NATIVE_APP_KEY',
+  defaultValue: '',
+);
+
+bool _looksLikeKakaoJsApiKey(String value) {
+  final key = value.trim();
+  if (key.isEmpty) return false;
+  if (key.toLowerCase().contains('your_')) return false;
+  if (key.length < 20) return false;
+  return true;
+}
+
+class _TimedCacheEntry<T> {
+  final T value;
+  final DateTime timestamp;
+
+  _TimedCacheEntry(this.value, this.timestamp);
+
+  bool isExpired(Duration ttl) {
+    return DateTime.now().difference(timestamp) > ttl;
+  }
+}
 
 class MapScreen extends StatefulWidget {
   final String? routeId;
@@ -31,11 +60,25 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
+  static const Duration _nearbyCacheTtl = Duration(seconds: 90);
+  static const Duration _stationInfoCacheTtl = Duration(seconds: 45);
+  static const Duration _stationInfoRefreshGap = Duration(seconds: 8);
+
   late WebViewController _webViewController;
   Position? _currentPosition;
   List<BusStop> _nearbyStations = [];
   List<RouteStation> _routeStations = [];
   Timer? _busPositionTimer;
+  Timer? _searchThrottleTimer;
+  final Debouncer _mapSearchDebouncer = Debouncer(delay: const Duration(milliseconds: 350));
+  final Map<String, Future<List<BusStop>>> _nearbyInFlight = {};
+  final Map<String, _TimedCacheEntry<List<BusStop>>> _nearbyCache = {};
+  final Map<String, Future<List<BusArrival>>> _stationInfoInFlight = {};
+  final Map<String, _TimedCacheEntry<List<BusArrival>>> _stationInfoCache = {};
+  final Map<String, String?> _stationIdCache = {};
+  final Map<String, DateTime> _stationInfoLastRequestedAt = {};
+  int _nearbyRequestSequence = 0;
+  int _stationInfoRequestSequence = 0;
   bool _isLoading = true;
   bool _mapReady = false;
   String? _errorMessage;
@@ -93,14 +136,30 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _loadHtmlTemplate() async {
     try {
+      if (!dotenv.isInitialized || _resolveKakaoApiKey() == null) {
+        await _initializeKakaoRuntimeConfig();
+      }
+
       String htmlTemplate =
           await rootBundle.loadString('assets/kakao_map.html');
 
-      // 환경변수에서 카카오 API 키 가져오기
-      final kakaoApiKey = dotenv.env['KAKAO_JS_API_KEY'];
+      // 환경변수(.env) 또는 --dart-define에서 카카오 API 키 가져오기
+      String? kakaoApiKey = _resolveKakaoApiKey();
 
       if (kakaoApiKey == null || kakaoApiKey.isEmpty) {
-        throw Exception('KAKAO_JS_API_KEY가 .env 파일에 설정되지 않았습니다.');
+        debugPrint(
+          '⚠️ 최초 키 조회 실패. 런타임 환경 재초기화 후 재시도합니다.',
+        );
+        await _initializeKakaoRuntimeConfig(forceReload: true);
+        kakaoApiKey = _resolveKakaoApiKey();
+      }
+
+      if (kakaoApiKey == null || kakaoApiKey.isEmpty) {
+        throw Exception('KAKAO_JS_API_KEY가 설정되지 않았습니다.');
+      }
+
+      if (!_looksLikeKakaoJsApiKey(kakaoApiKey)) {
+        throw Exception('KAKAO_JS_API_KEY 형식이 유효하지 않습니다.');
       }
 
       // 카카오 API 키를 실제 키로 교체
@@ -111,6 +170,66 @@ class _MapScreenState extends State<MapScreen> {
       debugPrint('HTML 템플릿 로드 오류: $e');
       throw Exception('HTML 템플릿을 로드할 수 없습니다: $e');
     }
+  }
+
+  String? _resolveKakaoApiKey() {
+    final fromDotEnv = dotenv.env['KAKAO_JS_API_KEY']?.trim();
+    if (fromDotEnv != null && fromDotEnv.isNotEmpty) {
+      return _looksLikeKakaoJsApiKey(fromDotEnv) ? fromDotEnv : null;
+    }
+
+    final fromDartDefine = _kakaoJsApiKeyFromDefine.trim();
+    if (_looksLikeKakaoJsApiKey(fromDartDefine)) {
+      return fromDartDefine;
+    }
+
+    final fromNativeDotEnv = dotenv.env['KAKAO_NATIVE_APP_KEY']?.trim();
+    if (_looksLikeKakaoJsApiKey(fromNativeDotEnv ?? '')) {
+      debugPrint(
+        '⚠️ KAKAO_JS_API_KEY가 없어 KAKAO_NATIVE_APP_KEY로 폴백합니다. '
+        'JS 용 키가 있는 경우 KAKAO_JS_API_KEY로 교체하세요.',
+      );
+      return fromNativeDotEnv;
+    }
+
+    final fromNativeDefine = _kakaoNativeAppKeyFromDefine.trim();
+    if (_looksLikeKakaoJsApiKey(fromNativeDefine)) {
+      debugPrint(
+        '⚠️ KAKAO_JS_API_KEY가 없어 KAKAO_NATIVE_APP_KEY(--dart-define)로 폴백합니다.',
+      );
+      return fromNativeDefine;
+    }
+
+    return null;
+  }
+
+  Future<void> _initializeKakaoRuntimeConfig({bool forceReload = false}) async {
+    if (!forceReload && dotenv.isInitialized) {
+      final existing = _resolveKakaoApiKey();
+      if (existing != null && existing.isNotEmpty) {
+        return;
+      }
+    }
+
+    final mergedEnv = <String, String>{
+      if (_kakaoJsApiKeyFromDefine.isNotEmpty)
+        'KAKAO_JS_API_KEY': _kakaoJsApiKeyFromDefine.trim(),
+      if (_kakaoNativeAppKeyFromDefine.isNotEmpty)
+        'KAKAO_NATIVE_APP_KEY': _kakaoNativeAppKeyFromDefine.trim(),
+    };
+
+    try {
+      await dotenv.load(fileName: '.env', mergeWith: mergedEnv, isOptional: true);
+      debugPrint('✅ 카카오맵 환경설정 로드 완료');
+    } catch (_) {
+      dotenv.testLoad(mergeWith: mergedEnv);
+      debugPrint('⚠️ 카카오맵 .env 로드 실패, dart-define/기본값으로 폴백');
+    }
+
+    debugPrint(
+      '🐛 KAKAO_JS_API_KEY 상태: '
+      '${dotenv.isInitialized && dotenv.env["KAKAO_JS_API_KEY"]?.isNotEmpty == true ? "있음" : "없음"}',
+    );
   }
 
   Future<Position> _getCurrentPosition() async {
@@ -140,37 +259,14 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    try {
-      debugPrint(
-          '주변 정류장 검색 시작: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}');
-
-      // 주변 정류장 검색 (반경 2km로 증가)
-      final stations = await ApiService.findNearbyStations(
-        _currentPosition!.latitude,
-        _currentPosition!.longitude,
-        radiusMeters: 2000.0,
-      );
-
-      debugPrint('주변 정류장 검색 완료: ${stations.length}개 발견');
-
-      for (final station in stations) {
-        debugPrint(
-            '정류장: ${station.name} (${station.latitude}, ${station.longitude})');
-      }
-
-      setState(() {
-        _nearbyStations = stations;
-      });
-
-      debugPrint('주변 정류장 상태 업데이트 완료');
-
-      // 로컬 DB에서 정류장을 찾지 못한 경우
-      if (stations.isEmpty) {
-        debugPrint('로컬 DB에서 정류장을 찾지 못했습니다.');
-      }
-    } catch (e) {
-      debugPrint('주변 정류장 로드 오류: $e');
-    }
+    await _searchNearbyStationsFromCoords(
+      _currentPosition!.latitude,
+      _currentPosition!.longitude,
+      isAuto: true,
+      allowFallback: false,
+      showMessage: false,
+      initialRadius: 2000.0,
+    );
   }
 
   // 카카오맵 API 검색 기능 제거됨
@@ -264,26 +360,12 @@ class _MapScreenState extends State<MapScreen> {
     // 지도 초기화
     _initializeKakaoMap();
 
-    // 잠시 후 마커 추가 (지도 초기화 완료 대기)
-    Future.delayed(const Duration(milliseconds: 1000), () {
+    _searchThrottleTimer?.cancel();
+    _searchThrottleTimer = Timer(const Duration(milliseconds: 1000), () {
       if (!mounted) return;
       debugPrint('지연 후 마커 추가 시작');
       _addMarkers();
-
-      // 주변 정류장이 없으면 자동으로 검색
-      if (_nearbyStations.isEmpty) {
-        debugPrint('주변 정류장이 없어서 자동 검색을 시작합니다');
-        _searchNearbyStations();
-      }
-    });
-
-    // 3초 후에도 주변 정류장이 없으면 추가 검색
-    Future.delayed(const Duration(milliseconds: 3000), () {
-      if (!mounted) return;
-      if (_nearbyStations.isEmpty) {
-        debugPrint('3초 후에도 주변 정류장이 없어서 추가 검색을 시도합니다');
-        _searchNearbyStations();
-      }
+      _scheduleNearbySearch(visibleOnly: false, isAuto: true);
     });
 
     // 노선 ID가 있으면 실시간 버스 위치 추적 시작
@@ -299,23 +381,24 @@ class _MapScreenState extends State<MapScreen> {
     final lng = _currentPosition?.longitude ?? 128.6014;
 
     _webViewController.runJavaScript('initMap($lat, $lng, 3);');
+  }
 
-    // 지도 초기화 후 자동으로 주변 정류장 검색 시작 (더 빠르게)
-    Future.delayed(const Duration(milliseconds: 1000), () {
-      if (!mounted) return;
-      if (_nearbyStations.isEmpty) {
-        debugPrint('지도 초기화 후 자동 주변 정류장 검색 시작');
-        _searchNearbyStations();
-      }
-    });
+  void _scheduleNearbySearch({
+    bool visibleOnly = false,
+    bool isAuto = true,
+  }) {
+    final currentPosition = _currentPosition;
+    if (currentPosition == null) return;
 
-    // 추가로 3초 후에도 검색 (지도 완전 로드 후)
-    Future.delayed(const Duration(milliseconds: 3000), () {
-      if (!mounted) return;
-      if (_nearbyStations.isEmpty) {
-        debugPrint('지도 완전 로드 후 추가 주변 정류장 검색');
-        _searchNearbyStations();
-      }
+    _mapSearchDebouncer.call(() {
+      _searchNearbyStationsFromCoords(
+        currentPosition.latitude,
+        currentPosition.longitude,
+        isAuto: isAuto,
+        allowFallback: !visibleOnly,
+        showMessage: !visibleOnly && !isAuto,
+        initialRadius: 500.0,
+      );
     });
   }
 
@@ -349,7 +432,7 @@ class _MapScreenState extends State<MapScreen> {
 
         debugPrint('노선 정류장 마커 추가: ${station.stationName} ($lat, $lng)');
         _webViewController.runJavaScript(
-            'addStationMarker($lat, $lng, "${station.stationName}", "route", ${station.sequenceNo});');
+            'addStationMarker($lat, $lng, ${_toJsString(station.stationName)}, ${_toJsString("route")}, ${station.sequenceNo});');
       }
     }
 
@@ -380,7 +463,7 @@ class _MapScreenState extends State<MapScreen> {
 
           debugPrint('주변 정류장 마커 추가: ${station.name} ($lat, $lng)');
           _webViewController.runJavaScript(
-              'addStationMarker($lat, $lng, "${station.name}", "nearby", 0);');
+              'addStationMarker($lat, $lng, ${_toJsString(station.name)}, ${_toJsString("nearby")}, 0);');
           addedCoordinates.add(coordKey);
         }
       }
@@ -388,6 +471,114 @@ class _MapScreenState extends State<MapScreen> {
 
     debugPrint(
         '마커 추가 완료 - 총 ${_routeStations.length + addedCoordinates.length}개');
+  }
+
+  String _toJsString(Object? value) => jsonEncode(value ?? '');
+
+  String _stationCoordinateCacheKey(double latitude, double longitude, double radiusMeters) {
+    return '${latitude.toStringAsFixed(5)}_${longitude.toStringAsFixed(5)}_${radiusMeters.toInt()}';
+  }
+
+  double? _toCoordinate(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
+  Future<List<BusStop>> _getNearbyStationsFromCache(
+    double latitude,
+    double longitude,
+    double radiusMeters,
+  ) async {
+    final cacheKey = _stationCoordinateCacheKey(latitude, longitude, radiusMeters);
+
+    final cached = _nearbyCache[cacheKey];
+    if (cached != null && !cached.isExpired(_nearbyCacheTtl)) {
+      return cached.value;
+    }
+
+    final existing = _nearbyInFlight[cacheKey];
+    if (existing != null) {
+      return existing;
+    }
+
+    final future = ApiService.findNearbyStations(
+      latitude,
+      longitude,
+      radiusMeters: radiusMeters,
+    ).then((stations) {
+      _nearbyCache[cacheKey] = _TimedCacheEntry(stations, DateTime.now());
+      return stations;
+    }).whenComplete(() {
+      _nearbyInFlight.remove(cacheKey);
+    });
+
+    _nearbyInFlight[cacheKey] = future;
+    return future;
+  }
+
+  Future<List<BusStop>> _getNearbyStationsWithFallback(
+    double latitude,
+    double longitude, {
+    bool allowFallback = false,
+    double initialRadius = 500.0,
+  }) async {
+    final searchRadii = <double>[initialRadius];
+    if (allowFallback) {
+      if (!searchRadii.contains(1000.0)) searchRadii.add(1000.0);
+      if (!searchRadii.contains(2000.0)) searchRadii.add(2000.0);
+    }
+
+    for (final radius in searchRadii) {
+      final stations = await _getNearbyStationsFromCache(
+        latitude,
+        longitude,
+        radius,
+      );
+      if (stations.isNotEmpty) return stations;
+    }
+    return const [];
+  }
+
+  Future<List<BusArrival>> _getStationInfoFromCache(String stationId) async {
+    if (stationId.isEmpty) return [];
+
+    final cache = _stationInfoCache[stationId];
+    if (cache != null && !cache.isExpired(_stationInfoCacheTtl)) {
+      return cache.value;
+    }
+
+    final existing = _stationInfoInFlight[stationId];
+    if (existing != null) return existing;
+
+    final lastRequestedAt = _stationInfoLastRequestedAt[stationId];
+    if (lastRequestedAt != null &&
+        DateTime.now().difference(lastRequestedAt) < _stationInfoRefreshGap) {
+      return cache?.value ?? [];
+    }
+
+    _stationInfoLastRequestedAt[stationId] = DateTime.now();
+
+    final future = ApiService.getStationInfo(stationId).then((arrivals) {
+      _stationInfoCache[stationId] = _TimedCacheEntry(arrivals, DateTime.now());
+      return arrivals;
+    }).whenComplete(() {
+      _stationInfoInFlight.remove(stationId);
+    });
+
+    _stationInfoInFlight[stationId] = future;
+    return future;
+  }
+
+  void _sendStationBusInfoToMap({
+    required String stationName,
+    required String stationType,
+    required String busInfo,
+  }) {
+    if (!_mapReady) return;
+    _webViewController.runJavaScript(
+      'updateStationBusInfo(${_toJsString(stationName)}, ${_toJsString(stationType)}, ${_toJsString(busInfo)});',
+    );
   }
 
   void _handleMapEvent(String message) {
@@ -440,12 +631,19 @@ class _MapScreenState extends State<MapScreen> {
                 duration: const Duration(seconds: 2),
               ),
             );
-          } else {
-            // 근처에 정류장이 없을 때만 API를 통해 검색
-            debugPrint('근처에 정류장이 없어 새로 검색합니다.');
-            _searchNearbyStationsFromCoords(lat, lng);
-          }
-          break;
+        } else {
+          // 근처에 정류장이 없을 때만 API를 통해 검색
+          debugPrint('근처에 정류장이 없어 새로 검색합니다.');
+          _searchNearbyStationsFromCoords(
+            lat,
+            lng,
+            isAuto: false,
+            showMessage: true,
+            allowFallback: true,
+            initialRadius: 500.0,
+          );
+        }
+        break;
         case 'stationClick':
           final stationData = data['data'];
           debugPrint('정류장 클릭 상세 데이터: $stationData');
@@ -468,8 +666,8 @@ class _MapScreenState extends State<MapScreen> {
   void _showStationBusInfo(Map<String, dynamic> stationData) {
     final stationName = stationData['name'] as String;
     final stationType = stationData['type'] as String?;
-    final latitude = stationData['latitude'] as double?;
-    final longitude = stationData['longitude'] as double?;
+    final latitude = _toCoordinate(stationData['latitude']);
+    final longitude = _toCoordinate(stationData['longitude']);
 
     // 정류장 이름으로 BusStop 객체 찾기
     BusStop? selectedStation;
@@ -547,7 +745,14 @@ class _MapScreenState extends State<MapScreen> {
               label: '근처 검색',
               onPressed: () {
                 if (latitude != null && longitude != null) {
-                  _searchNearbyStationsFromCoords(latitude, longitude);
+                  _searchNearbyStationsFromCoords(
+                    latitude,
+                    longitude,
+                    isAuto: false,
+                    showMessage: true,
+                    allowFallback: true,
+                    initialRadius: 500.0,
+                  );
                 }
               },
             ),
@@ -561,7 +766,14 @@ class _MapScreenState extends State<MapScreen> {
               label: '근처 정류장 검색',
               onPressed: () {
                 if (latitude != null && longitude != null) {
-                  _searchNearbyStationsFromCoords(latitude, longitude);
+                  _searchNearbyStationsFromCoords(
+                    latitude,
+                    longitude,
+                    isAuto: false,
+                    showMessage: true,
+                    allowFallback: true,
+                    initialRadius: 500.0,
+                  );
                 }
               },
             ),
@@ -627,113 +839,84 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   // 좌표 기반 근처 정류장 검색
-  Future<void> _searchNearbyStationsFromCoords(double lat, double lng) async {
-    debugPrint('좌표 기반 정류장 검색: $lat, $lng');
+  Future<void> _searchNearbyStationsFromCoords(
+    double lat,
+    double lng, {
+    bool isAuto = true,
+    bool allowFallback = true,
+    bool showMessage = false,
+    double initialRadius = 500.0,
+  }) async {
+    final requestId = ++_nearbyRequestSequence;
+    final normalizedLat = double.tryParse(lat.toStringAsFixed(6)) ?? lat;
+    final normalizedLng = double.tryParse(lng.toStringAsFixed(6)) ?? lng;
+
+    debugPrint(
+      '좌표 기반 정류장 검색 시작: $normalizedLat, $normalizedLng (auto=$isAuto, fallback=$allowFallback, radius=$initialRadius, request=$requestId)',
+    );
 
     try {
-      // 로딩 표시
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              SizedBox(width: 16),
-              Text('근처 정류장을 검색하고 있습니다...'),
-            ],
+      if (!isAuto && showMessage) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 16),
+                Text('근처 정류장을 검색하고 있습니다...'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
           ),
-          duration: Duration(seconds: 2),
-        ),
+        );
+      }
+
+      final stations = await _getNearbyStationsWithFallback(
+        normalizedLat,
+        normalizedLng,
+        initialRadius: initialRadius,
+        allowFallback: allowFallback,
       );
 
-      // 좌표 기반으로 주변 정류장 검색 (반경 500m)
-      final stations = await ApiService.findNearbyStations(
-        lat,
-        lng,
-        radiusMeters: 500.0,
-      );
+      if (!mounted || requestId != _nearbyRequestSequence) return;
 
       if (stations.isNotEmpty) {
         setState(() {
           _nearbyStations = stations;
         });
 
-        // 지도에 마커 업데이트
         if (_mapReady) {
           _addMarkers();
+          _webViewController.runJavaScript(
+            'moveToLocation($normalizedLat, $normalizedLng, 3);',
+          );
         }
 
-        // 지도를 클릭한 위치로 이동
-        if (_mapReady) {
-          _webViewController.runJavaScript('moveToLocation($lat, $lng, 3);');
-        }
-
-        if (mounted) {
+        if (!isAuto && showMessage && mounted) {
+          final message = stations.isNotEmpty
+              ? '근처 ${stations.length}개 정류장을 찾았습니다.'
+              : '근처 정류장을 찾을 수 없습니다.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('근처 ${stations.length}개 정류장을 찾았습니다.'),
-              action: SnackBarAction(
-                label: '확인',
-                onPressed: () {},
-              ),
+              content: Text(message),
               duration: const Duration(seconds: 3),
             ),
           );
         }
-      } else {
-        // 검색 반경을 늘려서 다시 시도
-        debugPrint('500m 반경에서 정류장을 찾지 못했습니다. 1km 반경으로 재검색합니다.');
-
-        final extendedStations = await ApiService.findNearbyStations(
-          lat,
-          lng,
-          radiusMeters: 1000.0,
+      } else if (!isAuto && mounted && showMessage) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('근처 정류장을 찾을 수 없습니다.'),
+            duration: Duration(seconds: 2),
+          ),
         );
-
-        if (extendedStations.isNotEmpty) {
-          setState(() {
-            _nearbyStations = extendedStations;
-          });
-
-          // 지도에 마커 업데이트
-          if (_mapReady) {
-            _addMarkers();
-          }
-
-          // 지도를 클릭한 위치로 이동
-          if (_mapReady) {
-            _webViewController.runJavaScript('moveToLocation($lat, $lng, 3);');
-          }
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content:
-                    Text('1km 반경에서 ${extendedStations.length}개 정류장을 찾았습니다.'),
-                action: SnackBarAction(
-                  label: '확인',
-                  onPressed: () {},
-                ),
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('근처에 정류장을 찾을 수 없습니다.'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-        }
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && !isAuto && showMessage) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('근처 정류장 검색 중 오류가 발생했습니다: $e'),
@@ -756,32 +939,23 @@ class _MapScreenState extends State<MapScreen> {
 
   // 정류장 클릭 시 버스 도착 정보를 HTML로 전달
   Future<void> _updateStationInfoInMap(Map<String, dynamic> stationData) async {
-    try {
-      final stationName = stationData['name'] as String;
-      final stationType = stationData['type'] as String?;
+    final requestId = ++_stationInfoRequestSequence;
+    final stationName = stationData['name']?.toString() ?? '';
+    final stationType = stationData['type']?.toString() ?? 'nearby';
+    final latitude = _toCoordinate(stationData['latitude']);
+    final longitude = _toCoordinate(stationData['longitude']);
 
-      // 정류장 정보 찾기
+    try {
       BusStop? selectedStation;
 
-      if (stationType == 'nearby') {
-        // 주변 정류장에서 찾기
-        selectedStation = _nearbyStations.firstWhere(
-          (station) => station.name == stationName,
-          orElse: () => BusStop(
-            id: 'temp_${stationName.hashCode}',
-            stationId: 'temp_station',
-            name: stationName,
-            latitude: stationData['latitude'],
-            longitude: stationData['longitude'],
-          ),
-        );
-      } else if (stationType == 'route') {
-        // 노선 정류장에서 찾기
-        final routeStation = _routeStations
-            .where(
-              (station) => station.stationName == stationName,
-            )
-            .firstOrNull;
+      if (stationType == 'route') {
+        RouteStation? routeStation;
+        for (final station in _routeStations) {
+          if (station.stationName == stationName) {
+            routeStation = station;
+            break;
+          }
+        }
 
         if (routeStation != null) {
           selectedStation = BusStop(
@@ -791,222 +965,143 @@ class _MapScreenState extends State<MapScreen> {
             latitude: routeStation.latitude,
             longitude: routeStation.longitude,
           );
-        } else {
-          selectedStation = BusStop(
-            id: 'temp_${stationName.hashCode}',
-            stationId: 'temp_station',
-            name: stationName,
-            latitude: stationData['latitude'],
-            longitude: stationData['longitude'],
-          );
         }
-      } else {
-        // 카카오 정류장 처리 - 정류장 이름으로 검색
-        debugPrint('카카오 정류장 처리: $stationName');
-
-        try {
-          // 정류장 이름으로 검색하여 실제 정류장 ID 찾기
-          final searchResults = await ApiService.searchStations(stationName);
-          debugPrint('정류장 검색 결과: ${searchResults.length}개');
-
-          if (searchResults.isNotEmpty) {
-            // 가장 유사한 정류장 선택
-            final bestMatch = searchResults.first;
-            selectedStation = BusStop(
-              id: bestMatch.id,
-              stationId: bestMatch.stationId,
-              name: bestMatch.name,
-              latitude: bestMatch.latitude,
-              longitude: bestMatch.longitude,
-            );
-            debugPrint(
-                '검색된 정류장 사용: ${bestMatch.name} (${bestMatch.stationId})');
-          } else {
-            // 검색 결과가 없으면 더미 정류장 생성
-            final latitude = stationData['latitude'] as double?;
-            final longitude = stationData['longitude'] as double?;
-            selectedStation = BusStop(
-              id: 'kakao_${stationName.hashCode}',
-              stationId: 'temp_station',
-              name: stationName,
-              latitude: latitude,
-              longitude: longitude,
-            );
-            debugPrint('더미 정류장 생성: $stationName');
+      } else if (stationType == 'nearby') {
+        for (final station in _nearbyStations) {
+          if (station.name == stationName) {
+            selectedStation = station;
+            break;
           }
-        } catch (e) {
-          debugPrint('정류장 검색 오류: $e');
-          final latitude = stationData['latitude'] as double?;
-          final longitude = stationData['longitude'] as double?;
-          selectedStation = BusStop(
-            id: 'kakao_${stationName.hashCode}',
-            stationId: 'temp_station',
-            name: stationName,
-            latitude: latitude,
-            longitude: longitude,
-          );
         }
       }
 
-      // 버스 도착 정보 조회 - 정류장 이름으로 검색 후 실제 ID로 조회
-      debugPrint('정류장 버스 정보 조회 시작: $stationName');
+      selectedStation ??= _findNearestStationByNameOrDistance(
+        stationName: stationName,
+        latitude: latitude,
+        longitude: longitude,
+        preferNearby: stationType != 'route',
+      );
 
-      try {
-        String? actualStationId;
+      var stationId = selectedStation?.getEffectiveStationId() ??
+          _stationIdCache[stationName];
 
-        // 1. 먼저 selectedStation에서 유효한 ID가 있는지 확인
-        final stationId = selectedStation.stationId ?? selectedStation.id;
-        if (stationId.isNotEmpty &&
-            !stationId.startsWith('temp_') &&
-            stationId != 'temp_station') {
-          actualStationId = stationId;
-          debugPrint('기존 정류장 ID 사용: $actualStationId');
-        }
+      if (!_isValidStationId(stationId)) {
+        stationId = null;
+      }
 
-        // 2. 유효한 ID가 없으면 정류장 이름으로 검색
-        if (actualStationId == null) {
-          debugPrint('정류장 이름으로 검색 시작: $stationName');
-          final searchResults = await ApiService.searchStations(stationName);
-          debugPrint('정류장 검색 결과: ${searchResults.length}개');
-
-          if (searchResults.isNotEmpty) {
-            // 정확히 일치하는 정류장 찾기
-            final exactMatch = searchResults.firstWhere(
-              (station) => station.name == stationName,
-              orElse: () => searchResults.first,
-            );
-            actualStationId = exactMatch.getEffectiveStationId();
-            debugPrint('검색된 정류장 ID: $actualStationId (${exactMatch.name})');
-          }
-        }
-
-        if (actualStationId == null || actualStationId.isEmpty) {
-          debugPrint('유효한 정류장 ID를 찾을 수 없음');
-          if (_mapReady) {
-            _webViewController.runJavaScript(
-                'updateStationBusInfo("$stationName", "$stationType", "정류장 정보를 찾을 수 없습니다");');
-          }
-          return;
-        }
-
-        // 3. 실제 정류장 ID로 버스 정보 조회
-        debugPrint('실제 정류장 ID로 버스 정보 조회: $actualStationId');
-        const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
-        final String jsonResult =
-            await platform.invokeMethod('getStationInfo', {
-          'stationId': actualStationId,
-        });
-
-        debugPrint('네이티브 응답 원본: $jsonResult');
-
-        if (jsonResult.isNotEmpty && jsonResult != '[]') {
-          final List<dynamic> decoded = jsonDecode(jsonResult);
-          // final busApiService = BusApiService(); // 사용되지 않음
-
-          // 네이티브 코드에서 반환하는 JSON 구조에 맞게 파싱
-          final List<BusArrival> arrivals = [];
-
-          for (final routeData in decoded) {
-            if (routeData is! Map<String, dynamic>) continue;
-
-            final String routeNo = routeData['routeNo'] ?? '';
-            final List<dynamic>? arrList = routeData['arrList'];
-
-            debugPrint('노선 $routeNo 파싱 중, arrList: $arrList');
-
-            if (arrList == null || arrList.isEmpty) {
-              debugPrint('노선 $routeNo의 arrList가 비어있음');
-              continue;
-            }
-
-            final List<BusInfo> busInfoList = [];
-
-            for (final arrivalData in arrList) {
-              if (arrivalData is! Map<String, dynamic>) continue;
-
-              // final String routeId = arrivalData['routeId'] ?? ''; // 사용되지 않음
-              final String bsNm = arrivalData['bsNm'] ?? '정보 없음';
-              final String arrState = arrivalData['arrState'] ?? '정보 없음';
-              final int bsGap = arrivalData['bsGap'] ?? 0;
-              final String busTCd2 = arrivalData['busTCd2'] ?? 'N';
-              // final String busTCd3 = arrivalData['busTCd3'] ?? 'N'; // 사용되지 않음
-              final String vhcNo2 = arrivalData['vhcNo2'] ?? '';
-
-              // 저상버스 여부 확인 (busTCd2가 "1"이면 저상버스)
-              final bool isLowFloor = busTCd2 == '1';
-
-              // 운행 종료 여부 확인
-              final bool isOutOfService = arrState == '운행종료' ||
-                  arrState == '운행 종료' ||
-                  arrState == '-';
-
-              // 도착 예정 시간 처리
-              String estimatedTime = arrState;
-              if (estimatedTime.contains('출발예정')) {
-                estimatedTime = estimatedTime.replaceAll('출발예정', '').trim();
-                if (estimatedTime.isEmpty) {
-                  estimatedTime = '출발예정';
-                }
+      if (stationId == null) {
+        debugPrint('정류장 ID 직접 매칭 실패, 이름 검색 재시도: $stationName');
+        final searchResults = await ApiService.searchStations(stationName);
+        if (searchResults.isNotEmpty) {
+          BusStop? chosen;
+          if (latitude != null && longitude != null) {
+            for (final station in searchResults) {
+              final stationLat = station.latitude;
+              final stationLng = station.longitude;
+              if (stationLat == null || stationLng == null) {
+                continue;
               }
-
-              final busInfo = BusInfo(
-                busNumber: vhcNo2.isNotEmpty ? vhcNo2 : routeNo,
-                isLowFloor: isLowFloor,
-                currentStation: bsNm,
-                remainingStops: bsGap.toString(),
-                estimatedTime: estimatedTime,
-                isOutOfService: isOutOfService,
-              );
-
-              busInfoList.add(busInfo);
-            }
-
-            if (busInfoList.isNotEmpty) {
-              final arrival = BusArrival(
-                routeId: routeData['routeId'] ?? '',
-                routeNo: routeNo,
-                direction: '',
-                busInfoList: busInfoList,
-              );
-              arrivals.add(arrival);
+              if (_calculateDistance(
+                    latitude,
+                    longitude,
+                    stationLat,
+                    stationLng,
+                  ) <
+                  0.01) {
+                chosen = station;
+                break;
+              }
             }
           }
 
-          debugPrint('정류장 버스 정보 조회 완료: ${arrivals.length}개 버스');
+          chosen ??= searchResults.firstWhere(
+            (station) => station.name == stationName,
+            orElse: () => searchResults.first,
+          );
 
-          // 버스 정보를 HTML로 전달
-          final busInfoText = _formatBusInfoForMap(arrivals);
-          final escapedBusInfo =
-              busInfoText.replaceAll("'", "\\'").replaceAll('\n', '\\n');
-
-          debugPrint('HTML로 전달할 버스 정보: $busInfoText');
-
-          if (_mapReady) {
-            final latitude = selectedStation.latitude;
-            final longitude = selectedStation.longitude;
-
-            if (_mapReady && latitude != null && longitude != null) {
-              _webViewController.runJavaScript(
-                  'updateStationBusInfo("$stationName", "$stationType", \'$escapedBusInfo\', $latitude, $longitude);');
-            }
+          final resolvedStationId = chosen.getEffectiveStationId();
+          if (_isValidStationId(resolvedStationId)) {
+            stationId = resolvedStationId;
+            selectedStation = chosen;
+            _stationIdCache[stationName] = stationId;
           }
-        } else {
-          debugPrint('버스 정보 없음 또는 빈 응답');
-          if (_mapReady) {
-            _webViewController.runJavaScript(
-                'updateStationBusInfo("$stationName", "$stationType", "도착 예정 버스 없음");');
-          }
-        }
-      } catch (platformError) {
-        debugPrint('버스 정보 조회 오류: $platformError');
-        if (_mapReady) {
-          _webViewController.runJavaScript(
-              'updateStationBusInfo("$stationName", "$stationType", "버스 정보 조회 실패: $platformError");');
         }
       }
+
+      if (!_isValidStationId(stationId)) {
+        _sendStationBusInfoToMap(
+          stationName: stationName,
+          stationType: stationType,
+          busInfo: '정류장 정보를 찾을 수 없습니다',
+        );
+        return;
+      }
+
+      final arrivals = await _getStationInfoFromCache(stationId!);
+      if (!mounted || requestId != _stationInfoRequestSequence) return;
+
+      final busInfoText =
+          arrivals.isNotEmpty ? _formatBusInfoForMap(arrivals) : '도착 예정 버스 없음';
+      _sendStationBusInfoToMap(
+        stationName: stationName,
+        stationType: stationType,
+        busInfo: busInfoText,
+      );
     } catch (e) {
       debugPrint('정류장 버스 정보 업데이트 오류: $e');
+      if (mounted && requestId == _stationInfoRequestSequence) {
+        _sendStationBusInfoToMap(
+          stationName: stationName,
+          stationType: stationType,
+          busInfo: '버스 정보 조회 실패: $e',
+        );
+      }
     }
+  }
+
+  BusStop? _findNearestStationByNameOrDistance({
+    required String stationName,
+    double? latitude,
+    double? longitude,
+    bool preferNearby = true,
+  }) {
+    if (stationName.isEmpty) return null;
+
+    if (preferNearby) {
+      for (final station in _nearbyStations) {
+        if (station.name == stationName) {
+          return station;
+        }
+      }
+    }
+
+    if (latitude != null && longitude != null) {
+      final nearest = _findNearestStation(latitude, longitude);
+      if (nearest != null) {
+        return nearest;
+      }
+    }
+
+    for (final station in _routeStations) {
+      if (station.stationName == stationName) {
+        return BusStop(
+          id: station.stationId,
+          stationId: station.stationId,
+          name: station.stationName,
+          latitude: station.latitude,
+          longitude: station.longitude,
+        );
+      }
+    }
+
+    return null;
+  }
+
+  bool _isValidStationId(String? stationId) {
+    if (stationId == null || stationId.isEmpty) return false;
+    return !stationId.startsWith('temp_') &&
+        stationId != 'temp_station' &&
+        !stationId.startsWith('kakao_');
   }
 
   // 버스 도착 정보를 지도용 Grid Layout HTML로 포맷 (노선별 중복 제거)
@@ -1089,75 +1184,16 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    try {
-      // 로딩 표시
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              SizedBox(width: 16),
-              Text('주변 정류장을 검색하고 있습니다...'),
-            ],
-          ),
-          duration: Duration(seconds: 2),
-        ),
-      );
-
-      // 주변 정류장 검색 (반경 2km로 증가)
-      final stations = await ApiService.findNearbyStations(
-        _currentPosition!.latitude,
-        _currentPosition!.longitude,
-        radiusMeters: 2000.0,
-      );
-
-      setState(() {
-        _nearbyStations = stations;
-      });
-
-      // 지도에 마커 업데이트
-      if (_mapReady) {
-        _addMarkers();
-      }
-
-      // 결과 알림
-      if (mounted) {
-        if (stations.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('주변 ${stations.length}개 정류장을 찾았습니다.'),
-              action: SnackBarAction(
-                label: '확인',
-                onPressed: () {},
-              ),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        } else {
-          // 로컬 DB에서 정류장을 찾지 못한 경우
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('근처에 정류장을 찾지 못했습니다.'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('주변 정류장 검색 중 오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
+    await _searchNearbyStationsFromCoords(
+      _currentPosition!.latitude,
+      _currentPosition!.longitude,
+      isAuto: false,
+      allowFallback: false,
+      showMessage: true,
+      initialRadius: 2000.0,
+    );
   }
+
 
   void _startBusPositionTracking() {
     if (widget.routeId == null) return;
@@ -1207,7 +1243,8 @@ class _MapScreenState extends State<MapScreen> {
 
           if (lat != null && lng != null) {
             _webViewController.runJavaScript(
-                'addBusMarker($lat, $lng, "$busNumber", "${widget.routeId}");');
+              'addBusMarker($lat, $lng, ${_toJsString(busNumber)}, ${_toJsString(widget.routeId)});',
+            );
           }
         }
       }
@@ -1217,6 +1254,8 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _busPositionTimer?.cancel();
+    _searchThrottleTimer?.cancel();
+    _mapSearchDebouncer.dispose();
     super.dispose();
   }
 }

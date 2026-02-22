@@ -1,0 +1,19 @@
+storeFile=/absolute/path/to/daegu-bus-app-release.jks
+storePassword=REPLACE_ME
+keyAlias=daegu_bus_app
+keyPassword=REPLACE_ME
+
+# Android Gradle properties or CI 환경변수 대신 key.properties에 넣는 값
+ADMOB_APP_ID=ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYYYYYYYY
+
+# 선택 항목(키 대소문자 혼용 시 fallback 지원):
+# STORE_FILE=...
+# STORE_PASSWORD=...
+# KEY_ALIAS=...
+# KEY_PASSWORD=...
+# storeFile, storePassword, keyAlias, keyPassword
+
+# 사용 예:
+# flutter build appbundle --release \
+#   -PSTORE_FILE=/abs/path/daegu-bus-app-release.jks \
+#   -PSTORE_PASSWORD=...

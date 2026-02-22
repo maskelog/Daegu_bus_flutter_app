@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:flutter/foundation.dart' show kDebugMode, kReleaseMode;
 import 'package:logging/logging.dart';
 import 'package:provider/provider.dart';
 
@@ -32,6 +32,12 @@ const String _dartDefineAdmobAppId = String.fromEnvironment(
   defaultValue: '',
 );
 
+String _safeValue(String? value) {
+  if (value == null || value.isEmpty) return '<EMPTY>';
+  if (value.length <= 8) return '****';
+  return '${value.substring(0, 4)}...${value.substring(value.length - 4)}';
+}
+
 // 전역 AlarmService 인스턴스 (노티피케이션 취소 처리용)
 AlarmService? _globalAlarmService;
 
@@ -44,25 +50,43 @@ Future<void> _loadRuntimeConfig() async {
   };
 
   try {
-    await dotenv.load(
-      fileName: '.env',
-      mergeWith: mergedEnv,
-      isOptional: true,
-    );
+    if (kReleaseMode) {
+      // 운영 빌드는 .env 파일 의존 없이 빌드 시점 주입 값만 사용해 비밀 유출 경로를 차단합니다.
+      dotenv.testLoad(mergeWith: mergedEnv);
+      debugPrint('[SECURITY] Release 모드: runtime .env 로드 비활성화');
+    } else if (kDebugMode) {
+      // 개발 모드는 디버그 확인용으로만 .env를 optional 로딩합니다.
+      await dotenv.load(
+        fileName: '.env',
+        mergeWith: mergedEnv,
+        isOptional: true,
+      );
+    } else {
+      // 그 외 모드(Fallback)
+      dotenv.testLoad(mergeWith: mergedEnv);
+    }
   } catch (_) {
     dotenv.testLoad(mergeWith: mergedEnv);
   }
 
+  final serviceKey = dotenv.env['SERVICE_KEY']?.trim();
+  final kakaoKey = dotenv.env['KAKAO_JS_API_KEY']?.trim();
+  final admobAppId = dotenv.env['ADMOB_APP_ID']?.trim();
+  debugPrint(
+    '[CONFIG] ENV 상태 '
+    '(SERVICE_KEY=${_safeValue(serviceKey)}, '
+    'KAKAO_JS_API_KEY=${_safeValue(kakaoKey)}, '
+    'ADMOB_APP_ID=${_safeValue(admobAppId)})',
+  );
+
   if (kReleaseMode) {
-    if (dotenv.env['SERVICE_KEY'] == null || dotenv.env['SERVICE_KEY']!.isEmpty) {
+    if (serviceKey == null || serviceKey.isEmpty) {
       debugPrint('❌ [CONFIG] SERVICE_KEY가 비어 있습니다. --dart-define로 주입 필요');
     }
-    if (dotenv.env['KAKAO_JS_API_KEY'] == null ||
-        dotenv.env['KAKAO_JS_API_KEY']!.isEmpty) {
+    if (kakaoKey == null || kakaoKey.isEmpty) {
       debugPrint('❌ [CONFIG] KAKAO_JS_API_KEY가 비어 있습니다. --dart-define로 주입 필요');
     }
-    if (dotenv.env['ADMOB_APP_ID'] == null ||
-        dotenv.env['ADMOB_APP_ID']!.isEmpty) {
+    if (admobAppId == null || admobAppId.isEmpty) {
       debugPrint('❌ [CONFIG] ADMOB_APP_ID가 비어 있습니다. --dart-define로 주입 필요');
     }
   }

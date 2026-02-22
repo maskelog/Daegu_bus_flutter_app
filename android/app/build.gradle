@@ -8,6 +8,48 @@ plugins {
 
 def localFastRelease = (project.findProperty("localFastRelease")?.toString() ?: "false").toBoolean()
 
+def keyPropertiesFile = rootProject.file("key.properties")
+def keyProperties = new java.util.Properties()
+if (keyPropertiesFile.exists()) {
+    keyProperties.load(new java.io.FileInputStream(keyPropertiesFile))
+}
+
+def isReleaseTask = gradle.startParameter.taskNames.any { task ->
+    task.toLowerCase().contains("release")
+}
+
+def admobAppId = project.findProperty("ADMOB_APP_ID")?.toString()?.trim()
+        ?: keyProperties["ADMOB_APP_ID"]?.toString()?.trim()
+        ?: keyProperties["admobAppId"]?.toString()?.trim()
+if (!isReleaseTask && (admobAppId == null || admobAppId.trim().isEmpty())) {
+    admobAppId = "ca-app-pub-3940256099942544~3347511713"
+}
+
+def releaseSigningConfig = [
+    storeFile: (project.findProperty("STORE_FILE")
+            ?: keyProperties["storeFile"]
+            ?: keyProperties["STORE_FILE"])?.toString()?.trim(),
+    storePassword: (project.findProperty("STORE_PASSWORD")
+            ?: keyProperties["storePassword"]
+            ?: keyProperties["STORE_PASSWORD"])?.toString()?.trim(),
+    keyAlias: (project.findProperty("KEY_ALIAS")
+            ?: keyProperties["keyAlias"]
+            ?: keyProperties["KEY_ALIAS"])?.toString()?.trim(),
+    keyPassword: (project.findProperty("KEY_PASSWORD")
+            ?: keyProperties["keyPassword"]
+            ?: keyProperties["KEY_PASSWORD"])?.toString()?.trim(),
+]
+if (isReleaseTask && (admobAppId == null || admobAppId.trim().isEmpty())) {
+    throw new GradleException("릴리즈 빌드 requires ADMOB_APP_ID to be set (gradle property or android/key.properties).")
+}
+if (isReleaseTask) {
+    releaseSigningConfig.each { prop, value ->
+        if (value == null || value.trim().isEmpty()) {
+            throw new GradleException("릴리즈 빌드 requires ${prop} (gradle property or android/key.properties).")
+        }
+    }
+}
+
 android {
     namespace = "com.example.daegu_bus_app"
     // Android 16 Live Updates 지원을 위해 SDK 36 필요
@@ -27,7 +69,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.daegu_bus_app"
+        applicationId = "com.daegubus.daegu_bus_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -38,11 +80,23 @@ android {
         // multidex 활성화 (필요한 경우)
         multiDexEnabled true
         buildConfigField "String", "KAKAO_NATIVE_APP_KEY", "\"\""
+        manifestPlaceholders = [ADMOB_APP_ID: admobAppId ?: ""]
+    }
+
+    signingConfigs {
+        release {
+            if (isReleaseTask) {
+                keyAlias releaseSigningConfig.keyAlias
+                keyPassword releaseSigningConfig.keyPassword
+                storeFile file(releaseSigningConfig.storeFile)
+                storePassword releaseSigningConfig.storePassword
+            }
+        }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             // localFastRelease=true 로 빌드 시 로컬 릴리스 속도 우선(코드 축소/난독화 생략)
             minifyEnabled !localFastRelease
             shrinkResources !localFastRelease
@@ -51,7 +105,7 @@ android {
             // R8 동작 방식 완화 설정 추가
             crunchPngs false // PNG 최적화 비활성화
             
-            buildConfigField "boolean", "ENABLE_LOGGING", "true"
+            buildConfigField "boolean", "ENABLE_LOGGING", "false"
             buildConfigField "boolean", "ENABLE_LOGS", "true"
             ndk {
                 abiFilters 'armeabi-v7a', 'arm64-v8a'

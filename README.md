@@ -66,3 +66,8 @@ https://github.com/maskelog/Daegu_bus_api
 ## 📝 개발 기록
 
 자세한 개발 과정과 구현 내용은 [GEMINI.md](GEMINI.md) 파일에서 확인할 수 있습니다.
+
+## 📋 배포 제출 가이드
+
+- Play Store 제출 관련 정리: [PLAY_STORE_COMPLIANCE.md](PLAY_STORE_COMPLIANCE.md)
+- 본 앱은 `ACCESS_BACKGROUND_LOCATION`을 사용하지 않으며, 위치 권한은 앱 사용 중(전경) 조회/지도 기능에만 사용합니다.

@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart' show logMessage, LogLevel;
 import 'package:daegu_bus_app/widgets/home_search_bar.dart';
@@ -52,9 +53,25 @@ class _HomeScreenState extends State<HomeScreen>
   bool _isCheckingMapPermission = true;
   BannerAd? _bannerAd;
   bool _isBannerAdLoaded = false;
+  static const Set<String> _adMobKnownTestIds = {
+    'ca-app-pub-3940256099942544~3347511713',
+    'ca-app-pub-3940256099942544/6300978111',
+    'ca-app-pub-3940256099942544/2934735716',
+    'ca-app-pub-3940256099942544/2247696110',
+  };
 
-  // 테스트 배너 ID (실서비스 전 실제 AdMob ID로 교체 필요)
-  static const String _bannerAdUnitId = 'ca-app-pub-3940256099942544/9214589741';
+  // 실제 배포 전 ADMOB_BANNER_AD_UNIT_ID 값을 --dart-define로 전달하세요.
+  static const String _bannerAdUnitId = String.fromEnvironment(
+    'ADMOB_BANNER_AD_UNIT_ID',
+    defaultValue: '',
+  );
+  static String get _resolvedBannerAdUnitId {
+    final fromDotEnv = dotenv.env['ADMOB_BANNER_AD_UNIT_ID']?.trim();
+    if (fromDotEnv != null && fromDotEnv.isNotEmpty) {
+      return fromDotEnv;
+    }
+    return _bannerAdUnitId;
+  }
 
   @override
   void initState() {
@@ -69,8 +86,19 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _loadBannerAd() {
+    final adUnitId = _resolvedBannerAdUnitId;
+    if (adUnitId.isEmpty) {
+      debugPrint('AdMob 배너 ID가 설정되지 않았습니다.');
+      return;
+    }
+
+    if (_adMobKnownTestIds.contains(adUnitId)) {
+      debugPrint('AdMob 테스트 ID 감지됨: 배포 빌드에서 테스트 ID를 교체하세요.');
+      return;
+    }
+
     _bannerAd = BannerAd(
-      adUnitId: _bannerAdUnitId,
+      adUnitId: adUnitId,
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
@@ -407,10 +435,14 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final bannerHeight =
+        (_isBannerAdLoaded && _bannerAd != null) ? _bannerAd!.size.height.toDouble() : 0.0;
+    final navBottomOffset = bannerHeight > 0 ? bannerHeight : 8.0;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
             Padding(
@@ -459,7 +491,7 @@ class _HomeScreenState extends State<HomeScreen>
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: 74,
+                    bottom: navBottomOffset,
                     child: Center(
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -484,7 +516,7 @@ class _HomeScreenState extends State<HomeScreen>
                             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 6),
+                                  horizontal: 5, vertical: 5),
                               decoration: BoxDecoration(
                                 color: colorScheme.surface.withAlpha(242),
                                 borderRadius: BorderRadius.circular(28),
@@ -528,15 +560,20 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                   ),
+                  if (_isBannerAdLoaded && _bannerAd != null)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: SizedBox(
+                        width: _bannerAd!.size.width.toDouble(),
+                        height: _bannerAd!.size.height.toDouble(),
+                        child: AdWidget(ad: _bannerAd!),
+                      ),
+                    ),
                 ],
               ),
             ),
-            if (_isBannerAdLoaded && _bannerAd != null)
-              SizedBox(
-                width: _bannerAd!.size.width.toDouble(),
-                height: _bannerAd!.size.height.toDouble(),
-                child: AdWidget(ad: _bannerAd!),
-              ),
           ],
         ),
       ),

@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.example.daegu_bus_app.services.BusAlertService
 
 class NotificationCancelReceiver : BroadcastReceiver() {
@@ -32,7 +33,7 @@ class NotificationCancelReceiver : BroadcastReceiver() {
             putExtra("stationName", stationName)
         }
         
-        context.startService(stopIntent)
+        ContextCompat.startForegroundService(context, stopIntent)
         Log.i("NotificationCancelReceiver", "✅ BusAlertService에 종료 인텐트 전달 완료")
     }
 }
