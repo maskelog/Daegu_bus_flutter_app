@@ -493,6 +493,7 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
           '나만의 예외 날짜 관리',
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
           ),
         ),
         centerTitle: true,
@@ -554,6 +555,7 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
                     '$dateStr ($weekdayStr)',
                     style: theme.textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
                     ),
                   ),
                   trailing: IconButton(

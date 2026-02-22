@@ -1661,8 +1661,10 @@ class AlarmService extends ChangeNotifier {
                   level: LogLevel.debug,
                 );
 
-                // ✅ 버스 모니터링 서비스 시작 (10분 이내일 때)
-                if (remainingMinutes <= 10 && remainingMinutes >= 0) {
+                // ✅ 버스 모니터링 서비스 시작 (10분 이내이고 아직 추적 중이 아닐 때만)
+                if (remainingMinutes <= 10 &&
+                    remainingMinutes >= 0 &&
+                    _alarmFacade.trackedRouteId != alarm.routeId) {
                   try {
                     await startBusMonitoringService(
                       routeId: alarm.routeId,

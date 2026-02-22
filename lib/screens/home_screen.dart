@@ -294,16 +294,25 @@ class _HomeScreenState extends State<HomeScreen>
 
       if (missingRouteIds.isEmpty) return;
 
-      final results = await Future.wait(
-        missingRouteIds.map((id) async {
-          try {
-            final route = await ApiService.getBusRouteDetails(id);
-            return route != null ? MapEntry(id, route.getRouteType()) : null;
-          } catch (e) {
-            return null;
-          }
-        }),
-      );
+      const routeBatchSize = 5;
+      final List<MapEntry<String, BusRouteType>?> results = [];
+      for (int i = 0; i < missingRouteIds.length; i += routeBatchSize) {
+        final batch = missingRouteIds.skip(i).take(routeBatchSize);
+        final batchResults = await Future.wait(
+          batch.map((id) async {
+            try {
+              final route = await ApiService.getBusRouteDetails(id);
+              return route != null ? MapEntry(id, route.getRouteType()) : null;
+            } catch (e) {
+              return null;
+            }
+          }),
+        );
+        results.addAll(batchResults);
+        if (i + routeBatchSize < missingRouteIds.length) {
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+      }
 
       final newTypes = <String, BusRouteType>{};
       for (final entry in results) {
@@ -344,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen>
             }
           }
         }));
-        await Future.delayed(const Duration(milliseconds: 50));
+        await Future.delayed(const Duration(milliseconds: 150));
       }
     });
   }
