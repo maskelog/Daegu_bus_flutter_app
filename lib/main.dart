@@ -60,21 +60,21 @@ class AppColorScheme {
   static const Color outlineLight = Color(0xFFCBD5E1);
   static const Color outlineVariantLight = Color(0xFFE2E8F0);
 
-  // Dark Theme (Sleek Dark Mode)
-  static const Color primaryDark = Color(0xFF60A5FA);
-  static const Color onPrimaryDark = Color(0xFF1E3A8A);
-  static const Color primaryContainerDark = Color(0xFF1E40AF);
-  static const Color onPrimaryContainerDark = Color(0xFFDBEAFE);
+  // Dark Theme (Monochrome Slate Mode)
+  static const Color primaryDark = Color(0xFFE2E8F0);       // Slate 200
+  static const Color onPrimaryDark = Color(0xFF0F172A);      // Slate 900
+  static const Color primaryContainerDark = Color(0xFF334155); // Slate 700
+  static const Color onPrimaryContainerDark = Color(0xFFF1F5F9); // Slate 100
 
-  static const Color secondaryDark = Color(0xFF94A3B8);
-  static const Color onSecondaryDark = Color(0xFF0F172A);
-  static const Color secondaryContainerDark = Color(0xFF334155);
-  static const Color onSecondaryContainerDark = Color(0xFFF1F5F9);
+  static const Color secondaryDark = Color(0xFF94A3B8);      // Slate 400
+  static const Color onSecondaryDark = Color(0xFF0F172A);    // Slate 900
+  static const Color secondaryContainerDark = Color(0xFF334155); // Slate 700
+  static const Color onSecondaryContainerDark = Color(0xFFF1F5F9); // Slate 100
 
-  static const Color tertiaryDark = Color(0xFF38BDF8);
-  static const Color onTertiaryDark = Color(0xFF0C4A6E);
-  static const Color tertiaryContainerDark = Color(0xFF075985);
-  static const Color onTertiaryContainerDark = Color(0xFFE0F2FE);
+  static const Color tertiaryDark = Color(0xFFCBD5E1);       // Slate 300
+  static const Color onTertiaryDark = Color(0xFF1E293B);     // Slate 800
+  static const Color tertiaryContainerDark = Color(0xFF475569); // Slate 600
+  static const Color onTertiaryContainerDark = Color(0xFFF8FAFC); // Slate 50
 
   static const Color surfaceDark = Color(0xFF0F172A); // Slate 900
   static const Color onSurfaceDark = Color(0xFFF8FAFC);
@@ -371,7 +371,7 @@ class AppTheme {
       hintStyle: const TextStyle(color: AppColorScheme.onSurfaceVariantDark),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(28),
-        borderSide: const BorderSide(color: AppColorScheme.primaryDark, width: 2.5),
+        borderSide: const BorderSide(color: AppColorScheme.onSurfaceVariantDark, width: 2.5),
       ),
     ),
 
