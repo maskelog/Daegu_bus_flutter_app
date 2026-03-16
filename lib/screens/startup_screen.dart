@@ -21,6 +21,7 @@ class _StartupScreenState extends State<StartupScreen> {
   bool _shouldShowScreen = true; // 화면 표시 여부
   static const String _permissionsGrantedKey = 'permissions_granted_once';
   bool _autoRequested = false;
+  bool _promotedNotificationsEnabled = true;
 
   @override
   void initState() {
@@ -37,6 +38,8 @@ class _StartupScreenState extends State<StartupScreen> {
     bool granted;
     try {
       granted = await _hasCorePermissions();
+      _promotedNotificationsEnabled =
+          await PermissionService.canPostPromotedNotifications();
     } catch (e) {
       granted = false;
       if (mounted) {
@@ -111,10 +114,16 @@ class _StartupScreenState extends State<StartupScreen> {
     try {
       await PermissionService.requestAllPermissions();
       final granted = await _hasCorePermissions();
+      final promotedEnabled =
+          await PermissionService.canPostPromotedNotifications();
+      _promotedNotificationsEnabled = promotedEnabled;
       if (granted && mounted) {
         // 권한이 허용되었음을 저장
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_permissionsGrantedKey, true);
+        if (mounted) {
+          setState(() {});
+        }
         _goHome();
       } else if (mounted) {
         setState(() {
@@ -214,6 +223,16 @@ class _StartupScreenState extends State<StartupScreen> {
                   title: '알림 권한',
                   subtitle: '도착 알림 및 자동 알람',
                 ),
+                if (Platform.isAndroid) ...[
+                  const SizedBox(height: 8),
+                  _PermissionItem(
+                    icon: Icons.update_rounded,
+                    title: '실시간 정보',
+                    subtitle: _promotedNotificationsEnabled
+                        ? 'Live Updates 및 상태칩 표시 사용 가능'
+                        : 'Android 16 이상에서 상태바/Now Bar 표시',
+                  ),
+                ],
                 const SizedBox(height: 20),
                 if (_errorMessage != null) ...[
                   Text(
@@ -248,6 +267,24 @@ class _StartupScreenState extends State<StartupScreen> {
                   },
                   child: const Text('나중에 하기'),
                 ),
+                if (Platform.isAndroid && !_promotedNotificationsEnabled) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _isRequesting
+                        ? null
+                        : () async {
+                            await PermissionService
+                                .requestPromotedNotificationPermission();
+                            if (!mounted) return;
+                            final enabled = await PermissionService
+                                .canPostPromotedNotifications();
+                            setState(() {
+                              _promotedNotificationsEnabled = enabled;
+                            });
+                          },
+                    child: const Text('실시간 정보 설정 열기'),
+                  ),
+                ],
               ],
             ),
           ),

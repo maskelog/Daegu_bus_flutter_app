@@ -537,6 +537,32 @@ class _AlarmScreenState extends State<AlarmScreen> {
     return excludes.join(', ');
   }
 
+  /// 다음 발동 시각 미리보기 문자열
+  String _getNextAlarmTimeText(AutoAlarm alarm) {
+    if (!alarm.isActive) return '';
+    if (alarm.repeatDays.isEmpty) return '';
+    try {
+      final next = alarm.getNextAlarmTime();
+      if (next == null) return '';
+      final weekdays = ['월', '화', '수', '목', '금', '토', '일'];
+      final wd = weekdays[next.weekday - 1];
+      final mm = next.month.toString().padLeft(2, '0');
+      final dd = next.day.toString().padLeft(2, '0');
+      final hh = next.hour.toString().padLeft(2, '0');
+      final mn = next.minute.toString().padLeft(2, '0');
+      return '다음: $mm/$dd($wd) $hh:$mn';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// AlarmService가 해당 자동 알람 경로/정류장을 추적 중인지 확인
+  bool _isTracking(AutoAlarm alarm, AlarmService alarmService) {
+    // AlarmService에 activeAlarms getter가 없으므로 현재 항상 false 반환
+    // 추후 Native 상태 노출 시 실제 구현으로 교체 예정
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -706,9 +732,13 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                       )
                                     : SliverList(
                                         delegate: SliverChildBuilderDelegate(
-                                          (context, index) {
-                                             final alarm = _autoAlarms[index];
-                                            return Container(
+                                           (context, index) {
+                                              final alarm = _autoAlarms[index];
+                                            return Consumer<AlarmService>(
+                                              builder: (context, alarmService, _) {
+                                                final tracking = _isTracking(alarm, alarmService);
+                                                final nextTimeText = _getNextAlarmTimeText(alarm);
+                                                return Container(
                                               margin: const EdgeInsets.only(bottom: 16), // More spacing
                                               decoration: BoxDecoration(
                                                 borderRadius: BorderRadius.circular(32), // Very rounded
@@ -743,38 +773,37 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                             activeColor: colorScheme.primary,
                                                           ),
                                                         ),
-                                                      // 버스 번호 뱃지 with gradient
+                                                      // 버스 번호 뱃지 — 활성/비활성 색상 구분
                                                       Container(
                                                         margin: const EdgeInsets.only(right: 16),
                                                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                                         decoration: BoxDecoration(
                                                           gradient: LinearGradient(
-                                                            colors: [
-                                                              colorScheme.primary,
-                                                              colorScheme.primary.withAlpha(204),
-                                                            ],
+                                                            colors: alarm.isActive
+                                                                ? [colorScheme.primary, colorScheme.primary.withAlpha(204)]
+                                                                : [colorScheme.onSurfaceVariant.withAlpha(100), colorScheme.onSurfaceVariant.withAlpha(70)],
                                                             begin: Alignment.topLeft,
                                                             end: Alignment.bottomRight,
                                                           ),
                                                           borderRadius: BorderRadius.circular(20),
                                                           boxShadow: [
                                                             BoxShadow(
-                                                              color: colorScheme.primary.withAlpha(77),
+                                                              color: (alarm.isActive && tracking ? colorScheme.primary : colorScheme.onSurfaceVariant).withAlpha(60),
                                                               blurRadius: 8,
                                                               offset: const Offset(0, 2),
-                                                            )
+                                                            ),
                                                           ],
                                                         ),
                                                         child: Row(
                                                           children: [
-                                                            Icon(Icons.directions_bus, size: 20, color: colorScheme.onPrimary),
+                                                            const Icon(Icons.directions_bus, size: 20, color: Colors.white),
                                                             const SizedBox(width: 6),
                                                             Text(
                                                               alarm.routeNo,
-                                                              style: TextStyle(
+                                                              style: const TextStyle(
                                                                 fontSize: 18,
                                                                 fontWeight: FontWeight.w900,
-                                                                color: colorScheme.onPrimary,
+                                                                color: Colors.white,
                                                               ),
                                                             ),
                                                           ],
@@ -783,50 +812,89 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                       Expanded(
                                                         child: Column(
                                                           crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Text(
-                                                              alarm.stationName,
-                                                              style: TextStyle(
-                                                                fontSize: 17,
-                                                                fontWeight: FontWeight.w700,
-                                                                color: colorScheme.onSurface,
-                                                              ),
-                                                            ),
-                                                            const SizedBox(height: 6),
-                                                            Row(
-                                                              children: [
-                                                                Icon(Icons.alarm, size: 16, color: colorScheme.onSurfaceVariant),
-                                                                const SizedBox(width: 4),
-                                                                Text(
-                                                                  '${alarm.hour.toString().padLeft(2, '0')}:${alarm.minute.toString().padLeft(2, '0')}',
-                                                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: colorScheme.onSurfaceVariant),
-                                                                ),
-                                                                const SizedBox(width: 12),
-                                                                Icon(Icons.repeat, size: 16, color: colorScheme.onSurfaceVariant),
-                                                                const SizedBox(width: 4),
-                                                                Flexible(
-                                                                  child: Text(
-                                                                    _getRepeatDaysText(alarm),
-                                                                    style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
-                                                                    overflow: TextOverflow.ellipsis,
-                                                                  ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                            if (alarm.excludeHolidays || alarm.excludeWeekends) ...[
-                                                              const SizedBox(height: 4),
-                                                              Row(
-                                                                children: [
-                                                                  Icon(Icons.event_busy, size: 14, color: colorScheme.onSurfaceVariant),
-                                                                  const SizedBox(width: 4),
-                                                                  Text(
-                                                                    _getExcludeText(alarm),
-                                                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            ],
-                                                          ],
+                                                           children: [
+                                                             // 정류장명 + 추적 중 뱃지
+                                                             Row(
+                                                               children: [
+                                                                 Expanded(
+                                                                   child: Text(
+                                                                     alarm.stationName,
+                                                                     style: TextStyle(
+                                                                       fontSize: 17,
+                                                                       fontWeight: FontWeight.w700,
+                                                                       color: colorScheme.onSurface,
+                                                                     ),
+                                                                     maxLines: 1,
+                                                                     overflow: TextOverflow.ellipsis,
+                                                                   ),
+                                                                 ),
+                                                                 if (tracking) ...[  
+                                                                   const SizedBox(width: 6),
+                                                                   Container(
+                                                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                                     decoration: BoxDecoration(
+                                                                       color: colorScheme.tertiary.withAlpha(30),
+                                                                       borderRadius: BorderRadius.circular(20),
+                                                                       border: Border.all(color: colorScheme.tertiary.withAlpha(120), width: 1),
+                                                                     ),
+                                                                     child: Row(
+                                                                       mainAxisSize: MainAxisSize.min,
+                                                                       children: [
+                                                                         Icon(Icons.radio_button_checked, size: 10, color: colorScheme.tertiary),
+                                                                         const SizedBox(width: 3),
+                                                                         Text('추적 중', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: colorScheme.tertiary)),
+                                                                       ],
+                                                                     ),
+                                                                   ),
+                                                                 ],
+                                                               ],
+                                                             ),
+                                                             const SizedBox(height: 6),
+                                                             Row(
+                                                               children: [
+                                                                 Icon(Icons.alarm, size: 16, color: colorScheme.onSurfaceVariant),
+                                                                 const SizedBox(width: 4),
+                                                                 Text(
+                                                                   '${alarm.hour.toString().padLeft(2, '0')}:${alarm.minute.toString().padLeft(2, '0')}',
+                                                                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: colorScheme.onSurfaceVariant),
+                                                                 ),
+                                                                 const SizedBox(width: 12),
+                                                                 Icon(Icons.repeat, size: 16, color: colorScheme.onSurfaceVariant),
+                                                                 const SizedBox(width: 4),
+                                                                 Flexible(
+                                                                   child: Text(
+                                                                     _getRepeatDaysText(alarm),
+                                                                     style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                                                                     overflow: TextOverflow.ellipsis,
+                                                                   ),
+                                                                 ),
+                                                               ],
+                                                             ),
+                                                             if (alarm.excludeHolidays || alarm.excludeWeekends) ...[
+                                                               const SizedBox(height: 4),
+                                                               Row(
+                                                                 children: [
+                                                                   Icon(Icons.event_busy, size: 14, color: colorScheme.onSurfaceVariant),
+                                                                   const SizedBox(width: 4),
+                                                                   Text(_getExcludeText(alarm), style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                                                                 ],
+                                                               ),
+                                                             ],
+                                                             // 다음 발동 시각
+                                                             if (nextTimeText.isNotEmpty) ...[
+                                                               const SizedBox(height: 6),
+                                                               Row(
+                                                                 children: [
+                                                                   Icon(Icons.schedule_rounded, size: 13, color: colorScheme.primary.withAlpha(180)),
+                                                                   const SizedBox(width: 4),
+                                                                   Text(
+                                                                     nextTimeText,
+                                                                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: colorScheme.primary.withAlpha(180)),
+                                                                   ),
+                                                                 ],
+                                                               ),
+                                                             ],
+                                                           ],
                                                         ),
                                                       ),
                                                       Switch(
@@ -837,11 +905,13 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                     ],
                                                   ),
                                                 ),
-                                                ),
-                                              ),
+                                                 ),
+                                               ),
+                                             );
+                                              },
                                             );
-                                          },
-                                          childCount: _autoAlarms.length,
+                                           },
+                                           childCount: _autoAlarms.length,
                                         ),
                                       ),
                               ),

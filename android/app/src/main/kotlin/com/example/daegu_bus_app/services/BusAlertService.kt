@@ -3046,22 +3046,21 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             return "지나감"
         }
 
-        if (normalizedNormalized == "도착" || remainingMinutes <= 0) {
-            return if (remainingStops > 0) "${remainingStops}개전" else "도착"
-        }
-
-        // 정류장 전 수치가 있으면 우선 표시 (요구 포맷: 5개전)
-        if (remainingStops > 0) {
-            return "${remainingStops}개전"
-        }
-
         val minutePart = if (normalizedNormalized.contains("분")) {
             normalizedNormalized.replace("[^0-9]".toRegex(), "").toIntOrNull()
         } else {
             null
         } ?: remainingMinutes
 
-        return if (minutePart > 0) "${minutePart}분" else "정보 없음"
+        if (normalizedNormalized == "도착" || minutePart <= 0 || remainingMinutes <= 0) {
+            return "도착"
+        }
+
+        if (minutePart > 0) {
+            return "${minutePart}분"
+        }
+
+        return if (remainingStops > 0) "${remainingStops}개전" else "정보 없음"
     }
 
     private fun applyOneUiOngoingExtras(targetBundle: android.os.Bundle, oneUiBundle: android.os.Bundle) {

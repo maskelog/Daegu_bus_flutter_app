@@ -11,6 +11,20 @@ class FavoriteBus {
     required this.routeNo,
   });
 
+  FavoriteBus copyWith({
+    String? stationId,
+    String? stationName,
+    String? routeId,
+    String? routeNo,
+  }) {
+    return FavoriteBus(
+      stationId: stationId ?? this.stationId,
+      stationName: stationName ?? this.stationName,
+      routeId: routeId ?? this.routeId,
+      routeNo: routeNo ?? this.routeNo,
+    );
+  }
+
   String get key => '$stationId|$routeId';
 
   factory FavoriteBus.fromJson(Map<String, dynamic> json) {

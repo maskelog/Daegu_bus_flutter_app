@@ -3,14 +3,17 @@
 ## 2026-01-28: Android 16 Live Update 알림 구현
 
 ### 목표
+
 Android 16의 Live Updates 기능을 사용하여 버스 알림에 실시간 업데이트 표시 (버스 아이콘이 Live Update 영역에 표시되도록)
 
 ### 참고 자료
+
 - https://github.com/android/platform-samples/tree/main/samples/user-interface/live-updates/src/main
 
 ### 수정된 파일
 
 #### 1. `android/app/build.gradle`
+
 - `compileSdk`: `flutter.compileSdkVersion` → `36` (Android 16 지원)
 - `targetSdk`: `flutter.targetSdkVersion` → `36` (Android 16 지원)
 - `androidx.core:core-ktx`: `1.9.0` → `1.15.0` (최신 버전)
@@ -18,6 +21,7 @@ Android 16의 Live Updates 기능을 사용하여 버스 알림에 실시간 업
 #### 2. `android/app/src/main/kotlin/com/example/daegu_bus_app/utils/NotificationHandler.kt`
 
 ##### Live Update 핵심 API 추가 (Reflection 사용)
+
 Android 16 API가 아직 SDK에 공개되지 않아 Reflection으로 호출:
 
 ```kotlin
@@ -49,12 +53,15 @@ try {
 ```
 
 ##### 알림 카테고리 추가
+
 ```kotlin
 .setCategory(Notification.CATEGORY_PROGRESS)
 ```
 
 ##### 아이콘 생성 함수 개선 (`createColoredBusIcon`)
+
 Live Update 영역에 아이콘이 잘 보이도록 최적화:
+
 - 아이콘 크기: 48x48dp (Live Update 권장 크기)
 - 원형 배경 + 흰색 아이콘으로 변경
 - `ic_bus_large.png` 우선 사용
@@ -97,6 +104,7 @@ private fun createColoredBusIcon(context: Context, color: Int, busNo: String): a
 ```
 
 ##### 플래그 설정 방식 수정 (Kotlin 컴파일 오류 해결)
+
 ```kotlin
 // 수정 전 (컴파일 오류)
 builtNotification.flags = builtNotification.flags or
@@ -111,6 +119,7 @@ builtNotification.flags = builtNotification.flags or liveUpdateFlags
 ```
 
 ### Live Update 작동 조건 (Android 16+)
+
 1. `setOngoing(true)` - 진행 중인 알림
 2. `setRequestPromotedOngoing(true)` - Live Update 승격 요청
 3. `setShortCriticalText()` - 상태 칩 텍스트 (예: "5분")
@@ -123,6 +132,7 @@ builtNotification.flags = builtNotification.flags or liveUpdateFlags
 ## 2026-01-28 (2차): ProgressStyle로 버스 아이콘 진행 바 이동 구현
 
 ### 문제
+
 - 버스 아이콘이 오른쪽 Large Icon 위치에만 표시됨
 - 진행 바 위에서 버스 아이콘이 이동하지 않음
 
@@ -131,6 +141,7 @@ builtNotification.flags = builtNotification.flags or liveUpdateFlags
 #### 핵심 변경 사항
 
 ##### 1. `InboxStyle` 제거 → `ProgressStyle` 사용
+
 ```kotlin
 // 기존: InboxStyle (여러 줄 텍스트)
 .setStyle(Notification.InboxStyle()...)
@@ -141,6 +152,7 @@ val progressStyle = progressStyleClass.getConstructor().newInstance()
 ```
 
 ##### 2. `setProgressTrackerIcon()` - 버스 아이콘이 진행 바 위에서 이동!
+
 ```kotlin
 val busIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_large)
 val setProgressTrackerIconMethod = progressStyleClass.getMethod(
@@ -150,6 +162,7 @@ setProgressTrackerIconMethod.invoke(progressStyle, busIcon)
 ```
 
 ##### 3. `setProgressSegments()` - 구간별 색상 표시
+
 ```kotlin
 val segmentClass = Class.forName("android.app.Notification\$ProgressStyle\$Segment")
 val segmentConstructor = segmentClass.getConstructor(Int::class.javaPrimitiveType)
@@ -169,6 +182,7 @@ progressStyleClass.getMethod("setProgressSegments", List::class.java)
 ```
 
 ##### 4. `setProgressPoints()` - 출발/도착 지점 표시
+
 ```kotlin
 val pointClass = Class.forName("android.app.Notification\$ProgressStyle\$Point")
 val pointConstructor = pointClass.getConstructor(Int::class.javaPrimitiveType)
@@ -188,6 +202,7 @@ progressStyleClass.getMethod("setProgressPoints", List::class.java)
 ```
 
 ##### 5. 여러 버스 추적 시 subText에 요약 표시
+
 ```kotlin
 val summaryText = if (activeTrackings.size > 1) {
     activeTrackings.values.drop(1).take(3).joinToString(" | ") { info ->
@@ -198,10 +213,12 @@ nativeBuilder.setSubText(summaryText)
 ```
 
 ### 참고 자료
+
 - [Progress-centric notifications | Android Developers](https://developer.android.com/about/versions/16/features/progress-centric-notifications)
 - [Create a progress-centric notification | Android Developers](https://developer.android.com/develop/ui/views/notifications/progress-centric)
 
 ### 예상 결과
+
 ```
 ┌─────────────────────────────────────────┐
 │ 🚌  버스 알람 추적 중 (13:45:30)        │
@@ -214,6 +231,7 @@ nativeBuilder.setSubText(summaryText)
 ```
 
 ### 로그 확인
+
 ```
 ✅ ProgressStyle.setProgress(16) 호출 성공
 ✅ ProgressStyle.setProgressTrackerIcon() 호출 성공 - 버스 아이콘 설정됨
@@ -235,6 +253,7 @@ nativeBuilder.setSubText(summaryText)
 ### 1. 버스 트래커 아이콘 추가
 
 #### 새 파일: `android/app/src/main/res/drawable/ic_bus_tracker.xml`
+
 - 72dp 크기의 파란색 버스 Vector Drawable
 - Live Update 진행 바에서 이동하는 트래커 아이콘으로 사용
 - 회색 상단 + 파란색 하단 + 검은색 창문 + 노란색 라이트
@@ -253,6 +272,7 @@ nativeBuilder.setSubText(summaryText)
 ```
 
 #### NotificationHandler.kt 수정
+
 ```kotlin
 // 단일 흰색 버스 아이콘 사용
 val busIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_tracker)
@@ -261,10 +281,12 @@ val busIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawa
 ### 2. 알람 재시작 방지 시간 단축
 
 #### 문제
+
 - 알람 해제 후 다른 버스 클릭 시 바로 알람이 생성되지 않음
 - 30초간 재시작 방지 로직이 너무 김
 
 #### 수정: `BusAlertService.kt` (라인 144)
+
 ```kotlin
 // 이전: 30초간 재시작 방지
 private val RESTART_PREVENTION_DURATION = 30000L
@@ -274,6 +296,7 @@ private val RESTART_PREVENTION_DURATION = 3000L
 ```
 
 #### 결과
+
 - 알람 해제 후 3초 후에 바로 다른 버스 알람 시작 가능
 
 ---
@@ -281,6 +304,7 @@ private val RESTART_PREVENTION_DURATION = 3000L
 ## 2026-01-28 (4차): 홈 화면 및 즐겨찾기 화면 UI 개선
 
 ### 목표
+
 Material 3 디자인 원칙에 따라 홈 화면과 즐겨찾기 화면의 UI를 개선하여 더 직관적이고 시각적으로 풍부한 사용자 경험 제공
 
 ### 수정된 파일
@@ -288,7 +312,9 @@ Material 3 디자인 원칙에 따라 홈 화면과 즐겨찾기 화면의 UI를
 #### 1. `lib/screens/home_screen.dart`
 
 ##### 섹션 헤더 개선
+
 아이콘과 함께 섹션 제목 표시:
+
 ```dart
 Widget _buildSectionHeader({
   required String title,
@@ -313,12 +339,14 @@ Widget _buildSectionHeader({
 ```
 
 ##### 근처 정류장 카드 개선
+
 - 빈 상태: 로딩 인디케이터와 메시지 표시
 - 선택된 정류장 하이라이트 (primaryContainer 배경, 그림자 효과)
 - 각 정류장 카드에 첫 번째 버스 도착 정보 미리보기 표시
 - 애니메이션 효과 (AnimatedContainer)
 
 ##### 즐겨찾기 버스 목록 개선
+
 - 빈 상태: 그라데이션 배경 + 아이콘 + 안내 메시지
 - 카드 진입 애니메이션 (TweenAnimationBuilder, staggered effect)
 - 그라데이션 노선 번호 배지 + 그림자 효과
@@ -329,15 +357,18 @@ Widget _buildSectionHeader({
 #### 2. `lib/screens/favorites_screen.dart`
 
 ##### 헤더 섹션 개선
+
 - 그라데이션 별 아이콘 배지 + 그림자 효과
 - 즐겨찾기 개수 표시
 - FilledButton.tonalIcon 스타일 "추가" 버튼
 
 ##### 빈 상태 디자인
+
 - 동심원 원형 배경 + 별 아이콘
 - 안내 메시지 + "버스 추가하기" 버튼
 
 ##### 즐겨찾기 카드 개선
+
 - 2행 레이아웃: 노선/정류장 정보 + 시간/액션
 - 카드 진입 애니메이션 (TweenAnimationBuilder)
 - 그라데이션 노선 배지 + 그림자
@@ -349,12 +380,14 @@ Widget _buildSectionHeader({
 - 액션 버튼 배경색 추가
 
 ##### 한글 인코딩 수정
+
 - `'?? ?? ??'` → `'도착 정보 없음'`
 - `'?? ??'` → `'운행 종료'`
 - `'? ??'` → `'곧 도착'`
 - `'${minutes}?'` → `'$minutes분'`
 
 ### 디자인 특징
+
 1. **시각적 계층**: 섹션별 아이콘 헤더, 그라데이션 배지
 2. **상태 피드백**: 도착 임박 강조, 빈 상태 안내
 3. **애니메이션**: 카드 진입 효과, 선택 하이라이트
@@ -365,25 +398,29 @@ Widget _buildSectionHeader({
 ## 2026-01-28 (5차): 즐겨찾기 UI 통일 및 기능 추가
 
 ### 목표
+
 - 버스 정류장 상세 모달과 홈 화면 즐겨찾기 목록의 디자인 이질감 해소
 - 정류장 상세 모달에 누락된 '즐겨찾기' 버튼 추가
 
 ### 수정된 파일
 
 #### 1. `lib/widgets/unified_bus_detail_widget.dart`
+
 - **즐겨찾기 버튼 추가**: 승차 알람 버튼 옆에 즐겨찾기 추가/해제 버튼 배치.
 - **기능 구현**: `FavoriteBusStore` 및 로컬 상태(`_favoriteBuses`)를 사용하여 즐겨찾기 토글 기능 구현.
 - **UI**: `FilledButton.tonalIcon` 스타일 적용하여 일관성 유지.
 
 #### 2. `lib/screens/home_screen.dart`
+
 - **즐겨찾기 카드 디자인 변경**:
-    - 기존의 Material Card 스타일에서 정류장 상세 모달과 유사한 컴팩트 스타일로 변경.
-    - 왼쪽: 단색 버스 번호 뱃지 (50x28).
-    - 중앙: 도착 시간 강조 (Bold 16) + 남은 정거장 수.
-    - Next 버스 정보 표시 추가.
-    - 우측: 별 아이콘 및 알람 아이콘 배치.
+  - 기존의 Material Card 스타일에서 정류장 상세 모달과 유사한 컴팩트 스타일로 변경.
+  - 왼쪽: 단색 버스 번호 뱃지 (50x28).
+  - 중앙: 도착 시간 강조 (Bold 16) + 남은 정거장 수.
+  - Next 버스 정보 표시 추가.
+  - 우측: 별 아이콘 및 알람 아이콘 배치.
 
 ### 결과
+
 이제 홈 화면의 즐겨찾기 목록과 정류장 상세 화면의 리스트 디자인이 통일되어, 사용자에게 일관된 경험을 제공합니다. 정류장 상세 화면에서도 바로 즐겨찾기를 추가할 수 있습니다.
 
 ---
@@ -391,6 +428,7 @@ Widget _buildSectionHeader({
 ## 2026-01-29~30: 즐겨찾기 여백 조정 + 버스 알림/추적 리팩터링
 
 ### 목표
+
 - 즐겨찾기 화면 좌우 여백을 홈 화면 비율로 통일
 - 버스 알림 서비스의 거대 파일 분리 및 성능/안정성 개선
 - 폴링/타이머 과다 사용 완화 및 안전성 강화
@@ -398,6 +436,7 @@ Widget _buildSectionHeader({
 ### 수정된 파일/주요 변경
 
 #### UI/여백
+
 - `lib/screens/favorites_screen.dart`
   - 리스트 좌우 패딩을 홈 화면과 맞춤 (16 기준).
   - 카드 내부 좌우 패딩 정렬.
@@ -405,6 +444,7 @@ Widget _buildSectionHeader({
   - 카드 내부 좌우 패딩 조정 (즐겨찾기 전광판 라인 정렬).
 
 #### 성능/안정성
+
 - `lib/services/alarm_service.dart`
   - 알람 로드 주기 완화(15초마다 무조건 로드 → 2분 간격 스로틀).
 - `lib/widgets/bus_card.dart`, `lib/widgets/compact_bus_card.dart`
@@ -413,6 +453,7 @@ Widget _buildSectionHeader({
   - `Future.delayed` 콜백에 `mounted` 체크 추가.
 
 #### Android 서비스 리팩터링
+
 - `android/app/src/main/kotlin/com/example/daegu_bus_app/services/BusAlertService.kt`
   - 대형 로직을 모듈로 분리하고 서비스는 조정/위임 역할로 축소.
 - 신규 추가
@@ -427,14 +468,16 @@ Widget _buildSectionHeader({
   - `TrackingInfo` 타입 참조 갱신
 
 ### 빌드 확인
+
 - `flutter build apk` 성공 (WSL 환경 기준).
 
 ### 주의/보류 사항 (추가 작업 필요)
-1. `RouteTracker.kt` 파서 통합 완료  
+
+1. `RouteTracker.kt` 파서 통합 완료
    → 공용 파서(`BusAlertParsers.kt`) 사용으로 정리됨.
-2. `android/local.properties`의 `flutter.sdk` 경로 변경은 로컬 환경용  
+2. `android/local.properties`의 `flutter.sdk` 경로 변경은 로컬 환경용
    → 커밋하지 말고, 팀 표준 경로/README 안내 필요.
-3. 알림/추적 분리 후 기능 회귀 테스트 필요  
+3. 알림/추적 분리 후 기능 회귀 테스트 필요
    - 자동 알람/이어폰 전용 모드/포그라운드 알림 갱신 시나리오.
 
 ---
@@ -442,10 +485,12 @@ Widget _buildSectionHeader({
 ## 2026-01-30: 초기 검은 화면 및 권한 플로우 개선
 
 ### 목표
+
 - 앱 초기 실행 시 권한 요청으로 인해 발생하는 검은 화면 해소
 - 일반적인 앱 권한 온보딩 플로우 제공
 
 ### 수정된 파일
+
 - `lib/main.dart`
   - 앱 시작 시 권한 요청을 제거하고 온보딩 화면으로 이동.
 - `lib/screens/startup_screen.dart` (신규)
@@ -454,6 +499,7 @@ Widget _buildSectionHeader({
   - 권한 허용 시 홈 화면으로 전환
 
 ### 추가 작업 필요
+
 1. (완료) 권한 거부 시 제한 모드 UX(지도 탭 제한) 적용
 
 ---
@@ -461,11 +507,76 @@ Widget _buildSectionHeader({
 ## 2026-01-29: 지도 탭 제한 모드 추가
 
 ### 목표
+
 - 위치 권한 거부 시 지도 탭을 제한 모드로 표시
 - 권한 요청/설정 이동 동선 제공
 
 ### 수정된 파일
+
 - `lib/screens/home_screen.dart`
   - 지도 탭에서 권한 상태에 따라 제한 모드 화면 표시
   - 권한 허용/설정 이동 버튼 제공
   - 지도 탭 접근 시 권한 상태 체크 로직 추가
+
+---
+
+## 2026-03-15: Android 16 Live Update "실시간 정보" 토글 미표시 문제 해결
+
+### 문제
+
+- Google 공식 Live Updates 샘플 앱을 설치하면 설정 > 앱 > 알림에 "실시간 정보(Live Updates)" 토글이 표시됨
+- 대구버스 앱에서는 동일한 설정이 표시되지 않아 `setShortCriticalText`로 상태 칩 표시 및 잠금화면 Live Update가 작동하지 않음
+
+### 원인 분석
+
+#### Google 샘플 앱과의 비교
+
+- **Google 샘플**: 앱 시작 시 `NotificationChannel`을 즉시 생성 → OS가 채널을 인식하여 "실시간 정보" 토글 표시
+- **대구버스 앱**: `NotificationHandler.createNotificationChannels()`가 `BusAlertService.onCreate()`에서만 호출됨 → 사용자가 버스 추적을 시작하기 전까지 `bus_tracking_ongoing` 채널이 OS에 등록되지 않음
+
+#### 확인된 설정 (이미 올바르게 구성됨)
+
+- `compileSdk = 36`, `targetSdk = 36` (Android 16)
+- `androidx.core:core-ktx:1.17.0` (Live Update API 포함)
+- `POST_PROMOTED_NOTIFICATIONS` 권한 선언 (AndroidManifest.xml)
+- `IMPORTANCE_DEFAULT` 채널 중요도 (Google 샘플과 동일)
+- `NotificationCompat.Builder`에 `setRequestPromotedOngoing(true)`, `setShortCriticalText()`, `ProgressStyle` 적용 완료
+
+### 수정된 파일
+
+#### `android/app/src/main/kotlin/com/example/daegu_bus_app/MainActivity.kt`
+
+##### 변경: `initializeEssentialComponents()`에 채널 생성 호출 추가
+
+```kotlin
+// 수정 전
+notificationHandler = NotificationHandler(this)
+createAlarmNotificationChannel()
+
+// 수정 후
+notificationHandler = NotificationHandler(this)
+notificationHandler.createNotificationChannels()  // ← 추가
+createAlarmNotificationChannel()
+```
+
+- 앱 시작 시 `bus_tracking_ongoing` 채널이 OS에 즉시 등록됨
+- OS가 채널의 promoted notification 속성을 인식하여 설정에 "실시간 정보" 토글 표시
+- `BusAlertService.onCreate()`의 기존 호출은 유지 (서비스 재시작 시 채널 보장)
+
+### 테스트 방법
+
+1. 앱 완전 제거 후 `flutter run`으로 재설치
+2. 설정 → 앱 → 대구버스 → 알림에서 "실시간 정보" 토글 표시 확인
+3. 토글 활성화 후 버스 추적 시작 → 상태 칩/잠금화면 Live Update 작동 확인
+
+### Live Update 전체 요구사항 정리 (Android 16+)
+
+1. `targetSdk 36` + `compileSdk 36`
+2. `POST_PROMOTED_NOTIFICATIONS` 권한 선언
+3. `androidx.core:core-ktx:1.17.0` 이상
+4. 앱 시작 시 `NotificationChannel` 생성 (IMPORTANCE_DEFAULT)
+5. `setRequestPromotedOngoing(true)` - 승격 요청
+6. `setShortCriticalText()` - 상태 칩 텍스트
+7. `NotificationCompat.ProgressStyle` - 진행 바 스타일
+8. `setOngoing(true)` - 진행 중 알림
+9. `setCategory(Notification.CATEGORY_PROGRESS)` - 카테고리

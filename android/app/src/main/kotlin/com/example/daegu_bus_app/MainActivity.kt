@@ -196,6 +196,46 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             result.success(false)
                         }
                     }
+                    "canPostPromotedNotifications" -> {
+                        if (Build.VERSION.SDK_INT >= 36) {
+                            try {
+                                val notificationManager =
+                                    getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                result.success(notificationManager.canPostPromotedNotifications())
+                            } catch (e: Exception) {
+                                Log.e(TAG, "canPostPromotedNotifications 실패: ${e.message}", e)
+                                result.error("PROMOTED_NOTIFICATION_CHECK_ERROR", e.message, null)
+                            }
+                        } else {
+                            result.success(true)
+                        }
+                    }
+                    "openPromotedNotificationSettings" -> {
+                        if (Build.VERSION.SDK_INT >= 36) {
+                            try {
+                                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                val resolveInfo = intent.resolveActivity(packageManager)
+                                if (resolveInfo == null) {
+                                    result.error(
+                                        "PROMOTED_NOTIFICATION_INTENT_NOT_FOUND",
+                                        "실시간 정보 설정 화면을 열 수 없습니다.",
+                                        null
+                                    )
+                                    return@setMethodCallHandler
+                                }
+                                startActivity(intent)
+                                result.success(true)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "openPromotedNotificationSettings 실패: ${e.message}", e)
+                                result.error("PROMOTED_NOTIFICATION_SETTINGS_ERROR", e.message, null)
+                            }
+                        } else {
+                            result.success(false)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -1775,6 +1815,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
             notificationHandler = NotificationHandler(this)
+
+            // Create Notification Channels (Live Update "실시간 정보" 토글이 설정에 표시되려면 앱 시작 시 채널이 존재해야 함)
+            notificationHandler.createNotificationChannels()
 
             // Create Notification Channel for Alarms
             createAlarmNotificationChannel()

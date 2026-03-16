@@ -130,6 +130,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     widget.onFavoritesUpdated(updated);
   }
 
+  /// 드래그로 순서 변경 후 저장
+  void _reorderFavorites(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final item = _favoriteBuses.removeAt(oldIndex);
+      _favoriteBuses.insert(newIndex, item);
+    });
+    FavoriteBusStore.save(_favoriteBuses);
+    widget.onFavoritesUpdated(_favoriteBuses);
+  }
+
   Future<void> _openAddFavoriteFlow() async {
     final selectedStop = await Navigator.push(
       context,
@@ -152,6 +163,202 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         SnackBar(content: Text('정류장 정보를 불러오지 못했습니다: $e')),
       );
     }
+  }
+
+  /// 즐겨찾기 편집 (정류장/노선 변경)
+  Future<void> _editFavorite(int index) async {
+    final current = _favoriteBuses[index];
+    final colorScheme = Theme.of(context).colorScheme;
+
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Text(
+                  '즐겨찾기 편집',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: colorScheme.onSurface),
+                ),
+                Text(
+                  '${current.routeNo}번 · ${current.stationName}',
+                  style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: colorScheme.primaryContainer, borderRadius: BorderRadius.circular(10)),
+                    child: Icon(Icons.location_on_outlined, color: colorScheme.onPrimaryContainer),
+                  ),
+                  title: const Text('정류장 변경', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text(current.stationName, style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.pop(ctx, 'station'),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(10)),
+                    child: Icon(Icons.directions_bus_outlined, color: colorScheme.onSecondaryContainer),
+                  ),
+                  title: const Text('노선 변경', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('${current.routeNo}번', style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.pop(ctx, 'route'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || choice == null) return;
+
+    if (choice == 'station') {
+      final selectedStop = await Navigator.push<BusStop>(
+        context,
+        MaterialPageRoute(builder: (context) => const SearchScreen()),
+      );
+      if (!mounted || selectedStop == null) return;
+      try {
+        final arrivals = await ApiService.getStationInfo(selectedStop.stationId ?? selectedStop.id);
+        if (!mounted) return;
+        _showEditRoutePicker(stop: selectedStop, arrivals: arrivals, index: index);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('정류장 정보를 불러오지 못했습니다: $e')),
+        );
+      }
+    } else {
+      try {
+        final arrivals = await ApiService.getStationInfo(current.stationId);
+        if (!mounted) return;
+        final currentStop = BusStop(
+          id: current.stationId,
+          name: current.stationName,
+          stationId: current.stationId,
+          lat: 0,
+          lng: 0,
+        );
+        _showEditRoutePicker(stop: currentStop, arrivals: arrivals, index: index);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('노선 정보를 불러오지 못했습니다: $e')),
+        );
+      }
+    }
+  }
+
+  void _showEditRoutePicker({
+    required BusStop stop,
+    required List<BusArrival> arrivals,
+    required int index,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final colorScheme = Theme.of(ctx).colorScheme;
+        if (arrivals.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.directions_bus_outlined, size: 48, color: colorScheme.onSurfaceVariant),
+                const SizedBox(height: 12),
+                Text('선택할 버스가 없습니다.', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          );
+        }
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(color: colorScheme.outlineVariant, borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                Text(stop.name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colorScheme.onSurface)),
+                const SizedBox(height: 4),
+                Text('노선을 선택하세요', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 12),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.5),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: arrivals.map((arrival) {
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        leading: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            arrival.routeNo,
+                            style: TextStyle(fontWeight: FontWeight.w700, color: colorScheme.onPrimaryContainer),
+                          ),
+                        ),
+                        title: Text(
+                          _formatArrivalTime(arrival),
+                          style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
+                        ),
+                        trailing: Icon(Icons.check_circle_outline, color: colorScheme.primary),
+                        onTap: () async {
+                          final updated = _favoriteBuses[index].copyWith(
+                            stationId: stop.stationId ?? stop.id,
+                            stationName: stop.name,
+                            routeId: arrival.routeId,
+                            routeNo: arrival.routeNo,
+                          );
+                          setState(() { _favoriteBuses[index] = updated; });
+                          await FavoriteBusStore.save(_favoriteBuses);
+                          widget.onFavoritesUpdated(_favoriteBuses);
+                          if (!mounted) return;
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('${arrival.routeNo}번으로 변경되었습니다.')),
+                          );
+                          _refreshArrivals();
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _showArrivalPicker(BusStop stop, List<BusArrival> arrivals) {
@@ -347,17 +554,20 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                 child: _buildEmptyState(colorScheme),
               )
             else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final favorite = _favoriteBuses[index];
-                      return _buildFavoriteCard(favorite, index);
-                    },
-                    childCount: _favoriteBuses.length,
-                  ),
-                ),
+              SliverReorderableList(
+                onReorder: _reorderFavorites,
+                itemCount: _favoriteBuses.length,
+                itemBuilder: (context, index) {
+                  final favorite = _favoriteBuses[index];
+                  return ReorderableDelayedDragStartListener(
+                    key: ValueKey(favorite.key),
+                    index: index,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                      child: _buildFavoriteCard(favorite, index),
+                    ),
+                  );
+                },
               ),
           ],
         ),
@@ -651,13 +861,20 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      // Earphone alarm button
-                      _buildCardActionButton(
-                        icon: Icons.headphones_rounded,
-                        color: colorScheme.tertiary,
-                        onPressed: () => _handleEarphoneAlarm(favorite, arrival),
-                      ),
+                       const SizedBox(width: 12),
+                       // Edit favorite button
+                       _buildCardActionButton(
+                         icon: Icons.edit_outlined,
+                         color: colorScheme.secondary,
+                         onPressed: () => _editFavorite(index),
+                       ),
+                       const SizedBox(width: 8),
+                       // Earphone alarm button
+                       _buildCardActionButton(
+                         icon: Icons.headphones_rounded,
+                         color: colorScheme.tertiary,
+                         onPressed: () => _handleEarphoneAlarm(favorite, arrival),
+                       ),
                       const SizedBox(width: 8),
                       // Remove favorite button
                       _buildCardActionButton(

@@ -9,6 +9,9 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
 class PermissionService {
+  static const MethodChannel _methodChannel =
+      MethodChannel('com.example.daegu_bus_app/permission');
+
   /// 알림 권한 요청 (Android 13 이상만 요청)
   static Future<void> requestNotificationPermission() async {
     if (!Platform.isAndroid) return;
@@ -39,6 +42,53 @@ class PermissionService {
     } else {
       logMessage('ℹ️ Android 12 이하 → 알림 권한 요청 생략됨 (SDK: $sdkVersion)',
           level: LogLevel.debug);
+    }
+  }
+
+  static Future<bool> canPostPromotedNotifications() async {
+    if (!Platform.isAndroid) return true;
+
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      if (androidInfo.version.sdkInt < 36) {
+        return true;
+      }
+
+      final result =
+          await _methodChannel.invokeMethod<bool>('canPostPromotedNotifications');
+      return result ?? false;
+    } catch (e) {
+      logMessage('❌ 실시간 정보 권한 상태 확인 오류: $e', level: LogLevel.error);
+      return false;
+    }
+  }
+
+  static Future<void> requestPromotedNotificationPermission() async {
+    if (!Platform.isAndroid) return;
+
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      if (androidInfo.version.sdkInt < 36) {
+        return;
+      }
+
+      final enabled = await canPostPromotedNotifications();
+      if (enabled) {
+        logMessage('✨ 실시간 정보 권한 이미 허용됨', level: LogLevel.debug);
+        return;
+      }
+
+      final opened = await _methodChannel.invokeMethod<bool>(
+            'openPromotedNotificationSettings',
+          ) ??
+          false;
+      if (opened) {
+        logMessage('✨ 실시간 정보 설정 화면 열기 성공', level: LogLevel.info);
+      } else {
+        logMessage('⚠️ 실시간 정보 설정 화면을 열지 못했습니다.', level: LogLevel.warning);
+      }
+    } catch (e) {
+      logMessage('❌ 실시간 정보 권한 요청 오류: $e', level: LogLevel.error);
     }
   }
 
@@ -104,13 +154,11 @@ class PermissionService {
     if (!Platform.isAndroid) return;
 
     try {
-      const methodChannel = MethodChannel('com.example.daegu_bus_app/permission');
-
       // 네이티브 채널 우선: 일부 기기에서 permission_handler가 즉시 denied를 반환해
       // 실제 요청 화면이 열리지 않는 이슈가 있어 먼저 네이티브 채널을 우선 시도
       try {
         final bool isIgnored =
-            await methodChannel.invokeMethod<bool>(
+            await _methodChannel.invokeMethod<bool>(
               'isIgnoringBatteryOptimizations',
             ) ??
             false;
@@ -120,7 +168,7 @@ class PermissionService {
           return;
         }
 
-        final bool result = await methodChannel.invokeMethod<bool>(
+        final bool result = await _methodChannel.invokeMethod<bool>(
           'requestIgnoreBatteryOptimizations',
         ) ??
             false;
@@ -200,6 +248,8 @@ class PermissionService {
     // 단계별로 권한 요청하고 각각 완료 대기
     try {
       await requestNotificationPermission();
+
+      await requestPromotedNotificationPermission();
       
       await requestLocationPermission();
       
