@@ -11,6 +11,7 @@ import 'package:daegu_bus_app/utils/tts_switcher.dart';
 import 'package:daegu_bus_app/main.dart' show logMessage, LogLevel;
 import 'package:daegu_bus_app/services/settings_service.dart';
 import '../services/alarm_manager.dart';
+import '../services/permission_service.dart';
 
 const String stationTrackingChannel =
     'com.example.daegu_bus_app/station_tracking';
@@ -376,6 +377,9 @@ class _BusCardState extends State<BusCard> {
         );
       }
 
+      // Android 16: 실시간 정보(Live Update) 권한 미허용 시 안내
+      await _checkAndPromptLiveUpdatePermission();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('승차 알람이 시작되었습니다')),
@@ -592,6 +596,9 @@ class _BusCardState extends State<BusCard> {
               _updateBusArrivalInfo();
             }
           });
+
+          // Android 16: 실시간 정보(Live Update) 권한 미허용 시 안내
+          await _checkAndPromptLiveUpdatePermission();
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1233,5 +1240,37 @@ class _BusCardState extends State<BusCard> {
       logMessage('❌ [ERROR] 네이티브 추적 시작 실패: $e', level: LogLevel.error);
       rethrow;
     }
+  }
+
+  /// Android 16 Live Update "실시간 정보" 권한 미허용 시 안내 다이얼로그
+  Future<void> _checkAndPromptLiveUpdatePermission() async {
+    if (!mounted) return;
+    final canPost = await PermissionService.canPostPromotedNotifications();
+    if (canPost || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Now Bar 실시간 정보'),
+        content: const Text(
+          '상태바 칩 및 Now Bar에 버스 도착 정보를 실시간으로 표시하려면 '
+          '"실시간 정보" 권한을 허용해주세요.\n\n'
+          '설정 → 앱 알림 → 실시간 버스 추적 → 실시간 정보 토글 ON',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('나중에'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await PermissionService.requestPromotedNotificationPermission();
+            },
+            child: const Text('설정 열기'),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -36,6 +36,9 @@ class NotificationHandler(private val context: Context) {
         // Notification Channel IDs
         private const val CHANNEL_ID_ONGOING = "bus_tracking_ongoing"
         private const val CHANNEL_NAME_ONGOING = "실시간 버스 추적"
+        // Android 16 Live Update 전용 채널 (sound=null 보장, 기존 채널과 분리)
+        private const val CHANNEL_ID_LIVE_UPDATE = "bus_live_update"
+        private const val CHANNEL_NAME_LIVE_UPDATE = "실시간 버스 추적"
         private const val CHANNEL_ID_ALERT = "bus_tracking_alert"
         private const val CHANNEL_NAME_ALERT = "버스 도착 임박 알림"
         private const val CHANNEL_ID_ERROR = "bus_tracking_error"
@@ -45,6 +48,7 @@ class NotificationHandler(private val context: Context) {
         const val ONGOING_NOTIFICATION_ID = 1 // Referenced by BusAlertService
         private const val ALERT_NOTIFICATION_ID_BASE = 1000 // Base for dynamic alert IDs
         const val ARRIVING_SOON_NOTIFICATION_ID = 2 // For arriving soon notifications
+        const val TEST_LIVE_UPDATE_ID = 9999 // 개발 테스트 전용 ID
 
         // Intent Actions (referenced by notifications) - BusAlertService와 통일
         const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_TRACKING"
@@ -61,31 +65,39 @@ class NotificationHandler(private val context: Context) {
             try {
                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-                // Android 16+ (SDK 36): 기존 채널 삭제 후 재생성하여 Live Update "실시간 정보" 설정이 OS에 등록되도록 함
-                // 채널이 이전 SDK 타겟에서 생성된 경우 OS가 promoted notification 기능을 인식하지 못함
+                // Android 16+ (SDK 36): Live Update 전용 채널 생성
+                // AOSP 샘플과 동일하게 IMPORTANCE_DEFAULT만 사용, setSound(null,null) 미설정
+                // 채널이 이미 존재하면 삭제 후 재생성 (sound 설정 변경 적용)
                 if (Build.VERSION.SDK_INT >= 36) {
-                    val prefs = context.getSharedPreferences("notification_channel_prefs", Context.MODE_PRIVATE)
-                    val migrationKey = "channel_migrated_sdk36_v3_importance_default"
-                    if (!prefs.getBoolean(migrationKey, false)) {
-                        try {
-                            notificationManager.deleteNotificationChannel(CHANNEL_ID_ONGOING)
-                            Log.d(TAG, "🔄 Android 16 채널 마이그레이션: 기존 ongoing 채널 삭제")
-                        } catch (e: Exception) {
-                            Log.w(TAG, "⚠️ 기존 채널 삭제 실패 (이미 없을 수 있음): ${e.message}")
+                    notificationManager.deleteNotificationChannel(CHANNEL_ID_LIVE_UPDATE)
+                    val liveUpdateChannel = NotificationChannel(
+                        CHANNEL_ID_LIVE_UPDATE,
+                        CHANNEL_NAME_LIVE_UPDATE,
+                        NotificationManager.IMPORTANCE_DEFAULT
+                    ).apply {
+                        description = "실시간 버스 도착 정보 Live Update"
+                        // setSound(null, null) 제거 — AOSP 샘플과 동일하게 기본값 사용
+                        enableVibration(false)
+                        enableLights(false)
+                        setShowBadge(true)
+                        lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                        setBypassDnd(false)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            setAllowBubbles(false)
                         }
-                        prefs.edit().putBoolean(migrationKey, true).apply()
-                        Log.d(TAG, "✅ Android 16 채널 마이그레이션 완료 (v3 - IMPORTANCE_DEFAULT)")
                     }
+                    notificationManager.createNotificationChannel(liveUpdateChannel)
+                    Log.d(TAG, "✅ Live Update 채널 생성: $CHANNEL_ID_LIVE_UPDATE (IMPORTANCE_DEFAULT)")
                 }
 
-                // Ongoing Channel (Live Update / 실시간 정보 지원)
-                // Google 샘플과 동일하게 IMPORTANCE_DEFAULT 사용 - Live Update 토글이 설정에 표시되기 위한 요건
+                // Ongoing Channel (기존 호환성 유지 / Android 15 이하)
                 val ongoingChannel = NotificationChannel(
                     CHANNEL_ID_ONGOING,
                     CHANNEL_NAME_ONGOING,
                     NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
                     description = "실시간 버스 추적 상태 알림"
+                    setSound(null, null)
                     enableVibration(false)
                     enableLights(false)
                     setShowBadge(true)
@@ -379,132 +391,97 @@ class NotificationHandler(private val context: Context) {
         Log.d(TAG, "📱 Live Updates API 지원: ${if (Build.VERSION.SDK_INT >= 36) "✅ YES (Android 16+)" else "❌ NO (Android ${Build.VERSION.RELEASE})"}")
         Log.d(TAG, "📱 ================================")
 
-        // Android 16+ (API 36): NotificationCompat.Builder 사용 + FLAG_PROMOTED_ONGOING 수동 보완
-        // 문제: NotificationCompat.Builder.setRequestPromotedOngoing()가 extras에는 기록하지만
-        // notification.flags의 FLAG_PROMOTED_ONGOING 비트를 직접 설정하지 않을 수 있음.
-        // 이로 인해 hasPromotableCharacteristics()가 false → "실시간 정보" 토글 미표시.
-        // 해결: 빌드 후 리플렉션으로 FLAG_PROMOTED_ONGOING 값을 읽어 flags에 수동 설정.
+        // Android 16+ (API 36): NotificationCompat.Builder로 Live Update (상태칩) 구현
+        // AOSP 샘플(platform-samples/live-updates)과 동일한 방식:
+        //   - NotificationCompat.Builder.setRequestPromotedOngoing(true) 직접 호출
+        //   - NotificationCompat.ProgressStyle 사용
+        //   - 리플렉션 / 네이티브 Builder 불필요
         val notification = if (Build.VERSION.SDK_INT >= 36) {
             try {
-                // 가장 가까운 버스 정보 가져오기
-                val firstTracking = activeTrackings.values.firstOrNull()
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val canPostPromoted = try {
+                    notificationManager.canPostPromotedNotifications()
+                } catch (e: Exception) { false }
+                Log.d(TAG, "📋 canPostPromotedNotifications(): $canPostPromoted")
 
-                // 버스 타입별 색상 결정 (첫 번째 버스 기준)
-                val busTypeColor = when (firstTracking?.routeTCd) {
-                    "1" -> 0xFFDC2626.toInt() // 급행: 빨간색
-                    "2" -> 0xFFF59E0B.toInt() // 좌석: 주황색
-                    "3" -> 0xFF2563EB.toInt() // 일반: 파란색
-                    "4" -> 0xFF10B981.toInt() // 지선/마을: 초록색
-                    else -> ContextCompat.getColor(context, R.color.tracking_color) // 기본값
+                val firstTrackingForLive = activeTrackings.values.firstOrNull()
+                val busInfoForLive = firstTrackingForLive?.lastBusInfo
+                val remainingStopsInt = busInfoForLive?.remainingStops?.filter { it.isDigit() }?.toIntOrNull() ?: 0
+                val remainingMinutes = busInfoForLive?.getRemainingMinutes() ?: -1
+
+                val busTypeColor = when (firstTrackingForLive?.routeTCd) {
+                    "1" -> 0xFFDC2626.toInt()
+                    "2" -> 0xFFF59E0B.toInt()
+                    "3" -> 0xFF2563EB.toInt()
+                    "4" -> 0xFF10B981.toInt()
+                    else -> ContextCompat.getColor(context, R.color.tracking_color)
                 }
 
-                val largeBusIconBitmap = if (firstTracking != null) {
-                    createColoredBusIcon(context, busTypeColor, firstTracking.busNo)
+                // 상태칩 텍스트 — 항상 설정 (버스 정보 없으면 "추적중" 기본값)
+                val finalChipText = if (firstTrackingForLive != null) {
+                    buildLiveUpdateStatusChipText(
+                        busNo = firstTrackingForLive.busNo,
+                        estimatedTime = busInfoForLive?.estimatedTime,
+                        remainingMinutes = remainingMinutes,
+                        remainingStops = remainingStopsInt
+                    ).trim().take(10).ifBlank { "${firstTrackingForLive.busNo}번" }
                 } else {
-                    null
+                    "추적중"
                 }
+                Log.d(TAG, "✅ 상태칩 텍스트: '$finalChipText' stops=$remainingStopsInt min=$remainingMinutes")
 
-                val liveBuilder = NotificationCompat.Builder(context, CHANNEL_ID_ONGOING)
+                // NotificationCompat.Builder — AOSP 샘플과 동일한 방식
+                val liveBuilder = NotificationCompat.Builder(context, CHANNEL_ID_LIVE_UPDATE)
                     .setSmallIcon(R.drawable.ic_bus_notification)
                     .setContentTitle(title)
                     .setContentText(contentText)
-                    .setContentIntent(createPendingIntent())
                     .setOngoing(true)
                     .setOnlyAlertOnce(true)
-                    .setRequestPromotedOngoing(true)
-                    .setCategory(Notification.CATEGORY_PROGRESS)
+                    .setCategory(Notification.CATEGORY_TRANSPORT)
                     .setColor(busTypeColor)
+                    .setColorized(true)
                     .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                    .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                    .setShowWhen(false)
+                    .setRequestPromotedOngoing(true)     // ← 상태칩 핵심 (AOSP 샘플과 동일)
+                    .setShortCriticalText(finalChipText) // ← 칩에 표시될 텍스트
+                    .setContentIntent(createPendingIntent())
                     .addAction(R.drawable.ic_stop_tracking, "추적 중지", stopPendingIntent)
 
-                if (largeBusIconBitmap != null) {
-                    liveBuilder.setLargeIcon(largeBusIconBitmap)
+                if (hasAutoAlarm) {
+                    liveBuilder.addAction(R.drawable.ic_cancel, "중지", createStopAutoAlarmPendingIntent())
                 }
 
-                // --- Live Update Promotable Characteristics Checks ---
-                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                @Suppress("NewApi")
-                val canPostPromoted = try {
-                    notificationManager.canPostPromotedNotifications()
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ canPostPromotedNotifications 호출 실패: ${e.message}")
-                    false
+                if (firstTrackingForLive != null) {
+                    createColoredBusIcon(context, busTypeColor, firstTrackingForLive.busNo)?.let {
+                        liveBuilder.setLargeIcon(it)
+                    }
                 }
-                Log.d(TAG, "📋 NotificationManager.canPostPromotedNotifications(): $canPostPromoted")
 
-                // Live Update 핵심: ProgressStyle + setShortCriticalText
-                if (firstTracking != null) {
-                    val busInfo = firstTracking.lastBusInfo
-
-                    // 1. 상태 칩 텍스트 계산
-                    val remainingStopsInt = busInfo?.remainingStops
-                        ?.filter { it.isDigit() }?.toIntOrNull() ?: 0
-                    val timeMinutes = when {
-                        busInfo == null -> -1
-                        busInfo.estimatedTime.contains("분") ->
-                            busInfo.estimatedTime.replace("[^0-9]".toRegex(), "").toIntOrNull() ?: busInfo.getRemainingMinutes()
-                        else -> busInfo.getRemainingMinutes()
-                    }
-                    val computedChipText = buildLiveUpdateStatusChipText(
-                        busInfo?.estimatedTime,
-                        timeMinutes,
-                        remainingStopsInt
-                    )
-
-                    val remainingMinutes = busInfo?.getRemainingMinutes() ?: 0
-                    val arrivalTimeMillis = if (remainingMinutes > 0) {
-                        System.currentTimeMillis() + (remainingMinutes * 60 * 1000L)
-                    } else {
-                        System.currentTimeMillis() + 60000L
-                    }
-                    liveBuilder.setShortCriticalText(
-                        computedChipText.trim().take(10).ifBlank { "정보 없음" }
-                    )
-                    liveBuilder.setWhen(arrivalTimeMillis)
-                    liveBuilder.setUsesChronometer(true)
-                    liveBuilder.setChronometerCountDown(true)
-                    liveBuilder.setShowWhen(true)
-                    Log.d(TAG, "✅ setShortCriticalText 적용 완료 ('$computedChipText')")
-                    Log.d(TAG, "⏰ setWhen 설정: ${remainingMinutes}분 후 ($arrivalTimeMillis)")
-
-                    // 4. ProgressStyle 설정 (NotificationCompat.ProgressStyle)
+                // NotificationCompat.ProgressStyle — AOSP 샘플과 동일한 방식
+                if (firstTrackingForLive != null) {
                     val maxMinutes = 30
-                    val clampedRemainingMinutes = remainingMinutes.coerceIn(0, maxMinutes)
-                    val progressPercent = if (clampedRemainingMinutes <= 0) 100
-                                          else ((maxMinutes - clampedRemainingMinutes) * 100 / maxMinutes)
-                    val progress = progressPercent.coerceIn(0, 100)
+                    val progress = when {
+                        remainingMinutes < 0 -> 0
+                        remainingMinutes == 0 -> 100
+                        else -> ((maxMinutes - remainingMinutes.coerceIn(0, maxMinutes)) * 100 / maxMinutes).coerceIn(0, 100)
+                    }
                     val remainingPercent = (100 - progress).coerceIn(0, 100)
-
-                    Log.d(TAG, "🎯 Progress 계산: remaining=${remainingMinutes}분, progress=${progress}%")
+                    Log.d(TAG, "🎯 Progress: ${progress}% (${remainingMinutes}분 남음)")
 
                     try {
                         val progressStyle = NotificationCompat.ProgressStyle()
-                            .setProgress(progress)
-                            .setProgressTrackerIcon(
-                                androidx.core.graphics.drawable.IconCompat.createWithResource(
-                                    context,
-                                    R.drawable.ic_bus_tracker
-                                )
-                            )
+                        progressStyle.setProgress(progress)
 
-                        // Segments: 진행 구간 (버스 색상) + 남은 구간 (회색)
                         val segments = mutableListOf<NotificationCompat.ProgressStyle.Segment>()
-                        if (progress > 0) {
-                            segments.add(NotificationCompat.ProgressStyle.Segment(progress).setColor(busTypeColor))
-                        }
-                        if (remainingPercent > 0) {
-                            segments.add(
-                                NotificationCompat.ProgressStyle.Segment(remainingPercent)
-                                    .setColor(0xFFE0E0E0.toInt())
-                            )
-                        }
-                        if (segments.isNotEmpty()) {
-                            progressStyle.setProgressSegments(segments)
-                        }
+                        if (progress > 0) segments.add(
+                            NotificationCompat.ProgressStyle.Segment(progress).setColor(busTypeColor)
+                        )
+                        if (remainingPercent > 0) segments.add(
+                            NotificationCompat.ProgressStyle.Segment(remainingPercent).setColor(0xFFE0E0E0.toInt())
+                        )
+                        if (segments.isNotEmpty()) progressStyle.setProgressSegments(segments)
 
-                        // Points: 출발 (초록) + 도착 (주황)
-                        progressStyle.setProgressPoints(listOf(
+                        progressStyle.setProgressPoints(mutableListOf(
                             NotificationCompat.ProgressStyle.Point(1).setColor(0xFF4CAF50.toInt()),
                             NotificationCompat.ProgressStyle.Point(100).setColor(0xFFFF5722.toInt())
                         ))
@@ -512,93 +489,27 @@ class NotificationHandler(private val context: Context) {
                         liveBuilder.setStyle(progressStyle)
                         Log.d(TAG, "✅ NotificationCompat.ProgressStyle 설정 완료")
                     } catch (e: Exception) {
-                        Log.e(TAG, "❌ ProgressStyle 설정 실패: ${e.message}", e)
-                    }
-
-                    Log.d(TAG, "🎯 Live Update 설정 완료:")
-                    Log.d(TAG, "   - Builder: NotificationCompat.Builder")
-                    Log.d(TAG, "   - ProgressStyle: NotificationCompat.ProgressStyle")
-                    Log.d(TAG, "   - setShortCriticalText: '$computedChipText'")
-                    Log.d(TAG, "   - setRequestPromotedOngoing: true")
-                    Log.d(TAG, "   - setProgress: $progress/100")
-                    Log.d(TAG, "   - SDK Version: ${Build.VERSION.SDK_INT}")
-                }
-
-                // 자동알람 중지 액션
-                if (hasAutoAlarm) {
-                    liveBuilder.addAction(R.drawable.ic_cancel, "중지", createStopAutoAlarmPendingIntent())
-                }
-
-                // 승격 불가 시 설정 바로가기
-                if (!canPostPromoted) {
-                    try {
-                        val manageSettingsIntent = Intent(Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS).apply {
-                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                        }
-                        val manageSettingsPendingIntent = PendingIntent.getActivity(
-                            context, 9997, manageSettingsIntent,
-                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                        )
-                        liveBuilder.addAction(R.drawable.ic_cancel, "알림 설정", manageSettingsPendingIntent)
-                        Log.d(TAG, "⚙️ '알림 설정' 액션 추가됨 (Promoted Notifications 비활성화됨)")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ '알림 설정' 액션 추가 실패: ${e.message}")
+                        Log.e(TAG, "❌ ProgressStyle 실패: ${e.message}", e)
                     }
                 }
 
-                // 최종 빌드
                 val builtNotification = liveBuilder.build()
-
-                // FLAG_PROMOTED_ONGOING 수동 보완:
-                // NotificationCompat.Builder.setRequestPromotedOngoing()가 notification.flags에
-                // FLAG_PROMOTED_ONGOING 비트를 설정하지 않는 경우를 대비해 리플렉션으로 직접 설정.
-                // hasPromotableCharacteristics()가 true이면 이미 설정된 것이므로 생략.
-                @Suppress("NewApi")
-                val hasPromotableCharacteristics = try {
-                    builtNotification.hasPromotableCharacteristics()
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ hasPromotableCharacteristics 호출 실패: ${e.message}")
-                    false
-                }
-                if (!hasPromotableCharacteristics) {
-                    try {
-                        val flagField = Notification::class.java.getField("FLAG_PROMOTED_ONGOING")
-                        val flagValue = flagField.getInt(null)
-                        builtNotification.flags = builtNotification.flags or flagValue
-                        Log.d(TAG, "✅ FLAG_PROMOTED_ONGOING ($flagValue=0x${Integer.toHexString(flagValue)}) 리플렉션으로 수동 설정됨")
-                    } catch (e: NoSuchFieldException) {
-                        // FLAG_PROMOTED_ONGOING이 아직 공개 API가 아닌 경우 — setRequestPromotedOngoing 리플렉션 시도
-                        try {
-                            val method = builtNotification.javaClass.getMethod(
-                                "setRequestPromotedOngoing", Boolean::class.javaPrimitiveType
-                            )
-                            method.invoke(builtNotification, true)
-                            Log.d(TAG, "✅ setRequestPromotedOngoing(true) 리플렉션 폴백 적용됨")
-                        } catch (e2: Exception) {
-                            Log.w(TAG, "⚠️ FLAG_PROMOTED_ONGOING 수동 설정 불가: ${e2.message}")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ FLAG_PROMOTED_ONGOING 리플렉션 오류: ${e.message}")
-                    }
-                }
-
-                @Suppress("NewApi")
-                val hasPromotableAfterFix = try {
-                    builtNotification.hasPromotableCharacteristics()
-                } catch (e: Exception) { false }
-                Log.d(TAG, "📋 hasPromotableCharacteristics (수동 보완 후): $hasPromotableAfterFix")
-                Log.d(TAG, "📋 canPostPromotedNotifications: $canPostPromoted")
-                Log.d(TAG, "📋 notification.flags: ${Integer.toHexString(builtNotification.flags)}")
-
+                // FLAG_PROMOTED_ONGOING (0x4000) 수동 설정
+                // NotificationCompat.setRequestPromotedOngoing()이 Samsung One UI에서
+                // extras만 설정하고 실제 플래그를 설정하지 않는 문제 직접 보완
+                val flagPromotedOngoing = try {
+                    android.app.Notification::class.java.getField("FLAG_PROMOTED_ONGOING").getInt(null)
+                } catch (e: Exception) { 0x4000 }
+                builtNotification.flags = builtNotification.flags or flagPromotedOngoing
+                Log.d(TAG, "📋 flags: 0x${Integer.toHexString(builtNotification.flags)} (FLAG_PROMOTED_ONGOING=0x${Integer.toHexString(flagPromotedOngoing)} 포함)")
+                Log.d(TAG, "📋 android.shortCriticalText: ${builtNotification.extras.getCharSequence("android.shortCriticalText")}")
+                Log.d(TAG, "📋 android.requestPromotedOngoing: ${builtNotification.extras.getBoolean("android.requestPromotedOngoing")}")
                 builtNotification
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Android 16 NotificationCompat.Builder 오류: ${e.message}", e)
-                e.printStackTrace()
-                val compatNotification = notificationBuilder.build()
-                val fallbackFlags = Notification.FLAG_ONGOING_EVENT or
-                    Notification.FLAG_NO_CLEAR or Notification.FLAG_FOREGROUND_SERVICE
-                compatNotification.flags = compatNotification.flags or fallbackFlags
-                compatNotification
+                Log.e(TAG, "❌ Android 16 NotificationCompat Builder 오류: ${e.message}", e)
+                val fallback = notificationBuilder.build()
+                fallback.flags = fallback.flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR or Notification.FLAG_FOREGROUND_SERVICE
+                fallback
             }
         } else {
             // Android 15 이하는 기존 NotificationCompat 사용
@@ -619,43 +530,153 @@ class NotificationHandler(private val context: Context) {
         return notification
     }
 
-    // Android 16 Live Update 상태칩 적용 헬퍼
+    // ===== Live Update 개발 테스트 메서드 =====
+
+    fun showTestLiveUpdateNotification(
+        busNo: String,
+        remainingStops: Int,
+        remainingMinutes: Int,
+        chipText: String
+    ) {
+        if (Build.VERSION.SDK_INT < 36) {
+            Log.w(TAG, "⚠️ Live Update 테스트: Android 16 미만 (SDK ${Build.VERSION.SDK_INT}) 미지원")
+            return
+        }
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val canPostPromoted = try { notificationManager.canPostPromotedNotifications() } catch (e: Exception) { false }
+            Log.d(TAG, "🧪 canPostPromotedNotifications(): $canPostPromoted")
+
+            val busTypeColor = 0xFF2563EB.toInt()
+            val contentText = when {
+                remainingStops == 0 && remainingMinutes == 0 -> "도착"
+                remainingStops == 1 -> "곧도착 · 1정류장 전"
+                remainingStops > 1  -> "${remainingStops}개 정류장 전 (약 ${remainingMinutes}분)"
+                else -> "버스 추적 시작 중..."
+            }
+
+            val contentIntent = PendingIntent.getActivity(
+                context, 9997,
+                Intent(context, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val cancelServiceIntent = PendingIntent.getService(
+                context, 9996,
+                Intent(context, com.example.daegu_bus_app.services.BusAlertService::class.java).apply {
+                    action = ACTION_STOP_TRACKING
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // NotificationCompat.Builder — AOSP 샘플과 완전히 동일한 방식
+            val liveBuilder = NotificationCompat.Builder(context, CHANNEL_ID_LIVE_UPDATE)
+                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setContentTitle("[$busNo] 동성로 방면  🧪테스트")
+                .setContentText(contentText)
+                .setContentIntent(contentIntent)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(Notification.CATEGORY_TRANSPORT)
+                .setColor(busTypeColor)
+                .setColorized(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setShowWhen(false)
+                .setRequestPromotedOngoing(true)     // ← 상태칩 핵심
+                .setShortCriticalText(chipText)      // ← 칩 텍스트
+                .addAction(R.drawable.ic_cancel, "테스트 종료", cancelServiceIntent)
+
+            // NotificationCompat.ProgressStyle
+            val maxMin = 20
+            val progress = when {
+                remainingMinutes < 0 -> 5
+                remainingMinutes == 0 -> 100
+                else -> ((maxMin - remainingMinutes.coerceIn(0, maxMin)) * 100 / maxMin).coerceIn(5, 100)
+            }
+            try {
+                val ps = NotificationCompat.ProgressStyle()
+                ps.setProgress(progress)
+                val rem = (100 - progress).coerceIn(0, 100)
+                val segs = mutableListOf<NotificationCompat.ProgressStyle.Segment>()
+                if (progress > 0) segs.add(NotificationCompat.ProgressStyle.Segment(progress).setColor(busTypeColor))
+                if (rem > 0)      segs.add(NotificationCompat.ProgressStyle.Segment(rem).setColor(0xFFE0E0E0.toInt()))
+                if (segs.isNotEmpty()) ps.setProgressSegments(segs)
+                ps.setProgressPoints(mutableListOf(
+                    NotificationCompat.ProgressStyle.Point(1).setColor(0xFF4CAF50.toInt()),
+                    NotificationCompat.ProgressStyle.Point(100).setColor(0xFFFF5722.toInt())
+                ))
+                liveBuilder.setStyle(ps)
+                Log.d(TAG, "🧪 NotificationCompat.ProgressStyle 설정 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 테스트 ProgressStyle 실패: ${e.message}")
+            }
+
+            val n = liveBuilder.build()
+            // FLAG_PROMOTED_ONGOING 수동 설정 (NotificationCompat이 Samsung에서 extras만 설정하는 문제 보완)
+            val flagPromotedOngoing = try {
+                android.app.Notification::class.java.getField("FLAG_PROMOTED_ONGOING").getInt(null)
+            } catch (e: Exception) { 0x4000 }
+            n.flags = n.flags or flagPromotedOngoing
+            Log.d(TAG, "🧪 TEST flags=0x${Integer.toHexString(n.flags)} (FLAG_PROMOTED_ONGOING 포함 여부: ${(n.flags and flagPromotedOngoing) != 0})")
+            Log.d(TAG, "🧪 TEST chip='${n.extras.getCharSequence("android.shortCriticalText")}'")
+            Log.d(TAG, "🧪 TEST requestPromotedOngoing=${n.extras.getBoolean("android.requestPromotedOngoing")}")
+
+            notificationManager.notify(TEST_LIVE_UPDATE_ID, n)
+            Log.d(TAG, "🧪 테스트 Live Update 알림 발송 완료 chip='$chipText'")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 테스트 Live Update 실패: ${e.message}", e)
+        }
+    }
+
+    fun cancelTestLiveUpdateNotification() {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(TEST_LIVE_UPDATE_ID)
+        Log.d(TAG, "🧪 테스트 Live Update 알림 취소")
+    }
+
+    // Android 16 Live Update 상태칩 텍스트 헬퍼
+    // 우선순위: 도착/지나감 > 곧도착(1정류소) > X개소전 > X분 > 버스번호(정보없음)
     private fun buildLiveUpdateStatusChipText(
+        busNo: String,
         estimatedTime: String?,
         remainingMinutes: Int,
         remainingStops: Int
     ): String {
-        val normalized = estimatedTime?.trim().orEmpty().replace(" ", "")
-        val normalizedNormalized = when {
-            normalized.contains("곧") && normalized.contains("도착") -> "도착"
-            normalized == "운행종료" || normalized == "지나감" -> "지나감"
-            normalized.contains("도착") -> "도착"
-            else -> normalized
+        val busLabel = if (busNo.isNotBlank()) "${busNo}번" else "추적중"
+
+        // 아직 버스 정보 없음 → 버스 번호 표시 (추적 시작 직후)
+        if (estimatedTime.isNullOrBlank()) {
+            return busLabel
         }
 
-        if (remainingMinutes < 0) {
+        val normalized = estimatedTime.trim().replace(" ", "")
+
+        // 운행종료 / 지나감
+        if (normalized == "운행종료" || normalized == "지나감" || normalized == "-") {
             return "지나감"
         }
 
-        if (normalizedNormalized == "지나감") {
-            return "지나감"
-        }
-
-        val minutePart = if (normalizedNormalized.contains("분")) {
-            normalizedNormalized.replace("[^0-9]".toRegex(), "").toIntOrNull()
-        } else {
-            null
-        } ?: remainingMinutes
-
-        if (normalizedNormalized == "도착" || minutePart <= 0 || remainingMinutes <= 0) {
+        // 도착 (곧 도착 포함)
+        if (normalized.contains("도착") || normalized.contains("곧") || remainingMinutes == 0) {
             return "도착"
         }
 
-        if (minutePart > 0) {
-            return "${minutePart}분"
+        // 시간이 음수(유효하지 않음) → 버스 번호 fallback
+        if (remainingMinutes < 0) {
+            return busLabel
         }
 
-        return if (remainingStops > 0) "${remainingStops}개전" else "정보 없음"
+        // 1정류소 전 → "곧도착"
+        if (remainingStops == 1) return "곧도착"
+
+        // 2개소 이상 → "X개소전"
+        if (remainingStops > 1) return "${remainingStops}개소전"
+
+        // 정류소 정보 없고 분 정보 있음 → "X분"
+        val minutePart = normalized.replace("[^0-9]".toRegex(), "").toIntOrNull()
+            ?: remainingMinutes
+        if (minutePart > 0) return "${minutePart}분"
+
+        return busLabel
     }
 
     private fun buildTrackingHeadline(busNo: String, timeText: String): String {

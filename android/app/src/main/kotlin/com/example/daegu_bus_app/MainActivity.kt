@@ -787,6 +787,56 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         }
                     }
                 }
+                // ===== 개발 테스트: Live Update 상태칩 검증 =====
+                "showTestLiveUpdate" -> {
+                    val busNo = call.argument<String>("busNo") ?: "623"
+                    val remainingStops = call.argument<Int>("remainingStops") ?: 0
+                    val remainingMinutes = call.argument<Int>("remainingMinutes") ?: -1
+                    val chipText = call.argument<String>("chipText") ?: "추적중"
+
+                    // canPostPromotedNotifications 확인 (API 36+)
+                    val canPost = if (Build.VERSION.SDK_INT >= 36) {
+                        try {
+                            val nm = getSystemService(android.app.NotificationManager::class.java)
+                            nm.canPostPromotedNotifications()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "canPostPromotedNotifications 오류: ${e.message}")
+                            false
+                        }
+                    } else false
+
+                    Log.d(TAG, "🧪 showTestLiveUpdate: canPostPromotedNotifications=$canPost")
+                    notificationHandler.showTestLiveUpdateNotification(busNo, remainingStops, remainingMinutes, chipText)
+                    result.success(mapOf(
+                        "sent" to true,
+                        "canPostPromoted" to canPost,
+                        "sdkInt" to Build.VERSION.SDK_INT
+                    ))
+                }
+                "cancelTestLiveUpdate" -> {
+                    notificationHandler.cancelTestLiveUpdateNotification()
+                    result.success(true)
+                }
+                "openPromotedNotificationSettings" -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= 36) {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS).apply {
+                                putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        } else {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SETTINGS_ERROR", e.message, null)
+                    }
+                }
                 "cancelAlarmByRoute" -> {
                     val busNo = call.argument<String>("busNo")
                     val stationName = call.argument<String>("stationName")

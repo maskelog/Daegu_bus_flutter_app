@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../services/settings_service.dart';
@@ -150,6 +151,13 @@ class SettingsScreen extends StatelessWidget {
                   _buildCustomExcludeDateSelector(context, settingsService),
                 ],
               ),
+
+              const SizedBox(height: 16),
+
+              // 개발자 테스트 섹션
+              const _LiveUpdateTestCard(),
+
+              const SizedBox(height: 24),
             ],
           );
         },
@@ -772,6 +780,227 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
             label: const Text('날짜 추가'),
           );
         },
+      ),
+    );
+  }
+}
+
+// ===== Live Update 개발 테스트 카드 =====
+
+class _LiveUpdateTestCard extends StatefulWidget {
+  const _LiveUpdateTestCard();
+
+  @override
+  State<_LiveUpdateTestCard> createState() => _LiveUpdateTestCardState();
+}
+
+class _LiveUpdateTestCardState extends State<_LiveUpdateTestCard> {
+  static const _channel = MethodChannel('com.example.daegu_bus_app/bus_api');
+
+  // 테스트 시나리오: busNo, remainingStops, remainingMinutes, chipText
+  static const _scenarios = [
+    {'label': '초기', 'busNo': '623', 'stops': 0, 'minutes': -1, 'chip': '추적중'},
+    {'label': '7개소전', 'busNo': '623', 'stops': 7, 'minutes': 14, 'chip': '7개소전'},
+    {'label': '4개소전', 'busNo': '623', 'stops': 4, 'minutes': 8, 'chip': '4개소전'},
+    {'label': '곧도착', 'busNo': '623', 'stops': 1, 'minutes': 2, 'chip': '곧도착'},
+    {'label': '도착', 'busNo': '623', 'stops': 0, 'minutes': 0, 'chip': '도착'},
+  ];
+
+  int _activeIdx = -1; // -1 = 비활성
+  bool _loading = false;
+  bool? _canPostPromoted; // null=미확인, true=허용, false=거부
+
+  Future<void> _sendTest(int idx) async {
+    if (_loading) return;
+    setState(() { _loading = true; _activeIdx = idx; });
+    try {
+      final s = _scenarios[idx];
+      final result = await _channel.invokeMethod<Map>('showTestLiveUpdate', {
+        'busNo': s['busNo'],
+        'remainingStops': s['stops'],
+        'remainingMinutes': s['minutes'],
+        'chipText': s['chip'],
+      });
+      final canPost = result?['canPostPromoted'] as bool? ?? false;
+      final sdk = result?['sdkInt'] as int? ?? 0;
+      if (mounted) setState(() { _canPostPromoted = canPost; });
+
+      if (!canPost && mounted) {
+        showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 36),
+            title: const Text('실시간 정보 권한 필요'),
+            content: Text(
+              sdk < 36
+                ? 'Android 16 (API 36) 이상에서만 Live Update 상태칩이 지원됩니다.\n현재 SDK: $sdk'
+                : '상태바 칩을 표시하려면 "실시간 정보" 권한이 필요합니다.\n\n'
+                  '설정 → 앱 → 대구버스 → 알림 → 실시간 버스 추적\n→ 실시간 정보 토글 ON',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('닫기'),
+              ),
+              if (sdk >= 36)
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _channel.invokeMethod('openPromotedNotificationSettings');
+                  },
+                  child: const Text('설정 열기'),
+                ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('테스트 실패: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() { _loading = false; });
+    }
+  }
+
+  Future<void> _cancelTest() async {
+    setState(() { _loading = true; _activeIdx = -1; });
+    try {
+      await _channel.invokeMethod('cancelTestLiveUpdate');
+    } catch (e) {
+      // ignore
+    } finally {
+      if (mounted) setState(() { _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: cs.primary.withAlpha(80),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 헤더
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              children: [
+                Icon(Icons.science_outlined, color: cs.primary, size: 20),
+                const SizedBox(width: 10),
+                Text(
+                  'Live Update 테스트',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurface,
+                  ),
+                ),
+                const Spacer(),
+                // 권한 상태 인디케이터
+                if (_canPostPromoted != null)
+                  Icon(
+                    _canPostPromoted! ? Icons.verified_rounded : Icons.warning_amber_rounded,
+                    color: _canPostPromoted! ? Colors.green : Colors.orange,
+                    size: 18,
+                  ),
+                if (_canPostPromoted != null) const SizedBox(width: 6),
+                if (_activeIdx >= 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: cs.primary,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _scenarios[_activeIdx]['chip'] as String,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: cs.onPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: Text(
+              '상태칩·알림 동작을 아래 버튼으로 직접 확인하세요.\n상태바에 버스 아이콘+텍스트가 표시되어야 정상입니다.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                height: 1.5,
+              ),
+            ),
+          ),
+
+          const Divider(height: 1, indent: 16, endIndent: 16),
+
+          // 시나리오 버튼 행
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List.generate(_scenarios.length, (i) {
+                final s = _scenarios[i];
+                final isActive = _activeIdx == i;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  child: FilledButton.tonal(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: isActive ? cs.primary : cs.surfaceContainerHigh,
+                      foregroundColor: isActive ? cs.onPrimary : cs.onSurface,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: _loading ? null : () => _sendTest(i),
+                    child: Text(
+                      s['label'] as String,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+
+          // 종료 버튼
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: cs.error,
+                side: BorderSide(color: cs.error.withAlpha(120)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: _activeIdx < 0 || _loading ? null : _cancelTest,
+              icon: const Icon(Icons.close, size: 16),
+              label: Text(
+                '테스트 종료',
+                style: theme.textTheme.labelMedium,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

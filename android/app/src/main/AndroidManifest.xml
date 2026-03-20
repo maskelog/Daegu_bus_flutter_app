@@ -28,6 +28,8 @@
     <!-- 포그라운드 권한 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Android 16 Live Update / Samsung Now Bar용 specialUse 포그라운드 서비스 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- 배터리 최적화 관련 권한 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -47,8 +49,12 @@
         android:networkSecurityConfig="@xml/network_security_config">
         <!-- <meta-data android:name="com.kakao.sdk.AppKey" android:value="${BuildConfig.KAKAO_NATIVE_APP_KEY}"/> -->
 
-        <!-- Samsung One UI 7 Live Notifications and Now Bar 지원 -->
+        <!-- Samsung One UI 7/8.5 Live Notifications and Now Bar 지원 -->
         <meta-data android:name="com.samsung.android.support.ongoing_activity" android:value="true" />
+        <!-- Google Play specialUse FGS 사유 (Live Update 실시간 버스 추적) -->
+        <property
+            android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="실시간 버스 도착 정보 추적 및 Live Update 알림 제공" />
 
         <!-- AdMob 앱 ID (릴리스 빌드에서 ADMOB_APP_ID 메타데이터로 주입) -->
         <meta-data
@@ -76,10 +82,10 @@
             </intent-filter>
         </activity>
 
-        <!-- 버스 알림 포그라운드 서비스 -->
+        <!-- 버스 알림 포그라운드 서비스 (Android 16 Live Update: specialUse 타입 추가) -->
         <service
             android:name="com.example.daegu_bus_app.services.BusAlertService"
-            android:foregroundServiceType="dataSync"
+            android:foregroundServiceType="dataSync|specialUse"
             android:exported="false" />
 
         <!-- TTS 서비스 -->

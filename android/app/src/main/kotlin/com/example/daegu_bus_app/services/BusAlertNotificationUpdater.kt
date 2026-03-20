@@ -33,7 +33,14 @@ class BusAlertNotificationUpdater(
 
         if (!isInForeground) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (Build.VERSION.SDK_INT >= 36) {
+                    // Android 16+: specialUse 타입으로 Live Update (Now Bar) 지원
+                    service.startForeground(
+                        notificationId,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    )
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     service.startForeground(
                         notificationId,
                         notification,
