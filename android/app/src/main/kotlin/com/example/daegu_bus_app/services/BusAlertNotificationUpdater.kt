@@ -33,7 +33,13 @@ class BusAlertNotificationUpdater(
 
         if (!isInForeground) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (Build.VERSION.SDK_INT >= 36) {
+                    service.startForeground(
+                        notificationId,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    )
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     service.startForeground(
                         notificationId,
                         notification,

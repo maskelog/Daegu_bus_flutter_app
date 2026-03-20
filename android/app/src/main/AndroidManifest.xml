@@ -11,7 +11,7 @@
 
     <!-- 알림 권한 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    
+
     <!-- Android 16 Live Updates 권한 -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
 
@@ -28,6 +28,7 @@
     <!-- 포그라운드 권한 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- 배터리 최적화 관련 권한 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -40,31 +41,17 @@
         <package android:name="com.android.settings"/>
     </queries>
 
-    <application
-        android:label="대구 버스"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:networkSecurityConfig="@xml/network_security_config">
+    <application android:label="대구 버스" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:networkSecurityConfig="@xml/network_security_config">
         <!-- <meta-data android:name="com.kakao.sdk.AppKey" android:value="${BuildConfig.KAKAO_NATIVE_APP_KEY}"/> -->
 
         <!-- Samsung One UI 7 Live Notifications and Now Bar 지원 -->
         <meta-data android:name="com.samsung.android.support.ongoing_activity" android:value="true" />
+        <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="실시간 버스 도착 정보 추적 및 Live Update 알림 제공" />
 
         <!-- AdMob 앱 ID (릴리스 빌드에서 ADMOB_APP_ID 메타데이터로 주입) -->
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="${ADMOB_APP_ID}"/>
+        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="${ADMOB_APP_ID}"/>
 
-        <activity
-            android:name="com.example.daegu_bus_app.MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop"
-            android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize"
-            android:screenOrientation="unspecified"
-            android:resizeableActivity="true">
+        <activity android:name="com.example.daegu_bus_app.MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize" android:screenOrientation="unspecified" android:resizeableActivity="true">
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
                  while the Flutter UI initializes. After that, this theme continues
@@ -77,22 +64,13 @@
         </activity>
 
         <!-- 버스 알림 포그라운드 서비스 -->
-        <service
-            android:name="com.example.daegu_bus_app.services.BusAlertService"
-            android:foregroundServiceType="dataSync"
-            android:exported="false" />
+        <service android:name="com.example.daegu_bus_app.services.BusAlertService" android:foregroundServiceType="dataSync|specialUse" android:exported="false" />
 
         <!-- TTS 서비스 -->
-        <service
-            android:name="com.example.daegu_bus_app.services.TTSService"
-            android:foregroundServiceType="dataSync"
-            android:exported="false" />
+        <service android:name="com.example.daegu_bus_app.services.TTSService" android:foregroundServiceType="dataSync" android:exported="false" />
 
         <!-- 정류장 추적 서비스 -->
-        <service
-            android:name="com.example.daegu_bus_app.services.StationTrackingService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
+        <service android:name="com.example.daegu_bus_app.services.StationTrackingService" android:exported="false" android:foregroundServiceType="dataSync" />
 
         <!-- AlarmManager를 위한 리시버 등록 -->
         <service android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false"/>
@@ -103,17 +81,12 @@
             </intent-filter>
         </receiver>
         <!-- 제거: NOTIFICATION_DISMISS 경로는 사용하지 않음 (중복 선언 방지) -->
-        <receiver
-            android:name="com.example.daegu_bus_app.receivers.AlarmReceiver"
-            android:enabled="true"
-            android:exported="false">
+        <receiver android:name="com.example.daegu_bus_app.receivers.AlarmReceiver" android:enabled="true" android:exported="false">
             <intent-filter>
                 <action android:name="com.example.daegu_bus_app.AUTO_ALARM" />
             </intent-filter>
         </receiver>
-        <receiver
-            android:name="com.example.daegu_bus_app.receivers.NotificationCancelReceiver"
-            android:exported="false">
+        <receiver android:name="com.example.daegu_bus_app.receivers.NotificationCancelReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="com.example.daegu_bus_app.ACTION_NOTIFICATION_CANCEL" />
             </intent-filter>
