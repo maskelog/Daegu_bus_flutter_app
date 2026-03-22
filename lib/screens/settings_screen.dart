@@ -1,6 +1,10 @@
+import 'dart:io';
+
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import '../services/permission_service.dart';
 import '../services/settings_service.dart';
 import '../models/alarm_sound.dart';
 
@@ -83,6 +87,10 @@ class SettingsScreen extends StatelessWidget {
                     onChanged: (value) =>
                         settingsService.updateVibrate(value),
                   ),
+                  if (Platform.isAndroid) ...[
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    const _LiveUpdatesTile(),
+                  ],
                 ],
               ),
 
@@ -773,6 +781,72 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class _LiveUpdatesTile extends StatefulWidget {
+  const _LiveUpdatesTile();
+
+  @override
+  State<_LiveUpdatesTile> createState() => _LiveUpdatesTileState();
+}
+
+class _LiveUpdatesTileState extends State<_LiveUpdatesTile> {
+  bool? _enabled; // null = not applicable (SDK < 36)
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      if (androidInfo.version.sdkInt < 36) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      final result = await PermissionService.canPostPromotedNotifications();
+      if (mounted) setState(() { _enabled = result; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading || _enabled == null) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final enabled = _enabled!;
+
+    return ListTile(
+      leading: Icon(
+        Icons.update_rounded,
+        color: enabled ? colorScheme.primary : colorScheme.error,
+      ),
+      title: const Text('실시간 정보 (Live Updates)'),
+      subtitle: Text(
+        enabled
+            ? '활성화됨 - 상태바 / Now Bar에 버스 정보 표시'
+            : '비활성화됨 - 탭하여 설정 열기',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: enabled ? colorScheme.onSurfaceVariant : colorScheme.error,
+        ),
+      ),
+      trailing: enabled
+          ? Icon(Icons.check_circle_outline, color: colorScheme.primary)
+          : Icon(Icons.open_in_new, color: colorScheme.error),
+      onTap: enabled
+          ? null
+          : () async {
+              await PermissionService.requestPromotedNotificationPermission();
+              await _check();
+            },
     );
   }
 }
