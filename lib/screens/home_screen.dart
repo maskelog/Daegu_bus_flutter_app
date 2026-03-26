@@ -435,9 +435,8 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final bannerHeight =
-        (_isBannerAdLoaded && _bannerAd != null) ? _bannerAd!.size.height.toDouble() : 0.0;
-    final navBottomOffset = bannerHeight > 0 ? bannerHeight : 8.0;
+    const bannerHeight = 50.0; // AdSize.banner 표준 높이 - 광고 미표시 시에도 공간 유지
+    final navBottomOffset = bannerHeight + 8.0;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -560,17 +559,17 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                   ),
-                  if (_isBannerAdLoaded && _bannerAd != null)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: SizedBox(
-                        width: _bannerAd!.size.width.toDouble(),
-                        height: _bannerAd!.size.height.toDouble(),
-                        child: AdWidget(ad: _bannerAd!),
-                      ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: SizedBox(
+                      height: bannerHeight,
+                      child: (_isBannerAdLoaded && _bannerAd != null)
+                          ? AdWidget(ad: _bannerAd!)
+                          : const SizedBox.shrink(),
                     ),
+                  ),
                 ],
               ),
             ),
