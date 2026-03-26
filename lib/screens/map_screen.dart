@@ -136,23 +136,10 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _loadHtmlTemplate() async {
     try {
-      if (!dotenv.isInitialized || _resolveKakaoApiKey() == null) {
-        await _initializeKakaoRuntimeConfig();
-      }
-
-      String htmlTemplate =
+      final String htmlTemplate =
           await rootBundle.loadString('assets/kakao_map.html');
 
-      // 환경변수(.env) 또는 --dart-define에서 카카오 API 키 가져오기
-      String? kakaoApiKey = _resolveKakaoApiKey();
-
-      if (kakaoApiKey == null || kakaoApiKey.isEmpty) {
-        debugPrint(
-          '⚠️ 최초 키 조회 실패. 런타임 환경 재초기화 후 재시도합니다.',
-        );
-        await _initializeKakaoRuntimeConfig(forceReload: true);
-        kakaoApiKey = _resolveKakaoApiKey();
-      }
+      final String? kakaoApiKey = _resolveKakaoApiKey();
 
       if (kakaoApiKey == null || kakaoApiKey.isEmpty) {
         throw Exception('KAKAO_JS_API_KEY가 설정되지 않았습니다.');
@@ -162,10 +149,7 @@ class _MapScreenState extends State<MapScreen> {
         throw Exception('KAKAO_JS_API_KEY 형식이 유효하지 않습니다.');
       }
 
-      // 카카오 API 키를 실제 키로 교체
       _htmlContent = htmlTemplate.replaceAll('YOUR_KAKAO_API_KEY', kakaoApiKey);
-
-      debugPrint('카카오맵 API 키 로드 완료 (길이: ${kakaoApiKey.length})');
     } catch (e) {
       debugPrint('HTML 템플릿 로드 오류: $e');
       throw Exception('HTML 템플릿을 로드할 수 없습니다: $e');
@@ -203,34 +187,6 @@ class _MapScreenState extends State<MapScreen> {
     return null;
   }
 
-  Future<void> _initializeKakaoRuntimeConfig({bool forceReload = false}) async {
-    if (!forceReload && dotenv.isInitialized) {
-      final existing = _resolveKakaoApiKey();
-      if (existing != null && existing.isNotEmpty) {
-        return;
-      }
-    }
-
-    final mergedEnv = <String, String>{
-      if (_kakaoJsApiKeyFromDefine.isNotEmpty)
-        'KAKAO_JS_API_KEY': _kakaoJsApiKeyFromDefine.trim(),
-      if (_kakaoNativeAppKeyFromDefine.isNotEmpty)
-        'KAKAO_NATIVE_APP_KEY': _kakaoNativeAppKeyFromDefine.trim(),
-    };
-
-    try {
-      await dotenv.load(fileName: '.env', mergeWith: mergedEnv, isOptional: true);
-      debugPrint('✅ 카카오맵 환경설정 로드 완료');
-    } catch (_) {
-      dotenv.testLoad(mergeWith: mergedEnv);
-      debugPrint('⚠️ 카카오맵 .env 로드 실패, dart-define/기본값으로 폴백');
-    }
-
-    debugPrint(
-      '🐛 KAKAO_JS_API_KEY 상태: '
-      '${dotenv.isInitialized && dotenv.env["KAKAO_JS_API_KEY"]?.isNotEmpty == true ? "있음" : "없음"}',
-    );
-  }
 
   Future<Position> _getCurrentPosition() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
