@@ -567,7 +567,20 @@ class _HomeScreenState extends State<HomeScreen>
                       height: bannerHeight,
                       child: (_isBannerAdLoaded && _bannerAd != null)
                           ? AdWidget(ad: _bannerAd!)
-                          : const SizedBox.shrink(),
+                          : Container(
+                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              child: Center(
+                                child: Text(
+                                  'AD',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(128),
+                                    letterSpacing: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ),
                     ),
                   ),
                 ],
