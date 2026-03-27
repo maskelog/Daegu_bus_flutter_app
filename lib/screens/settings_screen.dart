@@ -72,11 +72,9 @@ class SettingsScreen extends StatelessWidget {
                     title: '다크 모드',
                     icon: Icons.dark_mode_outlined,
                     value: settingsService.themeMode == ThemeMode.dark,
-                    onChanged: (value) {
-                      settingsService.updateThemeMode(
-                        value ? ThemeMode.dark : ThemeMode.light,
-                      );
-                    },
+                    onChanged: (value) => settingsService.updateThemeMode(
+                      value ? ThemeMode.dark : ThemeMode.light,
+                    ),
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   _buildSwitchTile(
@@ -84,8 +82,7 @@ class SettingsScreen extends StatelessWidget {
                     title: '진동',
                     icon: Icons.vibration,
                     value: settingsService.vibrate,
-                    onChanged: (value) =>
-                        settingsService.updateVibrate(value),
+                    onChanged: (value) => settingsService.updateVibrate(value),
                   ),
                   if (Platform.isAndroid) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
@@ -107,8 +104,7 @@ class SettingsScreen extends StatelessWidget {
                     title: '음성 안내 사용',
                     icon: Icons.volume_up_outlined,
                     value: settingsService.useTts,
-                    onChanged: (value) =>
-                        settingsService.updateUseTts(value),
+                    onChanged: (value) => settingsService.updateUseTts(value),
                   ),
                   if (settingsService.useTts) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
@@ -116,18 +112,6 @@ class SettingsScreen extends StatelessWidget {
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     _buildTtsTestButton(context, settingsService),
                   ],
-                ],
-              ),
-
-              const SizedBox(height: 16),
-
-              // 테마 색상 섹션
-              _buildSectionCard(
-                context,
-                title: '테마 색상',
-                icon: Icons.palette_outlined,
-                children: [
-                  _buildColorSchemePicker(context, settingsService),
                 ],
               ),
 
@@ -441,81 +425,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  /// 컬러 스키마 선택 - 색상 동그라미 8개
-  Widget _buildColorSchemePicker(
-      BuildContext context, SettingsService settingsService) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    const colorMap = <ColorSchemeType, Color>{
-      ColorSchemeType.blue: Color(0xFF1565C0),
-      ColorSchemeType.green: Color(0xFF2E7D32),
-      ColorSchemeType.purple: Color(0xFF6A1B9A),
-      ColorSchemeType.orange: Color(0xFFE65100),
-      ColorSchemeType.pink: Color(0xFFAD1457),
-      ColorSchemeType.red: Color(0xFFC62828),
-      ColorSchemeType.teal: Color(0xFF00695C),
-      ColorSchemeType.indigo: Color(0xFF283593),
-    };
-
-    const nameMap = <ColorSchemeType, String>{
-      ColorSchemeType.blue: "파랑",
-      ColorSchemeType.green: "초록",
-      ColorSchemeType.purple: "보라",
-      ColorSchemeType.orange: "주황",
-      ColorSchemeType.pink: "핑크",
-      ColorSchemeType.red: "빨강",
-      ColorSchemeType.teal: "청록",
-      ColorSchemeType.indigo: "남색",
-    };
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: ColorSchemeType.values.map((type) {
-          final isSelected = settingsService.colorScheme == type;
-          final color = colorMap[type]!;
-          final name = nameMap[type]!;
-          return GestureDetector(
-            onTap: () => settingsService.updateColorScheme(type),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: isSelected
-                        ? Border.all(color: colorScheme.onSurface, width: 3)
-                        : Border.all(color: Colors.transparent, width: 3),
-                    boxShadow: isSelected
-                        ? [BoxShadow(color: color.withAlpha(120), blurRadius: 8, offset: const Offset(0, 3))]
-                        : null,
-                  ),
-                  child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 22) : null,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  name,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
-                    color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
   /// 폰트 크기 슬라이더 + 미리보기 텍스트
   Widget _buildFontSizeSlider(
       BuildContext context, SettingsService settingsService) {
@@ -531,7 +440,8 @@ class SettingsScreen extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.text_decrease, color: colorScheme.onSurfaceVariant, size: 18),
+              Icon(Icons.text_decrease,
+                  color: colorScheme.onSurfaceVariant, size: 18),
               Expanded(
                 child: Slider(
                   value: multiplier,
@@ -539,10 +449,12 @@ class SettingsScreen extends StatelessWidget {
                   max: SettingsService.maxFontSizeMultiplier,
                   divisions: 12,
                   label: "$percent%",
-                  onChanged: (value) => settingsService.updateFontSizeMultiplier(value),
+                  onChanged: (value) =>
+                      settingsService.updateFontSizeMultiplier(value),
                 ),
               ),
-              Icon(Icons.text_increase, color: colorScheme.onSurfaceVariant, size: 18),
+              Icon(Icons.text_increase,
+                  color: colorScheme.onSurfaceVariant, size: 18),
             ],
           ),
           Container(
@@ -555,7 +467,8 @@ class SettingsScreen extends StatelessWidget {
             ),
             child: Text(
               "버스가 곧 도착합니다 ($percent%)",
-              style: TextStyle(fontSize: 14 * multiplier, color: colorScheme.onSurface),
+              style: TextStyle(
+                  fontSize: 14 * multiplier, color: colorScheme.onSurface),
             ),
           ),
         ],
@@ -569,15 +482,19 @@ class SettingsScreen extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Icon(Icons.play_circle_outline, color: colorScheme.onSurfaceVariant, size: 24),
+      leading: Icon(Icons.play_circle_outline,
+          color: colorScheme.onSurfaceVariant, size: 24),
       title: Text(
         'TTS 테스트',
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-          fontWeight: FontWeight.w500, color: colorScheme.onSurface),
+            fontWeight: FontWeight.w500, color: colorScheme.onSurface),
       ),
       subtitle: Text(
         '"버스가 곧 도착합니다" 음성 재생',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: colorScheme.onSurfaceVariant),
       ),
       trailing: OutlinedButton(
         onPressed: () async {
@@ -587,7 +504,8 @@ class SettingsScreen extends StatelessWidget {
             await tts.speak('버스가 곧 도착합니다.');
           } catch (e) {
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('TTS 재생 오류: $e')));
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text('TTS 재생 오류: $e')));
             }
           }
         },
@@ -595,7 +513,6 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _AlarmSoundDialog extends StatelessWidget {
@@ -668,7 +585,8 @@ class _CustomExcludeDatesScreen extends StatefulWidget {
   const _CustomExcludeDatesScreen();
 
   @override
-  State<_CustomExcludeDatesScreen> createState() => _CustomExcludeDatesScreenState();
+  State<_CustomExcludeDatesScreen> createState() =>
+      _CustomExcludeDatesScreenState();
 }
 
 class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
@@ -701,7 +619,8 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.event_available_outlined, size: 64, color: colorScheme.outlineVariant),
+                    Icon(Icons.event_available_outlined,
+                        size: 64, color: colorScheme.outlineVariant),
                     const SizedBox(height: 16),
                     Text(
                       '나만의 예외 날짜가 없습니다.',
@@ -741,7 +660,8 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
                 ),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
-                  leading: Icon(Icons.calendar_today, color: colorScheme.primary),
+                  leading:
+                      Icon(Icons.calendar_today, color: colorScheme.primary),
                   title: Text(
                     '$dateStr ($weekdayStr)',
                     style: theme.textTheme.bodyLarge?.copyWith(
@@ -750,7 +670,8 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
                     ),
                   ),
                   trailing: IconButton(
-                    icon: Icon(Icons.remove_circle_outline, color: colorScheme.error),
+                    icon: Icon(Icons.remove_circle_outline,
+                        color: colorScheme.error),
                     onPressed: () {
                       settingsService.removeCustomExcludeDate(date);
                     },
@@ -810,7 +731,11 @@ class _LiveUpdatesTileState extends State<_LiveUpdatesTile> {
         return;
       }
       final result = await PermissionService.canPostPromotedNotifications();
-      if (mounted) setState(() { _enabled = result; _loading = false; });
+      if (mounted)
+        setState(() {
+          _enabled = result;
+          _loading = false;
+        });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -831,9 +756,7 @@ class _LiveUpdatesTileState extends State<_LiveUpdatesTile> {
       ),
       title: const Text('실시간 정보 (Live Updates)'),
       subtitle: Text(
-        enabled
-            ? '활성화됨 - 상태바 / Now Bar에 버스 정보 표시'
-            : '비활성화됨 - 탭하여 설정 열기',
+        enabled ? '활성화됨 - 상태바 / Now Bar에 버스 정보 표시' : '비활성화됨 - 탭하여 설정 열기',
         style: theme.textTheme.bodySmall?.copyWith(
           color: enabled ? colorScheme.onSurfaceVariant : colorScheme.error,
         ),

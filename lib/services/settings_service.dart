@@ -10,29 +10,15 @@ enum NotificationDisplayMode {
   allBuses // 해당 정류장의 모든 버스
 }
 
-// 컬러 스키마 종류 정의
-enum ColorSchemeType {
-  blue,
-  green,
-  purple,
-  orange,
-  pink,
-  red,
-  teal,
-  indigo,
-}
-
 class SettingsService extends ChangeNotifier {
   static const String _alarmSoundKey = 'alarm_sound';
   static const String _autoAlarmKey = 'use_auto_alarm';
   static const String _autoAlarmVolumeKey = 'auto_alarm_volume';
   static const String _useTtsKey = 'use_tts';
-  static const String _isDarkModeKey = 'is_dark_mode';
   static const String _kThemeModeKey = 'theme_mode';
   static const String _kVibrateKey = 'vibrate';
   static const String _kSpeakerModeKey = 'speaker_mode';
   static const String _notificationDisplayModeKey = 'notificationDisplayMode';
-  static const String _colorSchemeKey = 'color_scheme';
   static const String _autoAlarmTimeoutMsKey = 'auto_alarm_timeout_ms';
   static const String _fontSizeMultiplierKey = 'font_size_multiplier';
   static const String _earphoneAlarmVibrateKey = 'earphone_alarm_vibrate';
@@ -40,7 +26,7 @@ class SettingsService extends ChangeNotifier {
   static const int defaultAutoAlarmTimeoutMinutes = 30; // 기본 30분
   static const int minAutoAlarmTimeoutMinutes = 5; // 최소 5분
   static const int maxAutoAlarmTimeoutMinutes = 120; // 최대 120분
-  
+
   // 폰트 크기 관련 상수
   static const double defaultFontSizeMultiplier = 1.0; // 기본 크기
   static const double minFontSizeMultiplier = 0.8; // 최소 크기 (80%)
@@ -62,8 +48,6 @@ class SettingsService extends ChangeNotifier {
   double _autoAlarmVolume = 0.7;
   int _autoAlarmTimeoutMinutes = defaultAutoAlarmTimeoutMinutes;
   bool _useTts = true;
-  bool _isDarkMode = false;
-  ColorSchemeType _colorScheme = ColorSchemeType.blue;
   double _fontSizeMultiplier = defaultFontSizeMultiplier;
   List<DateTime> _customExcludeDates = [];
 
@@ -79,7 +63,7 @@ class SettingsService extends ChangeNotifier {
 
   // MethodChannel 추가
   final MethodChannel _ttsChannel =
-      const MethodChannel('com.example.daegu_bus_app/tts');
+      const MethodChannel('com.devground.daegubus/tts');
 
   // 알림 표시 모드 관련
   NotificationDisplayMode _notificationDisplayMode =
@@ -100,31 +84,28 @@ class SettingsService extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   NotificationDisplayMode get notificationDisplayMode =>
       _notificationDisplayMode;
-  ColorSchemeType get colorScheme => _colorScheme;
   int get autoAlarmTimeoutMinutes => _autoAlarmTimeoutMinutes;
   double get fontSizeMultiplier => _fontSizeMultiplier;
   List<DateTime> get customExcludeDates => _customExcludeDates;
-
-  bool get isDarkMode => _isDarkMode;
 
   // 설정 초기화
   Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
     _alarmSound = _prefs.getString(_alarmSoundKey) ?? 'tts';
-    _isDarkMode = _prefs.getBool(_isDarkModeKey) ?? false;
-    _themeMode = _parseThemeMode(_prefs.getString(_kThemeModeKey) ?? 'system');
+    _themeMode = _parseThemeMode(
+      _prefs.getString(_kThemeModeKey) ?? 'system',
+    );
     _useTts = _prefs.getBool(_useTtsKey) ?? true;
     _vibrate = _prefs.getBool(_kVibrateKey) ?? true;
-    _earphoneAlarmVibrate =
-        _prefs.getBool(_earphoneAlarmVibrateKey) ?? true;
+    _earphoneAlarmVibrate = _prefs.getBool(_earphoneAlarmVibrateKey) ?? true;
     _useAutoAlarm = _prefs.getBool(_autoAlarmKey) ?? true;
     _speakerMode = _prefs.getInt(_kSpeakerModeKey) ?? speakerModeHeadset;
     _autoAlarmVolume =
         _prefs.getDouble(_autoAlarmVolumeKey) ?? defaultAutoAlarmVolume;
     _notificationDisplayMode = NotificationDisplayMode
         .values[_prefs.getInt(_notificationDisplayModeKey) ?? 0];
-    _colorScheme = ColorSchemeType.values[_prefs.getInt(_colorSchemeKey) ?? 0];
-    _fontSizeMultiplier = _prefs.getDouble(_fontSizeMultiplierKey) ?? defaultFontSizeMultiplier;
+    _fontSizeMultiplier =
+        _prefs.getDouble(_fontSizeMultiplierKey) ?? defaultFontSizeMultiplier;
     // 자동 알람 자동 종료 시간(분) 불러오기 (기본 30분)
     _autoAlarmTimeoutMinutes = ((_prefs.getInt(_autoAlarmTimeoutMsKey) ??
                 (defaultAutoAlarmTimeoutMinutes * 60 * 1000)) ~/
@@ -133,11 +114,20 @@ class SettingsService extends ChangeNotifier {
 
     final excludeDatesStrs = _prefs.getStringList(_customExcludeDatesKey) ?? [];
     try {
-      _customExcludeDates = excludeDatesStrs.map((e) => DateTime.parse(e)).toList();
+      _customExcludeDates =
+          excludeDatesStrs.map((e) => DateTime.parse(e)).toList();
     } catch (_) {
       _customExcludeDates = [];
     }
 
+    notifyListeners();
+  }
+
+  Future<void> updateThemeMode(ThemeMode mode) async {
+    if (_themeMode == mode) return;
+
+    _themeMode = mode;
+    await _prefs.setString(_kThemeModeKey, _themeModeToString(mode));
     notifyListeners();
   }
 
@@ -154,14 +144,6 @@ class SettingsService extends ChangeNotifier {
       debugPrint('❌ 네이티브 알람 소리 설정 실패: $e');
     }
 
-    notifyListeners();
-  }
-
-  Future<void> updateThemeMode(ThemeMode mode) async {
-    if (_themeMode == mode) return;
-
-    _themeMode = mode;
-    await _prefs.setString(_kThemeModeKey, _themeModeToString(mode));
     notifyListeners();
   }
 
@@ -230,19 +212,17 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // 테마 모드 문자열 변환 헬퍼 함수
   String _themeModeToString(ThemeMode mode) {
     switch (mode) {
-      case ThemeMode.light:
-        return 'light';
       case ThemeMode.dark:
         return 'dark';
-      default:
+      case ThemeMode.light:
+        return 'light';
+      case ThemeMode.system:
         return 'system';
     }
   }
 
-  // 테마 모드 파싱 헬퍼 함수
   ThemeMode _parseThemeMode(String value) {
     switch (value) {
       case 'light':
@@ -279,7 +259,10 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> removeCustomExcludeDate(DateTime date) async {
     final dateOnly = DateTime(date.year, date.month, date.day);
-    _customExcludeDates.removeWhere((d) => d.year == dateOnly.year && d.month == dateOnly.month && d.day == dateOnly.day);
+    _customExcludeDates.removeWhere((d) =>
+        d.year == dateOnly.year &&
+        d.month == dateOnly.month &&
+        d.day == dateOnly.day);
     await _saveCustomExcludeDates();
     notifyListeners();
   }
@@ -344,20 +327,12 @@ class SettingsService extends ChangeNotifier {
   // 현재 스피커 모드가 자동 감지인지 확인
   bool get isAutoMode => _speakerMode == speakerModeAuto;
 
-  // 컬러 스키마 업데이트 메서드
-  Future<void> updateColorScheme(ColorSchemeType colorScheme) async {
-    if (_colorScheme != colorScheme) {
-      _colorScheme = colorScheme;
-      await _prefs.setInt(_colorSchemeKey, colorScheme.index);
-      notifyListeners();
-    }
-  }
-
   // 폰트 크기 업데이트 메서드
   Future<void> updateFontSizeMultiplier(double multiplier) async {
-    final clamped = multiplier.clamp(minFontSizeMultiplier, maxFontSizeMultiplier);
+    final clamped =
+        multiplier.clamp(minFontSizeMultiplier, maxFontSizeMultiplier);
     if (_fontSizeMultiplier == clamped) return;
-    
+
     _fontSizeMultiplier = clamped;
     await _prefs.setDouble(_fontSizeMultiplierKey, clamped);
     notifyListeners();

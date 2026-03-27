@@ -96,7 +96,7 @@ Future<void> _loadRuntimeConfig() async {
 class AppColorScheme {
   // Premium Blue Palette (Trust, Professionalism)
   // Primary: Deep, vibrant blue
-  static const Color primaryLight = Color(0xFF2563EB); 
+  static const Color primaryLight = Color(0xFF2563EB);
   static const Color onPrimaryLight = Color(0xFFFFFFFF);
   static const Color primaryContainerLight = Color(0xFFDBEAFE);
   static const Color onPrimaryContainerLight = Color(0xFF1E3A8A);
@@ -119,7 +119,8 @@ class AppColorScheme {
   static const Color surfaceVariantLight = Color(0xFFF8FAFC);
   static const Color onSurfaceVariantLight = Color(0xFF64748B);
 
-  static const Color backgroundLight = Color(0xFFF8FAFC); // Very light gray for background
+  static const Color backgroundLight =
+      Color(0xFFF8FAFC); // Very light gray for background
   static const Color onBackgroundLight = Color(0xFF0F172A);
 
   // Error
@@ -133,18 +134,18 @@ class AppColorScheme {
   static const Color outlineVariantLight = Color(0xFFE2E8F0);
 
   // Dark Theme (Monochrome Slate Mode)
-  static const Color primaryDark = Color(0xFFE2E8F0);       // Slate 200
-  static const Color onPrimaryDark = Color(0xFF0F172A);      // Slate 900
+  static const Color primaryDark = Color(0xFFE2E8F0); // Slate 200
+  static const Color onPrimaryDark = Color(0xFF0F172A); // Slate 900
   static const Color primaryContainerDark = Color(0xFF334155); // Slate 700
   static const Color onPrimaryContainerDark = Color(0xFFF1F5F9); // Slate 100
 
-  static const Color secondaryDark = Color(0xFF94A3B8);      // Slate 400
-  static const Color onSecondaryDark = Color(0xFF0F172A);    // Slate 900
+  static const Color secondaryDark = Color(0xFF94A3B8); // Slate 400
+  static const Color onSecondaryDark = Color(0xFF0F172A); // Slate 900
   static const Color secondaryContainerDark = Color(0xFF334155); // Slate 700
   static const Color onSecondaryContainerDark = Color(0xFFF1F5F9); // Slate 100
 
-  static const Color tertiaryDark = Color(0xFFCBD5E1);       // Slate 300
-  static const Color onTertiaryDark = Color(0xFF1E293B);     // Slate 800
+  static const Color tertiaryDark = Color(0xFFCBD5E1); // Slate 300
+  static const Color onTertiaryDark = Color(0xFF1E293B); // Slate 800
   static const Color tertiaryContainerDark = Color(0xFF475569); // Slate 600
   static const Color onTertiaryContainerDark = Color(0xFFF8FAFC); // Slate 50
 
@@ -214,82 +215,93 @@ class AppColorScheme {
 
 /// Material 3 테마 생성
 class AppTheme {
-  /// ColorSchemeType에 따른 컬러 스키마 생성
-  static ColorScheme getColorScheme(
-      ColorSchemeType type, Brightness brightness) {
-    Color seedColor;
-
-    switch (type) {
-      case ColorSchemeType.blue:
-        // Premium Blue (New)
-        if (brightness == Brightness.light) {
-             return AppColorScheme.lightColorScheme;
-        } else {
-             return AppColorScheme.darkColorScheme;
-        }
-      case ColorSchemeType.green:
-        seedColor = const Color(0xFF4CAF50);
-        break;
-      case ColorSchemeType.purple:
-        seedColor = const Color(0xFF9C27B0);
-        break;
-      case ColorSchemeType.orange:
-        seedColor = const Color(0xFFFF9800);
-        break;
-      case ColorSchemeType.pink:
-        seedColor = const Color(0xFFE91E63);
-        break;
-      case ColorSchemeType.red:
-        seedColor = const Color(0xFFF44336);
-        break;
-      case ColorSchemeType.teal:
-        seedColor = const Color(0xFF009688);
-        break;
-      case ColorSchemeType.indigo:
-        seedColor = const Color(0xFF3F51B5);
-        break;
-    }
-
-    return ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: brightness,
-    );
-  }
-
   static ThemeData lightTheme = ThemeData(
     useMaterial3: true,
     colorScheme: AppColorScheme.lightColorScheme,
-    
+
     // Material 3 Expressive Typography - More pronounced, larger display styles
     textTheme: const TextTheme(
-      displayLarge: TextStyle(fontSize: 64, fontWeight: FontWeight.w900, letterSpacing: -1.0, height: 1.15),
-      displayMedium: TextStyle(fontSize: 52, fontWeight: FontWeight.w800, letterSpacing: -0.5, height: 1.2),
-      displaySmall: TextStyle(fontSize: 40, fontWeight: FontWeight.w700, letterSpacing: -0.25, height: 1.25),
-      headlineLarge: TextStyle(fontSize: 36, fontWeight: FontWeight.w700, letterSpacing: -0.5, height: 1.3),
-      headlineMedium: TextStyle(fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: 0, height: 1.3),
-      headlineSmall: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, letterSpacing: 0, height: 1.35),
-      titleLarge: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, letterSpacing: 0, height: 1.4),
-      titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, letterSpacing: 0.15, height: 1.4),
-      titleSmall: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: 0.1, height: 1.45),
-      bodyLarge: TextStyle(fontSize: 17, fontWeight: FontWeight.w400, letterSpacing: 0.5, height: 1.6),
-      bodyMedium: TextStyle(fontSize: 15, fontWeight: FontWeight.w400, letterSpacing: 0.25, height: 1.6),
-      bodySmall: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, letterSpacing: 0.4, height: 1.5),
-      labelLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.1),
-      labelMedium: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0.5),
-      labelSmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+      displayLarge: TextStyle(
+          fontSize: 64,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -1.0,
+          height: 1.15),
+      displayMedium: TextStyle(
+          fontSize: 52,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.5,
+          height: 1.2),
+      displaySmall: TextStyle(
+          fontSize: 40,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.25,
+          height: 1.25),
+      headlineLarge: TextStyle(
+          fontSize: 36,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.5,
+          height: 1.3),
+      headlineMedium: TextStyle(
+          fontSize: 32,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0,
+          height: 1.3),
+      headlineSmall: TextStyle(
+          fontSize: 28,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+          height: 1.35),
+      titleLarge: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0,
+          height: 1.4),
+      titleMedium: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.15,
+          height: 1.4),
+      titleSmall: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.1,
+          height: 1.45),
+      bodyLarge: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w400,
+          letterSpacing: 0.5,
+          height: 1.6),
+      bodyMedium: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w400,
+          letterSpacing: 0.25,
+          height: 1.6),
+      bodySmall: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w400,
+          letterSpacing: 0.4,
+          height: 1.5),
+      labelLarge: TextStyle(
+          fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.1),
+      labelMedium: TextStyle(
+          fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+      labelSmall: TextStyle(
+          fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
     ),
 
     // Card Theme - Material 3 Expressive: NO BORDERS, Strong elevation, Clean
     cardTheme: CardThemeData(
       elevation: 4, // MUCH stronger elevation - no borders needed
       shadowColor: Colors.black.withAlpha(20), // 255 * 0.08 = 20.4
-      surfaceTintColor: AppColorScheme.primaryLight.withAlpha((255 * 0.05).round()),
+      surfaceTintColor:
+          AppColorScheme.primaryLight.withAlpha((255 * 0.05).round()),
       color: AppColorScheme.surfaceLight,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
         side: BorderSide.none, // NO BORDER - clean Material 3 Expressive
       ),
-      margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 20), // More spacing
+      margin: const EdgeInsets.symmetric(
+          vertical: 12, horizontal: 20), // More spacing
     ),
 
     // AppBar Theme - Bolder
@@ -321,12 +333,16 @@ class AppTheme {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(28),
-        borderSide: const BorderSide(color: AppColorScheme.primaryLight, width: 3), // Thicker, more visible
+        borderSide: const BorderSide(
+            color: AppColorScheme.primaryLight,
+            width: 3), // Thicker, more visible
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24), // Much more padding
-      hintStyle: const TextStyle(color: AppColorScheme.onSurfaceVariantLight, fontSize: 17),
+      contentPadding: const EdgeInsets.symmetric(
+          horizontal: 28, vertical: 24), // Much more padding
+      hintStyle: const TextStyle(
+          color: AppColorScheme.onSurfaceVariantLight, fontSize: 17),
     ),
-    
+
     // Elevated Button - Bold and prominent
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
@@ -335,8 +351,10 @@ class AppTheme {
         backgroundColor: AppColorScheme.primaryLight,
         foregroundColor: AppColorScheme.onPrimaryLight,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 22), // Even larger
-        textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: 0.5),
+        padding: const EdgeInsets.symmetric(
+            horizontal: 36, vertical: 22), // Even larger
+        textStyle: const TextStyle(
+            fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: 0.5),
       ),
     ),
 
@@ -348,7 +366,8 @@ class AppTheme {
         foregroundColor: AppColorScheme.onPrimaryLight,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17, letterSpacing: 0.5),
+        textStyle: const TextStyle(
+            fontWeight: FontWeight.w700, fontSize: 17, letterSpacing: 0.5),
       ),
     ),
 
@@ -358,9 +377,11 @@ class AppTheme {
       highlightElevation: 12, // Double the highlight
       backgroundColor: AppColorScheme.primaryLight, // Use primary for boldness
       foregroundColor: AppColorScheme.onPrimaryLight,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)), // Even rounder
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(32)), // Even rounder
       extendedPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-      extendedTextStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 0.5),
+      extendedTextStyle: const TextStyle(
+          fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 0.5),
     ),
 
     // Chip Theme - Clean, no borders
@@ -372,7 +393,8 @@ class AppTheme {
       labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       elevation: 2,
-      selectedShadowColor: AppColorScheme.primaryLight.withAlpha((255 * 0.5).round()),
+      selectedShadowColor:
+          AppColorScheme.primaryLight.withAlpha((255 * 0.5).round()),
     ),
 
     // Navigation Bar - Clean and prominent
@@ -380,10 +402,12 @@ class AppTheme {
       elevation: 4, // Stronger elevation
       height: 88, // Taller for more impact
       backgroundColor: AppColorScheme.surfaceLight,
-      surfaceTintColor: AppColorScheme.primaryLight.withAlpha((255 * 0.05).round()),
+      surfaceTintColor:
+          AppColorScheme.primaryLight.withAlpha((255 * 0.05).round()),
       indicatorColor: AppColorScheme.primaryLight, // Bold indicator
       shadowColor: Colors.black.withAlpha((255 * 0.1).round()),
-      indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      indicatorShape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
@@ -408,7 +432,7 @@ class AppTheme {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       elevation: 3,
       titleTextStyle: const TextStyle(
-        fontSize: 24, 
+        fontSize: 24,
         fontWeight: FontWeight.w700,
         color: AppColorScheme.onSurfaceLight,
       ),
@@ -418,38 +442,40 @@ class AppTheme {
   static ThemeData darkTheme = lightTheme.copyWith(
     colorScheme: AppColorScheme.darkColorScheme,
     scaffoldBackgroundColor: AppColorScheme.backgroundDark,
-    
+
     // 이 부분이 핵심: lightTheme의 검은색 텍스트를 다크모드용 흰색/회색(onSurfaceDark)으로 덮어씌움
     textTheme: lightTheme.textTheme.apply(
       bodyColor: AppColorScheme.onSurfaceDark,
       displayColor: AppColorScheme.onSurfaceDark,
     ),
-    
+
     cardTheme: lightTheme.cardTheme.copyWith(
       color: AppColorScheme.surfaceVariantDark,
-      elevation: 2, // Slightly more elevation in dark mode for better depth perception
+      elevation:
+          2, // Slightly more elevation in dark mode for better depth perception
       shadowColor: Colors.black.withAlpha((255 * 0.4).round()),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
         side: BorderSide.none, // Cleaner in dark mode
       ),
     ),
-    
+
     appBarTheme: lightTheme.appBarTheme.copyWith(
       titleTextStyle: const TextStyle(
-        fontSize: 28, 
-        fontWeight: FontWeight.w700, 
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
         color: AppColorScheme.onSurfaceDark,
         letterSpacing: -0.5,
       ),
     ),
-    
+
     inputDecorationTheme: lightTheme.inputDecorationTheme.copyWith(
       fillColor: AppColorScheme.surfaceVariantDark,
       hintStyle: const TextStyle(color: AppColorScheme.onSurfaceVariantDark),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(28),
-        borderSide: const BorderSide(color: AppColorScheme.onSurfaceVariantDark, width: 2.5),
+        borderSide: const BorderSide(
+            color: AppColorScheme.onSurfaceVariantDark, width: 2.5),
       ),
     ),
 
@@ -461,7 +487,8 @@ class AppTheme {
         foregroundColor: AppColorScheme.onPrimaryDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17, letterSpacing: 0.5),
+        textStyle: const TextStyle(
+            fontWeight: FontWeight.w700, fontSize: 17, letterSpacing: 0.5),
       ),
     ),
 
@@ -472,7 +499,8 @@ class AppTheme {
         foregroundColor: AppColorScheme.onPrimaryDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17, letterSpacing: 0.5),
+        textStyle: const TextStyle(
+            fontWeight: FontWeight.w700, fontSize: 17, letterSpacing: 0.5),
       ),
     ),
 
@@ -483,7 +511,8 @@ class AppTheme {
       foregroundColor: AppColorScheme.onPrimaryContainerDark,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       extendedPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      extendedTextStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 0.5),
+      extendedTextStyle: const TextStyle(
+          fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 0.5),
     ),
 
     chipTheme: ChipThemeData(
@@ -493,14 +522,16 @@ class AppTheme {
       labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
     ),
-    
+
     navigationBarTheme: lightTheme.navigationBarTheme.copyWith(
       backgroundColor: AppColorScheme.surfaceDark,
       indicatorColor: AppColorScheme.primaryContainerDark,
-      indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      indicatorShape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       iconTheme: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {
-          return const IconThemeData(color: AppColorScheme.onPrimaryContainerDark);
+          return const IconThemeData(
+              color: AppColorScheme.onPrimaryContainerDark);
         }
         return const IconThemeData(color: AppColorScheme.onSurfaceVariantDark);
       }),
@@ -519,7 +550,7 @@ class AppTheme {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       elevation: 3,
       titleTextStyle: const TextStyle(
-        fontSize: 24, 
+        fontSize: 24,
         fontWeight: FontWeight.w700,
         color: AppColorScheme.onSurfaceDark,
       ),
@@ -527,11 +558,9 @@ class AppTheme {
   );
 }
 
-
-
 /// Android에서 온 이벤트를 처리하기 위한 MethodChannel 핸들러 설정
 void _setupMethodChannelHandlers() {
-  const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
+  const platform = MethodChannel('com.devground.daegubus/bus_api');
 
   platform.setMethodCallHandler((call) async {
     try {
@@ -662,7 +691,7 @@ class MyApp extends StatelessWidget {
   static Future<bool> _hasCorePermissions() async {
     // 위치 권한 확인
     final location = await Permission.locationWhenInUse.isGranted;
-    
+
     // 알림 권한 확인 (Android 13 이상만 체크)
     bool notificationGranted = true;
     if (Platform.isAndroid) {
@@ -679,7 +708,7 @@ class MyApp extends StatelessWidget {
         notificationGranted = true;
       }
     }
-    
+
     return location && notificationGranted;
   }
 
@@ -738,24 +767,15 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<SettingsService>(
       builder: (context, settingsService, child) {
-        // 선택된 컬러 스키마로 테마 생성
-        final lightColorScheme = AppTheme.getColorScheme(
-          settingsService.colorScheme,
-          Brightness.light,
-        );
-        final darkColorScheme = AppTheme.getColorScheme(
-          settingsService.colorScheme,
-          Brightness.dark,
-        );
-
-        // 폰트 크기 배율을 적용한 테마 생성
         final adjustedLightTheme = AppTheme.lightTheme.copyWith(
-          colorScheme: lightColorScheme,
-          textTheme: _scaleTextTheme(AppTheme.lightTheme.textTheme, settingsService.fontSizeMultiplier),
+          textTheme: _scaleTextTheme(AppTheme.lightTheme.textTheme,
+              settingsService.fontSizeMultiplier),
         );
         final adjustedDarkTheme = AppTheme.darkTheme.copyWith(
-          colorScheme: darkColorScheme,
-          textTheme: _scaleTextTheme(AppTheme.darkTheme.textTheme, settingsService.fontSizeMultiplier),
+          textTheme: _scaleTextTheme(
+            AppTheme.darkTheme.textTheme,
+            settingsService.fontSizeMultiplier,
+          ),
         );
 
         return MaterialApp(
