@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ui';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart' show logMessage, LogLevel;
 import 'package:daegu_bus_app/widgets/home_search_bar.dart';
 
@@ -25,6 +23,8 @@ import '../models/bus_route.dart';
 import '../widgets/station_loading_widget.dart';
 import '../models/favorite_bus.dart';
 import '../utils/favorite_bus_store.dart';
+import '../utils/favorite_stop_store.dart';
+import '../utils/home_search_result_sync.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/permission_service.dart';
 import 'home_widgets.dart';
@@ -76,7 +76,8 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this, initialIndex: 2); // 4 tabs: 지도, 노선도, 홈, 알람
+    _tabController = TabController(
+        length: 4, vsync: this, initialIndex: 2); // 4 tabs: 지도, 노선도, 홈, 알람
     final alarmService = Provider.of<AlarmService>(context, listen: false);
     alarmService.initialize();
     alarmService.addListener(_onAlarmChanged);
@@ -106,6 +107,7 @@ class _HomeScreenState extends State<HomeScreen>
           if (mounted) setState(() => _isBannerAdLoaded = true);
         },
         onAdFailedToLoad: (ad, error) {
+          debugPrint('AdMob 배너 로드 실패: ${error.message} (code: ${error.code})');
           ad.dispose();
           _bannerAd = null;
         },
@@ -195,20 +197,15 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _removeFavoriteStop(BusStop stop) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final favorites = prefs.getStringList('favorites') ?? [];
-
-      favorites.removeWhere((json) {
-        final data = jsonDecode(json);
-        final existingStop = BusStop.fromJson(data);
-        return existingStop.id == stop.id;
-      });
-
-      await prefs.setStringList('favorites', favorites);
+      final updatedStops =
+          _favoriteStops.where((item) => item.id != stop.id).toList();
+      await FavoriteStopStore.save(updatedStops);
 
       if (!mounted) return;
       setState(() {
-        _favoriteStops.removeWhere((s) => s.id == stop.id);
+        _favoriteStops
+          ..clear()
+          ..addAll(updatedStops);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -458,8 +455,21 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                   );
-                  if (result != null && result is BusStop) {
-                    setState(() => _selectedStop = result);
+                  if (!mounted) return;
+
+                  final syncData = await HomeSearchResultSync.resolve(result);
+                  if (!mounted) return;
+
+                  setState(() {
+                    _favoriteStops
+                      ..clear()
+                      ..addAll(syncData.favoriteStops);
+                    if (syncData.selectedStop != null) {
+                      _selectedStop = syncData.selectedStop;
+                    }
+                  });
+
+                  if (syncData.selectedStop != null) {
                     _loadBusArrivals();
                   }
                 },
@@ -568,14 +578,19 @@ class _HomeScreenState extends State<HomeScreen>
                       child: (_isBannerAdLoaded && _bannerAd != null)
                           ? AdWidget(ad: _bannerAd!)
                           : Container(
-                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
                               child: Center(
                                 child: Text(
                                   'AD',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(128),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant
+                                        .withAlpha(128),
                                     letterSpacing: 1.5,
                                   ),
                                 ),
@@ -680,7 +695,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildMapTab() {
-
     return const SafeArea(top: true, bottom: false, child: RouteMapScreen());
   }
 
@@ -764,7 +778,7 @@ class _HomeScreenState extends State<HomeScreen>
     required ColorScheme colorScheme,
   }) {
     final isSelected = _tabController.index == index;
-    
+
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -777,12 +791,13 @@ class _HomeScreenState extends State<HomeScreen>
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic,
           margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8), // Reduced padding
+          padding: const EdgeInsets.symmetric(
+              vertical: 9, horizontal: 8), // Reduced padding
           decoration: BoxDecoration(
-            color: isSelected 
-                ? colorScheme.primaryContainer
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(20), // Slightly reduced inner radius
+            color:
+                isSelected ? colorScheme.primaryContainer : Colors.transparent,
+            borderRadius:
+                BorderRadius.circular(20), // Slightly reduced inner radius
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -793,7 +808,7 @@ class _HomeScreenState extends State<HomeScreen>
                 curve: Curves.easeOutCubic,
                 child: Icon(
                   icon,
-                  color: isSelected 
+                  color: isSelected
                       ? colorScheme.onPrimaryContainer
                       : colorScheme.onSurfaceVariant,
                   size: 24, // Reduced icon size
@@ -805,7 +820,7 @@ class _HomeScreenState extends State<HomeScreen>
                 style: TextStyle(
                   fontSize: isSelected ? 12 : 11,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected 
+                  color: isSelected
                       ? colorScheme.onPrimaryContainer
                       : colorScheme.onSurfaceVariant,
                 ),
@@ -863,7 +878,15 @@ class _HomeScreenState extends State<HomeScreen>
                                 )),
                             Text(
                               alarm.repeatDays
-                                  .map((d) => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][d - 1])
+                                  .map((d) => [
+                                        "Mon",
+                                        "Tue",
+                                        "Wed",
+                                        "Thu",
+                                        "Fri",
+                                        "Sat",
+                                        "Sun"
+                                      ][d - 1])
                                   .join(","),
                               style: TextStyle(
                                 color: isSelected
@@ -898,7 +921,7 @@ class _HomeScreenState extends State<HomeScreen>
                         labelPadding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 2, vertical: 1), 
+                            horizontal: 2, vertical: 1),
                         showCheckmark: false,
                       ),
                     );
@@ -921,8 +944,8 @@ class _HomeScreenState extends State<HomeScreen>
     return "$minutes분";
   }
 
-  Future<void> _handleAlarmClick(
-      BusArrival arrival, String stationId, String stationName, bool hasAlarm) async {
+  Future<void> _handleAlarmClick(BusArrival arrival, String stationId,
+      String stationName, bool hasAlarm) async {
     final alarmService = Provider.of<AlarmService>(context, listen: false);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final bus = arrival.firstBus;
@@ -939,7 +962,8 @@ class _HomeScreenState extends State<HomeScreen>
             SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.notifications_off, color: Colors.white, size: 20),
+                  const Icon(Icons.notifications_off,
+                      color: Colors.white, size: 20),
                   const SizedBox(width: 8),
                   Text('$routeNo번 알람이 해제되었습니다.'),
                 ],
@@ -972,7 +996,8 @@ class _HomeScreenState extends State<HomeScreen>
             SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.notifications_active, color: Colors.white, size: 20),
+                  const Icon(Icons.notifications_active,
+                      color: Colors.white, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text('$routeNo번 버스 $minutes분 후 알람이 설정되었습니다.'),
@@ -992,6 +1017,4 @@ class _HomeScreenState extends State<HomeScreen>
       }
     }
   }
-  
-
 }

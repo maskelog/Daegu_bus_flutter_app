@@ -462,6 +462,17 @@ class HomeFavoriteStopsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final favoriteAccent = Colors.amber.shade700;
+    final favoriteForeground = isDark ? Colors.brown.shade900 : Colors.amber.shade900;
+    final favoriteBackground =
+        isDark ? Colors.amber.shade100 : Colors.amber.shade50;
+    final favoriteBorder =
+        isDark ? Colors.amber.shade600 : Colors.amber.shade400;
+    final selectedBackground =
+        isDark ? Colors.amber.shade300 : colorScheme.primaryContainer;
+    final selectedForeground =
+        isDark ? Colors.brown.shade900 : colorScheme.onPrimaryContainer;
 
     if (favoriteStops.isEmpty) {
       return const SizedBox.shrink();
@@ -485,18 +496,18 @@ class HomeFavoriteStopsRow extends StatelessWidget {
                 avatar: Icon(
                   Icons.expand_more_rounded,
                   size: 18,
-                  color: Colors.amber.shade800,
+                  color: favoriteForeground,
                 ),
                 label: Text(
                   '+${favoriteStops.length - maxItems}',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Colors.amber.shade800,
+                    color: favoriteForeground,
                   ),
                 ),
-                backgroundColor: Colors.amber.withAlpha(26),
-                side: BorderSide.none,
+                backgroundColor: favoriteBackground,
+                side: BorderSide(color: favoriteBorder),
                 onPressed: () => _showAllFavoriteStops(context),
               ),
             );
@@ -511,7 +522,7 @@ class HomeFavoriteStopsRow extends StatelessWidget {
               avatar: Icon(
                 Icons.bookmark_rounded,
                 size: 16,
-                color: isSelected ? colorScheme.onPrimary : Colors.amber,
+                color: isSelected ? selectedForeground : favoriteForeground,
               ),
               label: Text(
                 stop.name.length > 10 ? '${stop.name.substring(0, 10)}...' : stop.name,
@@ -519,19 +530,19 @@ class HomeFavoriteStopsRow extends StatelessWidget {
                   fontSize: 12,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                   color: isSelected
-                      ? colorScheme.onPrimary
-                      : colorScheme.onSurface,
+                      ? selectedForeground
+                      : favoriteForeground,
                 ),
               ),
               selected: isSelected,
-              selectedColor: colorScheme.primary,
-              backgroundColor: Colors.amber.withAlpha(26),
-              checkmarkColor: colorScheme.onPrimary,
+              selectedColor: selectedBackground,
+              backgroundColor: favoriteBackground,
+              checkmarkColor: selectedForeground,
               showCheckmark: false,
               side: BorderSide(
                 color: isSelected
-                    ? colorScheme.primary
-                    : Colors.amber.withAlpha(102),
+                    ? favoriteAccent
+                    : favoriteBorder,
               ),
               onSelected: (_) => onStopSelected(stop),
               onDeleted: favoriteStops.length <= 1
@@ -542,7 +553,7 @@ class HomeFavoriteStopsRow extends StatelessWidget {
                       Icons.more_horiz,
                       size: 16,
                       color: isSelected
-                          ? colorScheme.onPrimary.withAlpha(179)
+                          ? selectedForeground.withAlpha(179)
                           : colorScheme.onSurfaceVariant,
                     )
                   : null,
