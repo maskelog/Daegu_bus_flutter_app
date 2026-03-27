@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app.services
+package com.devground.daegubus.services
 
 import android.app.Notification
 import android.app.NotificationManager
@@ -7,7 +7,7 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
-import com.example.daegu_bus_app.utils.NotificationHandler
+import com.devground.daegubus.utils.NotificationHandler
 
 class BusAlertNotificationUpdater(
     private val service: Service,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/bus_stop.dart';
@@ -378,6 +379,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       ),
                     ),
                     maxLines: 1,
+                    inputFormatters: [FilteringTextInputFormatter.singleLineFormatter],
                     textInputAction: TextInputAction.search,
                     onChanged: (value) {
                       _searchDebouncer(() => _searchStations(value));

@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app.workers
+package com.devground.daegubus.workers
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -8,9 +8,9 @@ import android.os.Build
 import android.util.Log
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import com.example.daegu_bus_app.services.BusAlertService
-import com.example.daegu_bus_app.services.TTSService
-import com.example.daegu_bus_app.receivers.AlarmReceiver
+import com.devground.daegubus.services.BusAlertService
+import com.devground.daegubus.services.TTSService
+import com.devground.daegubus.receivers.AlarmReceiver
 import java.util.Calendar
 
 class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
@@ -179,7 +179,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
             Log.d(TAG, "⏰ 사전 추적: 원래 시간 ${hour}:${minute}, 실제 알람 ${calendar.time} (${EARLY_TRACKING_MINUTES}분 전)")
 
             val alarmIntent = Intent(applicationContext, AlarmReceiver::class.java).apply {
-                action = "com.example.daegu_bus_app.AUTO_ALARM"
+                action = "com.devground.daegubus.AUTO_ALARM"
                 putExtra("alarmId", alarmId)
                 putExtra("busNo", busNo)
                 putExtra("stationName", stationName)

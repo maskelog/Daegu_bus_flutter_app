@@ -73,7 +73,7 @@ class AlarmService extends ChangeNotifier {
   }
 
   void _setupMethodChannel() {
-    _methodChannel = const MethodChannel('com.example.daegu_bus_app/bus_api');
+    _methodChannel = const MethodChannel('com.devground.daegubus/bus_api');
     _methodChannel?.setMethodCallHandler(_handleMethodCall);
     _alarmFacade.setMethodChannel(_methodChannel);
   }

@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app.workers
+package com.devground.daegubus.workers
 
 import android.content.Context
 import android.content.Intent
@@ -6,7 +6,7 @@ import android.os.Build
 import android.util.Log
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import com.example.daegu_bus_app.services.BusAlertService
+import com.devground.daegubus.services.BusAlertService
 
 class AutoAlarmWorker(
     private val context: Context,

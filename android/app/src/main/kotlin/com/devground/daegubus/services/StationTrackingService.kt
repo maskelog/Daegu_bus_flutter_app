@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app.services
+package com.devground.daegubus.services
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -18,8 +18,8 @@ import org.json.JSONObject
 import java.util.Timer
 import java.util.TimerTask
 import kotlin.math.min
-import com.example.daegu_bus_app.MainActivity
-import com.example.daegu_bus_app.R
+import com.devground.daegubus.MainActivity
+import com.devground.daegubus.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,10 +33,10 @@ class StationTrackingService : Service() {
         private const val TAG = "StationTrackingService"
         private const val CHANNEL_STATION_TRACKING = "station_tracking" // 새로운 알림 채널 ID
         const val STATION_TRACKING_NOTIFICATION_ID = 10001 // 다른 서비스의 알림 ID와 충돌하지 않도록 함 (public으로 변경)
-        const val ACTION_START_TRACKING = "com.example.daegu_bus_app.action.START_STATION_TRACKING"
-        const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_STATION_TRACKING"
-        const val EXTRA_STATION_ID = "com.example.daegu_bus_app.extra.STATION_ID"
-        const val EXTRA_STATION_NAME = "com.example.daegu_bus_app.extra.STATION_NAME"
+        const val ACTION_START_TRACKING = "com.devground.daegubus.action.START_STATION_TRACKING"
+        const val ACTION_STOP_TRACKING = "com.devground.daegubus.action.STOP_STATION_TRACKING"
+        const val EXTRA_STATION_ID = "com.devground.daegubus.extra.STATION_ID"
+        const val EXTRA_STATION_NAME = "com.devground.daegubus.extra.STATION_NAME"
     }
 
     // 서비스의 작업을 위한 코루틴 스코프 (메인 스레드 + SupervisorJob)

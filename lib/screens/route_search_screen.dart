@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/bus_route.dart';
 import '../services/api_service.dart';
 import '../utils/debouncer.dart';
@@ -94,6 +95,8 @@ class _RouteSearchScreenState extends State<RouteSearchScreen> {
                 filled: true,
                 fillColor: colorScheme.surfaceContainerHighest,
               ),
+              maxLines: 1,
+              inputFormatters: [FilteringTextInputFormatter.singleLineFormatter],
               onChanged: (value) {
                 _searchDebouncer(() => _searchRoutes(value));
               },

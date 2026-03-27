@@ -10,7 +10,7 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 
 class PermissionService {
   static const MethodChannel _methodChannel =
-      MethodChannel('com.example.daegu_bus_app/permission');
+      MethodChannel('com.devground.daegubus/permission');
 
   /// 알림 권한 요청 (Android 13 이상만 요청)
   static Future<void> requestNotificationPermission() async {

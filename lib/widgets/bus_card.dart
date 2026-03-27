@@ -13,7 +13,7 @@ import 'package:daegu_bus_app/services/settings_service.dart';
 import '../services/alarm_manager.dart';
 
 const String stationTrackingChannel =
-    'com.example.daegu_bus_app/station_tracking';
+    'com.devground.daegubus/station_tracking';
 
 class BusCard extends StatefulWidget {
   final BusArrival busArrival;
@@ -1208,7 +1208,7 @@ class _BusCardState extends State<BusCard> {
 
   Future<void> _stopSpecificNativeTracking() async {
     try {
-      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
+      const platform = MethodChannel('com.devground.daegubus/bus_api');
       await platform.invokeMethod('stopSpecificTracking', {
         'busNo': widget.busArrival.routeNo,
         'routeId': widget.busArrival.routeId,
@@ -1222,7 +1222,7 @@ class _BusCardState extends State<BusCard> {
 
   Future<void> _startNativeTracking() async {
     try {
-      const platform = MethodChannel('com.example.daegu_bus_app/bus_api');
+      const platform = MethodChannel('com.devground.daegubus/bus_api');
       await platform.invokeMethod('startBusTrackingService', {
         'busNo': widget.busArrival.routeNo,
         'stationName': widget.stationName ?? '정류장 정보 없음',

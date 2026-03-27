@@ -1,8 +1,8 @@
-package com.example.daegu_bus_app.core
+package com.devground.daegubus.core
 
 import android.util.Log
 import android.util.LruCache
-import com.example.daegu_bus_app.models.BusInfo
+import com.devground.daegubus.models.BusInfo
 import java.util.concurrent.ConcurrentHashMap
 
 /**

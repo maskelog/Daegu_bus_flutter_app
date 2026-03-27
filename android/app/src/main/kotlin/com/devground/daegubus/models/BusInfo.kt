@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app.models
+package com.devground.daegubus.models
 
 data class BusInfo(
     val currentStation: String,

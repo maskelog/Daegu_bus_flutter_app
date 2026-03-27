@@ -1,21 +1,12 @@
-# Flutter 및 플러그인 관련 클래스 보존
--keep class io.flutter.** { *; }
--keep class io.flutter.plugins.** { *; }
--keep class io.flutter.plugin.** { *; }
+# Flutter 엔진 전체를 keep 하면 사용하지 않는 deferred-components 경로까지
+# 살아남아 옛 Play Core 참조가 릴리스 번들에 남는다.
+# 이 앱은 deferred components를 사용하지 않으므로 R8이 미사용 경로를 제거하게 둔다.
+-keep class io.flutter.plugins.GeneratedPluginRegistrant { *; }
 
 # 메소드 채널 보존
 -keepclassmembers class * {
     @io.flutter.plugin.common.MethodChannel.Method *;
 }
-
-# 앱 코드 보존
--keep class com.example.daegu_bus_app.** { *; }
-
-# 모델 클래스 보존
--keep class com.example.daegu_bus_app.models.** { *; }
--keep class com.example.daegu_bus_app.BusApiService { *; }
--keep class com.example.daegu_bus_app.BusAlertService { *; }
--keep class com.example.daegu_bus_app.DatabaseHelper { *; }
 
 # JSON 및 파싱 관련 클래스
 -keep class org.json.** { *; }
@@ -62,3 +53,12 @@
 
 # 속성 보존
 -keepattributes Exceptions,InnerClasses,Signature,Deprecated,SourceFile,LineNumberTable,*Annotation*,EnclosingMethod
+
+# 릴리스에서는 Android Log 호출을 제거해 디버그 로그가 번들에 남지 않게 한다.
+-assumenosideeffects class android.util.Log {
+    public static int d(...);
+    public static int v(...);
+    public static int i(...);
+    public static int w(...);
+    public static int e(...);
+}

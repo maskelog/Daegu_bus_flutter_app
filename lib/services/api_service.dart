@@ -13,7 +13,7 @@ import 'route_service.dart';
 class ApiService {
   // 메소드 채널 추가
   static const MethodChannel _channel =
-      MethodChannel('com.example.daegu_bus_app/api');
+      MethodChannel('com.devground.daegubus/api');
 
   // 싱글톤 패턴 적용
   static final ApiService _instance = ApiService._internal();

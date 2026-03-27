@@ -59,7 +59,7 @@ class NotificationService extends ChangeNotifier {
   }
 
   static const MethodChannel _stationTrackingChannel =
-      MethodChannel('com.example.daegu_bus_app/station_tracking');
+      MethodChannel('com.devground.daegubus/station_tracking');
 
   /// 실시간 버스 정보를 fetch하여 알림 갱신
   Future<void> _updateAutoAlarmNotification() async {
@@ -110,7 +110,7 @@ class NotificationService extends ChangeNotifier {
   NotificationService._internal();
 
   static const MethodChannel _channel =
-      MethodChannel('com.example.daegu_bus_app/bus_api');
+      MethodChannel('com.devground.daegubus/bus_api');
   final SettingsService _settingsService = SettingsService();
 
   /// 알림 서비스 초기화
@@ -422,12 +422,12 @@ class NotificationService extends ChangeNotifier {
         'notificationId': notificationId, // 통합 알림 ID
         'isUpdate': false, // 새로운 추적 시작
         'isIndividualAlarm': false, // 개별 알람이 아님 (통합 추적 알림)
-        'action': 'com.example.daegu_bus_app.action.START_TRACKING_FOREGROUND',
+        'action': 'com.devground.daegubus.action.START_TRACKING_FOREGROUND',
       });
 
       // 2. 추가: bus_tracking 채널을 통해 직접 updateBusTrackingNotification 호출
       try {
-        await const MethodChannel('com.example.daegu_bus_app/bus_tracking')
+        await const MethodChannel('com.devground.daegubus/bus_tracking')
             .invokeMethod(
           'updateBusTrackingNotification',
           {
@@ -515,7 +515,7 @@ class NotificationService extends ChangeNotifier {
 
       // 1. bus_tracking 채널을 통한 알림 업데이트 (가장 직접적인 방법)
       updateMethods.add(
-          const MethodChannel('com.example.daegu_bus_app/bus_tracking')
+          const MethodChannel('com.devground.daegubus/bus_tracking')
               .invokeMethod(
         'updateBusTrackingNotification',
         {
@@ -596,7 +596,7 @@ class NotificationService extends ChangeNotifier {
 
       // 1. bus_tracking 채널을 통한 알림 업데이트 (가장 직접적인 방법)
       updateMethods.add(
-          const MethodChannel('com.example.daegu_bus_app/bus_tracking')
+          const MethodChannel('com.devground.daegubus/bus_tracking')
               .invokeMethod(
         'updateBusTrackingNotification',
         {

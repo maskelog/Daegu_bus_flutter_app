@@ -1,7 +1,7 @@
-package com.example.daegu_bus_app.services
+package com.devground.daegubus.services
 
 import android.util.Log
-import com.example.daegu_bus_app.models.BusInfo
+import com.devground.daegubus.models.BusInfo
 import org.json.JSONArray
 
 fun parseJsonBusArrivals(jsonString: String, inputRouteId: String): List<BusInfo> {

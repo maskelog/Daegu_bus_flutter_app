@@ -18,7 +18,7 @@ enum TtsOutputMode {
 /// TTS 엔진 선택을 위한 스위처 클래스
 class TtsSwitcher {
   static const MethodChannel _platform =
-      MethodChannel('com.example.daegu_bus_app/tts');
+      MethodChannel('com.devground.daegubus/tts');
   static const String _prefsKey = 'tts_output_mode';
 
   /// 현재 설정된 출력 모드

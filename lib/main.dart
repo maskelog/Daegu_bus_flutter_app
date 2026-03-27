@@ -18,6 +18,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'utils/app_logger.dart';
 
 const String _dartDefineServiceKey = String.fromEnvironment(
   'SERVICE_KEY',
@@ -636,6 +637,7 @@ void _setupMethodChannelHandlers() {
 /// 애플리케이션 시작점
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  configureAppLogging();
   await _loadRuntimeConfig();
   if (dotenv.env['ADMOB_APP_ID']?.isNotEmpty == true) {
     await MobileAds.instance.initialize();
@@ -643,13 +645,6 @@ Future<void> main() async {
 
   // Android에서 온 알람 취소 이벤트를 처리하기 위한 MethodChannel 핸들러 설정
   _setupMethodChannelHandlers();
-
-  // 로깅 설정
-  Logger.root.level = Level.ALL;
-  Logger.root.onRecord.listen((record) {
-    debugPrint(
-        '[${record.level.name}] ${record.time}: ${record.loggerName}: ${record.message}');
-  });
 
   // WorkManager 및 권한 초기화는 앱 UI 진입 후 처리
 

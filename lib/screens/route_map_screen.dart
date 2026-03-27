@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/bus_route.dart';
 import '../models/route_station.dart';
 import '../services/api_service.dart';
@@ -168,6 +169,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                           vertical: 8,
                         ),
                       ),
+                      maxLines: 1,
+                      inputFormatters: [FilteringTextInputFormatter.singleLineFormatter],
                       onSubmitted: (_) => _searchRoute(),
                       onChanged: (value) {
                         if (value.isEmpty) {

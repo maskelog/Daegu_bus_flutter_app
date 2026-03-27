@@ -1,7 +1,7 @@
-package com.example.daegu_bus_app.services
+package com.devground.daegubus.services
 
 import io.flutter.plugin.common.MethodChannel
-import com.example.daegu_bus_app.R
+import com.devground.daegubus.R
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -32,12 +32,12 @@ import java.util.Calendar
 import kotlin.collections.HashMap
 import kotlin.math.max
 import kotlin.math.roundToInt
-import com.example.daegu_bus_app.models.BusInfo
-import com.example.daegu_bus_app.utils.NotificationHandler
-import com.example.daegu_bus_app.MainActivity
-import com.example.daegu_bus_app.services.BusAlertTtsController
-import com.example.daegu_bus_app.services.BusAlertNotificationUpdater
-import com.example.daegu_bus_app.services.BusAlertTrackingManager
+import com.devground.daegubus.models.BusInfo
+import com.devground.daegubus.utils.NotificationHandler
+import com.devground.daegubus.MainActivity
+import com.devground.daegubus.services.BusAlertTtsController
+import com.devground.daegubus.services.BusAlertNotificationUpdater
+import com.devground.daegubus.services.BusAlertTrackingManager
 
 class BusAlertService : Service() {
     companion object {
@@ -77,19 +77,19 @@ class BusAlertService : Service() {
         const val AUTO_ALARM_NOTIFICATION_ID = 9999 // 자동알람 전용 ID
 
         // Intent Actions
-        const val ACTION_START_TRACKING = "com.example.daegu_bus_app.action.START_TRACKING"
-        const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_TRACKING"
-        const val ACTION_STOP_SPECIFIC_ROUTE_TRACKING = "com.example.daegu_bus_app.action.STOP_SPECIFIC_ROUTE_TRACKING"
-        const val ACTION_CANCEL_NOTIFICATION = "com.example.daegu_bus_app.action.CANCEL_NOTIFICATION"
-        const val ACTION_START_TTS_TRACKING = "com.example.daegu_bus_app.action.START_TTS_TRACKING"
-        const val ACTION_STOP_TTS_TRACKING = "com.example.daegu_bus_app.action.STOP_TTS_TRACKING"
-        const val ACTION_START_TRACKING_FOREGROUND = "com.example.daegu_bus_app.action.START_TRACKING_FOREGROUND"
-        const val ACTION_UPDATE_TRACKING = "com.example.daegu_bus_app.action.UPDATE_TRACKING"
-        const val ACTION_STOP_BUS_ALERT_TRACKING = "com.example.daegu_bus_app.action.STOP_BUS_ALERT_TRACKING"
-        const val ACTION_START_AUTO_ALARM_LIGHTWEIGHT = "com.example.daegu_bus_app.action.START_AUTO_ALARM_LIGHTWEIGHT"
-        const val ACTION_STOP_AUTO_ALARM = "com.example.daegu_bus_app.action.STOP_AUTO_ALARM"
-        const val ACTION_SET_ALARM_SOUND = "com.example.daegu_bus_app.action.SET_ALARM_SOUND"
-        const val ACTION_SHOW_NOTIFICATION = "com.example.daegu_bus_app.action.SHOW_NOTIFICATION"
+        const val ACTION_START_TRACKING = "com.devground.daegubus.action.START_TRACKING"
+        const val ACTION_STOP_TRACKING = "com.devground.daegubus.action.STOP_TRACKING"
+        const val ACTION_STOP_SPECIFIC_ROUTE_TRACKING = "com.devground.daegubus.action.STOP_SPECIFIC_ROUTE_TRACKING"
+        const val ACTION_CANCEL_NOTIFICATION = "com.devground.daegubus.action.CANCEL_NOTIFICATION"
+        const val ACTION_START_TTS_TRACKING = "com.devground.daegubus.action.START_TTS_TRACKING"
+        const val ACTION_STOP_TTS_TRACKING = "com.devground.daegubus.action.STOP_TTS_TRACKING"
+        const val ACTION_START_TRACKING_FOREGROUND = "com.devground.daegubus.action.START_TRACKING_FOREGROUND"
+        const val ACTION_UPDATE_TRACKING = "com.devground.daegubus.action.UPDATE_TRACKING"
+        const val ACTION_STOP_BUS_ALERT_TRACKING = "com.devground.daegubus.action.STOP_BUS_ALERT_TRACKING"
+        const val ACTION_START_AUTO_ALARM_LIGHTWEIGHT = "com.devground.daegubus.action.START_AUTO_ALARM_LIGHTWEIGHT"
+        const val ACTION_STOP_AUTO_ALARM = "com.devground.daegubus.action.STOP_AUTO_ALARM"
+        const val ACTION_SET_ALARM_SOUND = "com.devground.daegubus.action.SET_ALARM_SOUND"
+        const val ACTION_SHOW_NOTIFICATION = "com.devground.daegubus.action.SHOW_NOTIFICATION"
 
         // TTS Output Modes
         const val OUTPUT_MODE_HEADSET = 0  // 이어폰 전용 (현재 AUTO)
@@ -375,7 +375,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                     
                     // 자동알람 전용 브로드캐스트 전송
                     try {
-                        val autoAlarmIntent = Intent("com.example.daegu_bus_app.STOP_AUTO_ALARM")
+                        val autoAlarmIntent = Intent("com.devground.daegubus.STOP_AUTO_ALARM")
                         autoAlarmIntent.putExtra("busNo", busNo)
                         autoAlarmIntent.putExtra("stationName", stationName)
                         autoAlarmIntent.putExtra("routeId", routeId)
@@ -423,7 +423,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
                 // Flutter 측에 알림 취소 이벤트 전송 시도 (브로드캐스트 + 메서드 채널)
                 try {
-                    val cancelIntent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
+                    val cancelIntent = Intent("com.devground.daegubus.NOTIFICATION_CANCELLED")
                     cancelIntent.putExtra("notificationId", notificationId)
                     sendBroadcast(cancelIntent)
                     Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $notificationId")
@@ -844,7 +844,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             if (isAutoAlarmTracking) {
                 // 자동알람 전용 취소 이벤트 전송
                 try {
-                    val cancelAutoAlarmIntent = Intent("com.example.daegu_bus_app.AUTO_ALARM_CANCELLED").apply {
+                    val cancelAutoAlarmIntent = Intent("com.devground.daegubus.AUTO_ALARM_CANCELLED").apply {
                         putExtra("busNo", busNo)
                         putExtra("routeId", routeId)
                         putExtra("stationName", stationName)
@@ -1538,7 +1538,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             // 5. Flutter 측에 알림 취소 이벤트 전송 시도
             try {
-                val allCancelIntent = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
+                val allCancelIntent = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED")
                 sendBroadcast(allCancelIntent)
                 Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
             } catch (e: Exception) {
@@ -1630,7 +1630,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 sentCancellationEvents.remove(key)
             }
 
-            val cancellationIntent = Intent("com.example.daegu_bus_app.NOTIFICATION_CANCELLED").apply {
+            val cancellationIntent = Intent("com.devground.daegubus.NOTIFICATION_CANCELLED").apply {
                 putExtra("busNo", busNo)
                 putExtra("routeId", routeId)
                 putExtra("stationName", stationName)
@@ -1660,7 +1660,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
     private fun sendAllCancellationBroadcast() {
         try {
-            val allCancelBroadcast = Intent("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED").apply {
+            val allCancelBroadcast = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED").apply {
                 flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
             }
             sendBroadcast(allCancelBroadcast)

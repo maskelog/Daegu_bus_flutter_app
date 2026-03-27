@@ -8,7 +8,7 @@ import '../main.dart' show logMessage, LogLevel;
 
 /// 버스 노선 관련 API 서비스
 class RouteService {
-  static const String _methodChannel = 'com.example.daegu_bus_app/bus_api';
+  static const String _methodChannel = 'com.devground.daegubus/bus_api';
   static const int _defaultTimeout = 15; // seconds
 
   // 사용하는 DioClient 인스턴스

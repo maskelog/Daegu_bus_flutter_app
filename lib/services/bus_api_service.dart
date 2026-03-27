@@ -11,7 +11,7 @@ import '../utils/debouncer.dart';
 
 class BusApiService {
   static const MethodChannel _channel =
-      MethodChannel('com.example.daegu_bus_app/bus_api');
+      MethodChannel('com.devground.daegubus/bus_api');
 
   // 싱글톤 패턴 구현
   static final BusApiService _instance = BusApiService._internal();

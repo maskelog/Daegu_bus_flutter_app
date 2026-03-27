@@ -1,7 +1,7 @@
-package com.example.daegu_bus_app.services
+package com.devground.daegubus.services
 
 import android.util.Log
-import com.example.daegu_bus_app.models.BusInfo
+import com.devground.daegubus.models.BusInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

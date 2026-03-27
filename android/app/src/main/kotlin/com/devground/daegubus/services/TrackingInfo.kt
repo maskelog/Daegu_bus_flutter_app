@@ -1,6 +1,6 @@
-package com.example.daegu_bus_app.services
+package com.devground.daegubus.services
 
-import com.example.daegu_bus_app.models.BusInfo
+import com.devground.daegubus.models.BusInfo
 
 data class TrackingInfo(
     val routeId: String,

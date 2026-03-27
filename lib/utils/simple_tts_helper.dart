@@ -8,7 +8,7 @@ import 'tts_switcher.dart';
 class SimpleTTSHelper {
   static FlutterTts? _flutterTts;
   static const MethodChannel _ttsChannel =
-      MethodChannel('com.example.daegu_bus_app/tts');
+      MethodChannel('com.devground.daegubus/tts');
   static bool _isInitialized = false;
   static bool _isSpeaking = false;
   static final Set<String> _recentMessages = {};

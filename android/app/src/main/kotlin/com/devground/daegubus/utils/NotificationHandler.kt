@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app.utils
+package com.devground.daegubus.utils
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -21,9 +21,9 @@ import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import com.example.daegu_bus_app.services.BusAlertService
-import com.example.daegu_bus_app.MainActivity
-import com.example.daegu_bus_app.R
+import com.devground.daegubus.services.BusAlertService
+import com.devground.daegubus.MainActivity
+import com.devground.daegubus.R
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.net.Uri
@@ -51,9 +51,9 @@ class NotificationHandler(private val context: Context) {
         const val ARRIVING_SOON_NOTIFICATION_ID = 2 // For arriving soon notifications
 
         // Intent Actions (referenced by notifications) - BusAlertService와 통일
-        const val ACTION_STOP_TRACKING = "com.example.daegu_bus_app.action.STOP_TRACKING"
-        const val ACTION_STOP_SPECIFIC_ROUTE_TRACKING = "com.example.daegu_bus_app.action.STOP_SPECIFIC_ROUTE_TRACKING"
-        const val ACTION_CANCEL_NOTIFICATION = "com.example.daegu_bus_app.action.CANCEL_NOTIFICATION"
+        const val ACTION_STOP_TRACKING = "com.devground.daegubus.action.STOP_TRACKING"
+        const val ACTION_STOP_SPECIFIC_ROUTE_TRACKING = "com.devground.daegubus.action.STOP_SPECIFIC_ROUTE_TRACKING"
+        const val ACTION_CANCEL_NOTIFICATION = "com.devground.daegubus.action.CANCEL_NOTIFICATION"
 
         private val lastRemainingMinutesByRoute = mutableMapOf<String, Int>()
 
@@ -203,7 +203,7 @@ class NotificationHandler(private val context: Context) {
         )
     }
 
-    fun buildOngoingNotification(activeTrackings: Map<String, com.example.daegu_bus_app.services.TrackingInfo>): Notification {
+    fun buildOngoingNotification(activeTrackings: Map<String, com.devground.daegubus.services.TrackingInfo>): Notification {
         val startTime = System.currentTimeMillis()
         var shouldVibrateOnChange = false
         val ongoingChannelId = getOngoingChannelId()
@@ -543,7 +543,7 @@ class NotificationHandler(private val context: Context) {
         }
     }
 
-    private fun buildTrackingRemoteViews(title: String, contentText: String, trackingInfo: com.example.daegu_bus_app.services.TrackingInfo?): RemoteViews {
+    private fun buildTrackingRemoteViews(title: String, contentText: String, trackingInfo: com.devground.daegubus.services.TrackingInfo?): RemoteViews {
         return RemoteViews(context.packageName, R.layout.notification_tracking).apply {
             setTextViewText(R.id.notification_title, title)
             setTextViewText(R.id.notification_content, contentText)

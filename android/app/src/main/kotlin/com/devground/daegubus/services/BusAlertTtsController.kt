@@ -1,5 +1,6 @@
-package com.example.daegu_bus_app.services
+package com.devground.daegubus.services
 
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
@@ -203,7 +204,42 @@ class BusAlertTtsController(
                 putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, ttsVolume)
             }
 
-            audioManager.isSpeakerphoneOn = useSpeaker
+            // 스피커 모드 설정 (Android 12+ 대응)
+            if (useSpeaker) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        val devices = audioManager.availableCommunicationDevices
+                        val speakerDevice = devices.firstOrNull {
+                            it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                        }
+                        if (speakerDevice != null) {
+                            audioManager.setCommunicationDevice(speakerDevice)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "setCommunicationDevice 실패, fallback: ${e.message}")
+                        @Suppress("DEPRECATION")
+                        audioManager.isSpeakerphoneOn = true
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    audioManager.isSpeakerphoneOn = true
+                }
+            }
+
+            // DND(방해 금지) 모드 확인 — forceSpeaker(출근 알람)는 우회 시도
+            if (forceSpeaker) {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val filter = nm.currentInterruptionFilter
+                if (filter == NotificationManager.INTERRUPTION_FILTER_NONE) {
+                    Log.w(TAG, "⚠️ DND 완전 차단 모드 감지 — 알람 볼륨 강제 설정 시도")
+                    try {
+                        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                        audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "알람 볼륨 강제 설정 실패: ${e.message}")
+                    }
+                }
+            }
 
             val focusResult = requestAudioFocus(useSpeaker)
             Log.d(TAG, "🔊 Audio focus request result: $focusResult")
@@ -214,8 +250,12 @@ class BusAlertTtsController(
                 return
             }
 
-            if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                Log.d(TAG, "🔊 Audio focus granted. Speaking.")
+            // 오디오 포커스 실패해도 출근 알람(forceSpeaker)은 강제 발화
+            val shouldSpeak = focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED || forceSpeaker
+            if (shouldSpeak) {
+                if (focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    Log.w(TAG, "🔊 Audio focus 실패했지만 출근 알람이므로 강제 발화")
+                }
                 ttsEngine?.setOnUtteranceProgressListener(createTtsListener())
                 Log.i(TAG, "TTS 발화: $text, outputMode=$audioOutputMode, headset=${isHeadsetConnected()}, utteranceId=$utteranceId")
                 ttsEngine?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)

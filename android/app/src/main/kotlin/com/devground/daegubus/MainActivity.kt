@@ -1,4 +1,4 @@
-package com.example.daegu_bus_app
+package com.devground.daegubus
 
 import android.os.Bundle
 import android.content.pm.PackageManager
@@ -58,13 +58,13 @@ import io.flutter.plugins.GeneratedPluginRegistrant
 import java.util.Calendar
 import android.app.Notification
 import android.database.sqlite.SQLiteException
-import com.example.daegu_bus_app.services.BusApiService
-import com.example.daegu_bus_app.services.BusAlertService
-import com.example.daegu_bus_app.services.TTSService
-import com.example.daegu_bus_app.services.StationTrackingService
-import com.example.daegu_bus_app.utils.DatabaseHelper
+import com.devground.daegubus.services.BusApiService
+import com.devground.daegubus.services.BusAlertService
+import com.devground.daegubus.services.TTSService
+import com.devground.daegubus.services.StationTrackingService
+import com.devground.daegubus.utils.DatabaseHelper
 
-import com.example.daegu_bus_app.utils.NotificationHandler
+import com.devground.daegubus.utils.NotificationHandler
 import kotlinx.coroutines.runBlocking
 import android.os.PowerManager
 import android.provider.Settings
@@ -88,12 +88,12 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         }
     }
     
-    private val BUS_API_CHANNEL = "com.example.daegu_bus_app/bus_api"
-    private val NOTIFICATION_CHANNEL = "com.example.daegu_bus_app/notification"
-    private val TTS_CHANNEL = "com.example.daegu_bus_app/tts"
-    private val STATION_TRACKING_CHANNEL = "com.example.daegu_bus_app/station_tracking"
-    private val BUS_TRACKING_CHANNEL = "com.example.daegu_bus_app/bus_tracking"
-    private val PERMISSION_CHANNEL = "com.example.daegu_bus_app/permission"
+    private val BUS_API_CHANNEL = "com.devground.daegubus/bus_api"
+    private val NOTIFICATION_CHANNEL = "com.devground.daegubus/notification"
+    private val TTS_CHANNEL = "com.devground.daegubus/tts"
+    private val STATION_TRACKING_CHANNEL = "com.devground.daegubus/station_tracking"
+    private val BUS_TRACKING_CHANNEL = "com.devground.daegubus/bus_tracking"
+    private val PERMISSION_CHANNEL = "com.devground.daegubus/permission"
     private val TAG = "MainActivity"
     private val ONGOING_NOTIFICATION_ID = 10000
     private val ALARM_NOTIFICATION_CHANNEL_ID = "bus_alarm_channel"
@@ -900,8 +900,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
                             // Cancel action - 명시적 브로드캐스트로 변경 (Android 8.0+ 호환)
                             Log.d(TAG, "🔴 '종료' 버튼 PendingIntent 생성 시작")
-                            val cancelIntent = Intent(this, com.example.daegu_bus_app.receivers.NotificationCancelReceiver::class.java).apply {
-                                action = "com.example.daegu_bus_app.ACTION_NOTIFICATION_CANCEL"
+                            val cancelIntent = Intent(this, com.devground.daegubus.receivers.NotificationCancelReceiver::class.java).apply {
+                                action = "com.devground.daegubus.ACTION_NOTIFICATION_CANCEL"
                                 putExtra("routeId", routeId)
                                 putExtra("busNo", busNo)
                                 putExtra("stationName", stationName)
@@ -980,7 +980,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             .putBoolean("isCommuteAlarm", isCommuteAlarm)
                             .build()
                             
-                        val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.daegu_bus_app.workers.BackgroundWorker>()
+                        val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.devground.daegubus.workers.BackgroundWorker>()
                             .setInputData(inputData)
                             .addTag("autoAlarmScheduling_${alarmId}") // 태그 추가
                             .build()
@@ -1839,7 +1839,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             Log.d("MainActivity", "🔄 지연 초기화 시작")
 
             // 승차 완료 액션 처리
-            if (intent?.action == "com.example.daegu_bus_app.BOARDING_COMPLETE") {
+            if (intent?.action == "com.devground.daegubus.BOARDING_COMPLETE") {
                 handleBoardingComplete()
             }
 
@@ -2191,7 +2191,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     if (busNo.isNotEmpty() && stationName.isNotEmpty() && routeId.isNotEmpty()) {
                         try {
                             flutterEngine?.dartExecutor?.binaryMessenger?.let { messenger ->
-                                val channel = MethodChannel(messenger, "com.example.daegu_bus_app/bus_api")
+                                val channel = MethodChannel(messenger, "com.devground.daegubus/bus_api")
                                 channel.invokeMethod("cancelAlarmFromNotification", mapOf(
                                     "busNo" to busNo,
                                     "stationName" to stationName,
@@ -2230,9 +2230,9 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private fun registerNotificationCancelReceiver() {
         try {
             val intentFilter = IntentFilter().apply {
-                addAction("com.example.daegu_bus_app.NOTIFICATION_CANCELLED")
-                addAction("com.example.daegu_bus_app.ALL_TRACKING_CANCELLED")
-                addAction("com.example.daegu_bus_app.STOP_AUTO_ALARM") // 자동알람 중지 액션 추가
+                addAction("com.devground.daegubus.NOTIFICATION_CANCELLED")
+                addAction("com.devground.daegubus.ALL_TRACKING_CANCELLED")
+                addAction("com.devground.daegubus.STOP_AUTO_ALARM") // 자동알람 중지 액션 추가
                 // 필요하다면 다른 액션도 추가
             }
             // Android 버전에 따른 리시버 등록 방식 분기 (Exported/Not Exported)
@@ -2259,7 +2259,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 Log.d(TAG, "NotificationCancelReceiver: 액션 수신: $action")
 
                 when (action) {
-                    "com.example.daegu_bus_app.NOTIFICATION_CANCELLED" -> {
+                    "com.devground.daegubus.NOTIFICATION_CANCELLED" -> {
                         val routeId = intent.getStringExtra("routeId") ?: ""
                         val busNo = intent.getStringExtra("busNo") ?: ""
                         val stationName = intent.getStringExtra("stationName") ?: ""
@@ -2277,14 +2277,14 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         _methodChannel?.invokeMethod("onAlarmCanceledFromNotification", alarmCancelData)
                         Log.i(TAG, "Flutter 측에 알람 취소 알림 전송 완료 (From BroadcastReceiver)")
                     }
-                    "com.example.daegu_bus_app.ALL_TRACKING_CANCELLED" -> {
+                    "com.devground.daegubus.ALL_TRACKING_CANCELLED" -> {
                         Log.i(TAG, "모든 추적 취소 이벤트 수신")
 
                         // Flutter 측에 모든 알림 취소 이벤트 전송
                         _methodChannel?.invokeMethod("onAllAlarmsCanceled", mapOf("source" to "notification"))
                         Log.i(TAG, "Flutter 측에 모든 알람 취소 알림 전송 완료")
                     }
-                    "com.example.daegu_bus_app.STOP_AUTO_ALARM" -> {
+                    "com.devground.daegubus.STOP_AUTO_ALARM" -> {
                         val routeId = intent.getStringExtra("routeId") ?: ""
                         val busNo = intent.getStringExtra("busNo") ?: ""
                         val stationName = intent.getStringExtra("stationName") ?: ""
@@ -2401,7 +2401,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
         try {
             val intent = Intent(this, BusAlertService::class.java).apply {
-                action = "com.example.daegu_bus_app.action.STOP_BUS_ALERT_TRACKING"
+                action = "com.devground.daegubus.action.STOP_BUS_ALERT_TRACKING"
                 putExtra("busNo", busNo)
                 putExtra("routeId", routeId)
                 putExtra("stationName", stationName)

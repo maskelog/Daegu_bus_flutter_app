@@ -1,13 +1,13 @@
-package com.example.daegu_bus_app.receivers
+package com.devground.daegubus.receivers
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import com.example.daegu_bus_app.services.BusAlertService
-import com.example.daegu_bus_app.services.TTSService
-import com.example.daegu_bus_app.workers.BackgroundWorker
+import com.devground.daegubus.services.BusAlertService
+import com.devground.daegubus.services.TTSService
+import com.devground.daegubus.workers.BackgroundWorker
 
 class AlarmReceiver : BroadcastReceiver() {
     private val TAG = "AlarmReceiver"
@@ -16,7 +16,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val action = intent.action
         Log.d(TAG, "🔔 알람 수신: $action")
 
-        if (action == "com.example.daegu_bus_app.AUTO_ALARM") {
+        if (action == "com.devground.daegubus.AUTO_ALARM") {
             // ANR 방지를 위해 비동기 처리
             val pendingResult = goAsync()
             Thread {
@@ -284,7 +284,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
 
             val nextAlarmIntent = Intent(context, AlarmReceiver::class.java).apply {
-                action = "com.example.daegu_bus_app.AUTO_ALARM"
+                action = "com.devground.daegubus.AUTO_ALARM"
                 putExtra("alarmId", alarmId)
                 putExtra("busNo", busNo)
                 putExtra("stationName", stationName)

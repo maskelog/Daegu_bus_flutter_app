@@ -1,11 +1,11 @@
-package com.example.daegu_bus_app.receivers
+package com.devground.daegubus.receivers
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.example.daegu_bus_app.services.BusAlertService
+import com.devground.daegubus.services.BusAlertService
 
 class NotificationCancelReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

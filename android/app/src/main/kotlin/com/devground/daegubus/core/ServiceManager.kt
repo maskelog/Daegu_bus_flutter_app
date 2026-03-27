@@ -1,10 +1,10 @@
-package com.example.daegu_bus_app.core
+package com.devground.daegubus.core
 
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.example.daegu_bus_app.services.BusAlertService
-import com.example.daegu_bus_app.services.TTSService
+import com.devground.daegubus.services.BusAlertService
+import com.devground.daegubus.services.TTSService
 import kotlinx.coroutines.*
 
 /**
