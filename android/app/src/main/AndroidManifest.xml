@@ -28,6 +28,7 @@
     <!-- 포그라운드 권한 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- 배터리 최적화 관련 권한 -->
@@ -46,8 +47,6 @@
 
         <!-- Samsung One UI 7 Live Notifications and Now Bar 지원 -->
         <meta-data android:name="com.samsung.android.support.ongoing_activity" android:value="true" />
-        <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="실시간 버스 도착 정보 추적 및 Live Update 알림 제공" />
-
         <!-- AdMob 앱 ID (릴리스 빌드에서 ADMOB_APP_ID 메타데이터로 주입) -->
         <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="${ADMOB_APP_ID}"/>
 
@@ -64,10 +63,12 @@
         </activity>
 
         <!-- 버스 알림 포그라운드 서비스 -->
-        <service android:name="com.devground.daegubus.services.BusAlertService" android:foregroundServiceType="dataSync|specialUse" android:exported="false" />
+        <service android:name="com.devground.daegubus.services.BusAlertService" android:foregroundServiceType="dataSync|specialUse" android:exported="false">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="실시간 버스 도착 정보 추적 및 Live Update 알림 제공" />
+        </service>
 
         <!-- TTS 서비스 -->
-        <service android:name="com.devground.daegubus.services.TTSService" android:foregroundServiceType="dataSync" android:exported="false" />
+        <service android:name="com.devground.daegubus.services.TTSService" android:foregroundServiceType="mediaPlayback" android:exported="false" />
 
         <!-- 정류장 추적 서비스 -->
         <service android:name="com.devground.daegubus.services.StationTrackingService" android:exported="false" android:foregroundServiceType="dataSync" />
