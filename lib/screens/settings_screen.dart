@@ -66,15 +66,7 @@ class SettingsScreen extends StatelessWidget {
                 title: '일반',
                 icon: Icons.settings_outlined,
                 children: [
-                  _buildSwitchTile(
-                    context,
-                    title: '다크 모드',
-                    icon: Icons.dark_mode_outlined,
-                    value: settingsService.themeMode == ThemeMode.dark,
-                    onChanged: (value) => settingsService.updateThemeMode(
-                      value ? ThemeMode.dark : ThemeMode.light,
-                    ),
-                  ),
+                  _buildThemeModeTile(context, settingsService),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   _buildSwitchTile(
                     context,
@@ -225,6 +217,67 @@ class SettingsScreen extends StatelessWidget {
         activeTrackColor: colorScheme.primaryContainer,
         inactiveThumbColor: colorScheme.outline,
         inactiveTrackColor: colorScheme.surfaceContainerHighest,
+      ),
+    );
+  }
+
+  Widget _buildThemeModeTile(
+      BuildContext context, SettingsService settingsService) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    const modes = <ThemeMode, String>{
+      ThemeMode.system: '시스템 기본값',
+      ThemeMode.light: '라이트 모드',
+      ThemeMode.dark: '다크 모드',
+    };
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(
+        Icons.brightness_6_outlined,
+        color: colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      title: Text(
+        '테마',
+        style: theme.textTheme.bodyLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+          color: colorScheme.onSurface,
+        ),
+      ),
+      subtitle: Text(
+        modes[settingsService.themeMode] ?? '시스템 기본값',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: DropdownButton<ThemeMode>(
+        value: settingsService.themeMode,
+        dropdownColor: colorScheme.surfaceContainerHighest,
+        iconEnabledColor: colorScheme.onSurface,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurface,
+        ),
+        underline: const SizedBox.shrink(),
+        onChanged: (value) {
+          if (value != null) {
+            settingsService.updateThemeMode(value);
+          }
+        },
+        items: modes.entries
+            .map(
+              (entry) => DropdownMenuItem<ThemeMode>(
+                value: entry.key,
+                child: Text(
+                  entry.value,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            )
+            .toList(),
       ),
     );
   }
