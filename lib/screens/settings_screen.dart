@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import '../services/permission_service.dart';
 import '../services/settings_service.dart';
 import '../models/alarm_sound.dart';
@@ -109,8 +108,6 @@ class SettingsScreen extends StatelessWidget {
                   if (settingsService.useTts) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     _buildSpeakerModeDropdown(context, settingsService),
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    _buildTtsTestButton(context, settingsService),
                   ],
                 ],
               ),
@@ -472,44 +469,6 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// TTS 테스트 버튼
-  Widget _buildTtsTestButton(
-      BuildContext context, SettingsService settingsService) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Icon(Icons.play_circle_outline,
-          color: colorScheme.onSurfaceVariant, size: 24),
-      title: Text(
-        'TTS 테스트',
-        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w500, color: colorScheme.onSurface),
-      ),
-      subtitle: Text(
-        '"버스가 곧 도착합니다" 음성 재생',
-        style: Theme.of(context)
-            .textTheme
-            .bodySmall
-            ?.copyWith(color: colorScheme.onSurfaceVariant),
-      ),
-      trailing: OutlinedButton(
-        onPressed: () async {
-          try {
-            final tts = FlutterTts();
-            await tts.setLanguage('ko-KR');
-            await tts.speak('버스가 곧 도착합니다.');
-          } catch (e) {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context)
-                  .showSnackBar(SnackBar(content: Text('TTS 재생 오류: $e')));
-            }
-          }
-        },
-        child: const Text('테스트'),
       ),
     );
   }
