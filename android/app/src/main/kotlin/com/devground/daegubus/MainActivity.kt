@@ -1863,11 +1863,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 Log.e(TAG, "BusAlertService 초기화 실패: ${e.message}", e)
             }
 
-
-
-            // 배터리 최적화 예외 요청
-            requestBatteryOptimizationExemption()
-
             Log.d("MainActivity", "✅ 지연 초기화 완료")
 
         } catch (e: Exception) {

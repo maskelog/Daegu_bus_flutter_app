@@ -14,19 +14,35 @@ class StartupScreen extends StatefulWidget {
   State<StartupScreen> createState() => _StartupScreenState();
 }
 
-class _StartupScreenState extends State<StartupScreen> {
+class _StartupScreenState extends State<StartupScreen>
+    with WidgetsBindingObserver {
   bool _isRequesting = false;
   bool _isLoadingPermissions = true; // 권한 로딩 상태 추가
   String? _errorMessage;
   bool _shouldShowScreen = true; // 화면 표시 여부
   static const String _permissionsGrantedKey = 'permissions_granted_once';
-  bool _autoRequested = false;
   bool _promotedNotificationsEnabled = true;
+  bool _batteryOptimizationEnabled = true;
+  bool _waitingForBatteryOptimization = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkAndProceed();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _handleResume();
+    }
   }
 
   Future<void> _checkAndProceed() async {
@@ -40,6 +56,8 @@ class _StartupScreenState extends State<StartupScreen> {
       granted = await _hasCorePermissions();
       _promotedNotificationsEnabled =
           await PermissionService.canPostPromotedNotifications();
+      _batteryOptimizationEnabled =
+          await PermissionService.isIgnoringBatteryOptimizations();
     } catch (e) {
       granted = false;
       if (mounted) {
@@ -67,16 +85,6 @@ class _StartupScreenState extends State<StartupScreen> {
     if (mounted) {
       setState(() {
         _isLoadingPermissions = false;
-      });
-    }
-
-    // 권한이 없으면 첫 진입에서 즉시 팝업 노출
-    if (!_autoRequested && mounted) {
-      _autoRequested = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _requestPermissions();
-        }
       });
     }
   }
@@ -112,12 +120,27 @@ class _StartupScreenState extends State<StartupScreen> {
       _errorMessage = null;
     });
     try {
-      await PermissionService.requestAllPermissions();
+      await PermissionService.requestNotificationPermission();
+      await PermissionService.requestPromotedNotificationPermission();
+      await PermissionService.requestLocationPermission();
+      await PermissionService.requestExactAlarmPermission();
+
+      final grantedBeforeBattery = await _hasCorePermissions();
+      if (grantedBeforeBattery && !_batteryOptimizationEnabled) {
+        _waitingForBatteryOptimization = true;
+        await PermissionService.requestIgnoreBatteryOptimizations();
+      }
+
+      await PermissionService.checkAutoStartPermission();
+
       final granted = await _hasCorePermissions();
       final promotedEnabled =
           await PermissionService.canPostPromotedNotifications();
+      final batteryOptimizationEnabled =
+          await PermissionService.isIgnoringBatteryOptimizations();
       _promotedNotificationsEnabled = promotedEnabled;
-      if (granted && mounted) {
+      _batteryOptimizationEnabled = batteryOptimizationEnabled;
+      if (granted && batteryOptimizationEnabled && mounted) {
         // 권한이 허용되었음을 저장
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_permissionsGrantedKey, true);
@@ -127,7 +150,9 @@ class _StartupScreenState extends State<StartupScreen> {
         _goHome();
       } else if (mounted) {
         setState(() {
-          _errorMessage = '일부 권한이 허용되지 않아 기능이 제한될 수 있습니다.';
+          _errorMessage = batteryOptimizationEnabled
+              ? '일부 권한이 허용되지 않아 기능이 제한될 수 있습니다.'
+              : '배터리 사용량 제한 없음을 설정하면 자동알람이 더 안정적으로 동작합니다.';
         });
       }
     } catch (e) {
@@ -141,6 +166,65 @@ class _StartupScreenState extends State<StartupScreen> {
         setState(() => _isRequesting = false);
       }
     }
+  }
+
+  Future<void> _handleResume() async {
+    if (!_waitingForBatteryOptimization || !mounted) return;
+
+    final granted = await _hasCorePermissions();
+    final batteryOptimizationEnabled =
+        await PermissionService.isIgnoringBatteryOptimizations();
+    if (!mounted) return;
+
+    setState(() {
+      _batteryOptimizationEnabled = batteryOptimizationEnabled;
+      if (batteryOptimizationEnabled) {
+        _waitingForBatteryOptimization = false;
+        _errorMessage = null;
+      }
+    });
+
+    if (granted && batteryOptimizationEnabled) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_permissionsGrantedKey, true);
+      if (mounted) {
+        _goHome();
+      }
+    }
+  }
+
+  Future<void> _handlePermissionRequestTap() async {
+    if (_isRequesting) return;
+
+    final shouldProceed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            final theme = Theme.of(dialogContext);
+            return AlertDialog(
+              title: const Text('권한 요청 안내'),
+              content: Text(
+                '위치 권한은 주변 정류장과 지도 기능에 사용되고, 알림 권한은 도착 알림과 자동 알람에 사용됩니다.\n\n'
+                '배터리 사용량 제한 없음 설정은 자동알람이 백그라운드에서도 끊기지 않도록 유지하는 데 사용됩니다.\n\n'
+                '안내를 확인한 뒤 다음 단계에서 Android 권한 팝업이 순서대로 표시됩니다.',
+                style: theme.textTheme.bodyMedium,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('취소'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('계속'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!shouldProceed || !mounted) return;
+    await _requestPermissions();
   }
 
   void _goHome() {
@@ -226,6 +310,16 @@ class _StartupScreenState extends State<StartupScreen> {
                 if (Platform.isAndroid) ...[
                   const SizedBox(height: 8),
                   _PermissionItem(
+                    icon: Icons.battery_saver_rounded,
+                    title: '배터리 사용량 제한 없음',
+                    subtitle: _batteryOptimizationEnabled
+                        ? '활성화됨 - 자동알람이 백그라운드에서도 유지됨'
+                        : '자동알람이 백그라운드에서도 유지되도록 사용',
+                  ),
+                ],
+                if (Platform.isAndroid) ...[
+                  const SizedBox(height: 8),
+                  _PermissionItem(
                     icon: Icons.update_rounded,
                     title: '실시간 정보',
                     subtitle: _promotedNotificationsEnabled
@@ -247,7 +341,8 @@ class _StartupScreenState extends State<StartupScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _isRequesting ? null : _requestPermissions,
+                    onPressed:
+                        _isRequesting ? null : _handlePermissionRequestTap,
                     child: _isRequesting
                         ? const SizedBox(
                             height: 18,

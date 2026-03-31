@@ -92,6 +92,26 @@ class PermissionService {
     }
   }
 
+  static Future<bool> isIgnoringBatteryOptimizations() async {
+    if (!Platform.isAndroid) return true;
+
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      if (androidInfo.version.sdkInt < 23) {
+        return true;
+      }
+
+      final result = await _methodChannel.invokeMethod<bool>(
+            'isIgnoringBatteryOptimizations',
+          ) ??
+          false;
+      return result;
+    } catch (e) {
+      logMessage('❌ 배터리 최적화 제외 상태 확인 오류: $e', level: LogLevel.error);
+      return false;
+    }
+  }
+
   /// 위치 권한 요청 (Foreground)
   static Future<void> requestLocationPermission() async {
     // 이미 허용된 권한은 요청하지 않음
