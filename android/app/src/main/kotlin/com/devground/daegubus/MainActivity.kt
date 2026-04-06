@@ -1377,10 +1377,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 "setAutoAlarmVolume" -> {
                     val volume = call.argument<Double>("volume") ?: 1.0
                     try {
-                        // SharedPreferences에 저장하여 TTSService 등에서 참조 가능하게 함
-                        val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-                        prefs.edit().putFloat("tts_volume", volume.toFloat()).apply()
-
                         if (busAlertService != null) {
                             busAlertService?.setTtsVolume(volume)
                         }
@@ -1394,12 +1390,11 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 "setUseTts" -> {
                     val useTts = call.argument<Boolean>("useTts") ?: true
                     try {
-                        val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-                        prefs.edit().putBoolean("alarm_use_tts", useTts).apply()
-
                         if (busAlertService != null) {
-                            val soundFile = if (useTts) "tts" else (prefs.getString("alarm_sound_filename", "default") ?: "default")
-                            busAlertService?.setAlarmSound(soundFile, useTts)
+                            // Flutter가 FlutterSharedPreferences에 이미 저장했으므로 loadSettings()로 재읽기
+                            val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                            val currentSound = flutterPrefs.getString("flutter.alarm_sound", "tts") ?: "tts"
+                            busAlertService?.setAlarmSound(currentSound, useTts)
                         }
                         Log.d(TAG, "TTS 사용 설정: $useTts")
                         result.success(true)
@@ -1412,12 +1407,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     val soundId = call.argument<String>("soundId") ?: "tts"
                     try {
                         val useTts = soundId == "tts"
-                        val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-                        prefs.edit()
-                            .putString("alarm_sound_filename", soundId)
-                            .putBoolean("alarm_use_tts", useTts)
-                            .apply()
-
                         if (busAlertService != null) {
                             busAlertService?.setAlarmSound(soundId, useTts)
                         }

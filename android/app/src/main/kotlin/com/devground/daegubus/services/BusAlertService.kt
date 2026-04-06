@@ -8,7 +8,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
@@ -99,25 +98,48 @@ class BusAlertService : Service() {
         // Display Modes
         const val DISPLAY_MODE_ALARMED_ONLY = 0
 
-        // Preference Keys
-        const val PREF_ALARM_SOUND_FILENAME = "alarm_sound_filename"
-        const val PREF_ALARM_USE_TTS = "alarm_use_tts"
-        const val PREF_SPEAKER_MODE = "speaker_mode"
-        const val PREF_NOTIFICATION_DISPLAY_MODE_KEY = "notification_display_mode"
-        const val PREF_TTS_VOLUME = "tts_volume"
-
         // Default Values
         const val DEFAULT_ALARM_SOUND = ""
+        private const val FLUTTER_DOUBLE_PREFIX = "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu"
 
         // 추가 상수 정의
         private const val MAX_CONSECUTIVE_ERRORS = 3
         private const val ARRIVAL_THRESHOLD_MINUTES = 60
+
+        sealed class ServiceCommand {
+            object StopAll : ServiceCommand()
+            object StopAutoAlarm : ServiceCommand()
+            data class StopRoute(
+                val routeId: String,
+                val busNo: String,
+                val stationName: String,
+                val notificationId: Int,
+                val isAutoAlarm: Boolean,
+                val shouldRemoveFromList: Boolean
+            ) : ServiceCommand()
+            data class StartTracking(
+                val routeId: String,
+                val stationId: String,
+                val stationName: String,
+                val busNo: String,
+                val notificationId: Int,
+                val isAutoAlarm: Boolean
+            ) : ServiceCommand()
+            data class StartForegroundTracking(
+                val stationId: String?,
+                val stationName: String?,
+                val busNo: String?
+            ) : ServiceCommand()
+            object StartAutoAlarmLightweight : ServiceCommand()
+            object Unknown : ServiceCommand()
+            val isStopCommand: Boolean
+                get() = this is StopAll || this is StopAutoAlarm || this is StopRoute
+        }
     }
 
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var busApiService: BusApiService
-    private lateinit var sharedPreferences: SharedPreferences
     private lateinit var notificationHandler: NotificationHandler
     private lateinit var notificationUpdater: BusAlertNotificationUpdater
     private lateinit var trackingManager: BusAlertTrackingManager
@@ -160,7 +182,6 @@ class BusAlertService : Service() {
         instance = this
         isServiceActive = true
         busApiService = BusApiService(applicationContext)
-        sharedPreferences = applicationContext.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         notificationHandler = NotificationHandler(this)
         notificationUpdater = BusAlertNotificationUpdater(this, notificationHandler)
         ttsController = BusAlertTtsController(applicationContext) { /* no-op */ }
@@ -200,70 +221,124 @@ class BusAlertService : Service() {
 
     private fun loadSettings() {
         try {
-            val prefs = applicationContext.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-            // Flutter SharedPreferences에서도 읽기 (Flutter 설정과 동기화)
             val flutterPrefs = applicationContext.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
 
-            currentAlarmSound = prefs.getString(PREF_ALARM_SOUND_FILENAME, DEFAULT_ALARM_SOUND) ?: DEFAULT_ALARM_SOUND
-
-            // TTS 설정: AppSettings 우선, 없으면 Flutter SharedPreferences에서 읽기
-            // Flutter는 'flutter.use_tts' 키로 저장, 알람 사운드가 'tts'이면 TTS 사용
             val flutterAlarmSound = flutterPrefs.getString("flutter.alarm_sound", null)
             val flutterUseTts = flutterPrefs.getBoolean("flutter.use_tts", true)
-            useTextToSpeech = if (prefs.contains(PREF_ALARM_USE_TTS)) {
-                prefs.getBoolean(PREF_ALARM_USE_TTS, true)
-            } else {
-                // AppSettings에 없으면 Flutter 설정 참조
-                flutterUseTts || flutterAlarmSound == "tts"
-            }
+            currentAlarmSound = flutterAlarmSound ?: DEFAULT_ALARM_SOUND
+            useTextToSpeech = flutterUseTts || flutterAlarmSound == "tts"
             ttsController.setUseTts(useTextToSpeech)
 
-            // 스피커 모드: AppSettings 우선, 없으면 Flutter SharedPreferences에서 읽기
-            audioOutputMode = if (prefs.contains(PREF_SPEAKER_MODE)) {
-                prefs.getInt(PREF_SPEAKER_MODE, OUTPUT_MODE_AUTO)
-            } else {
-                // Flutter는 'flutter.speaker_mode' 키 사용 (Long으로 저장됨)
-                flutterPrefs.getLong("flutter.speaker_mode", OUTPUT_MODE_HEADSET.toLong()).toInt()
-            }
+            audioOutputMode = flutterPrefs.getLong("flutter.speaker_mode", OUTPUT_MODE_HEADSET.toLong()).toInt()
             ttsController.setAudioOutputMode(audioOutputMode)
 
-            notificationDisplayMode = prefs.getInt(PREF_NOTIFICATION_DISPLAY_MODE_KEY, DISPLAY_MODE_ALARMED_ONLY)
-            ttsVolume = prefs.getFloat(PREF_TTS_VOLUME, 1.0f).coerceIn(0f, 1f)
+            notificationDisplayMode = getFlutterLongPref(flutterPrefs, "notificationDisplayMode", DISPLAY_MODE_ALARMED_ONLY.toLong()).toInt()
+            ttsVolume = getFlutterFloatPref(flutterPrefs, "auto_alarm_volume", 1.0f).coerceIn(0f, 1f)
             ttsController.setTtsVolume(ttsVolume)
-            // 자동알람 타임아웃(ms) 로드, 기본 30분
-            autoAlarmTimeoutMs = prefs.getLong("auto_alarm_timeout_ms", 1800000L).coerceIn(300000L, 7200000L)
+            autoAlarmTimeoutMs = getFlutterLongPref(flutterPrefs, "auto_alarm_timeout_ms", 1800000L).coerceIn(300000L, 7200000L)
             Log.d(TAG, "⚙️ Settings loaded - TTS: $useTextToSpeech, Sound: $currentAlarmSound, NotifMode: $notificationDisplayMode, Output: $audioOutputMode, Volume: ${ttsVolume * 100}%, FlutterUseTts: $flutterUseTts, FlutterAlarmSound: $flutterAlarmSound")
         } catch (e: Exception) {
             Log.e(TAG, "⚙️ Error loading settings: ${e.message}")
         }
     }
 
+    private fun getFlutterLongPref(
+        flutterPrefs: android.content.SharedPreferences,
+        key: String,
+        defaultValue: Long
+    ): Long {
+        return when (val value = flutterPrefs.all["flutter.$key"]) {
+            is Long -> value
+            is Int -> value.toLong()
+            is String -> value.toLongOrNull() ?: defaultValue
+            else -> defaultValue
+        }
+    }
+
+    private fun getFlutterFloatPref(
+        flutterPrefs: android.content.SharedPreferences,
+        key: String,
+        defaultValue: Float
+    ): Float {
+        return when (val value = flutterPrefs.all["flutter.$key"]) {
+            is Float -> value
+            is Double -> value.toFloat()
+            is Long -> value.toFloat()
+            is Int -> value.toFloat()
+            is String -> {
+                val normalizedValue = if (value.startsWith(FLUTTER_DOUBLE_PREFIX)) {
+                    value.removePrefix(FLUTTER_DOUBLE_PREFIX)
+                } else {
+                    value
+                }
+                normalizedValue.toFloatOrNull() ?: defaultValue
+            }
+            else -> defaultValue
+        }
+    }
+
+    private fun parseCommand(intent: Intent?): ServiceCommand {
+        return when (intent?.action) {
+            ACTION_STOP_TRACKING -> ServiceCommand.StopAll
+            ACTION_STOP_AUTO_ALARM -> ServiceCommand.StopAutoAlarm
+            ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> ServiceCommand.StopRoute(
+                routeId = intent.getStringExtra("routeId") ?: return ServiceCommand.Unknown,
+                busNo = intent.getStringExtra("busNo") ?: return ServiceCommand.Unknown,
+                stationName = intent.getStringExtra("stationName") ?: "",
+                notificationId = intent.getIntExtra("notificationId", -1),
+                isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false),
+                shouldRemoveFromList = intent.getBooleanExtra("shouldRemoveFromList", true)
+            )
+            ACTION_START_TRACKING -> ServiceCommand.StartTracking(
+                routeId = intent.getStringExtra("routeId") ?: return ServiceCommand.Unknown,
+                stationId = intent.getStringExtra("stationId") ?: return ServiceCommand.Unknown,
+                stationName = intent.getStringExtra("stationName") ?: "",
+                busNo = intent.getStringExtra("busNo") ?: "",
+                notificationId = intent.getIntExtra("notificationId", -1),
+                isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
+            )
+            ACTION_START_TRACKING_FOREGROUND, ACTION_UPDATE_TRACKING -> ServiceCommand.StartForegroundTracking(
+                stationId = intent.getStringExtra("stationId"),
+                stationName = intent.getStringExtra("stationName"),
+                busNo = intent.getStringExtra("busNo")
+            )
+            ACTION_START_AUTO_ALARM_LIGHTWEIGHT -> ServiceCommand.StartAutoAlarmLightweight
+            ACTION_CANCEL_NOTIFICATION,
+            ACTION_START_TTS_TRACKING,
+            ACTION_STOP_TTS_TRACKING,
+            ACTION_STOP_BUS_ALERT_TRACKING,
+            ACTION_SET_ALARM_SOUND,
+            ACTION_SHOW_NOTIFICATION -> ServiceCommand.Unknown
+            else -> ServiceCommand.Unknown
+        }
+    }
+
 override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     Log.i(TAG, "onStartCommand Received: Action = ${intent?.action}, StartId=$startId")
 
-    // 서비스가 비활성 상태인 경우 UPDATE_TRACKING은 무시
-    if (!isServiceActive && intent?.action == ACTION_UPDATE_TRACKING) {
-        Log.w(TAG, "⚠️ 서비스가 비활성 상태입니다. UPDATE_TRACKING 무시: ${intent.action}")
+    val command = parseCommand(intent)
+    if (!isServiceActive && !command.isStopCommand) {
+        Log.w(TAG, "Service not active, ignoring command: $command")
         return START_NOT_STICKY
-    }
-
-    // 서비스가 비활성 상태인 경우 초기화 시도 (STOP 계열 액션 제외)
-    if (!isServiceActive && intent?.action != ACTION_STOP_TRACKING && intent?.action != ACTION_STOP_AUTO_ALARM && intent?.action != ACTION_STOP_SPECIFIC_ROUTE_TRACKING) {
-        Log.w(TAG, "서비스가 비활성 상태입니다. 초기화 시도: ${intent?.action}")
-        try {
-            initialize()
-            isServiceActive = true
-            Log.i(TAG, "✅ 서비스 초기화 완료")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ 서비스 초기화 실패: ${e.message}", e)
-            return START_NOT_STICKY
-        }
     }
 
     loadSettings()
 
-    when (intent?.action) {
-        ACTION_START_TRACKING -> {
+    val action = intent?.action
+    val notificationId = intent?.getIntExtra("notificationId", -1) ?: -1
+    val remainingMinutes = intent?.getIntExtra("remainingMinutes", -1) ?: -1
+    val currentStation = intent?.getStringExtra("currentStation")
+    val allBusesSummary = intent?.getStringExtra("allBusesSummary")
+    val routeId = intent?.getStringExtra("routeId")
+    val isAutoAlarm = intent?.getBooleanExtra("isAutoAlarm", false) ?: false
+    val isCommuteAlarm = intent?.getBooleanExtra("isCommuteAlarm", false) ?: false
+    val stationId = intent?.getStringExtra("stationId")
+    val useTTS = intent?.getBooleanExtra("useTTS", true) ?: true
+    val autoAlarmBusNo = intent?.getStringExtra("busNo") ?: ""
+    val autoAlarmStationName = intent?.getStringExtra("stationName") ?: ""
+
+    when (command) {
+        is ServiceCommand.StartTracking -> {
             // 🛑 사용자가 수동으로 중지한 직후인지 확인 (재시작 방지)
             if (isManuallyStoppedByUser) {
                 val timeSinceStop = System.currentTimeMillis() - lastManualStopTime
@@ -278,24 +353,14 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 }
             }
 
-            val routeId = intent.getStringExtra("routeId")
-            val stationId = intent.getStringExtra("stationId")
-            val stationName = intent.getStringExtra("stationName")
-            val busNo = intent.getStringExtra("busNo")
-
-            if (routeId != null && stationId != null && stationName != null && busNo != null) {
-                Log.i(TAG, "ACTION_START_TRACKING: routeId=$routeId, stationId=$stationId, stationName=$stationName, busNo=$busNo")
-                addMonitoredRoute(routeId, stationId, stationName)
-                startTracking(routeId, stationId, stationName, busNo)
-            } else {
-                Log.e(TAG, "Missing data for ACTION_START_TRACKING")
-                stopTrackingIfIdle()
-            }
+            Log.i(TAG, "ACTION_START_TRACKING: routeId=${command.routeId}, stationId=${command.stationId}, stationName=${command.stationName}, busNo=${command.busNo}")
+            addMonitoredRoute(command.routeId, command.stationId, command.stationName)
+            startTracking(command.routeId, command.stationId, command.stationName, command.busNo)
         }
-        ACTION_STOP_TRACKING -> {
+        ServiceCommand.StopAll -> {
             Log.i(TAG, "🛑🛑🛑 ACTION_STOP_TRACKING 수신! 🛑🛑🛑")
-            Log.i(TAG, "🛑 Intent Action: ${intent.action}")
-            Log.i(TAG, "🛑 Intent Extras: ${intent.extras?.keySet()?.joinToString()}")
+            Log.i(TAG, "🛑 Intent Action: $action")
+            Log.i(TAG, "🛑 Intent Extras: ${intent?.extras?.keySet()?.joinToString()}")
             Log.i(TAG, "🛑 현재 활성 추적: ${activeTrackings.size}개")
             Log.i(TAG, "🛑 모니터링 작업: ${monitoringJobs.size}개")
             Log.i(TAG, "🛑 포그라운드 상태: $isInForeground")
@@ -357,106 +422,48 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             Log.i(TAG, "✅✅✅ ACTION_STOP_TRACKING 처리 완료! ✅✅✅")
             return START_NOT_STICKY
         }
-        ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> {
-            val routeId = intent.getStringExtra("routeId")
-            val busNo = intent.getStringExtra("busNo")
-            val stationName = intent.getStringExtra("stationName")
-            val notificationId = intent.getIntExtra("notificationId", -1)
-            val isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
-            val shouldRemoveFromList = intent.getBooleanExtra("shouldRemoveFromList", true) // NotificationHandler에서 전달된 값 사용
-
-            if (routeId != null && busNo != null && stationName != null) {
-                Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName, notificationId=$notificationId, isAutoAlarm=$isAutoAlarm, shouldRemoveFromList=$shouldRemoveFromList")
+        is ServiceCommand.StopRoute -> {
+            Log.i(TAG, "ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=${command.routeId}, busNo=${command.busNo}, stationName=${command.stationName}, notificationId=${command.notificationId}, isAutoAlarm=${command.isAutoAlarm}, shouldRemoveFromList=${command.shouldRemoveFromList}")
                 
-                // 📌 자동알람인 경우 Flutter 측에 명시적으로 중지 요청
-                if (isAutoAlarm) {
-                    Log.d(TAG, "🔔 자동알람 중지 요청: 전체 추적 중지 호출")
-                    stopAllBusTracking() // 자동알람인 경우 전체 중지
-                    
-                    // 자동알람 전용 브로드캐스트 전송
-                    try {
-                        val autoAlarmIntent = Intent("com.devground.daegubus.STOP_AUTO_ALARM")
-                        autoAlarmIntent.putExtra("busNo", busNo)
-                        autoAlarmIntent.putExtra("stationName", stationName)
-                        autoAlarmIntent.putExtra("routeId", routeId)
-                        autoAlarmIntent.flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
-                        sendBroadcast(autoAlarmIntent)
-                        Log.d(TAG, "✅ 자동알람 중지 브로드캐스트 전송 완료")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ 자동알람 중지 브로드캐스트 전송 실패: ${e.message}")
-                    }
-                } else {
-                    // 일반 알람인 경우 특정 추적만 중지
-                    stopSpecificTracking(routeId, busNo, stationName, shouldRemoveFromList)
-                    Log.d(TAG, "노티피케이션 종료: 알람 리스트 유지 여부: $shouldRemoveFromList ($busNo)")
-                }
+            // 📌 자동알람인 경우 Flutter 측에 명시적으로 중지 요청
+            if (command.isAutoAlarm) {
+                Log.d(TAG, "🔔 자동알람 중지 요청: 전체 추적 중지 호출")
+                stopAllBusTracking() // 자동알람인 경우 전체 중지
                 
-                // 📌 Flutter로 직접 메서드 채널을 통해 이벤트 전송
+                // 자동알람 전용 브로드캐스트 전송
                 try {
-                    val alarmCancelData = mapOf(
-                        "busNo" to busNo,
-                        "routeId" to routeId,
-                        "stationName" to stationName
-                    )
-                    MainActivity.sendFlutterEvent("onAlarmCanceledFromNotification", alarmCancelData)
-                    Log.d(TAG, "✅ Flutter 메서드 채널로 알람 취소 이벤트 전송 완료")
+                    val autoAlarmIntent = Intent("com.devground.daegubus.STOP_AUTO_ALARM")
+                    autoAlarmIntent.putExtra("busNo", command.busNo)
+                    autoAlarmIntent.putExtra("stationName", command.stationName)
+                    autoAlarmIntent.putExtra("routeId", command.routeId)
+                    autoAlarmIntent.flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
+                    sendBroadcast(autoAlarmIntent)
+                    Log.d(TAG, "✅ 자동알람 중지 브로드캐스트 전송 완료")
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ Flutter 메서드 채널 이벤트 전송 실패: ${e.message}")
+                    Log.e(TAG, "❌ 자동알람 중지 브로드캐스트 전송 실패: ${e.message}")
                 }
             } else {
-                Log.e(TAG, "Missing data for ACTION_STOP_SPECIFIC_ROUTE_TRACKING: routeId=$routeId, busNo=$busNo, stationName=$stationName")
-                stopTrackingIfIdle()
-            }
-        }
-        ACTION_CANCEL_NOTIFICATION -> {
-            val notificationId = intent.getIntExtra("notificationId", -1)
-            if (notificationId != -1) {
-                Log.i(TAG, "ACTION_CANCEL_NOTIFICATION: notificationId=$notificationId")
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancel(notificationId)
-
-                // 알림이 지속적인 추적 알림인 경우 서비스도 중지
-                if (notificationId == ONGOING_NOTIFICATION_ID) {
-                    Log.i(TAG, "지속적인 추적 알림 취소. 서비스 중지 시도.")
-                    stopAllTracking()
-                }
-
-                // Flutter 측에 알림 취소 이벤트 전송 시도 (브로드캐스트 + 메서드 채널)
-                try {
-                    val cancelIntent = Intent("com.devground.daegubus.NOTIFICATION_CANCELLED")
-                    cancelIntent.putExtra("notificationId", notificationId)
-                    sendBroadcast(cancelIntent)
-                    Log.d(TAG, "알림 취소 이벤트 브로드캐스트 전송: $notificationId")
-                    
-                    // 메서드 채널을 통한 직접 이벤트 전송 (더 신뢰성 있음)
-                    if (notificationId == ONGOING_NOTIFICATION_ID) {
-                        MainActivity.sendFlutterEvent("onAllAlarmsCanceled", null)
-                        Log.d(TAG, "✅ Flutter 메서드 채널로 모든 알람 취소 이벤트 전송 완료")
-                    } else {
-                        val cancelData = mapOf("notificationId" to notificationId)
-                        MainActivity.sendFlutterEvent("onNotificationCanceled", cancelData)
-                        Log.d(TAG, "✅ Flutter 메서드 채널로 알림 취소 이벤트 전송 완료: $notificationId")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}")
-                }
-            }
-        }
-        ACTION_START_TTS_TRACKING -> {
-            Log.w(TAG, "Received ACTION_START_TTS_TRACKING, but this should likely be handled by TTSService itself or specific internal logic.")
-        }
-        ACTION_STOP_TTS_TRACKING -> {
-            Log.w(TAG, "Received ACTION_STOP_TTS_TRACKING.")
-        }
-        ACTION_START_TRACKING_FOREGROUND, ACTION_UPDATE_TRACKING -> {
-            // 추가 체크: 서비스가 비활성화되어 있으면 UPDATE_TRACKING 무시
-            if (!isServiceActive && intent.action == ACTION_UPDATE_TRACKING) {
-                Log.w(TAG, "⚠️ 서비스 비활성화 상태에서 UPDATE_TRACKING 무시")
-                return START_NOT_STICKY
+                // 일반 알람인 경우 특정 추적만 중지
+                stopSpecificTracking(command.routeId, command.busNo, command.stationName, command.shouldRemoveFromList)
+                Log.d(TAG, "노티피케이션 종료: 알람 리스트 유지 여부: ${command.shouldRemoveFromList} (${command.busNo})")
             }
 
+            // 📌 Flutter로 직접 메서드 채널을 통해 이벤트 전송
+            try {
+                val alarmCancelData = mapOf(
+                    "busNo" to command.busNo,
+                    "routeId" to command.routeId,
+                    "stationName" to command.stationName
+                )
+                MainActivity.sendFlutterEvent("onAlarmCanceledFromNotification", alarmCancelData)
+                Log.d(TAG, "✅ Flutter 메서드 채널로 알람 취소 이벤트 전송 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Flutter 메서드 채널 이벤트 전송 실패: ${e.message}")
+            }
+        }
+        is ServiceCommand.StartForegroundTracking -> {
             // 🛑 새로운 추적 시작인 경우만 재시작 방지 로직 적용 (UPDATE는 제외)
-            if (intent.action == ACTION_START_TRACKING_FOREGROUND && isManuallyStoppedByUser) {
+            if (action == ACTION_START_TRACKING_FOREGROUND && isManuallyStoppedByUser) {
                 val timeSinceStop = System.currentTimeMillis() - lastManualStopTime
                 if (timeSinceStop < RESTART_PREVENTION_DURATION) {
                     Log.w(TAG, "⚠️ 사용자가 ${timeSinceStop/1000}초 전에 수동 중지했음 - 포그라운드 추적 시작 거부")
@@ -469,28 +476,22 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 }
             }
 
-            val busNo = intent.getStringExtra("busNo") ?: ""
-            val stationName = intent.getStringExtra("stationName") ?: ""
-            val remainingMinutes = intent.getIntExtra("remainingMinutes", -1)
-            val currentStation = intent.getStringExtra("currentStation")
-            val isUpdate = intent.action == ACTION_UPDATE_TRACKING
-            val allBusesSummary = intent.getStringExtra("allBusesSummary")
-            val routeId = intent.getStringExtra("routeId")
-            var stationId = intent.getStringExtra("stationId")
-            val isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
-            val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
+            val busNo = command.busNo ?: ""
+            val stationName = command.stationName ?: ""
+            val isUpdate = action == ACTION_UPDATE_TRACKING
+            var resolvedStationId = command.stationId
 
             Log.d(TAG, "🔔 자동알람 플래그 확인: isAutoAlarm=$isAutoAlarm, busNo=$busNo, stationName=$stationName")
-            Log.d(TAG, "🔔 자동알람 상세 정보: routeId=$routeId, stationId=$stationId, remainingMinutes=$remainingMinutes, currentStation=$currentStation")
+            Log.d(TAG, "🔔 자동알람 상세 정보: routeId=$routeId, stationId=$resolvedStationId, remainingMinutes=$remainingMinutes, currentStation=$currentStation")
 
             if (routeId == null || busNo.isBlank() || stationName.isBlank()) {
-                Log.e(TAG, "${intent.action} Aborted: Missing required info")
+                Log.e(TAG, "$action Aborted: Missing required info")
                 stopTrackingIfIdle()
                 return START_NOT_STICKY
             }
 
             // --- stationId 보정 로직 추가 ---
-            if (stationId.isNullOrBlank()) {
+            if (resolvedStationId.isNullOrBlank()) {
                 // routeId가 10자리 숫자(7로 시작)면 stationId로 잘못 들어온 것일 수 있으니 분리
                 if (routeId.length == 10 && routeId.startsWith("7")) {
                     // 실제 routeId는 busApiService.getRouteIdByStationId 등으로 찾아야 함(여기선 생략)
@@ -515,9 +516,9 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             }
 
             // 자동알람인 경우 무조건 추적 시작 (ACTION에 관계없이)
-            if (isAutoAlarm && stationId != null) {
+            if (isAutoAlarm && resolvedStationId != null) {
                 Log.d(TAG, "🔔 자동알람 감지: 무조건 추적 시작 - $busNo 번, $stationName")
-                addMonitoredRoute(routeId, stationId, stationName)
+                addMonitoredRoute(routeId, resolvedStationId, stationName)
                 
                 // 이미 추적 중이어도 자동알람은 강제로 재시작
                 if (monitoringJobs.containsKey(routeId)) {
@@ -526,11 +527,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                     monitoringJobs.remove(routeId)
                 }
                 
-                startTracking(routeId, stationId, stationName, busNo, isAutoAlarm = true, isCommuteAlarm = isCommuteAlarm)
-            } else if (intent.action == ACTION_START_TRACKING_FOREGROUND && stationId != null) {
+                startTracking(routeId, resolvedStationId, stationName, busNo, isAutoAlarm = true, isCommuteAlarm = isCommuteAlarm)
+            } else if (action == ACTION_START_TRACKING_FOREGROUND && resolvedStationId != null) {
                 // 일반 추적 시작
-                addMonitoredRoute(routeId, stationId, stationName)
-                startTracking(routeId, stationId, stationName, busNo)
+                addMonitoredRoute(routeId, resolvedStationId, stationName)
+                startTracking(routeId, resolvedStationId, stationName, busNo)
             }
 
             // 업데이트 요청인 경우 추적 정보도 업데이트
@@ -606,23 +607,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 )
             }
             // [AUTO ALARM 실시간 정보 즉시 갱신] autoAlarmTask 등 자동알람 진입점에서 실시간 정보 즉시 fetch
-            if (routeId != null && !routeId.isBlank() && stationId != null && !stationId.isBlank() && stationName.isNotBlank()) {
-                updateBusInfo(routeId, stationId, stationName)
+            if (!routeId.isBlank() && !resolvedStationId.isNullOrBlank() && stationName.isNotBlank()) {
+                updateBusInfo(routeId, resolvedStationId, stationName)
             }
         }
-        ACTION_STOP_BUS_ALERT_TRACKING -> {
-            val routeId = intent.getStringExtra("routeId")
-            val stationId = intent.getStringExtra("stationId")
-            val busNo = intent.getStringExtra("busNo")
-            Log.i(TAG, "Notification Action '$intent.action': Route=$routeId, Station=$stationId, Bus=$busNo")
-            if (routeId != null) {
-                stopTrackingForRoute(routeId, stationId = stationId, busNo = busNo, cancelNotification = true)
-            } else {
-                Log.e(TAG, "Missing routeId for $intent.action")
-                stopTrackingIfIdle()
-            }
-        }
-        ACTION_START_AUTO_ALARM_LIGHTWEIGHT -> {
+        ServiceCommand.StartAutoAlarmLightweight -> {
             // 🛑 사용자가 수동으로 중지한 직후인지 확인 (재시작 방지)
             if (isManuallyStoppedByUser) {
                 val timeSinceStop = System.currentTimeMillis() - lastManualStopTime
@@ -637,19 +626,14 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 }
             }
 
-            val busNo = intent.getStringExtra("busNo") ?: ""
-            val stationName = intent.getStringExtra("stationName") ?: ""
-            val remainingMinutes = intent.getIntExtra("remainingMinutes", -1)
-            val currentStation = intent.getStringExtra("currentStation") ?: ""
-            val routeId = intent.getStringExtra("routeId") ?: ""
-            val stationId = intent.getStringExtra("stationId") ?: ""
-            val useTTS = intent.getBooleanExtra("useTTS", true)
-            val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
+            val currentStationText = currentStation ?: ""
+            val routeIdText = routeId ?: ""
+            val stationIdText = stationId ?: ""
 
-            Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $busNo 번, $stationName, TTS=$useTTS")
-            handleAutoAlarmLightweight(busNo, stationName, remainingMinutes, currentStation, routeId, stationId, useTTS, isCommuteAlarm)
+            Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $autoAlarmBusNo 번, $autoAlarmStationName, TTS=$useTTS")
+            handleAutoAlarmLightweight(autoAlarmBusNo, autoAlarmStationName, remainingMinutes, currentStationText, routeIdText, stationIdText, useTTS, isCommuteAlarm)
         }
-        ACTION_STOP_AUTO_ALARM -> {
+        ServiceCommand.StopAutoAlarm -> {
             Log.i(TAG, "🛑 ACTION_STOP_AUTO_ALARM received")
 
             // 사용자 수동 중지 플래그 설정 (자동 알람 재시작 방지)
@@ -670,9 +654,9 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             stopAllBusTracking()
             return START_NOT_STICKY
         }
-        else -> {
-            Log.w(TAG, "Unhandled action received: $intent.action")
-            stopTrackingIfIdle()
+        ServiceCommand.Unknown -> {
+            Log.w(TAG, "Unhandled action received: $action")
+            return START_NOT_STICKY
         }
     }
 
@@ -1473,8 +1457,6 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         currentAlarmSound = filename
         useTextToSpeech = useTts
         ttsController.setUseTts(useTextToSpeech)
-        val prefs = applicationContext.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-        prefs.edit().putString(PREF_ALARM_SOUND_FILENAME, currentAlarmSound).putBoolean(PREF_ALARM_USE_TTS, useTextToSpeech).apply()
     }
 
     fun setAudioOutputMode(mode: Int) {
@@ -1482,8 +1464,6 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (mode in OUTPUT_MODE_HEADSET..OUTPUT_MODE_AUTO) {
             audioOutputMode = mode
             ttsController.setAudioOutputMode(audioOutputMode)
-            val prefs = applicationContext.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-            prefs.edit().putInt(PREF_SPEAKER_MODE, audioOutputMode).apply()
         }
     }
 
@@ -1500,8 +1480,6 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             try {
                 ttsVolume = volume.toFloat().coerceIn(0f, 1f)
                 ttsController.setTtsVolume(ttsVolume)
-                val prefs = applicationContext.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-                prefs.edit().putFloat(PREF_TTS_VOLUME, ttsVolume).apply()
                 Log.d(TAG, "TTS Volume set to: ${ttsVolume * 100}%")
             } catch (e: Exception) {
                 Log.e(TAG, "Error setting TTS volume: ${e.message}", e)
