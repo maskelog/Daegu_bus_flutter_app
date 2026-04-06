@@ -778,6 +778,32 @@ class MyApp extends StatelessWidget {
           theme: adjustedLightTheme,
           darkTheme: adjustedDarkTheme,
           themeMode: settingsService.themeMode,
+          themeAnimationDuration: const Duration(milliseconds: 200),
+          builder: (context, child) {
+            final platformBrightness = MediaQuery.platformBrightnessOf(context);
+            final isDarkMode = switch (settingsService.themeMode) {
+              ThemeMode.dark => true,
+              ThemeMode.light => false,
+              ThemeMode.system => platformBrightness == Brightness.dark,
+            };
+            final overlayStyle = isDarkMode
+                ? SystemUiOverlayStyle.light.copyWith(
+                    statusBarColor: Colors.transparent,
+                    systemNavigationBarColor: AppColorScheme.backgroundDark,
+                    systemNavigationBarIconBrightness: Brightness.light,
+                    statusBarIconBrightness: Brightness.light,
+                    statusBarBrightness: Brightness.dark,
+                  )
+                : SystemUiOverlayStyle.dark.copyWith(
+                    statusBarColor: Colors.transparent,
+                    systemNavigationBarColor: AppColorScheme.backgroundLight,
+                    systemNavigationBarIconBrightness: Brightness.dark,
+                    statusBarIconBrightness: Brightness.dark,
+                    statusBarBrightness: Brightness.light,
+                  );
+            SystemChrome.setSystemUIOverlayStyle(overlayStyle);
+            return child ?? const SizedBox.shrink();
+          },
           // 권한 상태를 확인하여 적절한 화면 표시
           home: const _InitialScreen(),
           debugShowCheckedModeBanner: false,
