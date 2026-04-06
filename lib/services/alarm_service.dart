@@ -52,22 +52,6 @@ class AlarmService extends ChangeNotifier {
     _alarmFacade = AlarmFacade(
       validateRequiredFields: _validateRequiredFields,
       resolveStationId: _getStationIdFromName,
-      startMonitoring: ({
-        required String stationId,
-        required String stationName,
-        required String routeId,
-        required String busNo,
-      }) {
-        return startBusMonitoringService(
-          stationId: stationId,
-          stationName: stationName,
-          routeId: routeId,
-          busNo: busNo,
-        );
-      },
-      refreshBusInfo: refreshAutoAlarmBusInfo,
-      saveAlarms: _saveAlarms,
-      restartPreventionDurationMs: _restartPreventionDuration,
     );
     _setupMethodChannel();
   }
@@ -403,7 +387,6 @@ class AlarmService extends ChangeNotifier {
           _lastRefreshAt = now;
           refreshAlarms();
         }
-        _alarmFacade.checkAutoAlarms(); // 자동 알람 체크 추가 (5초마다 정밀 체크)
 
         // 디버깅: 현재 자동 알람 상태 출력 (30초마다)
         if (timer.tick % 2 == 0) {
@@ -424,7 +407,6 @@ class AlarmService extends ChangeNotifier {
 
   @override
   void dispose() {
-    _alarmFacade.cancelRefreshTimer();
     _initialized = false;
     _alarmCheckTimer?.cancel();
     super.dispose();
@@ -1303,10 +1285,7 @@ class AlarmService extends ChangeNotifier {
       _alarmFacade.trackedRouteId = null;
       _alarmFacade.state.processedNotifications.clear();
 
-      // 5. 타이머 정리
-      _alarmFacade.cancelRefreshTimer();
-
-      // 6. 상태 저장 및 UI 업데이트
+      // 5. 상태 저장 및 UI 업데이트
       await _saveAlarms();
       notifyListeners();
 
@@ -1830,12 +1809,6 @@ class AlarmService extends ChangeNotifier {
 
         final timeUntilAlarm = scheduledTime.difference(now);
         logMessage('  ⏰ 다음 알람까지 ${timeUntilAlarm.inMinutes}분 남음');
-
-        if (timeUntilAlarm.inSeconds <= 30 &&
-            timeUntilAlarm.inSeconds >= -300) {
-          logMessage('  ⚡ 알람 시간이 지났음 - 즉시 실행 (${timeUntilAlarm.inSeconds}초)');
-          await _alarmFacade.executeAutoAlarmImmediately(alarm);
-        }
 
         final alarmData = alarm_model.AlarmData(
           id: alarm.id,

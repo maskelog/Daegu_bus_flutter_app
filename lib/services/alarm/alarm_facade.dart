@@ -14,15 +14,6 @@ class AlarmFacade {
   AlarmFacade({
     required bool Function(Map<String, dynamic>) validateRequiredFields,
     required String Function(String stationName, String routeId) resolveStationId,
-    required Future<bool> Function({
-      required String stationId,
-      required String stationName,
-      required String routeId,
-      required String busNo,
-    }) startMonitoring,
-    required Future<bool> Function(AutoAlarm alarm) refreshBusInfo,
-    required Future<void> Function() saveAlarms,
-    required int restartPreventionDurationMs,
   })  : state = AlarmState(),
         holidayService = HolidayService(),
         nativeBridge = AlarmNativeBridge(),
@@ -32,12 +23,7 @@ class AlarmFacade {
     cache = AlarmCache(state: state);
     autoEngine = AutoAlarmEngine(
       state: state,
-      startMonitoring: startMonitoring,
-      refreshBusInfo: refreshBusInfo,
-      saveAlarms: saveAlarms,
       resolveStationId: resolveStationId,
-      getHolidays: holidayService.fetchHolidays,
-      restartPreventionDurationMs: restartPreventionDurationMs,
     );
   }
 
@@ -70,16 +56,8 @@ class AlarmFacade {
     return holidayService.fetchHolidays(year, month);
   }
 
-  Future<void> checkAutoAlarms() {
-    return autoEngine.checkAutoAlarms();
-  }
-
   Future<void> saveAutoAlarms() {
     return autoEngine.saveAutoAlarms();
-  }
-
-  Future<void> executeAutoAlarmImmediately(AutoAlarm alarm) {
-    return autoEngine.executeAutoAlarmImmediately(alarm);
   }
 
   Future<void> scheduleAutoAlarm(AutoAlarm alarm, DateTime scheduledTime) {
@@ -121,9 +99,5 @@ class AlarmFacade {
 
   void updateCachedBusInfo(CachedBusInfo cachedInfo) {
     cache.updateCachedBusInfo(cachedInfo);
-  }
-
-  void cancelRefreshTimer() {
-    autoEngine.cancelRefreshTimer();
   }
 }
