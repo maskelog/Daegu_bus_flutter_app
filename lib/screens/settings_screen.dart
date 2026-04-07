@@ -128,6 +128,8 @@ class SettingsScreen extends StatelessWidget {
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   _buildAutoAlarmTimeoutDropdown(context, settingsService),
                   const Divider(height: 1, indent: 16, endIndent: 16),
+                  _buildArrivalOnlyToggle(context, settingsService),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
                   _buildCustomExcludeDateSelector(context, settingsService),
                 ],
               ),
@@ -422,6 +424,42 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ))
             .toList(),
+      ),
+    );
+  }
+
+  Widget _buildArrivalOnlyToggle(
+      BuildContext context, SettingsService settingsService) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(
+        Icons.directions_bus_outlined,
+        color: colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
+      title: Text(
+        '도착 임박 시에만 알림',
+        style: theme.textTheme.bodyLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+          color: colorScheme.onSurface,
+        ),
+      ),
+      subtitle: Text(
+        '3정거장 미만 또는 3분 이내일 때만 TTS 안내',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: Switch(
+        value: settingsService.alertOnArrivalOnly,
+        onChanged: settingsService.updateAlertOnArrivalOnly,
+        activeThumbColor: colorScheme.primary,
+        activeTrackColor: colorScheme.primaryContainer,
+        inactiveThumbColor: colorScheme.outline,
+        inactiveTrackColor: colorScheme.surfaceContainerHighest,
       ),
     );
   }

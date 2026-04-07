@@ -947,6 +947,51 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.error("NOTIFICATION_ERROR", "알림 표시 중 오류 발생: ${e.message}", null)
                     }
                 }
+                "startAutoAlarmNow" -> {
+                    val alarmId = call.argument<Int>("alarmId") ?: 0
+                    val busNo = call.argument<String>("busNo") ?: ""
+                    val stationName = call.argument<String>("stationName") ?: ""
+                    val routeId = call.argument<String>("routeId") ?: ""
+                    val stationId = call.argument<String>("stationId") ?: ""
+                    val useTTS = call.argument<Boolean>("useTTS") ?: true
+                    val isCommuteAlarm = call.argument<Boolean>("isCommuteAlarm") ?: false
+                    val alarmHour = call.argument<Int>("alarmHour") ?: -1
+                    val alarmMinute = call.argument<Int>("alarmMinute") ?: -1
+
+                    if (busNo.isBlank() || stationName.isBlank() || routeId.isBlank() || stationId.isBlank()) {
+                        result.error("INVALID_ARGUMENT", "필수 인자가 누락되었습니다", null)
+                        return@setMethodCallHandler
+                    }
+
+                    try {
+                        val busIntent = Intent(this, BusAlertService::class.java).apply {
+                            action = BusAlertService.ACTION_START_AUTO_ALARM_LIGHTWEIGHT
+                            putExtra("alarmId", alarmId)
+                            putExtra("busNo", busNo)
+                            putExtra("stationName", stationName)
+                            putExtra("routeId", routeId)
+                            putExtra("stationId", stationId)
+                            putExtra("remainingMinutes", -1)
+                            putExtra("currentStation", "")
+                            putExtra("useTTS", useTTS)
+                            putExtra("isCommuteAlarm", isCommuteAlarm)
+                            putExtra("alarmHour", alarmHour)
+                            putExtra("alarmMinute", alarmMinute)
+                        }
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(busIntent)
+                        } else {
+                            startService(busIntent)
+                        }
+
+                        Log.i(TAG, "✅ 즉시 자동알람 시작 요청 완료: $busNo, $stationName, alarmId=$alarmId")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 즉시 자동알람 시작 실패: ${e.message}", e)
+                        result.error("START_AUTO_ALARM_ERROR", "Failed to start auto alarm immediately", e.message)
+                    }
+                }
                 "scheduleNativeAlarm" -> {
                     val alarmId = call.argument<Int>("alarmId") ?: 0
                     val busNo = call.argument<String>("busNo") ?: ""

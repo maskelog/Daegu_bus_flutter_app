@@ -24,6 +24,8 @@ class AlarmService extends ChangeNotifier {
   bool _initialized = false;
   MethodChannel? _methodChannel;
   DateTime _lastRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
+  // stationId/isCommuteAlarm 보관용 (AlarmData에 해당 필드 없음)
+  final List<AutoAlarm> _rawAutoAlarms = [];
   final Set<String> _pendingAutoAlarmDeactivations = <String>{};
   static const Duration _alarmRefreshInterval = Duration(minutes: 2);
   static const int _restartPreventionDuration = 3000; // 3초간 재시작 방지
@@ -388,6 +390,8 @@ class AlarmService extends ChangeNotifier {
           refreshAlarms();
         }
 
+        unawaited(_checkAndFireAutoAlarms());
+
         // 디버깅: 현재 자동 알람 상태 출력 (30초마다)
         if (timer.tick % 2 == 0) {
           _logAutoAlarmStatus();
@@ -507,6 +511,80 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
+  Future<void> _checkAndFireAutoAlarms() async {
+    if (!_alarmFacade.state.autoAlarmEnabled || _rawAutoAlarms.isEmpty) {
+      return;
+    }
+
+    try {
+      cleanupExecutedAlarms();
+
+      final now = DateTime.now();
+      for (final autoAlarm in _rawAutoAlarms) {
+        if (!autoAlarm.isActive) {
+          continue;
+        }
+
+        final scheduledAlarm = _alarmFacade.autoAlarmsList.cast<alarm_model.AlarmData?>().firstWhere(
+          (alarm) =>
+              alarm != null &&
+              alarm.id == autoAlarm.id &&
+              alarm.routeId == autoAlarm.routeId &&
+              alarm.stationName == autoAlarm.stationName,
+          orElse: () => null,
+        );
+
+        final scheduledTime = scheduledAlarm?.scheduledTime;
+        if (scheduledTime == null) {
+          continue;
+        }
+
+        final alarmKey =
+            '${autoAlarm.routeNo}_${autoAlarm.stationName}_${autoAlarm.routeId}';
+        final stoppedAt =
+            _alarmFacade.state.manuallyStoppedTimestamps[alarmKey];
+        if (_alarmFacade.state.manuallyStoppedAlarms.contains(alarmKey) &&
+            stoppedAt != null &&
+            stoppedAt.year == now.year &&
+            stoppedAt.month == now.month &&
+            stoppedAt.day == now.day) {
+          continue;
+        }
+
+        final executionKey =
+            '${alarmKey}_${scheduledTime.hour}:${scheduledTime.minute}';
+        if (_alarmFacade.state.executedAlarms.containsKey(executionKey)) {
+          continue;
+        }
+
+        final diffSeconds = now.difference(scheduledTime).inSeconds.abs();
+        if (diffSeconds > 45) {
+          continue;
+        }
+
+        await _methodChannel?.invokeMethod('startAutoAlarmNow', {
+          'alarmId': 'auto_alarm_${autoAlarm.id}'.hashCode,
+          'busNo': autoAlarm.routeNo,
+          'stationName': autoAlarm.stationName,
+          'routeId': autoAlarm.routeId,
+          'stationId': autoAlarm.stationId,
+          'useTTS': autoAlarm.useTTS,
+          'isCommuteAlarm': autoAlarm.isCommuteAlarm,
+          'alarmHour': autoAlarm.hour,
+          'alarmMinute': autoAlarm.minute,
+        });
+
+        _alarmFacade.state.executedAlarms[executionKey] = now;
+        logMessage(
+          '🚀 자동 알람 즉시 시작 트리거: ${autoAlarm.routeNo}, ${autoAlarm.stationName}',
+          level: LogLevel.info,
+        );
+      }
+    } catch (e) {
+      logMessage('❌ 자동 알람 즉시 실행 체크 오류: $e', level: LogLevel.error);
+    }
+  }
+
   Future<void> loadAlarms() async {
     try {
       // 백그라운드 메신저 상태 확인 및 초기화
@@ -592,6 +670,7 @@ class AlarmService extends ChangeNotifier {
       logMessage('자동 알람 데이터 로드 시작: ${alarms.length}개');
 
       _alarmFacade.autoAlarmsList.clear();
+      _rawAutoAlarms.clear();
 
       for (var alarmJson in alarms) {
         try {
@@ -618,6 +697,7 @@ class AlarmService extends ChangeNotifier {
 
           // AutoAlarm 객체 생성하여 올바른 다음 알람 시간 계산
           final autoAlarm = AutoAlarm.fromJson(data);
+          _rawAutoAlarms.add(autoAlarm);
 
           // 다음 알람 시간 계산하기 위해 공휴일 가져오기
           final now = DateTime.now();
@@ -650,6 +730,7 @@ class AlarmService extends ChangeNotifier {
           );
 
           _alarmFacade.autoAlarmsList.add(alarm);
+          await _alarmFacade.scheduleAutoAlarm(autoAlarm, nextAlarmTime);
           logMessage(
             '✅ 자동 알람 로드: ${alarm.busNo}, ${alarm.stationName}, 다음 시간: ${nextAlarmTime.toString()}',
           );

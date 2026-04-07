@@ -23,6 +23,7 @@ class SettingsService extends ChangeNotifier {
   static const String _fontSizeMultiplierKey = 'font_size_multiplier';
   static const String _earphoneAlarmVibrateKey = 'earphone_alarm_vibrate';
   static const String _customExcludeDatesKey = 'custom_exclude_dates';
+  static const String _alertOnArrivalOnlyKey = 'alert_on_arrival_only';
   static const int defaultAutoAlarmTimeoutMinutes = 30; // 기본 30분
   static const int minAutoAlarmTimeoutMinutes = 5; // 최소 5분
   static const int maxAutoAlarmTimeoutMinutes = 120; // 최대 120분
@@ -50,6 +51,7 @@ class SettingsService extends ChangeNotifier {
   bool _useTts = true;
   double _fontSizeMultiplier = defaultFontSizeMultiplier;
   List<DateTime> _customExcludeDates = [];
+  bool _alertOnArrivalOnly = false;
 
   // 싱글톤 패턴
   static final SettingsService _instance = SettingsService._internal();
@@ -87,6 +89,7 @@ class SettingsService extends ChangeNotifier {
   int get autoAlarmTimeoutMinutes => _autoAlarmTimeoutMinutes;
   double get fontSizeMultiplier => _fontSizeMultiplier;
   List<DateTime> get customExcludeDates => _customExcludeDates;
+  bool get alertOnArrivalOnly => _alertOnArrivalOnly;
 
   // 설정 초기화
   Future<void> initialize() async {
@@ -120,6 +123,15 @@ class SettingsService extends ChangeNotifier {
       _customExcludeDates = [];
     }
 
+    _alertOnArrivalOnly = _prefs.getBool(_alertOnArrivalOnlyKey) ?? false;
+
+    notifyListeners();
+  }
+
+  Future<void> updateAlertOnArrivalOnly(bool value) async {
+    if (_alertOnArrivalOnly == value) return;
+    _alertOnArrivalOnly = value;
+    await _prefs.setBool(_alertOnArrivalOnlyKey, value);
     notifyListeners();
   }
 

@@ -140,6 +140,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("currentStation", "")
                 putExtra("useTTS", useTTS)
                 putExtra("isCommuteAlarm", isCommuteAlarm)
+                putExtra("alarmHour", hour)
+                putExtra("alarmMinute", minute)
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
