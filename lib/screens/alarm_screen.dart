@@ -870,6 +870,25 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                                                  ),
                                                                ],
                                                              ),
+                                                             const SizedBox(height: 6),
+                                                             Row(
+                                                               children: [
+                                                                 Icon(
+                                                                   alarm.isCommuteAlarm ? Icons.volume_up_rounded : Icons.headphones_rounded,
+                                                                   size: 14,
+                                                                   color: alarm.isCommuteAlarm ? colorScheme.primary : colorScheme.tertiary,
+                                                                 ),
+                                                                 const SizedBox(width: 4),
+                                                                 Text(
+                                                                   alarm.isCommuteAlarm ? '출근 (스피커)' : '퇴근 (이어폰)',
+                                                                   style: TextStyle(
+                                                                     fontSize: 12,
+                                                                     fontWeight: FontWeight.w500,
+                                                                     color: alarm.isCommuteAlarm ? colorScheme.primary : colorScheme.tertiary,
+                                                                   ),
+                                                                 ),
+                                                               ],
+                                                             ),
                                                              if (alarm.excludeHolidays || alarm.excludeWeekends) ...[
                                                                const SizedBox(height: 4),
                                                                Row(

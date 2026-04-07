@@ -46,6 +46,8 @@ class AlarmReceiver : BroadcastReceiver() {
             val stationId = intent.getStringExtra("stationId") ?: return
             val useTTS = intent.getBooleanExtra("useTTS", true)
             val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
+            val hour = intent.getIntExtra("hour", -1)
+            val minute = intent.getIntExtra("minute", -1)
 
             Log.d(TAG, "🔔 배터리 최적화된 자동 알람 처리: $busNo 번 버스, $stationName")
 
