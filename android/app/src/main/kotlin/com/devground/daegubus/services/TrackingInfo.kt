@@ -19,5 +19,7 @@ data class TrackingInfo(
     var alarmId: Int? = null,
     var isCommuteAlarm: Boolean = false,
     // [추가] 버스 타입 정보 (1: 급행, 2: 좌석, 3: 일반, 4: 지선/마을)
-    var routeTCd: String? = null
+    var routeTCd: String? = null,
+    // [추가] 자동알람 정확한 발화 시각 (ms) - 다중 알람 동시 추적 시 각각 독립된 시각 보유
+    var exactAlarmTriggerTime: Long = 0L
 )

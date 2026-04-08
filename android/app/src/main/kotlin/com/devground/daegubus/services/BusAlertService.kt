@@ -166,7 +166,6 @@ class BusAlertService : Service() {
     // 배터리 최적화를 위한 자동알람 모드
     private var isAutoAlarmMode = false
     private var autoAlarmStartTime = 0L
-    private var exactAlarmTriggerTime = 0L // 정확한 알람 발화 시각 (ms)
     private var autoAlarmTimeoutMs = 1800000L // 기본 30분, 설정으로 변경 가능
     private var alertOnArrivalOnly = false // 도착 임박 시에만 알림 (3정거장/3분)
 
@@ -634,6 +633,12 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             val currentStationText = currentStation ?: ""
             val routeIdText = routeId ?: ""
             val stationIdText = stationId ?: ""
+
+            // 이미 같은 노선 자동알람 추적 중이면 재시작 방지 (이중 트리거 차단)
+            if (isAutoAlarmMode && currentAutoAlarmRouteId == routeIdText && routeIdText.isNotBlank()) {
+                Log.w(TAG, "⚠️ 자동알람 이미 추적 중: $autoAlarmBusNo ($routeIdText) - 중복 시작 무시")
+                return START_NOT_STICKY
+            }
 
             Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $autoAlarmBusNo 번, $autoAlarmStationName, TTS=$useTTS")
             handleAutoAlarmLightweight(autoAlarmBusNo, autoAlarmStationName, remainingMinutes, currentStationText, routeIdText, stationIdText, useTTS, isCommuteAlarm, alarmHour, alarmMinute)
@@ -1712,8 +1717,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 remainingMinutes >= 0 && (stops < 3 || remainingMinutes <= 3)
             }
             else ->
-                // 토글 OFF: 설정된 알람 시각 이후부터 버스 정보가 있으면 발화
-                remainingMinutes >= 0 && System.currentTimeMillis() >= exactAlarmTriggerTime
+                // 토글 OFF: 설정된 알람 시각 이후부터 버스 정보가 있으면 발화 (TrackingInfo별 독립 시각)
+                remainingMinutes >= 0 && System.currentTimeMillis() >= trackingInfo.exactAlarmTriggerTime
         }
 
         if (isWithinThreshold) {
@@ -2368,8 +2373,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             isAutoAlarmMode = true
             autoAlarmStartTime = System.currentTimeMillis()
 
-            // 정확한 알람 발화 시각 계산 (toggle OFF 모드용)
-            exactAlarmTriggerTime = if (alarmHour >= 0 && alarmMinute >= 0) {
+            // 정확한 알람 발화 시각 계산 (toggle OFF 모드용) - TrackingInfo에 저장 (다중 알람 독립 관리)
+            val computedTriggerTime = if (alarmHour >= 0 && alarmMinute >= 0) {
                 val cal = java.util.Calendar.getInstance().apply {
                     set(java.util.Calendar.HOUR_OF_DAY, alarmHour)
                     set(java.util.Calendar.MINUTE, alarmMinute)
@@ -2381,7 +2386,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             } else {
                 autoAlarmStartTime // Flutter 트리거: 즉시 발화
             }
-            Log.d(TAG, "⏰ 알람 발화 시각: ${java.util.Date(exactAlarmTriggerTime)}, alarmHour=$alarmHour, alarmMinute=$alarmMinute")
+            Log.d(TAG, "⏰ 알람 발화 시각: ${java.util.Date(computedTriggerTime)}, alarmHour=$alarmHour, alarmMinute=$alarmMinute")
 
             // 정보 저장
             currentAutoAlarmBusNo = busNo
@@ -2405,6 +2410,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 Log.d(TAG, "🔔 자동알람: 실시간 추적 시작 ($routeId, $stationId)")
                 addMonitoredRoute(routeId, stationId, stationName)
                 startTracking(routeId, stationId, stationName, busNo, isAutoAlarm = true, isCommuteAlarm = isCommuteAlarm)
+                // TrackingInfo에 발화 시각 저장 (다중 알람 독립 관리)
+                activeTrackings[routeId]?.exactAlarmTriggerTime = computedTriggerTime
             } else {
                 Log.e(TAG, "❌ 자동알람: routeId 또는 stationId 누락으로 추적 불가")
             }

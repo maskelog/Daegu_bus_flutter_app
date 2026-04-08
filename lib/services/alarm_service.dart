@@ -557,8 +557,9 @@ class AlarmService extends ChangeNotifier {
           continue;
         }
 
-        final diffSeconds = now.difference(scheduledTime).inSeconds.abs();
-        if (diffSeconds > 45) {
+        // T+0 ~ T+30초 사이에만 발동 (abs 제거 - T-45초 이른 발동 방지)
+        final diffSeconds = now.difference(scheduledTime).inSeconds;
+        if (diffSeconds < 0 || diffSeconds > 30) {
           continue;
         }
 
