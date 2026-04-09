@@ -123,6 +123,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
             val stationId = inputData.getString("stationId") ?: return Result.failure()
             val useTTS = inputData.getBoolean("useTTS", true)
             val isCommuteAlarm = inputData.getBoolean("isCommuteAlarm", false)
+            val alertOnArrivalOnly = inputData.getBoolean("alertOnArrivalOnly", false)
             val hour = inputData.getInt("hour", 0)
             val minute = inputData.getInt("minute", 0)
             val repeatDays = inputData.getIntArray("repeatDays") ?: return Result.failure()
@@ -190,6 +191,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) : Worker(cont
                 putExtra("minute", minute)
                 putExtra("repeatDays", repeatDays)
                 putExtra("isCommuteAlarm", isCommuteAlarm)
+                putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
                 putExtra("scheduledTime", calendar.timeInMillis) // 사전 추적 시간
             }
             

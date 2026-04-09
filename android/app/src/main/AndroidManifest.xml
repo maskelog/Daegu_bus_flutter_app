@@ -81,6 +81,14 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+        <receiver android:name="com.devground.daegubus.receivers.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
         <!-- 제거: NOTIFICATION_DISMISS 경로는 사용하지 않음 (중복 선언 방지) -->
         <receiver android:name="com.devground.daegubus.receivers.AlarmReceiver" android:enabled="true" android:exported="false">
             <intent-filter>

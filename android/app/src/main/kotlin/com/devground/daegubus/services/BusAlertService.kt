@@ -237,8 +237,8 @@ class BusAlertService : Service() {
             ttsVolume = getFlutterFloatPref(flutterPrefs, "auto_alarm_volume", 1.0f).coerceIn(0f, 1f)
             ttsController.setTtsVolume(ttsVolume)
             autoAlarmTimeoutMs = getFlutterLongPref(flutterPrefs, "auto_alarm_timeout_ms", 1800000L).coerceIn(300000L, 7200000L)
-            alertOnArrivalOnly = flutterPrefs.getBoolean("flutter.alert_on_arrival_only", false)
-            Log.d(TAG, "⚙️ Settings loaded - TTS: $useTextToSpeech, Sound: $currentAlarmSound, NotifMode: $notificationDisplayMode, Output: $audioOutputMode, Volume: ${ttsVolume * 100}%, FlutterUseTts: $flutterUseTts, FlutterAlarmSound: $flutterAlarmSound, AlertOnArrivalOnly: $alertOnArrivalOnly")
+            // alertOnArrivalOnly는 intent extras로 전달됨 (setAlertOnArrivalOnly()로도 실시간 변경 가능)
+            Log.d(TAG, "⚙️ Settings loaded - TTS: $useTextToSpeech, Sound: $currentAlarmSound, NotifMode: $notificationDisplayMode, Output: $audioOutputMode, Volume: ${ttsVolume * 100}%, FlutterUseTts: $flutterUseTts, FlutterAlarmSound: $flutterAlarmSound")
         } catch (e: Exception) {
             Log.e(TAG, "⚙️ Error loading settings: ${e.message}")
         }
@@ -340,6 +340,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val autoAlarmStationName = intent?.getStringExtra("stationName") ?: ""
     val alarmHour = intent?.getIntExtra("alarmHour", -1) ?: -1
     val alarmMinute = intent?.getIntExtra("alarmMinute", -1) ?: -1
+    val intentAlertOnArrivalOnly = intent?.getBooleanExtra("alertOnArrivalOnly", alertOnArrivalOnly) ?: alertOnArrivalOnly
 
     when (command) {
         is ServiceCommand.StartTracking -> {
@@ -640,7 +641,9 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 return START_NOT_STICKY
             }
 
-            Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $autoAlarmBusNo 번, $autoAlarmStationName, TTS=$useTTS")
+            // intent extras로 전달된 alertOnArrivalOnly를 인스턴스 필드에 반영
+            alertOnArrivalOnly = intentAlertOnArrivalOnly
+            Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $autoAlarmBusNo 번, $autoAlarmStationName, TTS=$useTTS, ArrivalOnly=$alertOnArrivalOnly")
             handleAutoAlarmLightweight(autoAlarmBusNo, autoAlarmStationName, remainingMinutes, currentStationText, routeIdText, stationIdText, useTTS, isCommuteAlarm, alarmHour, alarmMinute)
         }
         ServiceCommand.StopAutoAlarm -> {
@@ -1467,6 +1470,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         currentAlarmSound = filename
         useTextToSpeech = useTts
         ttsController.setUseTts(useTextToSpeech)
+    }
+
+    fun setAlertOnArrivalOnly(value: Boolean) {
+        Log.d(TAG, "setAlertOnArrivalOnly: $value")
+        alertOnArrivalOnly = value
     }
 
     fun setAudioOutputMode(mode: Int) {

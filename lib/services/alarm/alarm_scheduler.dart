@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show logMessage, LogLevel;
 import '../../models/auto_alarm.dart';
+import '../../services/settings_service.dart';
 import '../../utils/simple_tts_helper.dart';
 
 class AlarmScheduler {
@@ -58,6 +59,7 @@ class AlarmScheduler {
         'repeatDays': alarm.repeatDays,
         'isImmediate': isImmediate,
         'isCommuteAlarm': alarm.isCommuteAlarm,
+        'alertOnArrivalOnly': SettingsService().alertOnArrivalOnly,
       });
 
       logMessage(

@@ -132,6 +132,9 @@ class SettingsService extends ChangeNotifier {
     if (_alertOnArrivalOnly == value) return;
     _alertOnArrivalOnly = value;
     await _prefs.setBool(_alertOnArrivalOnlyKey, value);
+    try {
+      await _ttsChannel.invokeMethod('setAlertOnArrivalOnly', {'value': value});
+    } catch (_) {}
     notifyListeners();
   }
 

@@ -8,15 +8,9 @@ class AlarmState {
   final Set<String> processedNotifications = {};
 
   bool autoAlarmEnabled = true;
-  final Set<String> manuallyStoppedAlarms = <String>{};
-  final Map<String, DateTime> manuallyStoppedTimestamps = <String, DateTime>{};
 
-  final Map<String, DateTime> executedAlarms = <String, DateTime>{};
   final Map<String, int> processedEventTimestamps = <String, int>{};
 
   bool isInTrackingMode = false;
   String? trackedRouteId;
-
-  bool userManuallyStopped = false;
-  int lastManualStopTime = 0;
 }

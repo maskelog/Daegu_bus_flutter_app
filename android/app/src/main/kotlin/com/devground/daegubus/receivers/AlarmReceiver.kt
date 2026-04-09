@@ -46,6 +46,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val stationId = intent.getStringExtra("stationId") ?: return
             val useTTS = intent.getBooleanExtra("useTTS", true)
             val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
+            val alertOnArrivalOnly = intent.getBooleanExtra("alertOnArrivalOnly", false)
             val hour = intent.getIntExtra("hour", -1)
             val minute = intent.getIntExtra("minute", -1)
 
@@ -142,6 +143,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("currentStation", "")
                 putExtra("useTTS", useTTS)
                 putExtra("isCommuteAlarm", isCommuteAlarm)
+                putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
                 putExtra("alarmHour", hour)
                 putExtra("alarmMinute", minute)
             }
@@ -245,6 +247,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val stationId = intent.getStringExtra("stationId") ?: return
             val useTTS = intent.getBooleanExtra("useTTS", true)
             val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
+            val alertOnArrivalOnly = intent.getBooleanExtra("alertOnArrivalOnly", false)
             val hour = intent.getIntExtra("hour", 0)
             val minute = intent.getIntExtra("minute", 0)
             val repeatDays = intent.getIntArrayExtra("repeatDays") ?: return
@@ -296,6 +299,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("stationId", stationId)
                 putExtra("useTTS", useTTS)
                 putExtra("isCommuteAlarm", isCommuteAlarm)
+                putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
                 putExtra("hour", hour)
                 putExtra("minute", minute)
                 putExtra("repeatDays", repeatDays)

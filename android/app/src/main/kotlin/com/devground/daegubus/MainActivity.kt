@@ -1000,6 +1000,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     val stationId = call.argument<String>("stationId") ?: ""
                     val useTTS = call.argument<Boolean>("useTTS") ?: true
                     val isCommuteAlarm = call.argument<Boolean>("isCommuteAlarm") ?: false
+                    val alertOnArrivalOnly = call.argument<Boolean>("alertOnArrivalOnly") ?: false
                     val hour = call.argument<Int>("hour") ?: 0
                     val minute = call.argument<Int>("minute") ?: 0
                     val repeatDays = call.argument<ArrayList<Int>>("repeatDays")?.toIntArray() ?: intArrayOf()
@@ -1023,6 +1024,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             .putInt("minute", minute)
                             .putIntArray("repeatDays", repeatDays)
                             .putBoolean("isCommuteAlarm", isCommuteAlarm)
+                            .putBoolean("alertOnArrivalOnly", alertOnArrivalOnly)
                             .build()
                             
                         val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.devground.daegubus.workers.BackgroundWorker>()
@@ -1459,6 +1461,17 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.success(true)
                     } catch (e: Exception) {
                         Log.e(TAG, "알람 소리 설정 오류: ${e.message}")
+                        result.success(true)
+                    }
+                }
+                "setAlertOnArrivalOnly" -> {
+                    val value = call.argument<Boolean>("value") ?: false
+                    try {
+                        busAlertService?.setAlertOnArrivalOnly(value)
+                        Log.d(TAG, "도착 임박 시에만 알림 설정: $value")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "도착 임박 알림 설정 오류: ${e.message}")
                         result.success(true)
                     }
                 }
