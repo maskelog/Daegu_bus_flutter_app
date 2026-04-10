@@ -2,6 +2,9 @@
     <!-- 인터넷 권한 -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Android 13+ 광고 ID 권한 (AdMob / Kakao AD) -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
+
     <!-- 위치 권한 추가 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />

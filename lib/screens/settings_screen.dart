@@ -363,6 +363,11 @@ class SettingsScreen extends StatelessWidget {
       ),
       trailing: DropdownButton<int>(
         value: settingsService.speakerMode,
+        dropdownColor: colorScheme.surfaceContainerHighest,
+        iconEnabledColor: colorScheme.onSurface,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurface,
+        ),
         underline: const SizedBox.shrink(),
         onChanged: (value) {
           if (value != null) {
@@ -407,6 +412,11 @@ class SettingsScreen extends StatelessWidget {
       ),
       trailing: DropdownButton<int>(
         value: settingsService.autoAlarmTimeoutMinutes,
+        dropdownColor: colorScheme.surfaceContainerHighest,
+        iconEnabledColor: colorScheme.onSurface,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurface,
+        ),
         underline: const SizedBox.shrink(),
         onChanged: (value) {
           if (value != null) {

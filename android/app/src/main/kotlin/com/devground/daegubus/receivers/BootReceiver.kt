@@ -34,10 +34,11 @@ class BootReceiver : BroadcastReceiver() {
 
     private fun rescheduleAllAlarms(context: Context) {
         val flutterPrefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val alarmListJson = flutterPrefs.getStringList("flutter.auto_alarms") ?: run {
+        val alarmSet: Set<String> = flutterPrefs.getStringSet("flutter.auto_alarms", null) ?: run {
             Log.d(TAG, "저장된 자동알람 없음")
             return
         }
+        val alarmListJson: List<String> = alarmSet.toList()
 
         Log.d(TAG, "자동알람 재등록 대상: ${alarmListJson.size}개")
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -47,7 +48,7 @@ class BootReceiver : BroadcastReceiver() {
                 val obj = JSONObject(alarmJson)
                 if (!obj.optBoolean("isActive", true)) continue
 
-                val alarmId = obj.optInt("id", 0)
+                val alarmId = Math.abs(obj.optString("id", "0").hashCode())
                 val busNo = obj.optString("routeNo").takeIf { it.isNotBlank() } ?: continue
                 val stationName = obj.optString("stationName").takeIf { it.isNotBlank() } ?: continue
                 val routeId = obj.optString("routeId").takeIf { it.isNotBlank() } ?: continue
