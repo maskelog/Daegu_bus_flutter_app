@@ -338,7 +338,7 @@
 
 <body>
     <div id="map"></div>
-    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_API_KEY"
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_API_KEY&libraries=services"
         onload="if(window.sendMessageToFlutter){sendMessageToFlutter('mapLoaded', {})} else {window.__kakaoLoaded__=true;}"
         onerror="console.error('카카오맵 스크립트 로드 실패')"></script>
     <script>
@@ -348,6 +348,14 @@
         var busMarkers = [];
         var currentInfoWindow = null;
         var clickMarker = null;
+        var _ignoreNextMapClick = false; // 마커 클릭 시 map click 이벤트 중복 차단
+        var kakaoStopCache = {};  // DB좌표 → Kakao 스냅 좌표 캐시
+        var _snapQueue = [];
+        var _snapBusy = false;
+        var _servicesReady = false;
+        var _servicesLoading = false;
+        // Flutter가 YOUR_KAKAO_API_KEY를 실제 키로 치환 (SDK URL과 동일)
+        var _kakaoAppKey = 'YOUR_KAKAO_API_KEY';
 
         // 지도 메트릭 계산 (줌 레벨, 중심좌표, 픽셀당 미터 수)
         function getMapMetrics() {
@@ -450,10 +458,31 @@
                     var metrics = getMapMetrics();
                     if (metrics) sendMessageToFlutter('mapMetrics', metrics);
                 });
+                kakao.maps.event.addListener(map, 'dragend', function () {
+                    var metrics = getMapMetrics();
+                    if (metrics) sendMessageToFlutter('mapMetrics', metrics);
+                });
 
                 kakao.maps.event.addListener(map, 'click', function (mouseEvent) {
+                    // 마커 클릭 이벤트가 버블링되어 중복 발화 방지
+                    if (_ignoreNextMapClick) { _ignoreNextMapClick = false; return; }
                     // 클릭한 지점에 정확한 표시 마커(십자/점)를 찍어 시각적 기준 제공
+                    var traceId = 'mapClick_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+                    var lat = null;
+                    var lng = null;
                     try {
+                        lat = Number(mouseEvent.latLng.getLat());
+                        lng = Number(mouseEvent.latLng.getLng());
+                        console.log('[kakao_map] click raw lat=' + mouseEvent.latLng.getLat() + ', lng=' + mouseEvent.latLng.getLng());
+                        console.log('[kakao_map] click converted lat=' + lat + ', lng=' + lng);
+                        console.log('[kakao_map] click traceId=' + traceId);
+                        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                            console.warn('[kakao_map] click invalid coordinate lat=' + lat + ', lng=' + lng + ', trace=' + traceId);
+                            return;
+                        }
+                        lat = Number(lat.toFixed(6));
+                        lng = Number(lng.toFixed(6));
+                        console.log('[kakao_map] click valid and emit');
                         if (!clickMarker) {
                             var crossSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="#e53935"/><line x1="8" y1="0" x2="8" y2="16" stroke="#e53935" stroke-width="1"/><line x1="0" y1="8" x2="16" y2="8" stroke="#e53935" stroke-width="1"/></svg>';
                             clickMarker = new kakao.maps.Marker({
@@ -465,11 +494,21 @@
                             clickMarker.setPosition(mouseEvent.latLng);
                             if (!clickMarker.getMap()) clickMarker.setMap(map);
                         }
-                    } catch (e) { /* ignore */ }
-                    sendMessageToFlutter('mapClick', {
-                        latitude: mouseEvent.latLng.getLat(),
-                        longitude: mouseEvent.latLng.getLng()
-                    });
+                    } catch (e) {
+                        console.warn('[kakao_map] click handler failed trace=' + traceId + ', error=' + e);
+                        return;
+                    }
+                    try {
+                        sendMessageToFlutter('mapClick', {
+                            traceId: traceId,
+                            latitude: lat,
+                            longitude: lng,
+                            source: 'map_click'
+                        });
+                        console.log('[kakao_map] mapClick dispatched trace=' + traceId + ', lat=' + lat + ', lng=' + lng);
+                    } catch (error) {
+                        console.warn('[kakao_map] mapClick dispatch failed trace=' + traceId + ', error=' + error);
+                    }
                 });
 
                 // 브리지 준비 상태 확인 후 초기 메트릭과 준비 이벤트 전송
@@ -491,9 +530,25 @@
                         }
                     }, 100);
                 }
+                // 지도 초기화 완료 후 Places 서비스 라이브러리 사용 가능 확인
+                if (kakao && kakao.maps && kakao.maps.services) {
+                    _servicesReady = true;
+                    _drainSnapQueue();
+                }
+
             } catch (error) {
                 sendMessageToFlutter('mapError', { error: error.message });
             }
+        }
+
+        // Kakao services 라이브러리는 이미 script 태그에서 로드됨
+        function _checkServicesReady() {
+            if (_servicesReady) return true;
+            if (kakao && kakao.maps && kakao.maps.services) {
+                _servicesReady = true;
+                return true;
+            }
+            return false;
         }
 
         // ★★★ 정보창 업데이트 함수 (핵심 수정) ★★★
@@ -555,8 +610,20 @@
             }
         }
 
-        // 정류장 마커 추가 함수
-        function addStationMarker(lat, lng, name, type, sequenceNo) {
+        // 스냅 요청 큐 처리 (Kakao API 호출 간격 조절)
+        function _drainSnapQueue() {
+            if (_snapBusy || _snapQueue.length === 0) return;
+            _snapBusy = true;
+            var task = _snapQueue.shift();
+            task(function () {
+                _snapBusy = false;
+                setTimeout(_drainSnapQueue, 80);
+            });
+        }
+
+        // 정류장 마커 실제 배치 (스냅된 좌표 사용, stationClick은 원본 DB 좌표 전달)
+        function _placeStationMarker(lat, lng, origLat, origLng, name, type, sequenceNo) {
+            console.log('[kakao_map] _placeStationMarker: ' + name + ' (' + lat + ', ' + lng + ')');
             var position = new kakao.maps.LatLng(lat, lng);
             var markerSvg, markerSize, markerOffset, color;
 
@@ -564,7 +631,6 @@
                 color = '#2196F3';
                 markerSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40"><path d="M16 0C7.2 0 0 7.2 0 16c0 16 16 24 16 24s16-8 16-24C32 7.2 24.8 0 16 0z" fill="${color}" stroke="#FFFFFF" stroke-width="2"/><circle cx="16" cy="16" r="9" fill="white"/><text x="16" y="20" text-anchor="middle" fill="${color}" font-size="11" font-weight="bold">${sequenceNo || 'R'}</text></svg>`;
                 markerSize = new kakao.maps.Size(32, 40);
-                // 중심 하단 정확히 고정
                 markerOffset = new kakao.maps.Point(16, 40);
             } else { // 'nearby'
                 color = '#4CAF50';
@@ -588,9 +654,73 @@
             });
 
             kakao.maps.event.addListener(marker, 'click', function () {
+                _ignoreNextMapClick = true;
+                setTimeout(function() { _ignoreNextMapClick = false; }, 300);
                 openInfoWindowWithBorderRemoval(infowindow, map, marker);
-                sendMessageToFlutter('stationClick', { name: name, latitude: lat, longitude: lng, type: type, sequenceNo: sequenceNo });
+                sendMessageToFlutter('stationClick', { name: name, latitude: origLat, longitude: origLng, type: type, sequenceNo: sequenceNo });
             });
+        }
+
+        // 정류장 마커 추가 함수 (Kakao Places API로 좌표 스냅 후 배치)
+        function addStationMarker(lat, lng, name, type, sequenceNo) {
+            var cacheKey = lat.toFixed(5) + ',' + lng.toFixed(5);
+
+            // 캐시 히트: 즉시 배치
+            if (kakaoStopCache[cacheKey] !== undefined) {
+                var c = kakaoStopCache[cacheKey];
+                _placeStationMarker(c.lat, c.lng, lat, lng, name, type, sequenceNo);
+                return;
+            }
+
+            // services 미준비 시 체크
+            if (!_servicesReady) {
+                _checkServicesReady();
+            }
+
+            // 큐에 추가: Kakao Places 키워드 검색으로 정확한 좌표 취득
+            _snapQueue.push(function (done) {
+                // services 사용 불가 시 DB 좌표 그대로 사용 (안전 폴백)
+                if (!_servicesReady || !kakao.maps.services) {
+                    kakaoStopCache[cacheKey] = { lat: lat, lng: lng };
+                    _placeStationMarker(lat, lng, lat, lng, name, type, sequenceNo);
+                    done();
+                    return;
+                }
+                try {
+                    var ps = new kakao.maps.services.Places();
+                    ps.keywordSearch(name, function (result, status) {
+                        var finalLat = lat, finalLng = lng;
+                        if (status === kakao.maps.services.Status.OK) {
+                            var best = null, bestDist = 150; // 150m 이내 가장 가까운 버스 정류장
+                            for (var i = 0; i < result.length; i++) {
+                                if (result[i].category_group_code === 'BUS_STOP') {
+                                    var d = haversine(lat, lng, parseFloat(result[i].y), parseFloat(result[i].x));
+                                    if (d < bestDist) { bestDist = d; best = result[i]; }
+                                }
+                            }
+                            if (best) {
+                                finalLat = parseFloat(best.y);
+                                finalLng = parseFloat(best.x);
+                            }
+                        }
+                        kakaoStopCache[cacheKey] = { lat: finalLat, lng: finalLng };
+                        _placeStationMarker(finalLat, finalLng, lat, lng, name, type, sequenceNo);
+                        done();
+                    }, {
+                        category_group_code: 'BUS_STOP',
+                        location: new kakao.maps.LatLng(lat, lng),
+                        radius: 150,
+                        size: 5
+                    });
+                } catch (e) {
+                    kakaoStopCache[cacheKey] = { lat: lat, lng: lng };
+                    _placeStationMarker(lat, lng, lat, lng, name, type, sequenceNo);
+                    done();
+                }
+            });
+            // services 준비 여부와 관계없이 항상 drain 시도
+            // (미준비 시 큐 태스크 내부 폴백이 DB 좌표로 즉시 배치)
+            _drainSnapQueue();
         }
 
         // 현재 위치, 버스 마커 및 기타 함수들... (기존과 동일)
@@ -616,7 +746,7 @@
             busMarkers.push(marker);
         }
 
-        function clearMarkers() { markers.forEach(m => m.setMap(null)); markers = []; }
+        function clearMarkers() { markers.forEach(m => m.setMap(null)); markers = []; _snapQueue = []; }
         function clearBusMarkers() { busMarkers.forEach(m => m.setMap(null)); busMarkers = []; }
         function moveToLocation(lat, lng, level) {
             var center = new kakao.maps.LatLng(lat, lng);
@@ -626,10 +756,13 @@
         function sendMessageToFlutter(type, data) {
             try {
                 if (window.mapEvent && typeof window.mapEvent.postMessage === 'function') {
+                    console.log('[kakao_map] sendMessageToFlutter ' + type + ': ' + JSON.stringify(data));
                     window.mapEvent.postMessage(JSON.stringify({ type: type, data: data }));
+                } else {
+                    console.warn('[kakao_map] sendMessageToFlutter failed: mapEvent not ready for ' + type);
                 }
             } catch (e) {
-                // swallow
+                console.warn('[kakao_map] sendMessageToFlutter error: ' + e);
             }
         }
 
