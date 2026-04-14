@@ -703,7 +703,9 @@ class _HomeScreenState extends State<HomeScreen>
       return const Center(child: CircularProgressIndicator());
     }
     if (_mapPermissionGranted) {
-      return const MapScreen();
+      // 광고(50) + 갭(8) + 네브바 높이(icon24+text12+spacing2+padding18+container10 = 66) = 124
+      const double mapBottomInset = 124.0;
+      return const MapScreen(bottomInset: mapBottomInset);
     }
     return _buildMapRestrictedView();
   }

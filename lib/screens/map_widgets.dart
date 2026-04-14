@@ -78,16 +78,18 @@ class MapFloatingButtons extends StatelessWidget {
     super.key,
     required this.onSearchNearby,
     required this.onMoveToCurrent,
+    this.bottomInset = 0.0,
   });
 
   final VoidCallback onSearchNearby;
   final VoidCallback onMoveToCurrent;
+  final double bottomInset;
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
       right: 16,
-      bottom: 16,
+      bottom: bottomInset + 16,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

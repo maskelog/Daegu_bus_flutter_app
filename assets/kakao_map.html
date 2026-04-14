@@ -821,6 +821,15 @@
         window.addCurrentLocationMarker = addCurrentLocationMarker;
         window.addStationMarker = addStationMarker;
         window.setStationMarkers = setStationMarkers;
+
+        // 하단 UI(광고+네비게이션) 높이만큼 맵 영역을 줄여 축적도/저작권 표시가 가려지지 않도록
+        window.adjustMapInset = function(bottomPx) {
+            var mapDiv = document.getElementById('map');
+            if (mapDiv) {
+                mapDiv.style.height = 'calc(100% - ' + bottomPx + 'px)';
+                if (map) map.relayout();
+            }
+        };
         window.addBusMarker = addBusMarker;
         window.clearMarkers = clearMarkers;
         window.clearBusMarkers = clearBusMarkers;

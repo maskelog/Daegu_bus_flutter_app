@@ -47,12 +47,14 @@ class MapScreen extends StatefulWidget {
   final String? routeId;
   final List<RouteStation>? routeStations;
   final List<BusStop>? initialNearbyStations; // 홈화면에서 전달받은 주변 정류장
+  final double bottomInset; // 하단 광고+네비게이션 높이 (버튼/축적도 겹침 방지)
 
   const MapScreen({
     super.key,
     this.routeId,
     this.routeStations,
-    this.initialNearbyStations, // 새로운 매개변수 추가
+    this.initialNearbyStations,
+    this.bottomInset = 0.0,
   });
 
   @override
@@ -271,6 +273,7 @@ class _MapScreenState extends State<MapScreen> {
             MapFloatingButtons(
               onSearchNearby: _searchNearbyStations,
               onMoveToCurrent: _moveToCurrentLocation,
+              bottomInset: widget.bottomInset,
             ),
         ],
       ),
@@ -352,6 +355,11 @@ class _MapScreenState extends State<MapScreen> {
 
     // 지도 초기화
     _initializeKakaoMap();
+
+    // 하단 인셋 적용 (축적도/저작권이 광고+네브바 뒤에 가려지지 않도록)
+    if (widget.bottomInset > 0) {
+      _webViewController.runJavaScript('adjustMapInset(${widget.bottomInset});');
+    }
 
     _searchThrottleTimer?.cancel();
     _searchThrottleTimer = Timer(const Duration(milliseconds: 1000), () {
