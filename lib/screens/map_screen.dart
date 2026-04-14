@@ -83,6 +83,7 @@ class _MapScreenState extends State<MapScreen> {
   int _stationInfoRequestSequence = 0;
   bool _isLoading = true;
   bool _mapReady = false;
+  bool _locationMarkerPlaced = false;
   String? _errorMessage;
   String? _htmlContent;
   String? _lastMapTraceId;
@@ -416,69 +417,55 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    debugPrint('마커 추가 시작');
-    debugPrint('노선 정류장: ${_routeStations.length}개');
-    debugPrint('주변 정류장: ${_nearbyStations.length}개');
-
-    // 기존 마커 제거
-    _webViewController.runJavaScript('clearMarkers();');
-
-    // 현재 위치 마커 추가 (원본 좌표 사용 - 불필요한 반올림 제거)
-    if (_currentPosition != null) {
-      final lat = _currentPosition!.latitude;
-      final lng = _currentPosition!.longitude;
-
-      debugPrint('현재 위치 마커 추가: $lat, $lng');
-      _webViewController.runJavaScript('addCurrentLocationMarker($lat, $lng);');
+    // 위치 마커는 최초 1회만 추가 (드래그/줌 시 깜빡임 방지)
+    if (!_locationMarkerPlaced) {
+      _webViewController.runJavaScript('clearMarkers();');
+      if (_currentPosition != null) {
+        _webViewController.runJavaScript(
+          'addCurrentLocationMarker(${_currentPosition!.latitude}, ${_currentPosition!.longitude});',
+        );
+      }
+      _locationMarkerPlaced = true;
     }
 
-    // 노선 정류장 마커 추가 (우선순위 높음)
+    // 정류장 마커 목록 구성
+    final List<Map<String, dynamic>> stationList = [];
+
+    // 노선 정류장 (route 타입, 우선)
+    final routeKeys = <String>{};
     for (final station in _routeStations) {
       if (station.latitude != null && station.longitude != null) {
-        final lat = station.latitude!;
-        final lng = station.longitude!;
-
-        debugPrint('노선 정류장 마커 추가: ${station.stationName} ($lat, $lng)');
-        _webViewController.runJavaScript(
-            'addStationMarker($lat, $lng, ${_toJsString(station.stationName)}, ${_toJsString("route")}, ${station.sequenceNo});');
+        stationList.add({
+          'lat': station.latitude!,
+          'lng': station.longitude!,
+          'name': station.stationName,
+          'type': 'route',
+          'seq': station.sequenceNo,
+        });
+        routeKeys.add('${station.latitude!.toStringAsFixed(5)},${station.longitude!.toStringAsFixed(5)}');
       }
     }
 
-    // 주변 정류장 마커 추가 (중복 제거)
-    final addedCoordinates = <String>{};
-
+    // 주변 정류장 (nearby, 노선 정류장과 중복 제거)
     for (final station in _nearbyStations) {
       if (station.latitude != null && station.longitude != null) {
-        final coordKey =
-            '${station.latitude!.toStringAsFixed(6)},${station.longitude!.toStringAsFixed(6)}';
-
-        // 이미 추가된 좌표인지 확인 (노선 정류장과 중복 방지)
-        bool isDuplicate = false;
-        for (final routeStation in _routeStations) {
-          if (routeStation.latitude != null && routeStation.longitude != null) {
-            final routeCoordKey =
-                '${routeStation.latitude!.toStringAsFixed(6)},${routeStation.longitude!.toStringAsFixed(6)}';
-            if (coordKey == routeCoordKey) {
-              isDuplicate = true;
-              break;
-            }
-          }
-        }
-
-        if (!isDuplicate && !addedCoordinates.contains(coordKey)) {
-          final lat = station.latitude!;
-          final lng = station.longitude!;
-
-          debugPrint('주변 정류장 마커 추가: ${station.name} ($lat, $lng)');
-          _webViewController.runJavaScript(
-              'addStationMarker($lat, $lng, ${_toJsString(station.name)}, ${_toJsString("nearby")}, 0);');
-          addedCoordinates.add(coordKey);
+        final key = '${station.latitude!.toStringAsFixed(5)},${station.longitude!.toStringAsFixed(5)}';
+        if (!routeKeys.contains(key)) {
+          stationList.add({
+            'lat': station.latitude!,
+            'lng': station.longitude!,
+            'name': station.name,
+            'type': 'nearby',
+            'seq': 0,
+          });
+          routeKeys.add(key);
         }
       }
     }
 
-    debugPrint(
-        '마커 추가 완료 - 총 ${_routeStations.length + addedCoordinates.length}개');
+    // 배치 + 증분 업데이트: JS 1회 호출로 전체 처리
+    _webViewController.runJavaScript('setStationMarkers(${_toJsString(jsonEncode(stationList))});');
+    debugPrint('마커 업데이트: 노선 ${_routeStations.length}개 + 주변 ${_nearbyStations.length}개 → 총 ${stationList.length}개');
   }
 
   String _toJsString(Object? value) => jsonEncode(value ?? '');
@@ -488,7 +475,12 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   String _stationCoordinateCacheKey(double latitude, double longitude, double radiusMeters) {
-    return '${latitude.toStringAsFixed(5)}_${longitude.toStringAsFixed(5)}_${radiusMeters.toInt()}';
+    // ~200m 격자 스냅: 인접 이동 시 캐시 히트율 향상 (1/500도 ≈ 222m)
+    final snapLat = (latitude * 500).round() / 500.0;
+    final snapLng = (longitude * 500).round() / 500.0;
+    // 반경도 500m 단위로 스냅 (세밀한 변화에도 캐시 히트)
+    final snapRadius = ((radiusMeters / 500).round() * 500).clamp(500, 15000);
+    return '${snapLat.toStringAsFixed(3)}_${snapLng.toStringAsFixed(3)}_$snapRadius';
   }
 
   double? _toCoordinate(dynamic value) {

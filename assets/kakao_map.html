@@ -353,6 +353,7 @@
         var _snapQueue = [];
         var _snapBusy = false;
         var _servicesReady = false;
+        var _stationMarkerRefs = {}; // cacheKey → marker (증분 업데이트용)
         var _servicesLoading = false;
         // Flutter가 YOUR_KAKAO_API_KEY를 실제 키로 치환 (SDK URL과 동일)
         var _kakaoAppKey = 'YOUR_KAKAO_API_KEY';
@@ -659,6 +660,7 @@
                 openInfoWindowWithBorderRemoval(infowindow, map, marker);
                 sendMessageToFlutter('stationClick', { name: name, latitude: origLat, longitude: origLng, type: type, sequenceNo: sequenceNo });
             });
+            return marker;
         }
 
         // 정류장 마커 추가 함수 (Kakao Places API로 좌표 스냅 후 배치)
@@ -746,7 +748,50 @@
             busMarkers.push(marker);
         }
 
-        function clearMarkers() { markers.forEach(m => m.setMap(null)); markers = []; _snapQueue = []; }
+        // 배치 + 증분 마커 업데이트 (DB 좌표 직접 사용, 스냅 큐 없음 → 즉시 표시)
+        function setStationMarkers(stationsJson) {
+            var stations;
+            try { stations = JSON.parse(stationsJson); } catch(e) { console.error('[kakao_map] setStationMarkers parse error', e); return; }
+            if (!Array.isArray(stations)) return;
+
+            // 새 마커 키 집합
+            var newKeys = {};
+            stations.forEach(function(s) {
+                var lat = parseFloat(s.lat), lng = parseFloat(s.lng);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    newKeys[lat.toFixed(5) + ',' + lng.toFixed(5)] = s;
+                }
+            });
+
+            // 제거: 새 목록에 없는 기존 정류장 마커만 제거
+            Object.keys(_stationMarkerRefs).forEach(function(key) {
+                if (!newKeys[key]) {
+                    var m = _stationMarkerRefs[key];
+                    m.setMap(null);
+                    var idx = markers.indexOf(m);
+                    if (idx !== -1) markers.splice(idx, 1);
+                    delete _stationMarkerRefs[key];
+                }
+            });
+
+            // 추가: 기존에 없는 마커만 새로 추가
+            Object.keys(newKeys).forEach(function(key) {
+                if (_stationMarkerRefs[key]) return; // 이미 표시 중
+                var s = newKeys[key];
+                var lat = parseFloat(s.lat), lng = parseFloat(s.lng);
+                var cacheKey = lat.toFixed(5) + ',' + lng.toFixed(5);
+                // 캐시에 없으면 DB 좌표를 즉시 등록 (Kakao 스냅 생략)
+                if (kakaoStopCache[cacheKey] === undefined) {
+                    kakaoStopCache[cacheKey] = { lat: lat, lng: lng };
+                }
+                var c = kakaoStopCache[cacheKey];
+                var marker = _placeStationMarker(c.lat, c.lng, lat, lng, s.name, s.type || 'nearby', s.seq || 0);
+                if (marker) _stationMarkerRefs[key] = marker;
+            });
+            console.log('[kakao_map] setStationMarkers: 표시 중=' + Object.keys(_stationMarkerRefs).length + '개');
+        }
+
+        function clearMarkers() { markers.forEach(m => m.setMap(null)); markers = []; _snapQueue = []; _stationMarkerRefs = {}; }
         function clearBusMarkers() { busMarkers.forEach(m => m.setMap(null)); busMarkers = []; }
         function moveToLocation(lat, lng, level) {
             var center = new kakao.maps.LatLng(lat, lng);
@@ -775,6 +820,7 @@
         window.initMap = initMap;
         window.addCurrentLocationMarker = addCurrentLocationMarker;
         window.addStationMarker = addStationMarker;
+        window.setStationMarkers = setStationMarkers;
         window.addBusMarker = addBusMarker;
         window.clearMarkers = clearMarkers;
         window.clearBusMarkers = clearBusMarkers;
