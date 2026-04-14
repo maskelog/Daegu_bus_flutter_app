@@ -3,6 +3,15 @@
 # 이 앱은 deferred components를 사용하지 않으므로 R8이 미사용 경로를 제거하게 둔다.
 -keep class io.flutter.plugins.GeneratedPluginRegistrant { *; }
 
+# WebView Flutter 플러그인 - JS↔Flutter 브릿지 보존
+# mapEvent.postMessage() 등 JS→Flutter 채널이 릴리즈에서 끊기는 것 방지
+-keep class io.flutter.plugins.webviewflutter.** { *; }
+-keep class androidx.webkit.** { *; }
+-keep class android.webkit.** { *; }
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
 # 메소드 채널 보존
 -keepclassmembers class * {
     @io.flutter.plugin.common.MethodChannel.Method *;

@@ -195,22 +195,29 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
         longitude: Double = 0.0,
         radiusInMeters: Double = 0.0
     ): List<LocalStationSearchResult> = withContext(Dispatchers.IO) {
-        if (latitude != 0.0 && longitude != 0.0 && radiusInMeters > 0) {
-            Log.d(TAG, "데이터베이스 정보 확인 시작...")
-            checkDatabaseInfo()
-            Log.d(TAG, "데이터베이스 정보 확인 완료")
-        }
-
-        // OPEN_READWRITE로 변경하여 쓰기 권한 확인
-        val db = SQLiteDatabase.openDatabase(context.getDatabasePath(DATABASE_NAME).absolutePath, null, SQLiteDatabase.OPEN_READWRITE)
         val stations = mutableListOf<LocalStationSearchResult>()
+        val db = readableDatabase
+        
         try {
             val (query, args) = if (latitude != 0.0 && longitude != 0.0 && radiusInMeters > 0) {
+                // 바운딩 박스 계산 (대략적인 사각형 범위)
+                val latDelta = radiusInMeters / 111000.0
+                // 위도 35.8도(대구) 기준 경도 1도는 약 90,000m
+                val lonDelta = radiusInMeters / (111000.0 * Math.cos(Math.toRadians(latitude)))
+                
+                val minLat = latitude - latDelta
+                val maxLat = latitude + latDelta
+                val minLon = longitude - lonDelta
+                val maxLon = longitude + lonDelta
+
+                Log.d(TAG, "주변 검색 바운딩 박스: Lat($minLat ~ $maxLat), Lon($minLon ~ $maxLon), Radius=${radiusInMeters}m")
+
                 if (searchText.isEmpty() || searchText == "*" || searchText.equals("all", ignoreCase = true)) {
-                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops" to null
+                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?" to
+                            arrayOf(minLat.toString(), maxLat.toString(), minLon.toString(), maxLon.toString())
                 } else {
-                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE stop_name LIKE ? OR bsId LIKE ?" to
-                            arrayOf("%$searchText%", "%$searchText%")
+                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE (stop_name LIKE ? OR bsId LIKE ?) AND (latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?)" to
+                            arrayOf("%$searchText%", "%$searchText%", minLat.toString(), maxLat.toString(), minLon.toString(), maxLon.toString())
                 }
             } else {
                 if (searchText.isEmpty() || searchText == "*" || searchText.equals("all", ignoreCase = true)) {
@@ -225,7 +232,6 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
             if (args != null) Log.d(TAG, "쿼리 인자: ${args.joinToString()}")
 
             db.rawQuery(query, args).use { cursor ->
-                Log.d(TAG, "쿼리 결과 행 수: ${cursor.count}개")
                 if (cursor.moveToFirst()) {
                     val bsIdIndex = cursor.getColumnIndexOrThrow("bsId")
                     val stopNameIndex = cursor.getColumnIndexOrThrow("stop_name")
@@ -252,7 +258,6 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
                                             distance = distance
                                         )
                                     )
-                                    Log.d(TAG, "정류장 추가: $stopName, bsId: $bsId, 거리: ${distance}m")
                                 }
                             }
                         } else {
@@ -265,7 +270,6 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
                                     stationId = bsId
                                 )
                             )
-                            Log.d(TAG, "정류장 추가: $stopName, bsId: $bsId")
                         }
                     } while (cursor.moveToNext())
                 }
@@ -277,10 +281,9 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
             }
         } catch (e: Exception) {
             Log.e(TAG, "정류장 검색 오류: ${e.message}", e)
-            throw e // 예외를 상위로 전달
-        } finally {
-            db.close()
+            throw e
         }
+        // readableDatabase는 헬퍼가 관리하므로 여기서 직접 닫지 않음 (또는 닫아도 되지만 보통 helper를 통해 관리함)
         Log.d(TAG, "정류장 검색 결과: ${stations.size}개")
         return@withContext stations
     }

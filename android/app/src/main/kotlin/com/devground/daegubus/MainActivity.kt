@@ -556,21 +556,66 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     }
                 }
                 "findNearbyStations" -> {
-                    val latitude = call.argument<Double>("latitude") ?: 0.0
-                    val longitude = call.argument<Double>("longitude") ?: 0.0
-                    val radiusMeters = call.argument<Double>("radiusMeters") ?: 500.0
-                    if (latitude == 0.0 || longitude == 0.0) {
+                    val eventStartNs = System.nanoTime()
+                    val requestTraceId = call.argument<String>("traceId")?.let { input ->
+                        val trimmed = input.trim()
+                        if (trimmed.isNotEmpty()) trimmed else null
+                    } ?: "findNearby_${System.currentTimeMillis()}"
+
+                    fun readCoordinate(argumentKey: String): Double? {
+                        val arg = call.argument<Any>(argumentKey)
+                        val normalizedString = if (arg is String) arg.trim().replace(",", ".") else null
+                        return when (arg) {
+                            is Double -> arg.takeIf { it.isFinite() }
+                            is Float -> arg.toDouble().takeIf { it.isFinite() }
+                            is Long -> arg.toDouble()
+                            is Int -> arg.toDouble()
+                            is String -> normalizedString?.toDoubleOrNull()?.takeIf { it.isFinite() }
+                            else -> {
+                                Log.w(
+                                    TAG,
+                                    "[$requestTraceId] findNearbyStations coord parse failed key=$argumentKey value=$arg type=${arg?.javaClass?.name}",
+                                )
+                                null
+                            }
+                        }
+                    }
+
+                    val traceId = requestTraceId
+                    val latitude = readCoordinate("latitude")
+                    val longitude = readCoordinate("longitude")
+                    val radiusMeters = readCoordinate("radiusMeters")?.takeIf { it > 0 } ?: 500.0
+                    
+                    if (latitude == null || longitude == null) {
+                        Log.w(TAG, "[$traceId] findNearbyStations invalid coordinates: lat=$latitude, lon=$longitude")
                         result.error("INVALID_ARGUMENT", "위도 또는 경도가 유효하지 않습니다", null)
                         return@setMethodCallHandler
                     }
+
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
-                            Log.d(TAG, "주변 정류장 검색 요청: lat=$latitude, lon=$longitude, radius=${radiusMeters}m")
+                            Log.d(TAG, "[$traceId] 주변 정류장 검색 요청: lat=$latitude, lon=$longitude, radius=${radiusMeters}m")
 
-                            // 데이터베이스 초기화 확인
                             val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
 
-                            // 데이터베이스 재설치 시도 (오류 발생 시)
+                            fun buildStationJsonArray(stations: List<com.devground.daegubus.models.LocalStationSearchResult>): JSONArray {
+                                val jsonArray = JSONArray()
+                                stations.forEach { station ->
+                                    val jsonObj = JSONObject().apply {
+                                        put("id", station.stationId ?: station.bsId)
+                                        put("name", station.bsNm)
+                                        put("isFavorite", false)
+                                        put("wincId", station.bsId)
+                                        put("distance", station.distance)
+                                        put("ngisXPos", station.longitude)
+                                        put("ngisYPos", station.latitude)
+                                        put("routeList", JSONArray()) // Fix: JSONArray instead of string
+                                    }
+                                    jsonArray.put(jsonObj)
+                                }
+                                return jsonArray
+                            }
+
                             try {
                                 val nearbyStations = databaseHelper.searchStations(
                                     searchText = "",
@@ -578,53 +623,25 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                     longitude = longitude,
                                     radiusInMeters = radiusMeters
                                 )
-                                Log.d(TAG, "주변 정류장 검색 결과: ${nearbyStations.size}개 (검색 반경: ${radiusMeters}m)")
-                                val jsonArray = JSONArray()
-                                nearbyStations.forEach { station ->
-                                    val jsonObj = JSONObject().apply {
-                                        put("id", station.stationId ?: station.bsId)
-                                        put("name", station.bsNm)
-                                        put("isFavorite", false)
-                                        put("wincId", station.bsId)
-                                        put("distance", station.distance)
-                                        put("ngisXPos", station.longitude)
-                                        put("ngisYPos", station.latitude)
-                                        put("routeList", "[]")
-                                    }
-                                    jsonArray.put(jsonObj)
-                                    Log.d(TAG, "정류장 정보 - 이름: ${station.bsNm}, ID: ${station.bsId}, 위치: (${station.longitude}, ${station.latitude}), 거리: ${station.distance}m")
-                                }
+                                
+                                Log.d(TAG, "[$traceId] 주변 정류장 검색 완료: ${nearbyStations.size}개 발견 (반경: ${radiusMeters}m)")
+                                
+                                val jsonArray = buildStationJsonArray(nearbyStations)
                                 result.success(jsonArray.toString())
                             } catch (e: SQLiteException) {
-                                // SQLite 오류 발생 시 데이터베이스 재설치 시도
-                                Log.e(TAG, "SQLite 오류 발생: ${e.message}. 데이터베이스 재설치 시도", e)
+                                Log.e(TAG, "[$traceId] SQLite 오류 발생, DB 재설치 시도", e)
                                 databaseHelper.forceReinstallDatabase()
-
-                                // 재설치 후 다시 시도
+                                
                                 val nearbyStations = databaseHelper.searchStations(
                                     searchText = "",
                                     latitude = latitude,
                                     longitude = longitude,
                                     radiusInMeters = radiusMeters
                                 )
-                                val jsonArray = JSONArray()
-                                nearbyStations.forEach { station ->
-                                    val jsonObj = JSONObject().apply {
-                                        put("id", station.stationId ?: station.bsId)
-                                        put("name", station.bsNm)
-                                        put("isFavorite", false)
-                                        put("wincId", station.bsId)
-                                        put("distance", station.distance)
-                                        put("ngisXPos", station.longitude)
-                                        put("ngisYPos", station.latitude)
-                                        put("routeList", "[]")
-                                    }
-                                    jsonArray.put(jsonObj)
-                                }
-                                result.success(jsonArray.toString())
+                                result.success(buildStationJsonArray(nearbyStations).toString())
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "주변 정류장 검색 오류: ${e.message}", e)
+                            Log.e(TAG, "[$traceId] 주변 정류장 검색 오류: ${e.message}", e)
                             result.error("DB_ERROR", "주변 정류장 검색 중 오류 발생: ${e.message}", null)
                         }
                     }
@@ -1011,32 +1028,87 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     }
                     
                     try {
-                        val workManager = androidx.work.WorkManager.getInstance(applicationContext)
-                        val inputData = androidx.work.Data.Builder()
-                            .putString("taskName", "scheduleAlarmManager")
-                            .putInt("alarmId", alarmId)
-                            .putString("busNo", busNo)
-                            .putString("stationName", stationName)
-                            .putString("routeId", routeId)
-                            .putString("stationId", stationId)
-                            .putBoolean("useTTS", useTTS)
-                            .putInt("hour", hour)
-                            .putInt("minute", minute)
-                            .putIntArray("repeatDays", repeatDays)
-                            .putBoolean("isCommuteAlarm", isCommuteAlarm)
-                            .putBoolean("alertOnArrivalOnly", alertOnArrivalOnly)
-                            .build()
-                            
-                        val workRequest = androidx.work.OneTimeWorkRequestBuilder<com.devground.daegubus.workers.BackgroundWorker>()
-                            .setInputData(inputData)
-                            .addTag("autoAlarmScheduling_${alarmId}") // 태그 추가
-                            .build()
-                        
-                        workManager.enqueue(workRequest)
-                        Log.d(TAG, "✅ Native AlarmManager 스케줄링 요청 완료 (WorkManager 경유)")
+                        val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                        val calendar = java.util.Calendar.getInstance()
+                        val now = java.util.Calendar.getInstance()
+
+                        calendar.set(java.util.Calendar.HOUR_OF_DAY, hour)
+                        calendar.set(java.util.Calendar.MINUTE, minute)
+                        calendar.set(java.util.Calendar.SECOND, 0)
+                        calendar.set(java.util.Calendar.MILLISECOND, 0)
+
+                        val currentDay = calendar.get(java.util.Calendar.DAY_OF_WEEK)
+                        val currentDayMapped = if (currentDay == java.util.Calendar.SUNDAY) 7 else currentDay - 1
+
+                        if (!repeatDays.contains(currentDayMapped) || calendar.timeInMillis <= now.timeInMillis) {
+                            var nextAlarmSet = false
+                            for (i in 1..7) {
+                                val testCalendar = java.util.Calendar.getInstance()
+                                testCalendar.add(java.util.Calendar.DAY_OF_YEAR, i)
+                                val testDay = testCalendar.get(java.util.Calendar.DAY_OF_WEEK)
+                                val testDayMapped = if (testDay == java.util.Calendar.SUNDAY) 7 else testDay - 1
+                                if (repeatDays.contains(testDayMapped)) {
+                                    calendar.add(java.util.Calendar.DAY_OF_YEAR, i)
+                                    nextAlarmSet = true
+                                    break
+                                }
+                            }
+                            if (!nextAlarmSet) {
+                                result.error("SCHEDULE_ERROR", "유효한 반복 요일을 찾을 수 없습니다", null)
+                                return@setMethodCallHandler
+                            }
+                        }
+
+                        // 5분 사전 추적
+                        val originalTimeMs = calendar.timeInMillis
+                        calendar.add(java.util.Calendar.MINUTE, -5)
+                        if (calendar.timeInMillis < now.timeInMillis && originalTimeMs > now.timeInMillis) {
+                            calendar.timeInMillis = now.timeInMillis + 3000
+                        }
+
+                        val alarmIntent = android.content.Intent(applicationContext, com.devground.daegubus.receivers.AlarmReceiver::class.java).apply {
+                            action = "com.devground.daegubus.AUTO_ALARM"
+                            putExtra("alarmId", alarmId)
+                            putExtra("busNo", busNo)
+                            putExtra("stationName", stationName)
+                            putExtra("routeId", routeId)
+                            putExtra("stationId", stationId)
+                            putExtra("useTTS", useTTS)
+                            putExtra("hour", hour)
+                            putExtra("minute", minute)
+                            putExtra("repeatDays", repeatDays)
+                            putExtra("isCommuteAlarm", isCommuteAlarm)
+                            putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
+                            putExtra("scheduledTime", calendar.timeInMillis)
+                        }
+
+                        val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            android.app.PendingIntent.getBroadcast(
+                                applicationContext, alarmId, alarmIntent,
+                                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                            )
+                        } else {
+                            android.app.PendingIntent.getBroadcast(
+                                applicationContext, alarmId, alarmIntent,
+                                android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                            )
+                        }
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            alarmManager.setAlarmClock(
+                                android.app.AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent),
+                                pendingIntent
+                            )
+                        } else {
+                            alarmManager.setExact(
+                                android.app.AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent
+                            )
+                        }
+
+                        Log.d(TAG, "✅ Native AlarmManager 스케줄링 완료: ${busNo}번 버스, ${calendar.time}")
                         result.success(true)
                     } catch (e: Exception) {
-                        Log.e(TAG, "❌ Native AlarmManager 스케줄링 요청 실패: ${e.message}", e)
+                        Log.e(TAG, "❌ Native AlarmManager 스케줄링 실패: ${e.message}", e)
                         result.error("SCHEDULE_ERROR", "Failed to schedule native alarm", e.message)
                     }
                 }
@@ -2505,3 +2577,4 @@ object WorkManagerCallback {
         // WorkManager initialization is best handled in the Application class.
     }
 }
+

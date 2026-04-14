@@ -43,9 +43,14 @@ class ApiService {
   /// 주변 정류장 검색 API
   static Future<List<BusStop>> findNearbyStations(
       double latitude, double longitude,
-      {double radiusMeters = 500}) async {
+      {double radiusMeters = 500, String? traceId}) async {
     return _instance._stationService
-        .findNearbyStations(latitude, longitude, radiusMeters: radiusMeters);
+        .findNearbyStations(
+      latitude,
+      longitude,
+      radiusMeters: radiusMeters,
+      traceId: traceId,
+    );
   }
 
   /// 정류장 도착 정보 조회 API
@@ -91,11 +96,13 @@ class ApiService {
 
   /// 주변 정류장 검색 API - LocationService에서 사용
   static Future<List<BusStop>> getNearbyStations(
-      double latitude, double longitude, double radiusMeters) async {
+      double latitude, double longitude, double radiusMeters,
+      {String? traceId}) async {
     return _instance._stationService.findNearbyStations(
       latitude,
       longitude,
       radiusMeters: radiusMeters,
+      traceId: traceId,
     );
   }
 

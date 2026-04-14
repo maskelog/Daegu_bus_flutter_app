@@ -7,7 +7,6 @@ import android.os.Build
 import android.util.Log
 import com.devground.daegubus.services.BusAlertService
 import com.devground.daegubus.services.TTSService
-import com.devground.daegubus.workers.BackgroundWorker
 
 class AlarmReceiver : BroadcastReceiver() {
     private val TAG = "AlarmReceiver"
@@ -163,77 +162,6 @@ class AlarmReceiver : BroadcastReceiver() {
         }
     }
     
-    /**
-     * 배터리 최적화된 다음 알람 스케줄링
-     * - 조건부 스케줄링으로 불필요한 작업 방지
-     * - 배터리 상태 확인
-     */
-    private fun scheduleNextAlarmOptimized(context: Context, intent: Intent) {
-        try {
-            val alarmId = intent.getIntExtra("alarmId", 0)
-            val busNo = intent.getStringExtra("busNo") ?: return
-            val stationName = intent.getStringExtra("stationName") ?: return
-            val routeId = intent.getStringExtra("routeId") ?: return
-            val stationId = intent.getStringExtra("stationId") ?: return
-            val useTTS = intent.getBooleanExtra("useTTS", true)
-            val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
-            val hour = intent.getIntExtra("hour", 0)
-            val minute = intent.getIntExtra("minute", 0)
-            val repeatDays = intent.getIntArrayExtra("repeatDays") ?: return
-
-            Log.d(TAG, "🔄 다음 자동 알람 스케줄링 시작: ${busNo}번 버스, $hour:$minute, 반복 요일: ${repeatDays.joinToString(",")}")
-
-            // 배터리 상태 확인 (간단한 체크)
-            val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
-            val batteryLevel = batteryManager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 100
-
-            // 배터리가 15% 미만이면 다음 알람 스케줄링 건너뛰기 (20%에서 15%로 완화)
-            if (batteryLevel < 15) {
-                Log.w(TAG, "⚠️ 배터리 부족 ($batteryLevel%), 다음 알람 스케줄링 건너뛰기")
-                return
-            }
-
-            // 다음 알람 스케줄링을 위한 WorkManager 작업 등록 (배터리 최적화)
-            val workManager = androidx.work.WorkManager.getInstance(context)
-            val inputData = androidx.work.Data.Builder()
-                .putString("taskName", "scheduleAlarmManager")
-                .putInt("alarmId", alarmId)
-                .putString("busNo", busNo)
-                .putString("stationName", stationName)
-                .putString("routeId", routeId)
-                .putString("stationId", stationId)
-                .putBoolean("useTTS", useTTS)
-                .putBoolean("isCommuteAlarm", isCommuteAlarm)
-                .putInt("hour", hour)
-                .putInt("minute", minute)
-                .putIntArray("repeatDays", repeatDays)
-                .build()
-
-            val workRequest = androidx.work.OneTimeWorkRequestBuilder<BackgroundWorker>()
-                .setInputData(inputData)
-                .setConstraints(
-                    androidx.work.Constraints.Builder()
-                        .setRequiredNetworkType(androidx.work.NetworkType.NOT_REQUIRED) // 네트워크 요구사항 완화
-                        .setRequiresBatteryNotLow(true) // 배터리 부족 시 실행 안함
-                        .setRequiresStorageNotLow(true) // 저장공간 부족 시 실행 안함
-                        .build()
-                )
-                .setBackoffCriteria(
-                    androidx.work.BackoffPolicy.EXPONENTIAL,
-                    30000L, // 30초 백오프
-                    java.util.concurrent.TimeUnit.MILLISECONDS
-                )
-                .addTag("nextAutoAlarm_${alarmId}") // 태그 추가로 추적 가능
-                .build()
-
-            workManager.enqueue(workRequest)
-            Log.d(TAG, "✅ 배터리 최적화된 다음 알람 스케줄링 요청 완료 (배터리: $batteryLevel%)")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ 배터리 최적화된 다음 알람 스케줄링 오류", e)
-        }
-    }
-
     /**
      * 다음 알람 즉시 재설정 - 반복 알람의 핵심 로직
      * AlarmManager를 사용하여 다음 알람을 바로 설정

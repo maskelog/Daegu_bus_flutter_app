@@ -81,19 +81,47 @@ class StationService {
 
   /// 주변 정류장 검색 API
   Future<List<BusStop>> findNearbyStations(double latitude, double longitude,
-      {double radiusMeters = 500}) async {
+      {double radiusMeters = 500, String? traceId}) async {
+    final effectiveTraceId =
+        (traceId != null && traceId.trim().isNotEmpty) ? traceId.trim() : null;
+    final requestTraceId = effectiveTraceId ?? _buildDefaultTraceId('search');
+    final requestArgs = <String, dynamic>{
+      'latitude': latitude,
+      'longitude': longitude,
+      'radiusMeters': radiusMeters.toDouble(),
+    };
+    if (effectiveTraceId != null && effectiveTraceId.isNotEmpty) {
+      requestArgs['traceId'] = effectiveTraceId;
+    }
+
+    logMessage(
+      '주변 정류장 검색 요청 trace=$requestTraceId '
+      'lat=$latitude, lng=$longitude, radius=$radiusMeters '
+      'args=${requestArgs.toString()}',
+      level: LogLevel.debug,
+    );
+
     try {
-      final result = await _callNativeMethod('findNearbyStations', {
-        'latitude': latitude,
-        'longitude': longitude,
-        'radiusMeters': radiusMeters
-      });
+      final result = await _callNativeMethod(
+        'findNearbyStations',
+        requestArgs,
+        traceId: requestTraceId,
+      );
 
       if (result == null) {
+        logMessage(
+          '주변 정류장 검색 응답 없음 trace=$requestTraceId',
+          level: LogLevel.warning,
+        );
         return [];
       }
 
-      return _parseStationSearchResult(result);
+      final parsed = _parseStationSearchResult(result);
+        logMessage(
+          '주변 정류장 검색 응답 trace=$requestTraceId count=${parsed.length}',
+          level: LogLevel.debug,
+        );
+      return parsed;
     } catch (e) {
       logMessage('주변 정류장 검색 오류: $e', level: LogLevel.error);
       return [];
@@ -171,21 +199,45 @@ class StationService {
 
   /// 네이티브 메서드 호출 공통 함수
   Future<String?> _callNativeMethod(
-      String method, Map<String, dynamic> arguments) async {
+    String method,
+    Map<String, dynamic> arguments, {
+    String? traceId,
+  }) async {
+    final effectiveTraceId = (traceId != null && traceId.trim().isNotEmpty)
+        ? traceId.trim()
+        : null;
     try {
+      final prefix = effectiveTraceId != null ? 'trace=$effectiveTraceId ' : '';
+      logMessage(
+        '네이티브 메서드 호출: $method ${prefix}args=$arguments',
+        level: LogLevel.debug,
+      );
       // DioClient 인스턴스를 통한 채널 호출
       final dynamic result = await _dioClient.callNativeMethod(
           _methodChannel, method, arguments,
           timeout: const Duration(seconds: _defaultTimeout));
 
       if (result == null) {
-        logMessage('네이티브 메서드 응답 없음: $method', level: LogLevel.warning);
+        logMessage(
+          '네이티브 메서드 응답 없음: $method${effectiveTraceId != null ? ' trace=$effectiveTraceId' : ''}',
+          level: LogLevel.warning,
+        );
         return null;
       }
 
+      final preview = result.toString();
+      logMessage(
+        '네이티브 메서드 응답 길이: ${preview.length}, method=$method, '
+        '${effectiveTraceId != null ? 'trace=$effectiveTraceId, ' : ''}'
+        'sample=${preview.length > 320 ? preview.substring(0, 320) : preview}',
+        level: LogLevel.debug,
+      );
       return result.toString();
     } catch (e) {
-      logMessage('네이티브 메서드 호출 오류: $method, $e', level: LogLevel.error);
+      logMessage(
+        '네이티브 메서드 호출 오류: $method${effectiveTraceId != null ? ' trace=$effectiveTraceId' : ''}, $e',
+        level: LogLevel.error,
+      );
       return null;
     }
   }
@@ -194,7 +246,16 @@ class StationService {
   List<BusStop> _parseStationSearchResult(String jsonString) {
     try {
       final List<dynamic> data = jsonDecode(jsonString);
-      return data.map((station) => BusStop.fromJson(station)).toList();
+      final list = data.map((station) => BusStop.fromJson(station)).toList();
+      if (list.isNotEmpty) {
+        final preview = list
+            .take(8)
+            .map((station) => station.name)
+            .where((name) => name.isNotEmpty)
+            .join(', ');
+        logMessage('정류장 검색 결과 파싱 완료 preview=$preview', level: LogLevel.debug);
+      }
+      return list;
     } catch (e) {
       logMessage('정류장 검색 결과 파싱 오류: $e', level: LogLevel.error);
       return [];
@@ -300,7 +361,7 @@ class StationService {
 
       return parsed;
     } catch (e) {
-      logMessage('?뺣쪟??寃???ㅻ쪟: $e', level: LogLevel.error);
+      logMessage('정류장 검색 내부 처리 오류: $e', level: LogLevel.error);
       return [];
     }
   }
@@ -327,5 +388,9 @@ class StationService {
 
   String _searchCacheKey(String type, String normalizedSearchText) {
     return '${type}_$normalizedSearchText';
+  }
+
+  String _buildDefaultTraceId(String prefix) {
+    return '${prefix}_${DateTime.now().millisecondsSinceEpoch}';
   }
 }

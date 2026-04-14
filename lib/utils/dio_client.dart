@@ -153,37 +153,23 @@ class DioClient {
   }) async {
     try {
       final methodChannel = MethodChannel(channel);
-      final completer = Completer<dynamic>();
-
-      // 타임아웃 처리
-      Timer? timeoutTimer;
-      if (timeout != null) {
-        timeoutTimer = Timer(timeout, () {
-          if (!completer.isCompleted) {
-            completer.completeError(
-                TimeoutException('네이티브 메서드 호출 시간 초과: $method', timeout));
-          }
-        });
-      }
 
       try {
-        final result = await methodChannel.invokeMethod(method, arguments);
-        if (!completer.isCompleted) {
-          completer.complete(result);
+        final Future<dynamic> resultFuture =
+            methodChannel.invokeMethod(method, arguments);
+        if (timeout == null) {
+          return await resultFuture;
         }
+        return await resultFuture.timeout(
+          timeout,
+          onTimeout: () =>
+              throw TimeoutException('네이티브 메서드 호출 시간 초과: $method', timeout),
+        );
       } on PlatformException catch (e) {
-        if (!completer.isCompleted) {
-          completer.completeError(e);
-        }
+        throw e;
       } catch (e) {
-        if (!completer.isCompleted) {
-          completer.completeError(e);
-        }
-      } finally {
-        timeoutTimer?.cancel();
+        throw e;
       }
-
-      return completer.future;
     } catch (e) {
       logMessage('❌ 네이티브 메서드 호출 오류: $method - $e', level: LogLevel.error);
       rethrow;
@@ -236,19 +222,5 @@ class DioClient {
     }
 
     return options;
-  }
-}
-
-/// Completer 확장 - isCompleted 체크 추가
-extension CompleterExtension<T> on Completer<T> {
-  // isCompleted 속성을 직접 사용할 수 없기 때문에 다른 방법으로 구현
-  bool get isCompleted {
-    try {
-      // 이미 완료된 Completer에 값을 완료하면 예외 발생
-      complete(null);
-      return false; // 예외가 발생하지 않으면 아직 완료되지 않음
-    } catch (e) {
-      return true; // 예외가 발생하면 이미 완료됨
-    }
   }
 }
