@@ -20,10 +20,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'utils/app_logger.dart';
 
-const String _dartDefineServiceKey = String.fromEnvironment(
-  'SERVICE_KEY',
-  defaultValue: '',
-);
 const String _dartDefineKakaoJsApiKey = String.fromEnvironment(
   'KAKAO_JS_API_KEY',
   defaultValue: '',
@@ -44,7 +40,6 @@ AlarmService? _globalAlarmService;
 
 Future<void> _loadRuntimeConfig() async {
   final mergedEnv = <String, String>{
-    if (_dartDefineServiceKey.isNotEmpty) 'SERVICE_KEY': _dartDefineServiceKey,
     if (_dartDefineKakaoJsApiKey.isNotEmpty)
       'KAKAO_JS_API_KEY': _dartDefineKakaoJsApiKey,
     if (_dartDefineAdmobAppId.isNotEmpty) 'ADMOB_APP_ID': _dartDefineAdmobAppId,
@@ -70,20 +65,15 @@ Future<void> _loadRuntimeConfig() async {
     dotenv.testLoad(mergeWith: mergedEnv);
   }
 
-  final serviceKey = dotenv.env['SERVICE_KEY']?.trim();
   final kakaoKey = dotenv.env['KAKAO_JS_API_KEY']?.trim();
   final admobAppId = dotenv.env['ADMOB_APP_ID']?.trim();
   debugPrint(
     '[CONFIG] ENV 상태 '
-    '(SERVICE_KEY=${_safeValue(serviceKey)}, '
-    'KAKAO_JS_API_KEY=${_safeValue(kakaoKey)}, '
+    '(KAKAO_JS_API_KEY=${_safeValue(kakaoKey)}, '
     'ADMOB_APP_ID=${_safeValue(admobAppId)})',
   );
 
   if (kReleaseMode) {
-    if (serviceKey == null || serviceKey.isEmpty) {
-      debugPrint('❌ [CONFIG] SERVICE_KEY가 비어 있습니다. --dart-define로 주입 필요');
-    }
     if (kakaoKey == null || kakaoKey.isEmpty) {
       debugPrint('❌ [CONFIG] KAKAO_JS_API_KEY가 비어 있습니다. --dart-define로 주입 필요');
     }
