@@ -154,41 +154,9 @@ class _SearchScreenState extends State<SearchScreen> {
       _errorMessage = null;
     });
 
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
-
     try {
-      final results = await ApiService.searchStations(query); // 정적 호출로 변경
+      final results = await ApiService.searchStations(query);
       final limitedResults = results.take(30).toList();
-
-      // stationId 확인 및 가공
-      for (var i = 0; i < limitedResults.length; i++) {
-        var station = limitedResults[i];
-        // stationId 확인
-        if ((station.stationId == null || station.stationId!.isEmpty) &&
-            (!station.id.startsWith('7') || station.id.length != 10)) {
-          try {
-            // 각 정류장마다 검색을 하면 성능 저하가 심함
-            // 따라서 일반 정류장만 한 번에 20개까지만 변환 시도
-            if (i < 20) {
-              debugPrint('정류장 ID 변환 시도: ${station.name} (${station.id})');
-
-              // getStationIdFromBsId 메서드 사용
-              final String? convertedId =
-                  await ApiService.getStationIdFromBsId(station.id);
-              if (convertedId != null && convertedId.isNotEmpty) {
-                limitedResults[i] = station.copyWith(
-                  stationId: convertedId,
-                  isFavorite: _isStopIdFavorite(station.id),
-                );
-                debugPrint('정류장 ID 변환 성공: ${station.id} -> $convertedId');
-              }
-            }
-          } catch (e) {
-            debugPrint('정류장 ID 변환 오류: $e');
-          }
-        }
-      }
 
       if (mounted) {
         _searchResultsNotifier.value = limitedResults
@@ -217,16 +185,38 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Future<void> _loadStationArrivals(BusStop station) async {
     try {
-      // 첫 번째 시도
       debugPrint('정류장 도착 정보 조회 시도: ${station.name} (ID: ${station.id})');
       var arrivals = await ApiService.getStationInfo(station.id);
 
-      // 결과가 없는 경우 stationId로 재시도
       if (arrivals.isEmpty &&
           station.stationId != null &&
           station.stationId!.isNotEmpty) {
         debugPrint('ID로 조회 실패, stationId로 재시도: ${station.stationId}');
         arrivals = await ApiService.getStationInfo(station.stationId!);
+      }
+
+      // 여전히 비어 있고 stationId가 없으면 lazy 변환 후 재시도
+      if (arrivals.isEmpty &&
+          (station.stationId == null || station.stationId!.isEmpty) &&
+          (!station.id.startsWith('7') || station.id.length != 10)) {
+        try {
+          final converted =
+              await ApiService.getStationIdFromBsId(station.id);
+          if (converted != null && converted.isNotEmpty) {
+            arrivals = await ApiService.getStationInfo(converted);
+            if (mounted) {
+              final list = _searchResultsNotifier.value;
+              final idx = list.indexWhere((s) => s.id == station.id);
+              if (idx != -1) {
+                final updated = [...list];
+                updated[idx] = list[idx].copyWith(stationId: converted);
+                _searchResultsNotifier.value = updated;
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('정류장 ID lazy 변환 오류: $e');
+        }
       }
 
       if (mounted) {
@@ -465,8 +455,13 @@ class _SearchScreenState extends State<SearchScreen> {
     return ValueListenableBuilder<List<BusStop>>(
       valueListenable: _searchResultsNotifier,
       builder: (context, searchResults, _) {
-        // 검색 결과가 갱신될 때마다 각 정류장에 대해 도착 정보가 없으면 비동기로 불러온다
-        for (final station in searchResults) {
+        // 상위 10개만 prefetch — 나머지는 사용자가 탭했을 때 로드됨
+        const prefetchLimit = 10;
+        final prefetchCount = searchResults.length < prefetchLimit
+            ? searchResults.length
+            : prefetchLimit;
+        for (var i = 0; i < prefetchCount; i++) {
+          final station = searchResults[i];
           if (!_stationArrivals.containsKey(station.id) &&
               !_loadingArrivals.contains(station.id)) {
             _loadingArrivals.add(station.id);
