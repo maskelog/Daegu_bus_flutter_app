@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
 import '../models/bus_route.dart';
@@ -41,23 +42,90 @@ class RouteService {
 
   /// 버스 노선 상세 정보 조회 API
   Future<BusRoute?> getBusRouteDetails(String routeId) async {
-    try {
-      if (routeId.isEmpty) {
-        logMessage('노선 ID가 비어있습니다', level: LogLevel.warning);
-        return null;
-      }
+    if (routeId.isEmpty) {
+      logMessage('노선 ID가 비어있습니다', level: LogLevel.warning);
+      return null;
+    }
 
+    final nativeFuture = _fetchRouteInfoNative(routeId);
+    final directFuture = _fetchRouteInfoDirect(routeId);
+
+    final direct = await directFuture;
+    if (_routeHasCorridor(direct)) {
+      unawaited(nativeFuture);
+      return direct;
+    }
+
+    final native = await nativeFuture;
+    return _routeHasCorridor(native) ? native : (direct ?? native);
+  }
+
+  Future<BusRoute?> _fetchRouteInfoNative(String routeId) async {
+    try {
       final result =
           await _callNativeMethod('getBusRouteDetails', {'routeId': routeId});
-
-      if (result == null) {
-        return null;
-      }
-
-      final Map<String, dynamic> routeData = jsonDecode(result);
-      return BusRoute.fromJson(routeData);
+      if (result == null) return null;
+      return BusRoute.fromJson(jsonDecode(result));
     } catch (e) {
-      logMessage('노선 상세 정보 조회 오류: $e', level: LogLevel.error);
+      logMessage('노선 상세 정보 네이티브 조회 오류: $e', level: LogLevel.warning);
+      return null;
+    }
+  }
+
+  bool _routeHasCorridor(BusRoute? r) {
+    if (r == null) return false;
+    final hasStart =
+        r.startPoint.trim().isNotEmpty && r.startPoint != '출발지 정보 없음';
+    final hasEnd = r.endPoint.trim().isNotEmpty && r.endPoint != '도착지 정보 없음';
+    return hasStart && hasEnd;
+  }
+
+  Future<BusRoute?> _fetchRouteInfoDirect(String routeId) async {
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 8),
+        receiveTimeout: const Duration(seconds: 8),
+        headers: {'User-Agent': 'okhttp/4.12.0'},
+        responseType: ResponseType.plain,
+      ));
+      final resp = await dio.get(
+        'https://businfo.daegu.go.kr:8095/dbms_web_api/route/info',
+        queryParameters: {'routeId': routeId},
+      );
+      if (resp.statusCode != 200 || resp.data == null) return null;
+      final decoded = jsonDecode(resp.data.toString());
+      if (decoded is! Map<String, dynamic>) return null;
+      final body = decoded['body'];
+      Map<String, dynamic>? info;
+      if (body is Map<String, dynamic>) {
+        info = body;
+      } else if (body is List && body.isNotEmpty && body.first is Map) {
+        info = Map<String, dynamic>.from(body.first);
+      }
+      if (info == null) return null;
+
+      final parts = <String>[];
+      final avg = (info['avgTm'] ?? '').toString().trim();
+      final comNm = (info['comNm'] ?? '').toString().trim();
+      final first = (info['bsFtm'] ?? info['frTm'] ?? '').toString().trim();
+      final last = (info['bsLtm'] ?? info['toTm'] ?? '').toString().trim();
+      final trips = (info['nCnt'] ?? '').toString().trim();
+      if (avg.isNotEmpty && avg != '정보 없음') parts.add('배차간격: $avg');
+      if (comNm.isNotEmpty && comNm != '정보 없음') parts.add('업체: $comNm');
+      if (first.isNotEmpty) parts.add('첫차: $first');
+      if (last.isNotEmpty) parts.add('막차: $last');
+      if (trips.isNotEmpty) parts.add('운행횟수: $trips');
+
+      return BusRoute(
+        id: (info['routeId'] ?? routeId).toString(),
+        routeNo: (info['routeNo'] ?? '').toString(),
+        routeTp: (info['routeTCd'] ?? info['routeTp'] ?? '').toString(),
+        startPoint: (info['stNm'] ?? '').toString(),
+        endPoint: (info['edNm'] ?? '').toString(),
+        routeDescription: parts.isEmpty ? null : parts.join(' | '),
+      );
+    } catch (e) {
+      logMessage('노선 상세 직접 조회 오류: $e', level: LogLevel.warning);
       return null;
     }
   }

@@ -74,14 +74,15 @@ class BusRoute {
   }
 
   /// 노선 유형 가져오기
+  /// 대구버스 routeTCd: 1=급행, 2=좌석, 3=일반, 4=지선/마을
   BusRouteType getRouteType() {
     switch (routeTp) {
       case '1':
-        return BusRouteType.regular;
+        return BusRouteType.express;
       case '2':
         return BusRouteType.seat;
       case '3':
-        return BusRouteType.express;
+        return BusRouteType.regular;
       case '4':
         return BusRouteType.village;
       case '5':

@@ -1,60 +1,33 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../models/bus_arrival.dart';
 import '../models/bus_route.dart';
 import '../models/route_station.dart';
 import '../services/api_service.dart';
 import 'map_screen.dart';
 
 class RouteMapScreen extends StatefulWidget {
-  const RouteMapScreen({super.key});
+  final BusRoute? initialRoute;
+
+  const RouteMapScreen({super.key, this.initialRoute});
 
   @override
   State<RouteMapScreen> createState() => _RouteMapScreenState();
 }
 
 class _RouteMapScreenState extends State<RouteMapScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
   bool _isLoading = false;
   String? _errorMessage;
   BusRoute? _selectedRoute;
-  List<BusRoute> _searchResults = [];
   List<RouteStation> _routeStations = [];
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    _searchFocusNode.dispose();
-    super.dispose();
-  }
-
-  Future<void> _searchRoute() async {
-    final query = _searchController.text.trim();
-    if (query.isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _selectedRoute = null;
-        _errorMessage = null;
-      });
-      return;
-    }
-
-    setState(() {
+  void initState() {
+    super.initState();
+    if (widget.initialRoute != null) {
+      _selectedRoute = widget.initialRoute;
       _isLoading = true;
-      _errorMessage = null;
-      _selectedRoute = null;
-    });
-
-    try {
-      final results = await ApiService.searchBusRoutes(query);
-      setState(() {
-        _searchResults = results;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = '노선 검색 중 오류가 발생했습니다: $e';
-        _isLoading = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _selectRoute(widget.initialRoute!);
       });
     }
   }
@@ -63,37 +36,68 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _selectedRoute = route;
+      _routeStations = [];
     });
 
-    try {
-      // 노선 상세 정보와 정류장 목록을 동시에 가져오기
-      final results = await Future.wait([
-        ApiService.getBusRouteDetails(route.id),
-        ApiService.getRouteStations(route.id),
-      ]);
-
-      final detailedRoute = results[0] as BusRoute?;
-      final stationsData = results[1] as List<dynamic>;
-
-      // 정류장 데이터를 RouteStation 객체로 변환
-      final List<RouteStation> stations = stationsData
-          .map((station) => RouteStation.fromJson(station))
-          .toList();
-
-      // 순서대로 정렬
-      stations.sort((a, b) => a.sequenceNo.compareTo(b.sequenceNo));
-
+    // 정류장 목록과 상세 정보를 병렬 요청하되, 먼저 도착하는 쪽부터 UI 반영
+    final stationsFuture = ApiService.getRouteStations(route.id).then((data) {
+      if (!mounted) return;
+      final stations = data
+          .map((s) => RouteStation.fromJson(s))
+          .toList()
+        ..sort((a, b) => a.sequenceNo.compareTo(b.sequenceNo));
       setState(() {
-        _selectedRoute = detailedRoute ?? route;
         _routeStations = stations;
-        _isLoading = false;
       });
-    } catch (e) {
+    }).catchError((e) {
+      if (!mounted) return;
       setState(() {
-        _errorMessage = '노선 상세 정보를 불러오는 중 오류가 발생했습니다: $e';
-        _isLoading = false;
+        _errorMessage = '정류장 목록을 불러오지 못했습니다: $e';
       });
-    }
+    });
+
+    final detailsFuture =
+        ApiService.getBusRouteDetails(route.id).then((detailed) {
+      if (!mounted || detailed == null) return;
+      setState(() {
+        _selectedRoute = _mergeRoute(route, detailed);
+      });
+    }).catchError((_) {/* 상세 정보는 실패해도 초기 route 유지 */});
+
+    await Future.wait([stationsFuture, detailsFuture]);
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  BusRoute _mergeRoute(BusRoute base, BusRoute detailed) {
+    return base.copyWith(
+      routeNo: detailed.routeNo.isNotEmpty ? detailed.routeNo : base.routeNo,
+      routeTp: detailed.routeTp.isNotEmpty ? detailed.routeTp : base.routeTp,
+      startPoint: detailed.startPoint.isNotEmpty
+          ? detailed.startPoint
+          : base.startPoint,
+      endPoint:
+          detailed.endPoint.isNotEmpty ? detailed.endPoint : base.endPoint,
+      routeDescription: (detailed.routeDescription?.isNotEmpty ?? false)
+          ? detailed.routeDescription
+          : base.routeDescription,
+    );
+  }
+
+  Future<void> _showStationArrivals(RouteStation station) async {
+    final colorScheme = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: colorScheme.surface,
+      showDragHandle: true,
+      builder: (_) => _StationArrivalsSheet(
+        station: station,
+        currentRouteNo: _selectedRoute?.routeNo,
+      ),
+    );
   }
 
   @override
@@ -103,135 +107,44 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        title: _selectedRoute?.routeNo != null
-            ? Text(
+      appBar: _selectedRoute != null
+          ? AppBar(
+              backgroundColor: colorScheme.surface,
+              foregroundColor: colorScheme.onSurface,
+              title: Text(
                 '${_selectedRoute!.routeNo}번 버스',
                 style: TextStyle(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.bold,
                 ),
-              )
-            : Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
-                      style: TextStyle(
-                        color: colorScheme.onSurface,
-                        fontSize: 16,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: '버스 번호를 입력하세요 (예: 304, 623)',
-                        hintStyle: TextStyle(
-                          color: colorScheme.onSurfaceVariant,
-                          fontSize: 16,
-                        ),
-                        prefixIcon: Icon(
-                          Icons.search,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                                icon: Icon(
-                                  Icons.clear,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() {
-                                    _searchResults = [];
-                                    _selectedRoute = null;
-                                    _errorMessage = null;
-                                  });
-                                },
-                              )
-                            : null,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: colorScheme.outline),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: colorScheme.outline),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: colorScheme.primary),
-                        ),
-                        filled: true,
-                        fillColor: colorScheme.surfaceContainerHighest,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                      maxLines: 1,
-                      inputFormatters: [FilteringTextInputFormatter.singleLineFormatter],
-                      onSubmitted: (_) => _searchRoute(),
-                      onChanged: (value) {
-                        if (value.isEmpty) {
-                          setState(() {
-                            _searchResults = [];
-                            _selectedRoute = null;
-                            _errorMessage = null;
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: _searchRoute,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      backgroundColor: colorScheme.primary,
-                      foregroundColor: colorScheme.onPrimary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      '검색',
-                      style: TextStyle(
-                        color: colorScheme.onPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ],
               ),
-        actions: [
-          if (_selectedRoute != null)
-            IconButton(
-              icon: const Icon(Icons.map),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => MapScreen(
-                      routeId: _selectedRoute!.id,
-                      routeStations: _routeStations,
-                    ),
+              actions: [
+                if (_routeStations.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.map),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => MapScreen(
+                            routeId: _selectedRoute!.id,
+                            routeStations: _routeStations,
+                          ),
+                        ),
+                      );
+                    },
+                    tooltip: '지도에서 보기',
                   ),
-                );
-              },
-              tooltip: '지도에서 보기',
-            ),
-        ],
-        elevation: 0,
-      ),
+              ],
+              elevation: 0,
+              surfaceTintColor: colorScheme.surfaceTint,
+            )
+          : null,
       body: Column(
         children: [
+          if (_isLoading && _selectedRoute == null)
+            const LinearProgressIndicator(minHeight: 2),
           const SizedBox(height: 8),
-          // 오류 메시지
           if (_errorMessage != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -255,126 +168,17 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                 ),
               ),
             ),
-          // 검색 결과 또는 선택된 노선 정보
           Expanded(
             child: _selectedRoute != null
                 ? _buildRouteDetails()
-                : _buildSearchResults(),
+                : const _EmptyState(
+                    icon: Icons.route,
+                    title: '버스 노선 검색',
+                    subtitle: '상단 검색창에서 버스 번호를 입력하세요',
+                  ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildSearchResults() {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    if (_searchResults.isEmpty &&
-        _searchController.text.isNotEmpty &&
-        !_isLoading) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.search_off,
-              size: 64,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '검색 결과가 없습니다',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '다른 버스 번호를 입력해보세요',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_searchResults.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.route,
-              size: 64,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '버스 노선 검색',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '버스 번호를 입력하여 노선 정보를 확인하세요',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _searchResults.length,
-      itemBuilder: (context, index) {
-        final route = _searchResults[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          color: colorScheme.surfaceContainerHighest,
-          elevation: 2,
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: _getRouteColor(route),
-              child: Text(
-                route.routeNo,
-                style: TextStyle(
-                  color: colorScheme.onPrimary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            title: Text(
-              '${route.routeNo}번 버스',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: colorScheme.onSurface,
-              ),
-            ),
-            subtitle: Text(
-              route.routeDescription?.isNotEmpty == true
-                  ? route.routeDescription!
-                  : '노선명 없음',
-              style: TextStyle(
-                color: colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            trailing: Icon(
-              Icons.arrow_forward_ios,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            onTap: () => _selectRoute(route),
-          ),
-        );
-      },
     );
   }
 
@@ -388,74 +192,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 노선 헤더
-          Card(
-            color: colorScheme.surfaceContainerHighest,
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 24,
-                        backgroundColor: _getRouteColor(route),
-                        child: Text(
-                          route.routeNo,
-                          style: TextStyle(
-                            color: colorScheme.onPrimary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${route.routeNo}번 버스',
-                              style: theme.textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: colorScheme.onSurface,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Icon(Icons.info_outline, color: colorScheme.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        '노선 정보',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  _buildInfoRow('노선 타입', _getRouteTypeText(route)),
-                  _buildInfoRow(
-                      '운행 구간', '${route.startPoint} ↔ ${route.endPoint}'),
-                  if (route.routeDescription?.isNotEmpty == true)
-                    ..._buildRouteDescriptionRows(route.routeDescription!),
-                ],
-              ),
-            ),
-          ),
-
+          _buildRouteHeaderCard(route, theme, colorScheme),
           const SizedBox(height: 16),
-
-          // 정류장 목록
           Card(
             color: colorScheme.surfaceContainerHighest,
             elevation: 2,
@@ -482,231 +220,448 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                     ..._routeStations.asMap().entries.map((entry) {
                       final index = entry.key;
                       final station = entry.value;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: station.stationType == StationType.start
-                                    ? colorScheme.primary
-                                    : station.stationType == StationType.end
-                                        ? colorScheme.error
-                                        : colorScheme.secondary,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '${index + 1}',
-                                  style: TextStyle(
-                                    color: colorScheme.onPrimary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                station.stationName,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: colorScheme.onSurface,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            if (station.stationType == StationType.start)
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => _showStationArrivals(station),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 6, horizontal: 4),
+                          child: Row(
+                            children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
+                                width: 24,
+                                height: 24,
                                 decoration: BoxDecoration(
-                                  color: colorScheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(4),
+                                  color: station.stationType ==
+                                          StationType.start
+                                      ? colorScheme.primary
+                                      : station.stationType == StationType.end
+                                          ? colorScheme.error
+                                          : colorScheme.secondary,
+                                  shape: BoxShape.circle,
                                 ),
-                                child: Text(
-                                  '기점',
-                                  style: TextStyle(
-                                    color: colorScheme.onPrimaryContainer,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              )
-                            else if (station.stationType == StationType.end)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.errorContainer,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  '종점',
-                                  style: TextStyle(
-                                    color: colorScheme.onErrorContainer,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
+                                child: Center(
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ),
-                          ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  station.stationName,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: colorScheme.onSurface,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (station.stationType == StationType.start)
+                                _stationTag('기점',
+                                    colorScheme.primaryContainer,
+                                    colorScheme.onPrimaryContainer)
+                              else if (station.stationType == StationType.end)
+                                _stationTag('종점',
+                                    colorScheme.errorContainer,
+                                    colorScheme.onErrorContainer),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.chevron_right,
+                                size: 18,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     })
-                  else
+                  else if (_isLoading)
                     Text(
                       '정류장 정보를 불러오는 중입니다...',
+                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+                    )
+                  else
+                    Text(
+                      '정류장 정보가 없습니다.',
                       style: TextStyle(color: colorScheme.onSurfaceVariant),
                     ),
                 ],
               ),
             ),
           ),
-
           const SizedBox(height: 16),
-
-          // 뒤로가기 버튼
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () {
-                setState(() {
-                  _selectedRoute = null;
-                });
-              },
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                foregroundColor: colorScheme.primary,
-                side: BorderSide(color: colorScheme.primary),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Text(
-                '다른 노선 검색',
-                style: TextStyle(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+  Widget _buildRouteHeaderCard(
+      BusRoute route, ThemeData theme, ColorScheme colorScheme) {
+    final typeName = '대구 ${route.getRouteTypeName()}버스';
+    final hasStart = route.startPoint.trim().isNotEmpty &&
+        route.startPoint != '출발지 정보 없음';
+    final hasEnd =
+        route.endPoint.trim().isNotEmpty && route.endPoint != '도착지 정보 없음';
+    final corridor = (hasStart && hasEnd)
+        ? '${route.startPoint} ↔ ${route.endPoint}'
+        : null;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: theme.textTheme.bodyMedium?.copyWith(
+    final desc = _parseDescription(route.routeDescription);
+    final firstLast =
+        (desc.firstTm != null && desc.lastTm != null)
+            ? '${desc.firstTm} ~ ${desc.lastTm}'
+            : null;
+    final intervalLabel = desc.interval != null
+        ? '배차간격 ${desc.interval}'
+        : null;
+    final tripLabel = desc.tripCount != null ? '${desc.tripCount}회' : null;
+
+    final line1 = [typeName, if (corridor != null) corridor].join(' | ');
+    final line2Parts = [
+      if (firstLast != null) firstLast,
+      if (intervalLabel != null) intervalLabel,
+      if (tripLabel != null) tripLabel,
+    ];
+    final line2 = line2Parts.join(' | ');
+
+    return Card(
+      color: colorScheme.surfaceContainerHighest,
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              line1,
+              style: theme.textTheme.titleMedium?.copyWith(
                 color: colorScheme.onSurface,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-        ],
+            if (line2.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                line2,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            if (desc.company != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                desc.company!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 
-  List<Widget> _buildRouteDescriptionRows(String description) {
-    final List<Widget> rows = [];
-
-    // "배차간격: 10분, 업체: 대구시내버스" 형식 파싱
-    final parts = description.split(', ');
+  _RouteDescription _parseDescription(String? raw) {
+    if (raw == null || raw.isEmpty) return const _RouteDescription();
+    // 우선 " | " 구분자로 파싱 시도 (avgTm/comNm 내부의 쉼표 보존)
+    List<String> parts = raw.contains(' | ') ? raw.split(' | ') : raw.split(', ');
     String? interval;
-    final List<String> companies = [];
+    String? company;
+    String? firstTm;
+    String? lastTm;
+    String? tripCount;
 
-    for (String part in parts) {
-      if (part.contains('배차간격:')) {
-        interval = part.replaceFirst('배차간격:', '').trim();
-      } else if (part.contains('업체:')) {
-        final company = part.replaceFirst('업체:', '').trim();
-        if (company != '정보 없음' && company.isNotEmpty) {
-          // 여러 업체가 쉼표로 구분되어 있을 수 있음
-          final companyList = company
-              .split(',')
-              .map((c) => c.trim())
-              .where((c) => c.isNotEmpty)
-              .toList();
-          companies.addAll(companyList);
+    String? pending; // 이전 필드 이어 붙이기 (쉼표 분리된 경우 보정)
+    String? pendingKey;
+    void flush() {
+      if (pending == null || pendingKey == null) return;
+      final v = pending!.trim();
+      if (v.isNotEmpty && v != '정보 없음') {
+        switch (pendingKey) {
+          case 'interval': interval = v; break;
+          case 'company': company = v; break;
+          case 'first': firstTm = v; break;
+          case 'last': lastTm = v; break;
+          case 'trip': tripCount = v; break;
         }
       }
+      pending = null;
+      pendingKey = null;
     }
 
-    // 배차간격 표시
-    if (interval != null && interval != '정보 없음' && interval.isNotEmpty) {
-      rows.add(_buildInfoRow('배차간격', interval));
-    }
+    for (final part in parts) {
+      final p = part.trim();
+      String? key;
+      String? value;
+      if (p.startsWith('배차간격:')) {
+        key = 'interval'; value = p.substring(5).trim();
+      } else if (p.startsWith('업체:')) {
+        key = 'company'; value = p.substring(3).trim();
+      } else if (p.startsWith('첫차:')) {
+        key = 'first'; value = p.substring(3).trim();
+      } else if (p.startsWith('막차:')) {
+        key = 'last'; value = p.substring(3).trim();
+      } else if (p.startsWith('운행횟수:')) {
+        key = 'trip'; value = p.substring(5).trim();
+      }
 
-    // 운수업체 표시 (여러 업체가 있으면 모두 표시)
-    if (companies.isNotEmpty) {
-      if (companies.length == 1) {
-        rows.add(_buildInfoRow('운수업체', companies.first));
-      } else {
-        rows.add(_buildInfoRow('운수업체', companies.join(', ')));
+      if (key != null) {
+        flush();
+        pending = value;
+        pendingKey = key;
+      } else if (pending != null) {
+        // 쉼표로 잘린 값의 연결 (구형 포맷 호환)
+        pending = '$pending, $p';
       }
     }
+    flush();
 
-    return rows;
+    return _RouteDescription(
+      interval: interval,
+      company: company,
+      firstTm: firstTm,
+      lastTm: lastTm,
+      tripCount: tripCount,
+    );
   }
 
-  Color _getRouteColor(BusRoute route) {
-    final brightness = Theme.of(context).brightness;
+  Widget _stationTag(String label, Color bg, Color fg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: fg,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
 
-    switch (route.getRouteType()) {
-      case BusRouteType.express:
-        // 급행버스 - 빨간색 계열
-        return brightness == Brightness.dark
-            ? const Color(0xFFFF6B6B) // 다크모드에서 더 밝은 빨간색
-            : const Color(0xFFE53E3E); // 라이트모드에서 진한 빨간색
-      case BusRouteType.seat:
-        // 좌석버스 - 파란색 계열
-        return brightness == Brightness.dark
-            ? const Color(0xFF4DABF7) // 다크모드에서 더 밝은 파란색
-            : const Color(0xFF2B6CB0); // 라이트모드에서 진한 파란색
-      case BusRouteType.regular:
-      default:
-        // 일반버스 - 초록색 계열
-        return brightness == Brightness.dark
-            ? const Color(0xFF51CF66) // 다크모드에서 더 밝은 초록색
-            : const Color(0xFF38A169); // 라이트모드에서 진한 초록색
+}
+
+class _RouteDescription {
+  final String? interval;
+  final String? company;
+  final String? firstTm;
+  final String? lastTm;
+  final String? tripCount;
+
+  const _RouteDescription({
+    this.interval,
+    this.company,
+    this.firstTm,
+    this.lastTm,
+    this.tripCount,
+  });
+}
+
+class _EmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _EmptyState({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 64, color: colorScheme.onSurfaceVariant),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StationArrivalsSheet extends StatefulWidget {
+  final RouteStation station;
+  final String? currentRouteNo;
+
+  const _StationArrivalsSheet({
+    required this.station,
+    this.currentRouteNo,
+  });
+
+  @override
+  State<_StationArrivalsSheet> createState() => _StationArrivalsSheetState();
+}
+
+class _StationArrivalsSheetState extends State<_StationArrivalsSheet> {
+  bool _isLoading = true;
+  String? _errorMessage;
+  List<BusArrival> _arrivals = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      var arrivals = await ApiService.getStationInfo(widget.station.stationId);
+      if (arrivals.isEmpty) {
+        final converted =
+            await ApiService.getStationIdFromBsId(widget.station.stationId);
+        if (converted != null && converted.isNotEmpty) {
+          arrivals = await ApiService.getStationInfo(converted);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _arrivals = arrivals;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = '도착 정보를 불러오지 못했습니다.';
+        _isLoading = false;
+      });
     }
   }
 
-  String _getRouteTypeText(BusRoute route) {
-    switch (route.getRouteType()) {
-      case BusRouteType.express:
-        return '급행버스';
-      case BusRouteType.seat:
-        return '좌석버스';
-      case BusRouteType.regular:
-      default:
-        return '일반버스';
-    }
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final sorted = [..._arrivals]..sort((a, b) {
+        if (widget.currentRouteNo != null) {
+          if (a.routeNo == widget.currentRouteNo) return -1;
+          if (b.routeNo == widget.currentRouteNo) return 1;
+        }
+        return a.routeNo.compareTo(b.routeNo);
+      });
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.station.stationName,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '도착 예정 버스',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  _errorMessage!,
+                  style: TextStyle(color: colorScheme.error),
+                ),
+              )
+            else if (sorted.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  '도착 예정 버스가 없습니다.',
+                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.5,
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: sorted.length,
+                  separatorBuilder: (_, __) => Divider(
+                    height: 1,
+                    color: colorScheme.outlineVariant,
+                  ),
+                  itemBuilder: (_, i) {
+                    final a = sorted[i];
+                    final isCurrent = a.routeNo == widget.currentRouteNo;
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        '${a.routeNo}번',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isCurrent
+                              ? colorScheme.primary
+                              : colorScheme.onSurface,
+                        ),
+                      ),
+                      subtitle: a.direction.isNotEmpty
+                          ? Text(a.direction,
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 12,
+                              ))
+                          : null,
+                      trailing: Text(
+                        a.getFirstArrivalTimeText(),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isCurrent
+                              ? colorScheme.primary
+                              : colorScheme.onSurface,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

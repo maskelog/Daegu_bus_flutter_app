@@ -444,14 +444,18 @@ class _HomeScreenState extends State<HomeScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: HomeSearchBar(
-                hintText: '버스 또는 정류장 검색',
+                hintText: _tabController.index == 1
+                    ? '버스 노선 번호 검색'
+                    : '버스 또는 정류장 검색',
                 onSearchTap: () async {
                   HapticFeedback.lightImpact();
+                  final isRouteTab = _tabController.index == 1;
                   final result = await Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => SearchScreen(
                         favoriteStops: _favoriteStops,
+                        routesOnly: isRouteTab,
                       ),
                     ),
                   );

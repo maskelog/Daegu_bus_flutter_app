@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/bus_stop.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
+import '../models/bus_route.dart';
 import '../services/api_service.dart';
 import '../widgets/station_item.dart';
 import '../widgets/unified_bus_detail_widget.dart';
 import '../utils/debouncer.dart';
+import '../widgets/home_search_bar.dart';
+import 'route_map_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   final List<BusStop>? favoriteStops;
+  final bool routesOnly;
 
   const SearchScreen({
     super.key,
     this.favoriteStops,
+    this.routesOnly = false,
   });
 
   @override
@@ -28,6 +32,7 @@ class _SearchScreenState extends State<SearchScreen> {
       Debouncer(delay: const Duration(milliseconds: 400));
   final FocusNode _searchFieldFocusNode = FocusNode();
   final ValueNotifier<List<BusStop>> _searchResultsNotifier = ValueNotifier([]);
+  final ValueNotifier<List<BusRoute>> _routeResultsNotifier = ValueNotifier([]);
 
   List<BusStop> _favoriteStops = [];
   final Map<String, List<BusArrival>> _stationArrivals = {};
@@ -53,6 +58,7 @@ class _SearchScreenState extends State<SearchScreen> {
     _searchDebouncer.dispose();
     _searchFieldFocusNode.dispose();
     _searchResultsNotifier.dispose();
+    _routeResultsNotifier.dispose();
     super.dispose();
   }
 
@@ -138,9 +144,10 @@ class _SearchScreenState extends State<SearchScreen> {
     return _favoriteStops.any((s) => s.id == stopId);
   }
 
-  Future<void> _searchStations(String query) async {
+  Future<void> _searchAll(String query) async {
     if (query.isEmpty) {
       _searchResultsNotifier.value = [];
+      _routeResultsNotifier.value = [];
       setState(() {
         _hasSearched = false;
         _errorMessage = null;
@@ -155,14 +162,29 @@ class _SearchScreenState extends State<SearchScreen> {
     });
 
     try {
-      final results = await ApiService.searchStations(query);
-      final limitedResults = results.take(30).toList();
+      final stationFuture = widget.routesOnly
+          ? Future.value(<BusStop>[])
+          : ApiService.searchStations(query).catchError((e) {
+              debugPrint('정류장 검색 오류: $e');
+              return <BusStop>[];
+            });
+      final results = await Future.wait([
+        stationFuture,
+        ApiService.searchBusRoutes(query).catchError((e) {
+          debugPrint('노선 검색 오류: $e');
+          return <BusRoute>[];
+        }),
+      ]);
+
+      final stations = (results[0] as List<BusStop>).take(30).toList();
+      final routes = (results[1] as List<BusRoute>).take(20).toList();
 
       if (mounted) {
-        _searchResultsNotifier.value = limitedResults
+        _searchResultsNotifier.value = stations
             .map((station) =>
                 station.copyWith(isFavorite: _isStopIdFavorite(station.id)))
             .toList();
+        _routeResultsNotifier.value = routes;
         setState(() {
           _isLoading = false;
           _stationArrivals.clear();
@@ -170,14 +192,14 @@ class _SearchScreenState extends State<SearchScreen> {
         });
       }
     } catch (e) {
-      debugPrint('정류장 검색 오류: $e');
+      debugPrint('통합 검색 오류: $e');
       if (mounted) {
         setState(() {
-          _errorMessage = '정류장 검색 중 오류가 발생했습니다';
+          _errorMessage = '검색 중 오류가 발생했습니다';
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('정류장 검색 중 오류가 발생했습니다')),
+          const SnackBar(content: Text('검색 중 오류가 발생했습니다')),
         );
       }
     }
@@ -245,147 +267,51 @@ class _SearchScreenState extends State<SearchScreen> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-        title: Text(
-          '정류장 검색',
-          style: TextStyle(color: colorScheme.onSurface),
-        ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
-          onPressed: () {
-            // 즐겨찾기 변경 사항을 호출자에게 알리기 위해 favoriteStops를 반환
-            Navigator.of(context).pop(_favoriteStops);
-          },
-        ),
-        elevation: 0,
-        surfaceTintColor: colorScheme.surfaceTint,
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: Focus(
-              onFocusChange: (hasFocus) => setState(() {}),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                height: 52,
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(28),
-                  border: FocusScope.of(context).hasFocus
-                      ? Border.all(
-                          color: colorScheme.primary.withValues(alpha: 0.8),
-                          width: 2,
-                        )
-                      : null,
-                  boxShadow: [
-                    BoxShadow(
-                      color: colorScheme.shadow.withValues(alpha: 0.05),
-                      blurRadius: FocusScope.of(context).hasFocus ? 4 : 2,
-                      offset: const Offset(0, 1),
-                    ),
-                    if (FocusScope.of(context).hasFocus)
-                      BoxShadow(
-                        color: colorScheme.primary.withValues(alpha: 0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(28), // Force clip to rounded shape
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFieldFocusNode,
-                    autofocus: true,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: colorScheme.onSurface,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                    decoration: InputDecoration(
-                      filled: true, // Must be filled
-                      fillColor: colorScheme.surfaceContainerHighest, // Match container
-                      hintText: '정류장 이름을 입력하세요',
-                      hintStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontSize: 16,
-                            fontWeight: FontWeight.normal,
-                          ),
-                      prefixIcon: Padding(
-                        padding: const EdgeInsets.only(left: 20, right: 12),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 200),
-                          child: Icon(
-                            Icons.search_rounded,
-                            key: ValueKey(FocusScope.of(context).hasFocus),
-                            color: FocusScope.of(context).hasFocus
-                                ? colorScheme.primary
-                                : colorScheme.onSurfaceVariant,
-                            size: 24,
-                          ),
-                        ),
-                      ),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: Material(
-                                color: Colors.transparent,
-                                borderRadius: BorderRadius.circular(20),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(20),
-                                  onTap: () {
-                                    _searchController.clear();
-                                    _searchStations('');
-                                  },
-                                  child: Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: BoxDecoration(
-                                      color: colorScheme.surfaceContainerHigh,
-                                      borderRadius: BorderRadius.circular(18),
-                                    ),
-                                    child: Icon(
-                                      Icons.clear_rounded,
-                                      size: 18,
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            )
-                          : null,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      errorBorder: InputBorder.none,
-                      focusedErrorBorder: InputBorder.none,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 0,
-                        vertical: 16,
-                      ),
-                    ),
-                    maxLines: 1,
-                    inputFormatters: [FilteringTextInputFormatter.singleLineFormatter],
-                    textInputAction: TextInputAction.search,
-                    onChanged: (value) {
-                      _searchDebouncer(() => _searchStations(value));
-                    },
-                    onSubmitted: (value) {
-                      _searchDebouncer.callNow(() => _searchStations(value));
-                      // 엔터키 눌렀을 때 키보드 숨기기
-                      FocusScope.of(context).unfocus();
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
+                    onPressed: () {
+                      Navigator.of(context).pop(_favoriteStops);
                     },
                   ),
-                ),
+                  Expanded(
+                    child: HomeSearchBarField(
+                      controller: _searchController,
+                      focusNode: _searchFieldFocusNode,
+                      hintText: widget.routesOnly
+                          ? '버스 노선 번호 검색'
+                          : '정류장 이름 또는 버스 번호',
+                      autofocus: true,
+                      onChanged: (value) {
+                        _searchDebouncer(() => _searchAll(value));
+                        setState(() {});
+                      },
+                      onSubmitted: (value) {
+                        _searchDebouncer.callNow(() => _searchAll(value));
+                        FocusScope.of(context).unfocus();
+                      },
+                      onClear: _searchController.text.isNotEmpty
+                          ? () {
+                              _searchController.clear();
+                              _searchAll('');
+                              _searchFieldFocusNode.requestFocus();
+                              setState(() {});
+                            }
+                          : null,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          Expanded(child: _buildSearchContent()),
-        ],
+            Expanded(child: _buildSearchContent()),
+          ],
+        ),
       ),
     );
   }
@@ -417,18 +343,25 @@ class _SearchScreenState extends State<SearchScreen> {
           children: [
             Icon(Icons.search, size: 48, color: colorScheme.onSurfaceVariant),
             const SizedBox(height: 12),
-            Text('정류장 이름을 입력하여 검색하세요',
+            Text(
+                widget.routesOnly
+                    ? '버스 번호를 입력하세요'
+                    : '정류장 또는 버스 번호를 입력하세요',
                 style: TextStyle(
                     fontSize: 15, color: colorScheme.onSurfaceVariant)),
             const SizedBox(height: 6),
-            Text('예: 대구역, 동대구역, 현풍시외버스터미널',
+            Text(
+                widget.routesOnly
+                    ? '예: 304, 623, 급행1'
+                    : '예: 대구역, 동대구역, 304, 623',
                 style: TextStyle(
                     fontSize: 13, color: colorScheme.onSurfaceVariant)),
           ],
         ),
       );
     }
-    if (_searchResultsNotifier.value.isEmpty) {
+    if (_searchResultsNotifier.value.isEmpty &&
+        _routeResultsNotifier.value.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -440,7 +373,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 style: TextStyle(
                     fontSize: 15, color: colorScheme.onSurfaceVariant)),
             const SizedBox(height: 6),
-            Text('다른 정류장 이름으로 검색해보세요',
+            Text('다른 검색어를 입력해보세요',
                 style: TextStyle(
                     fontSize: 13, color: colorScheme.onSurfaceVariant)),
           ],
@@ -450,84 +383,301 @@ class _SearchScreenState extends State<SearchScreen> {
     return _buildSearchResults();
   }
 
-  Widget _buildSearchResults() {
+  Widget _buildEmptySectionNotice(String message) {
     final colorScheme = Theme.of(context).colorScheme;
-    return ValueListenableBuilder<List<BusStop>>(
-      valueListenable: _searchResultsNotifier,
-      builder: (context, searchResults, _) {
-        // 상위 10개만 prefetch — 나머지는 사용자가 탭했을 때 로드됨
-        const prefetchLimit = 10;
-        final prefetchCount = searchResults.length < prefetchLimit
-            ? searchResults.length
-            : prefetchLimit;
-        for (var i = 0; i < prefetchCount; i++) {
-          final station = searchResults[i];
-          if (!_stationArrivals.containsKey(station.id) &&
-              !_loadingArrivals.contains(station.id)) {
-            _loadingArrivals.add(station.id);
-            _loadStationArrivals(station).whenComplete(() {
-              _loadingArrivals.remove(station.id);
-            });
-          }
-        }
-        return CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final station = searchResults[index];
-                    final isSelected = _selectedStation?.id == station.id;
-                    final hasArrivalInfo =
-                        _stationArrivals.containsKey(station.id);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline,
+              size: 14, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text(
+            message,
+            style: TextStyle(
+              fontSize: 12,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                    return Column(
-                      children: [
-                        _StationItemWrapper(
-                          station: station,
-                          isSelected: isSelected,
-                          arrivals: _stationArrivals[station.id],
-                          onSelect: () {
-                            Navigator.of(context).pop(station);
-                          },
-                          onFavoriteToggle: () => _toggleFavorite(station),
-                        ),
-                        if (isSelected &&
-                            hasArrivalInfo &&
-                            _stationArrivals[station.id]!.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                                left: 16, top: 8, bottom: 16),
-                            child: Column(
-                              children: _stationArrivals[station.id]!
-                                  .take(3)
-                                  .map((arrival) => UnifiedBusDetailWidget(
-                                        busArrival: arrival,
-                                        stationId:
-                                            station.stationId ?? station.id,
-                                        stationName: station.name,
-                                        isCompact: true,
-                                        onTap: () => showUnifiedBusDetailModal(
-                                          context,
-                                          arrival,
-                                          station.stationId ?? station.id,
-                                          station.name,
-                                        ),
-                                      ))
-                                  .toList(),
-                            ),
-                          ),
-                        if (index < searchResults.length - 1)
-                          Divider(color: colorScheme.outline.withAlpha(20)),
-                      ],
-                    );
-                  },
-                  childCount: searchResults.length,
-                ),
+  Widget _buildSectionHeader(String label, int count) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: colorScheme.primary,
+                letterSpacing: -0.2,
+              ),
+            ),
+            TextSpan(
+              text: ' ($count)',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Color _routeColor(BusRoute route, ColorScheme colorScheme, Brightness b) {
+    switch (route.getRouteType()) {
+      case BusRouteType.express:
+        return b == Brightness.dark
+            ? const Color(0xFFFF6B6B)
+            : const Color(0xFFE53E3E);
+      case BusRouteType.seat:
+        return b == Brightness.dark
+            ? const Color(0xFF4DABF7)
+            : const Color(0xFF2B6CB0);
+      default:
+        return b == Brightness.dark
+            ? const Color(0xFF51CF66)
+            : const Color(0xFF38A169);
+    }
+  }
+
+  String _routeTypeLabel(BusRoute route) {
+    switch (route.getRouteType()) {
+      case BusRouteType.express:
+        return '급행';
+      case BusRouteType.seat:
+        return '좌석';
+      default:
+        return '일반';
+    }
+  }
+
+  String _routeSubtitle(BusRoute route) {
+    final hasStart = route.startPoint.trim().isNotEmpty;
+    final hasEnd = route.endPoint.trim().isNotEmpty;
+    if (hasStart && hasEnd) return '${route.startPoint} ↔ ${route.endPoint}';
+    final desc = route.routeDescription?.trim() ?? '';
+    if (desc.isNotEmpty && desc != route.routeNo) return desc;
+    return '';
+  }
+
+  Widget _buildRouteTile(BusRoute route) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final badgeColor = _routeColor(route, colorScheme, theme.brightness);
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RouteMapScreen(initialRoute: route),
+          ),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: badgeColor,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    route.routeNo,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        '${route.routeNo}번',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: badgeColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          _routeTypeLabel(route),
+                          style: TextStyle(
+                            color: badgeColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_routeSubtitle(route).isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      _routeSubtitle(route),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right,
+                color: colorScheme.onSurfaceVariant, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ValueListenableBuilder<List<BusRoute>>(
+      valueListenable: _routeResultsNotifier,
+      builder: (context, routes, _) {
+        return ValueListenableBuilder<List<BusStop>>(
+          valueListenable: _searchResultsNotifier,
+          builder: (context, stations, __) {
+            // 정류장 상위 10개만 도착정보 prefetch
+            const prefetchLimit = 10;
+            final prefetchCount =
+                stations.length < prefetchLimit ? stations.length : prefetchLimit;
+            for (var i = 0; i < prefetchCount; i++) {
+              final station = stations[i];
+              if (!_stationArrivals.containsKey(station.id) &&
+                  !_loadingArrivals.contains(station.id)) {
+                _loadingArrivals.add(station.id);
+                _loadStationArrivals(station).whenComplete(() {
+                  _loadingArrivals.remove(station.id);
+                });
+              }
+            }
+
+            return CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      if (routes.isNotEmpty) ...[
+                        _buildSectionHeader('버스 노선', routes.length),
+                        ...routes.map(_buildRouteTile).expand((w) => [
+                              w,
+                              Divider(
+                                  color: colorScheme.outline.withAlpha(20),
+                                  height: 1),
+                            ]),
+                      ] else if (stations.isNotEmpty && !widget.routesOnly)
+                        _buildEmptySectionNotice('해당하는 버스 노선이 없습니다'),
+                      if (!widget.routesOnly) ...[
+                        if (stations.isNotEmpty)
+                          _buildSectionHeader('정류장', stations.length)
+                        else if (routes.isNotEmpty)
+                          _buildEmptySectionNotice('해당하는 정류장이 없습니다'),
+                      ],
+                    ]),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final station = stations[index];
+                        final isSelected = _selectedStation?.id == station.id;
+                        final hasArrivalInfo =
+                            _stationArrivals.containsKey(station.id);
+
+                        return Column(
+                          children: [
+                            _StationItemWrapper(
+                              station: station,
+                              isSelected: isSelected,
+                              arrivals: _stationArrivals[station.id],
+                              onSelect: () {
+                                Navigator.of(context).pop(station);
+                              },
+                              onFavoriteToggle: () => _toggleFavorite(station),
+                            ),
+                            if (isSelected &&
+                                hasArrivalInfo &&
+                                _stationArrivals[station.id]!.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                    left: 16, top: 8, bottom: 16),
+                                child: Column(
+                                  children: _stationArrivals[station.id]!
+                                      .take(3)
+                                      .map((arrival) => UnifiedBusDetailWidget(
+                                            busArrival: arrival,
+                                            stationId: station.stationId ??
+                                                station.id,
+                                            stationName: station.name,
+                                            isCompact: true,
+                                            onTap: () =>
+                                                showUnifiedBusDetailModal(
+                                              context,
+                                              arrival,
+                                              station.stationId ?? station.id,
+                                              station.name,
+                                            ),
+                                          ))
+                                      .toList(),
+                                ),
+                              ),
+                            if (index < stations.length - 1)
+                              Divider(color: colorScheme.outline.withAlpha(20)),
+                          ],
+                        );
+                      },
+                      childCount: stations.length,
+                    ),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+              ],
+            );
+          },
         );
       },
     );

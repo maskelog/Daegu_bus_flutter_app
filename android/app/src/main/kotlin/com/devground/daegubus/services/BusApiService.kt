@@ -419,6 +419,23 @@ class BusApiService(private val context: Context) {
         }
     }
 
+    private fun buildRouteDescription(
+        avgTm: String,
+        comNm: String,
+        firstTm: String,
+        lastTm: String,
+        tripCount: String
+    ): String {
+        // 구분자 " | " 사용 (avgTm, comNm 내부에 쉼표가 포함될 수 있음)
+        val parts = mutableListOf<String>()
+        if (avgTm.isNotEmpty() && avgTm != "정보 없음") parts.add("배차간격: $avgTm")
+        if (comNm.isNotEmpty() && comNm != "정보 없음") parts.add("업체: $comNm")
+        if (firstTm.isNotEmpty()) parts.add("첫차: $firstTm")
+        if (lastTm.isNotEmpty()) parts.add("막차: $lastTm")
+        if (tripCount.isNotEmpty()) parts.add("운행횟수: $tripCount")
+        return parts.joinToString(" | ")
+    }
+
     // JSON 노선 정보 파싱
     private fun parseJsonRouteInfo(jsonStr: String, routeId: String): BusRoute? {
         try {
@@ -435,7 +452,13 @@ class BusApiService(private val context: Context) {
                 routeTp = body.optString("routeTp", ""),
                 startPoint = body.optString("stNm", "출발지 정보 없음"),
                 endPoint = body.optString("edNm", "도착지 정보 없음"),
-                routeDescription = "배차간격: ${body.optString("avgTm", "정보 없음")}, 업체: ${body.optString("comNm", "정보 없음")}"
+                routeDescription = buildRouteDescription(
+                    avgTm = body.optString("avgTm", ""),
+                    comNm = body.optString("comNm", ""),
+                    firstTm = body.optString("bsFtm", body.optString("frTm", "")),
+                    lastTm = body.optString("bsLtm", body.optString("toTm", "")),
+                    tripCount = body.optString("nCnt", "")
+                )
             )
         } catch (e: Exception) {
             Log.e(TAG, "JSON 노선 정보 파싱 오류: ${e.message}", e)
@@ -462,7 +485,13 @@ class BusApiService(private val context: Context) {
                     routeTp = bodyElement.select("routeTp").text(),
                     startPoint = bodyElement.select("stNm").text(),
                     endPoint = bodyElement.select("edNm").text(),
-                    routeDescription = "배차간격: ${bodyElement.select("avgTm").text()}, 업체: ${bodyElement.select("comNm").text()}"
+                    routeDescription = buildRouteDescription(
+                        avgTm = bodyElement.select("avgTm").text(),
+                        comNm = bodyElement.select("comNm").text(),
+                        firstTm = bodyElement.select("bsFtm").text().ifEmpty { bodyElement.select("frTm").text() },
+                        lastTm = bodyElement.select("bsLtm").text().ifEmpty { bodyElement.select("toTm").text() },
+                        tripCount = bodyElement.select("nCnt").text()
+                    )
                 )
             } else {
                 null
