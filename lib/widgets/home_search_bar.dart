@@ -4,12 +4,14 @@ import 'package:flutter/services.dart';
 class HomeSearchBar extends StatelessWidget {
   final VoidCallback onSearchTap;
   final VoidCallback onSettingsTap;
+  final VoidCallback onFavoritesEditTap;
   final String hintText;
 
   const HomeSearchBar({
     super.key,
     required this.onSearchTap,
     required this.onSettingsTap,
+    required this.onFavoritesEditTap,
     required this.hintText,
   });
 
@@ -18,6 +20,79 @@ class HomeSearchBar extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Row(
       children: [
+        Semantics(
+          label: '메뉴',
+          hint: '설정 및 즐겨찾기 편집',
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Color.fromRGBO(0, 0, 0, 0.08),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: PopupMenuButton<String>(
+              tooltip: '메뉴',
+              offset: const Offset(0, 56),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              color: colorScheme.surfaceContainerHigh,
+              onSelected: (value) {
+                switch (value) {
+                  case 'favorites':
+                    onFavoritesEditTap();
+                    break;
+                  case 'settings':
+                    onSettingsTap();
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'favorites',
+                  child: Row(
+                    children: [
+                      Icon(Icons.star_rounded,
+                          size: 22, color: colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 12),
+                      const Text('즐겨찾기 편집'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'settings',
+                  child: Row(
+                    children: [
+                      Icon(Icons.settings_rounded,
+                          size: 22, color: colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 12),
+                      const Text('설정'),
+                    ],
+                  ),
+                ),
+              ],
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colorScheme.surfaceContainerHigh,
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.menu_rounded,
+                  color: colorScheme.onSurfaceVariant,
+                  size: 22,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
         Expanded(
           child: Semantics(
             label: hintText,
@@ -43,37 +118,6 @@ class HomeSearchBar extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Semantics(
-          label: '설정',
-          hint: '설정화면으로 이동',
-          child: Container(
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Color.fromRGBO(0, 0, 0, 0.08),
-                  blurRadius: 8,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            child: FilledButton(
-              onPressed: onSettingsTap,
-              style: FilledButton.styleFrom(
-                shape: const CircleBorder(),
-                padding: const EdgeInsets.all(14),
-                backgroundColor: colorScheme.surfaceContainerHigh,
-                elevation: 0,
-              ),
-              child: Icon(
-                Icons.settings_rounded,
-                color: colorScheme.onSurfaceVariant,
-                size: 22,
               ),
             ),
           ),
@@ -174,6 +218,111 @@ class SingleLineFormatter extends TextInputFormatter {
     return TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+}
+
+/// 홈/검색/노선도 화면에서 공통으로 사용하는 원형 아이콘 버튼.
+/// 햄버거 / 뒤로가기 / 지도 등 헤더 액션에 통일된 디자인을 제공합니다.
+class HeaderCircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+  final String? semanticLabel;
+  final String? semanticHint;
+
+  const HeaderCircleButton({
+    super.key,
+    required this.icon,
+    required this.onPressed,
+    this.semanticLabel,
+    this.semanticHint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final button = Container(
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Color.fromRGBO(0, 0, 0, 0.08),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: colorScheme.surfaceContainerHigh,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onPressed,
+          child: SizedBox(
+            width: 50,
+            height: 50,
+            child: Center(
+              child: Icon(
+                icon,
+                color: colorScheme.onSurfaceVariant,
+                size: 22,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (semanticLabel == null) return button;
+    return Semantics(label: semanticLabel, hint: semanticHint, child: button);
+  }
+}
+
+/// 검색바와 동일한 pill 모양의 읽기 전용 타이틀 표시.
+class HeaderTitlePill extends StatelessWidget {
+  final String title;
+  final IconData? leadingIcon;
+
+  const HeaderTitlePill({
+    super.key,
+    required this.title,
+    this.leadingIcon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return _HomeSearchBarShell(
+      child: Row(
+        children: [
+          if (leadingIcon != null) ...[
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                leadingIcon,
+                color: colorScheme.onPrimaryContainer,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+          ],
+          Expanded(
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                  ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

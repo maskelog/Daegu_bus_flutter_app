@@ -3,12 +3,18 @@ import '../models/bus_arrival.dart';
 import '../models/bus_route.dart';
 import '../models/route_station.dart';
 import '../services/api_service.dart';
+import '../widgets/home_search_bar.dart';
 import 'map_screen.dart';
 
 class RouteMapScreen extends StatefulWidget {
   final BusRoute? initialRoute;
+  final bool showHeader;
 
-  const RouteMapScreen({super.key, this.initialRoute});
+  const RouteMapScreen({
+    super.key,
+    this.initialRoute,
+    this.showHeader = true,
+  });
 
   @override
   State<RouteMapScreen> createState() => _RouteMapScreenState();
@@ -107,44 +113,54 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      appBar: _selectedRoute != null
-          ? AppBar(
-              backgroundColor: colorScheme.surface,
-              foregroundColor: colorScheme.onSurface,
-              title: Text(
-                '${_selectedRoute!.routeNo}번 버스',
-                style: TextStyle(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              actions: [
-                if (_routeStations.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.map),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => MapScreen(
-                            routeId: _selectedRoute!.id,
-                            routeStations: _routeStations,
-                          ),
-                        ),
-                      );
-                    },
-                    tooltip: '지도에서 보기',
-                  ),
-              ],
-              elevation: 0,
-              surfaceTintColor: colorScheme.surfaceTint,
-            )
-          : null,
-      body: Column(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
         children: [
+          if (widget.showHeader)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  HeaderCircleButton(
+                    icon: Icons.arrow_back_rounded,
+                    semanticLabel: '뒤로가기',
+                    semanticHint: '이전 화면으로 이동',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: HeaderTitlePill(
+                      leadingIcon: Icons.directions_bus_rounded,
+                      title: _selectedRoute != null
+                          ? '${_selectedRoute!.routeNo}번 버스'
+                          : '버스 노선',
+                    ),
+                  ),
+                  if (_selectedRoute != null && _routeStations.isNotEmpty) ...[
+                    const SizedBox(width: 10),
+                    HeaderCircleButton(
+                      icon: Icons.map_rounded,
+                      semanticLabel: '지도',
+                      semanticHint: '지도에서 보기',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => MapScreen(
+                              routeId: _selectedRoute!.id,
+                              routeStations: _routeStations,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
           if (_isLoading && _selectedRoute == null)
             const LinearProgressIndicator(minHeight: 2),
-          const SizedBox(height: 8),
           if (_errorMessage != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -178,6 +194,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                   ),
           ),
         ],
+        ),
       ),
     );
   }

@@ -208,6 +208,12 @@ class AppColorScheme {
 class AppTheme {
   static ThemeData lightTheme = ThemeData(
     useMaterial3: true,
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.iOS: FadeForwardsPageTransitionsBuilder(),
+      },
+    ),
     colorScheme: AppColorScheme.lightColorScheme,
 
     // Material 3 Expressive Typography - More pronounced, larger display styles

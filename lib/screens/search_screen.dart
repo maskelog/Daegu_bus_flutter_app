@@ -271,15 +271,18 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
                 children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back, color: colorScheme.onSurface),
+                  HeaderCircleButton(
+                    icon: Icons.arrow_back_rounded,
+                    semanticLabel: '뒤로가기',
+                    semanticHint: '이전 화면으로 이동',
                     onPressed: () {
                       Navigator.of(context).pop(_favoriteStops);
                     },
                   ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: HomeSearchBarField(
                       controller: _searchController,

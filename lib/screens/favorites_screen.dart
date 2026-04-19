@@ -255,8 +255,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           id: current.stationId,
           name: current.stationName,
           stationId: current.stationId,
-          lat: 0,
-          lng: 0,
+          latitude: 0,
+          longitude: 0,
         );
         _showEditRoutePicker(stop: currentStop, arrivals: arrivals, index: index);
       } catch (e) {

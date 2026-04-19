@@ -18,6 +18,7 @@ import 'search_screen.dart';
 import 'package:provider/provider.dart';
 import '../services/alarm_service.dart';
 import 'settings_screen.dart';
+import 'favorites_screen.dart';
 import '../models/auto_alarm.dart';
 import '../models/bus_route.dart';
 import '../widgets/station_loading_widget.dart';
@@ -486,6 +487,23 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   );
                 },
+                onFavoritesEditTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => FavoritesScreen(
+                        favoriteBuses: _favoriteBuses,
+                        onFavoritesUpdated: (updated) {
+                          if (!mounted) return;
+                          setState(() {
+                            _favoriteBuses = updated;
+                          });
+                        },
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
             Expanded(
@@ -699,7 +717,11 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildMapTab() {
-    return const SafeArea(top: true, bottom: false, child: RouteMapScreen());
+    return const SafeArea(
+      top: true,
+      bottom: false,
+      child: RouteMapScreen(showHeader: false),
+    );
   }
 
   Widget _buildMapScreen() {
