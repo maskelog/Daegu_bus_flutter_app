@@ -170,6 +170,7 @@ android/app/.cxx
 
 .metadata
 .env
+.env.json
 
 # 추가: 프로젝트 특화 ignore 항목
 *.stackdump
