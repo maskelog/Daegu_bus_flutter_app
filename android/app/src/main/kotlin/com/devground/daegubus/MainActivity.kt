@@ -6,6 +6,7 @@ import android.Manifest
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
+import androidx.core.view.WindowCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -1890,14 +1891,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
-            // Window 플래그 설정 (ViewRootImpl 오류 방지)
-            window?.let { window ->
-                window.statusBarColor = android.graphics.Color.TRANSPARENT
-                window.navigationBarColor = android.graphics.Color.TRANSPARENT
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    window.setDecorFitsSystemWindows(false)
-                }
-            }
+            // Edge-to-edge 설정 (모든 API 레벨 지원)
+            WindowCompat.setDecorFitsSystemWindows(window, false)
 
             super.onCreate(savedInstanceState)
 

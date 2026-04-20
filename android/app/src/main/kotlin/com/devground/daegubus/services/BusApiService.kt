@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.Strictness
+import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -50,34 +52,34 @@ interface BusInfoApi {
 
 // 모델: 버스 도착 정보 응답
 data class BusArrivalResponse(
-    val header: Header,
-    val body: Body
+    @SerializedName("header") val header: Header,
+    @SerializedName("body") val body: Body
 ) {
     data class Header(
-        val success: Boolean,
-        val resultCode: String,
-        val resultMsg: String
+        @SerializedName("success") val success: Boolean,
+        @SerializedName("resultCode") val resultCode: String,
+        @SerializedName("resultMsg") val resultMsg: String
     )
     data class Body(
-        val block: Boolean,
-        val list: List<RouteInfo>?
+        @SerializedName("block") val block: Boolean,
+        @SerializedName("list") val list: List<RouteInfo>?
     ) {
         data class RouteInfo(
-            val routeNo: String,
-            val arrList: List<ArrivalInfo>?
+            @SerializedName("routeNo") val routeNo: String,
+            @SerializedName("arrList") val arrList: List<ArrivalInfo>?
         ) {
             data class ArrivalInfo(
-                val routeId: String,
-                val routeNo: String,
-                val moveDir: String?,
-                val bsGap: Int,
-                val bsNm: String?,
-                val vhcNo2: String,
-                val busTCd2: String,
-                val busTCd3: String,
-                val busAreaCd: String,
-                val arrState: String?,
-                val prevBsGap: Int
+                @SerializedName("routeId") val routeId: String,
+                @SerializedName("routeNo") val routeNo: String,
+                @SerializedName("moveDir") val moveDir: String?,
+                @SerializedName("bsGap") val bsGap: Int,
+                @SerializedName("bsNm") val bsNm: String?,
+                @SerializedName("vhcNo2") val vhcNo2: String,
+                @SerializedName("busTCd2") val busTCd2: String,
+                @SerializedName("busTCd3") val busTCd3: String,
+                @SerializedName("busAreaCd") val busAreaCd: String,
+                @SerializedName("arrState") val arrState: String?,
+                @SerializedName("prevBsGap") val prevBsGap: Int
             )
         }
     }
@@ -85,27 +87,27 @@ data class BusArrivalResponse(
 
 // 모델: 클라이언트 응답용 도착 정보
 data class StationArrivalOutput(
-    val name: String,
-    val sub: String,
-    val id: String,
-    val forward: String?,
-    val bus: List<BusInfo>
+    @SerializedName("name") val name: String,
+    @SerializedName("sub") val sub: String,
+    @SerializedName("id") val id: String,
+    @SerializedName("forward") val forward: String?,
+    @SerializedName("bus") val bus: List<BusInfo>
 ) {
     data class BusInfo(
-        val busNumber: String,
-        val currentStation: String,
-        val remainingStations: String,
-        val estimatedTime: String
+        @SerializedName("busNumber") val busNumber: String,
+        @SerializedName("currentStation") val currentStation: String,
+        @SerializedName("remainingStations") val remainingStations: String,
+        @SerializedName("estimatedTime") val estimatedTime: String
     )
 }
 
 data class BusRoute(
-    val id: String,
-    val routeNo: String,
-    val routeTp: String,
-    val startPoint: String,
-    val endPoint: String,
-    val routeDescription: String?
+    @SerializedName("id") val id: String,
+    @SerializedName("routeNo") val routeNo: String,
+    @SerializedName("routeTp") val routeTp: String,
+    @SerializedName("startPoint") val startPoint: String,
+    @SerializedName("endPoint") val endPoint: String,
+    @SerializedName("routeDescription") val routeDescription: String?
 )
 
 data class RouteStation(
@@ -116,19 +118,19 @@ data class RouteStation(
 )
 
 data class BusInfo(
-    val busNumber: String,
-    val currentStation: String,
-    val remainingStops: String,
-    val estimatedTime: String,
-    val isLowFloor: Boolean = false,
-    val isOutOfService: Boolean = false
+    @SerializedName("busNumber") val busNumber: String,
+    @SerializedName("currentStation") val currentStation: String,
+    @SerializedName("remainingStops") val remainingStops: String,
+    @SerializedName("estimatedTime") val estimatedTime: String,
+    @SerializedName("isLowFloor") val isLowFloor: Boolean = false,
+    @SerializedName("isOutOfService") val isOutOfService: Boolean = false
 )
 
 data class BusArrivalInfo(
-    val routeId: String,
-    val routeNo: String,
-    val destination: String,
-    val buses: List<BusInfo>
+    @SerializedName("routeId") val routeId: String,
+    @SerializedName("routeNo") val routeNo: String,
+    @SerializedName("destination") val destination: String,
+    @SerializedName("buses") val buses: List<BusInfo>
 )
 
 class BusApiService(private val context: Context) {
@@ -138,7 +140,7 @@ class BusApiService(private val context: Context) {
         private const val SEARCH_URL = "https://businfo.daegu.go.kr/ba/route/rtbsarr.do"
     }
 
-    private val gson: Gson = GsonBuilder().setLenient().create()
+    private val gson: Gson = GsonBuilder().setStrictness(Strictness.LENIENT).create()
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)

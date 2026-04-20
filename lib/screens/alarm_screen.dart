@@ -567,8 +567,12 @@ class _AlarmScreenState extends State<AlarmScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    const floatingNavHeight = 68.0;
-    const floatingNavBottom = 24.0;
+    // 네비 바 높이: 아이콘(24) + 간격(2) + 텍스트 + 내부 패딩(18) + 컨테이너 패딩(10)
+    // 텍스트 접근성 스케일 반영
+    final textScaler = MediaQuery.textScalerOf(context);
+    final scaledNavLabel = textScaler.scale(12.0); // 선택된 탭 레이블 최대 크기
+    final floatingNavHeight = 24.0 + 2.0 + scaledNavLabel + 18.0 + 10.0;
+    const floatingNavBottom = 58.0; // bannerHeight(50) + gap(8) from home_screen
     final bottomInset = MediaQuery.of(context).padding.bottom;
     final toolbarBottom = floatingNavHeight + floatingNavBottom + bottomInset;
 

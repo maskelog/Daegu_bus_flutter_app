@@ -633,6 +633,7 @@ void _setupMethodChannelHandlers() {
 /// 애플리케이션 시작점
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   configureAppLogging();
   await _loadRuntimeConfig();
   if (dotenv.env['ADMOB_APP_ID']?.isNotEmpty == true) {
@@ -785,14 +786,14 @@ class MyApp extends StatelessWidget {
             final overlayStyle = isDarkMode
                 ? SystemUiOverlayStyle.light.copyWith(
                     statusBarColor: Colors.transparent,
-                    systemNavigationBarColor: AppColorScheme.backgroundDark,
+                    systemNavigationBarColor: Colors.transparent,
                     systemNavigationBarIconBrightness: Brightness.light,
                     statusBarIconBrightness: Brightness.light,
                     statusBarBrightness: Brightness.dark,
                   )
                 : SystemUiOverlayStyle.dark.copyWith(
                     statusBarColor: Colors.transparent,
-                    systemNavigationBarColor: AppColorScheme.backgroundLight,
+                    systemNavigationBarColor: Colors.transparent,
                     systemNavigationBarIconBrightness: Brightness.dark,
                     statusBarIconBrightness: Brightness.dark,
                     statusBarBrightness: Brightness.light,

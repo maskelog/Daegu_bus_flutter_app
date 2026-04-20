@@ -19,26 +19,17 @@
 
 # JSON 및 파싱 관련 클래스
 -keep class org.json.** { *; }
--keep class com.google.gson.** { *; }
+# com.google.gson: v2.11.0+ 자체 consumer rules 포함 + 모든 data class에 @SerializedName 적용 → 수동 규칙 불필요
 -keep class org.jsoup.** { *; }
 
 # 네트워크 라이브러리
--keep class okhttp3.** { *; }
--keep class retrofit2.** { *; }
--keep class okio.** { *; }
+# okhttp3, retrofit2, okio: v2.9.0+/4.x 이상 자체 consumer rules 포함 → 수동 규칙 불필요
 
 # 노티피케이션 관련 클래스
--keep class androidx.core.app.** { *; }
+# androidx.core.app: AndroidX 자체 consumer rules 포함 → 수동 규칙 불필요
 
 # Kotlin 관련 규칙
--keep class kotlin.** { *; }
--keep class kotlinx.** { *; }
--keepclassmembers class **$WhenMappings {
-    <fields>;
-}
--keepclassmembers class kotlin.Metadata {
-    public <methods>;
-}
+# kotlin.**, kotlinx.**: 자체 consumer rules 포함 → 수동 규칙 불필요
 
 # Enums 클래스 보존
 -keepclassmembers enum * {
@@ -47,9 +38,8 @@
 }
 
 # 안드로이드 컴포넌트
--keep public class * extends android.app.Activity
--keep public class * extends android.app.Service
--keep public class * extends android.content.BroadcastReceiver
+# Activity, Service, BroadcastReceiver: AndroidManifest.xml에 선언된 컴포넌트는
+# AAPT2가 자동으로 keep → 수동 규칙 불필요
 
 # Window Extensions 관련 클래스 (오류 해결)
 -dontwarn androidx.window.extensions.**

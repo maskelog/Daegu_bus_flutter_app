@@ -1722,7 +1722,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 remainingMinutes >= 0 && remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES
             alertOnArrivalOnly -> {
                 val stops = busInfo.remainingStops.toIntOrNull() ?: 99
-                remainingMinutes >= 0 && (stops < 3 || remainingMinutes <= 3)
+                // "전"/"도착"/"출발" 같은 상태 문자열이 remainingMinutes=0으로 잘못 매핑되는 것을 방지
+                // 시간 기반 조건은 실제 분 단위 데이터("N분", "곧 도착")에만 적용
+                val isTimeBasedClose = busInfo.estimatedTime == "곧 도착" ||
+                    (busInfo.estimatedTime.contains("분") && remainingMinutes in 0..3)
+                stops < 3 || isTimeBasedClose
             }
             else ->
                 // 토글 OFF: 설정된 알람 시각 이후부터 버스 정보가 있으면 발화 (TrackingInfo별 독립 시각)

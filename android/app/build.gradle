@@ -137,7 +137,7 @@ dependencies {
     implementation 'com.squareup.okhttp3:logging-interceptor:4.10.0'
     
     // JSON 처리
-    implementation 'com.google.code.gson:gson:2.9.1'
+    implementation 'com.google.code.gson:gson:2.11.0'
     
     // HTML 파싱
     implementation 'org.jsoup:jsoup:1.15.3'
