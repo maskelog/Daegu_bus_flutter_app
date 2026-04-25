@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -1891,8 +1892,17 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
-            // Edge-to-edge 설정 (모든 API 레벨 지원)
+            // Edge-to-edge: Flutter 앱은 FlutterActivity → android.app.Activity 상속으로
+            // ComponentActivity 확장함수인 enableEdgeToEdge() 불가.
+            // WindowCompat + WindowInsetsControllerCompat 으로 동등하게 처리.
             WindowCompat.setDecorFitsSystemWindows(window, false)
+            val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+            insetsController.isAppearanceLightStatusBars = false
+            insetsController.isAppearanceLightNavigationBars = false
+            // Android 10+: 내비게이션 바 컨트라스트 강제 적용 해제
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = false
+            }
 
             super.onCreate(savedInstanceState)
 

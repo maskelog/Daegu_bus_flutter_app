@@ -160,8 +160,9 @@ dependencies {
     // Multidex 지원 추가 (필요한 경우)
     implementation 'androidx.multidex:multidex:2.0.1'
 
-    // Material Design
-    implementation 'com.google.android.material:material:1.11.0'
+    // Material Design (1.12.0: edge-to-edge 완전 지원, deprecated setStatusBarColor 제거)
+    implementation 'com.google.android.material:material:1.12.0'
+
 }
 
 flutter {

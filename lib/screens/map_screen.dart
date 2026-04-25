@@ -72,6 +72,8 @@ class _MapScreenState extends State<MapScreen> {
   List<RouteStation> _routeStations = [];
   Timer? _busPositionTimer;
   Timer? _searchThrottleTimer;
+  Timer? _kakaoInitFallbackTimer;
+  bool _kakaoSdkLoaded = false;
   final Debouncer _mapSearchDebouncer = Debouncer(delay: const Duration(milliseconds: 350));
   final Map<String, Future<List<BusStop>>> _nearbyInFlight = {};
   final Map<String, _TimedCacheEntry<List<BusStop>>> _nearbyCache = {};
@@ -353,13 +355,34 @@ class _MapScreenState extends State<MapScreen> {
       _mapReady = true;
     });
 
-    // 지도 초기화
-    _initializeKakaoMap();
-
     // 하단 인셋 적용 (축적도/저작권이 광고+네브바 뒤에 가려지지 않도록)
     if (widget.bottomInset > 0) {
       _webViewController.runJavaScript('adjustMapInset(${widget.bottomInset});');
     }
+
+    // Kakao SDK onload(mapLoaded)가 오면 _onKakaoSdkLoaded()에서 initMap을 호출한다.
+    // 5초 안에 mapLoaded가 수신되지 않으면 fallback으로 직접 호출 (네트워크 지연 대비).
+    _kakaoInitFallbackTimer?.cancel();
+    _kakaoInitFallbackTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && !_kakaoSdkLoaded) {
+        debugPrint('[kakaoFallback] mapLoaded 미수신 → fallback initMap 실행');
+        _onKakaoSdkLoaded();
+      }
+    });
+
+    // 노선 ID가 있으면 실시간 버스 위치 추적 시작
+    if (widget.routeId != null) {
+      _startBusPositionTracking();
+    }
+  }
+
+  // Kakao SDK 로드 완료(mapLoaded) 또는 fallback 타이머에서 호출
+  void _onKakaoSdkLoaded() {
+    if (_kakaoSdkLoaded) return;
+    _kakaoSdkLoaded = true;
+    _kakaoInitFallbackTimer?.cancel();
+
+    _initializeKakaoMap();
 
     _searchThrottleTimer?.cancel();
     _searchThrottleTimer = Timer(const Duration(milliseconds: 1000), () {
@@ -368,11 +391,6 @@ class _MapScreenState extends State<MapScreen> {
       _addMarkers();
       _scheduleNearbySearch(visibleOnly: false, isAuto: true);
     });
-
-    // 노선 ID가 있으면 실시간 버스 위치 추적 시작
-    if (widget.routeId != null) {
-      _startBusPositionTracking();
-    }
   }
 
   void _initializeKakaoMap() {
@@ -666,6 +684,7 @@ class _MapScreenState extends State<MapScreen> {
         case 'mapReady':
         case 'mapLoaded':
           debugPrint('지도 준비 완료');
+          if (_mapReady) _onKakaoSdkLoaded();
           break;
         case 'zoomChanged':
           final lvl = eventData['level'];
@@ -1437,6 +1456,7 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _busPositionTimer?.cancel();
     _searchThrottleTimer?.cancel();
+    _kakaoInitFallbackTimer?.cancel();
     _mapSearchDebouncer.dispose();
     super.dispose();
   }
