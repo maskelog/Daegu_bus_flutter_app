@@ -346,7 +346,12 @@ class _MapScreenState extends State<MapScreen> {
       );
 
     debugPrint('[$webTrace] HTML 콘텐츠 로드 중...');
-    _webViewController.loadHtmlString(_htmlContent!);
+    // baseUrl 설정: null origin(data: URL) 대신 localhost로 로드하여
+    // 카카오 개발자 콘솔에 등록된 도메인(http://localhost)과 일치시킴
+    _webViewController.loadHtmlString(
+      _htmlContent!,
+      baseUrl: 'http://localhost',
+    );
   }
 
   void _onMapReady() {
@@ -355,10 +360,8 @@ class _MapScreenState extends State<MapScreen> {
       _mapReady = true;
     });
 
-    // 하단 인셋 적용 (축적도/저작권이 광고+네브바 뒤에 가려지지 않도록)
-    if (widget.bottomInset > 0) {
-      _webViewController.runJavaScript('adjustMapInset(${widget.bottomInset});');
-    }
+    // adjustMapInset은 map 객체 생성 후(mapReady 이벤트)에 호출해야 relayout()이 동작한다.
+    // 여기서는 map이 없으므로 호출하지 않는다.
 
     // Kakao SDK onload(mapLoaded)가 오면 _onKakaoSdkLoaded()에서 initMap을 호출한다.
     // 5초 안에 mapLoaded가 수신되지 않으면 fallback으로 직접 호출 (네트워크 지연 대비).
@@ -681,10 +684,19 @@ class _MapScreenState extends State<MapScreen> {
       debugPrint('웹뷰 메시지 수신: $type, 데이터: $eventData');
 
       switch (type) {
-        case 'mapReady':
         case 'mapLoaded':
-          debugPrint('지도 준비 완료');
+          debugPrint('카카오 SDK 로드 완료');
           if (_mapReady) _onKakaoSdkLoaded();
+          break;
+        case 'mapReady':
+          debugPrint('지도 초기화 완료 → relayout 및 인셋 적용');
+          // map 객체가 생성된 시점이므로 adjustMapInset(relayout 포함) 또는 relayout 단독 호출
+          if (widget.bottomInset > 0) {
+            _webViewController.runJavaScript(
+                'adjustMapInset(${widget.bottomInset});');
+          } else {
+            _webViewController.runJavaScript('if(map) map.relayout();');
+          }
           break;
         case 'zoomChanged':
           final lvl = eventData['level'];

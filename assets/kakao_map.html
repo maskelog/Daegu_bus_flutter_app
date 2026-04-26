@@ -447,6 +447,9 @@
                 };
                 map = new kakao.maps.Map(container, options);
 
+                // 생성 직후 WebView 레이아웃이 확정되면 relayout 하여 초기 타일 렌더링 보장
+                setTimeout(function () { if (map) map.relayout(); }, 150);
+
                 // 지도 리사이즈/레벨 변경 시 마커 렌더 보정을 위해 리레이아웃 호출
                 kakao.maps.event.addListener(map, 'zoom_changed', function () {
                     map.relayout();
@@ -826,8 +829,14 @@
         window.adjustMapInset = function(bottomPx) {
             var mapDiv = document.getElementById('map');
             if (mapDiv) {
-                mapDiv.style.height = 'calc(100% - ' + bottomPx + 'px)';
-                if (map) map.relayout();
+                // CSS calc(100%) 가 WebView 에서 0 으로 계산되는 케이스 방지 → 실제 뷰포트 높이 사용
+                var h = (window.innerHeight || document.documentElement.clientHeight) - (bottomPx || 0);
+                mapDiv.style.height = (h > 0 ? h : 0) + 'px';
+                if (map) {
+                    map.relayout();
+                    // 레이아웃 변경 후 타일이 다시 로드될 시간 확보
+                    setTimeout(function () { if (map) map.relayout(); }, 300);
+                }
             }
         };
         window.addBusMarker = addBusMarker;
