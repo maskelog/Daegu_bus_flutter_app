@@ -59,137 +59,42 @@ class MapScreen extends StatefulWidget {
 
   @override
   State<MapScreen> createState() => _MapScreenState();
-}
 
-class _MapScreenState extends State<MapScreen> {
-  static const Duration _nearbyCacheTtl = Duration(seconds: 90);
-  static const Duration _stationInfoCacheTtl = Duration(seconds: 45);
-  static const Duration _stationInfoRefreshGap = Duration(seconds: 8);
+  static Future<String>? _kakaoMapHtmlFuture;
+  static String? _cachedKakaoMapHtml;
+  static String? _cachedKakaoMapKey;
 
-  late WebViewController _webViewController;
-  Position? _currentPosition;
-  List<BusStop> _nearbyStations = [];
-  List<RouteStation> _routeStations = [];
-  Timer? _busPositionTimer;
-  Timer? _searchThrottleTimer;
-  Timer? _kakaoInitFallbackTimer;
-  bool _kakaoSdkLoaded = false;
-  final Debouncer _mapSearchDebouncer = Debouncer(delay: const Duration(milliseconds: 350));
-  final Map<String, Future<List<BusStop>>> _nearbyInFlight = {};
-  final Map<String, _TimedCacheEntry<List<BusStop>>> _nearbyCache = {};
-  final Map<String, Future<List<BusArrival>>> _stationInfoInFlight = {};
-  final Map<String, _TimedCacheEntry<List<BusArrival>>> _stationInfoCache = {};
-  final Map<String, String?> _stationIdCache = {};
-  final Map<String, DateTime> _stationInfoLastRequestedAt = {};
-  int _nearbyRequestSequence = 0;
-  int _manualNearbyRequestSequence = 0;
-  int _manualNearbyRequestPendingId = 0;
-  int _stationInfoRequestSequence = 0;
-  bool _isLoading = true;
-  bool _mapReady = false;
-  bool _locationMarkerPlaced = false;
-  String? _errorMessage;
-  String? _htmlContent;
-  String? _lastMapTraceId;
-  double? _lastClickedLat;
-  double? _lastClickedLng;
-  double? _lastCenterLat;
-  double? _lastCenterLng;
-  double? _lastMpp; // Meters Per Pixel
-  static const List<double> _defaultMapFallbackRadii = [
-    500.0,
-    1000.0,
-    2000.0,
-    4000.0,
-    8000.0,
-    20000.0,
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    debugPrint('[mapInit] MapScreen initState');
-    _initializeMap();
+  static Future<void> preloadKakaoMapHtml() async {
+    await _loadKakaoMapHtml();
   }
 
-  Future<void> _initializeMap() async {
-    final initTrace = 'map_init_${DateTime.now().millisecondsSinceEpoch}';
-    debugPrint('[$initTrace] 지도 화면 초기화 시작');
-    try {
-      // HTML 템플릿 로드
-      await _loadHtmlTemplate();
-      debugPrint('[$initTrace] HTML 템플릿 로드 완료');
-
-      // 현재 위치 가져오기
-      _currentPosition = await _getCurrentPosition();
-      debugPrint(
-        '[$initTrace] 현재 위치 획득: ${_currentPosition?.latitude}, ${_currentPosition?.longitude}',
-      );
-
-      // 노선 정류장이 전달된 경우 사용
-      if (widget.routeStations != null) {
-        _routeStations = widget.routeStations!;
-      }
-
-      // 홈화면에서 전달받은 주변 정류장이 있으면 사용
-      debugPrint(
-          '지도 화면 초기화 - initialNearbyStations: ${widget.initialNearbyStations?.length ?? 0}개');
-      if (widget.initialNearbyStations != null &&
-          widget.initialNearbyStations!.isNotEmpty) {
-        _nearbyStations = widget.initialNearbyStations!;
-        debugPrint('홈화면에서 전달받은 주변 정류장: ${_nearbyStations.length}개');
-        for (final station in _nearbyStations) {
-          debugPrint(
-              '  - ${station.name} (${station.latitude}, ${station.longitude})');
-        }
-      } else {
-        debugPrint('홈화면에서 주변 정류장 정보를 받지 못했습니다. 직접 검색을 시작합니다.');
-        // 주변 정류장 검색
-        await _loadNearbyStations();
-      }
-
-      // WebView 초기화
-      _initializeWebView();
-      debugPrint('[$initTrace] WebView 초기화 호출 완료');
-
-      setState(() {
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('[$initTrace] 지도 화면 초기화 실패: $e');
-      setState(() {
-        _errorMessage = '지도 초기화 중 오류가 발생했습니다: $e';
-        _isLoading = false;
-      });
+  static Future<String> _loadKakaoMapHtml() {
+    final kakaoApiKey = _resolveKakaoApiKey();
+    if (kakaoApiKey == null || kakaoApiKey.isEmpty) {
+      return Future.error(Exception('KAKAO_JS_API_KEY가 설정되지 않았습니다.'));
     }
-  }
-
-  Future<void> _loadHtmlTemplate() async {
-    try {
-      final String htmlTemplate =
-          await rootBundle.loadString('assets/kakao_map.html');
-
-      final String? kakaoApiKey = _resolveKakaoApiKey();
-
-      if (kakaoApiKey == null || kakaoApiKey.isEmpty) {
-        throw Exception('KAKAO_JS_API_KEY가 설정되지 않았습니다.');
-      }
-
-      if (!_looksLikeKakaoJsApiKey(kakaoApiKey)) {
-        throw Exception('KAKAO_JS_API_KEY 형식이 유효하지 않습니다.');
-      }
-
-      _htmlContent = htmlTemplate.replaceAll('YOUR_KAKAO_API_KEY', kakaoApiKey);
-      debugPrint(
-        '[kakaoKey] Kakao JS API 키 치환 완료 (${kakaoApiKey.length}자)',
-      );
-    } catch (e) {
-      debugPrint('HTML 템플릿 로드 오류: $e');
-      throw Exception('HTML 템플릿을 로드할 수 없습니다: $e');
+    if (!_looksLikeKakaoJsApiKey(kakaoApiKey)) {
+      return Future.error(Exception('KAKAO_JS_API_KEY 형식이 유효하지 않습니다.'));
     }
+
+    if (_cachedKakaoMapHtml != null && _cachedKakaoMapKey == kakaoApiKey) {
+      return Future.value(_cachedKakaoMapHtml!);
+    }
+
+    return _kakaoMapHtmlFuture ??= rootBundle
+        .loadString('assets/kakao_map.html')
+        .then((htmlTemplate) {
+      final html = htmlTemplate.replaceAll('YOUR_KAKAO_API_KEY', kakaoApiKey);
+      _cachedKakaoMapHtml = html;
+      _cachedKakaoMapKey = kakaoApiKey;
+      debugPrint('[kakaoKey] Kakao 지도 HTML 캐시 완료 (${kakaoApiKey.length}자)');
+      return html;
+    }).whenComplete(() {
+      _kakaoMapHtmlFuture = null;
+    });
   }
 
-  String? _resolveKakaoApiKey() {
+  static String? _resolveKakaoApiKey() {
     final fromDotEnv = dotenv.env['KAKAO_JS_API_KEY']?.trim();
     if (fromDotEnv != null && fromDotEnv.isNotEmpty) {
       if (_looksLikeKakaoJsApiKey(fromDotEnv)) {
@@ -223,6 +128,199 @@ class _MapScreenState extends State<MapScreen> {
 
     return null;
   }
+}
+
+class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+  static const double _defaultMapLat = 35.8714;
+  static const double _defaultMapLng = 128.6014;
+  static const Duration _nearbyCacheTtl = Duration(seconds: 90);
+  static const Duration _stationInfoCacheTtl = Duration(seconds: 45);
+  static const Duration _stationInfoRefreshGap = Duration(seconds: 8);
+
+  late WebViewController _webViewController;
+  Position? _currentPosition;
+  List<BusStop> _nearbyStations = [];
+  List<RouteStation> _routeStations = [];
+  Timer? _busPositionTimer;
+  Timer? _searchThrottleTimer;
+  Timer? _kakaoInitFallbackTimer;
+  bool _kakaoSdkLoaded = false;
+  final Debouncer _mapSearchDebouncer = Debouncer(delay: const Duration(milliseconds: 350));
+  final Map<String, Future<List<BusStop>>> _nearbyInFlight = {};
+  final Map<String, _TimedCacheEntry<List<BusStop>>> _nearbyCache = {};
+  final Map<String, Future<List<BusArrival>>> _stationInfoInFlight = {};
+  final Map<String, _TimedCacheEntry<List<BusArrival>>> _stationInfoCache = {};
+  final Map<String, String?> _stationIdCache = {};
+  final Map<String, DateTime> _stationInfoLastRequestedAt = {};
+  int _nearbyRequestSequence = 0;
+  int _manualNearbyRequestSequence = 0;
+  int _manualNearbyRequestPendingId = 0;
+  int _stationInfoRequestSequence = 0;
+  bool _isLoading = true;
+  bool _mapReady = false;
+  bool _gpsReady = false;
+  bool _mapInitialized = false;
+  bool _initializedWithFallbackPosition = false;
+  bool _hasUserInteractedWithMap = false;
+  bool _locationMarkerPlaced = false;
+  String? _errorMessage;
+  String? _htmlContent;
+  String? _lastMapTraceId;
+  double? _lastClickedLat;
+  double? _lastClickedLng;
+  double? _lastCenterLat;
+  double? _lastCenterLng;
+  double? _lastMpp; // Meters Per Pixel
+  static const List<double> _defaultMapFallbackRadii = [
+    500.0,
+    1000.0,
+    2000.0,
+    4000.0,
+    8000.0,
+    20000.0,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    debugPrint('[mapInit] MapScreen initState');
+    _initializeMap();
+  }
+
+  @override
+  void didUpdateWidget(covariant MapScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final incomingStations = widget.initialNearbyStations;
+    if (incomingStations == null || incomingStations.isEmpty) return;
+    if (identical(incomingStations, oldWidget.initialNearbyStations)) return;
+
+    setState(() {
+      _nearbyStations = incomingStations;
+    });
+    if (_mapInitialized) {
+      _addMarkers();
+    }
+  }
+
+  Future<void> _initializeMap() async {
+    final initTrace = 'map_init_${DateTime.now().millisecondsSinceEpoch}';
+    debugPrint('[$initTrace] 지도 화면 초기화 시작');
+    try {
+      // 1. HTML 로드 (assets, 빠름)
+      await _loadHtmlTemplate();
+      debugPrint('[$initTrace] HTML 템플릿 로드 완료');
+
+      // 2. WebView 즉시 시작 → Kakao SDK 다운로드가 GPS 취득과 병렬로 진행됨
+      _initializeWebView();
+      setState(() { _isLoading = false; });
+      debugPrint('[$initTrace] WebView 시작 - GPS 병렬 취득 시작');
+
+      // 3. 노선 정류장 처리 (동기)
+      if (widget.routeStations != null) {
+        _routeStations = widget.routeStations!;
+      }
+      if (widget.initialNearbyStations != null &&
+          widget.initialNearbyStations!.isNotEmpty) {
+        _nearbyStations = widget.initialNearbyStations!;
+        debugPrint('[$initTrace] 홈화면 주변 정류장 ${_nearbyStations.length}개 사용');
+      }
+
+      // 4. 마지막 위치만 빠르게 읽고, 지도 초기화는 GPS 실시간 취득을 기다리지 않음
+      _currentPosition = await _getLastKnownPosition();
+      if (_currentPosition != null) {
+        debugPrint('[$initTrace] 마지막 위치 사용: ${_currentPosition?.latitude}, ${_currentPosition?.longitude}');
+      } else {
+        debugPrint('[$initTrace] 마지막 위치 없음 - 대구 기본 좌표로 먼저 지도 표시');
+      }
+
+      // 5. 좌표 준비 완료 → SDK도 준비됐으면 즉시 initMap
+      _gpsReady = true;
+      if (mounted) setState(() {}); // 위치 버튼 표시
+      _tryInitializeKakaoMap();
+      unawaited(_refreshCurrentPosition(initTrace));
+    } catch (e) {
+      debugPrint('[$initTrace] 지도 화면 초기화 실패: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage = '지도 초기화 중 오류가 발생했습니다: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<Position?> _getLastKnownPosition() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null;
+
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return null;
+      }
+
+      return await Geolocator.getLastKnownPosition();
+    } catch (e) {
+      debugPrint('마지막 위치 조회 실패: $e');
+      return null;
+    }
+  }
+
+  Future<void> _refreshCurrentPosition(String initTrace) async {
+    try {
+      final position = await _getCurrentPosition();
+      if (!mounted) return;
+
+      final previous = _currentPosition;
+      final hasMeaningfulChange = previous == null ||
+          Geolocator.distanceBetween(
+                previous.latitude,
+                previous.longitude,
+                position.latitude,
+                position.longitude,
+              ) >
+              20;
+
+      if (!hasMeaningfulChange) return;
+
+      setState(() => _currentPosition = position);
+      debugPrint('[$initTrace] 현재 GPS 위치 갱신: ${position.latitude}, ${position.longitude}');
+
+      if (!_mapReady) return;
+
+      _locationMarkerPlaced = false;
+      _addMarkers();
+
+      if (_mapInitialized &&
+          (_initializedWithFallbackPosition || !_hasUserInteractedWithMap)) {
+        _webViewController.runJavaScript(
+          'moveToLocation(${position.latitude}, ${position.longitude}, 3);',
+        );
+        _initializedWithFallbackPosition = false;
+      }
+
+      _scheduleNearbySearch(
+        lat: position.latitude,
+        lng: position.longitude,
+        visibleOnly: false,
+        isAuto: true,
+      );
+    } catch (e) {
+      debugPrint('[$initTrace] 현재 GPS 위치 갱신 실패: $e');
+    }
+  }
+
+  Future<void> _loadHtmlTemplate() async {
+    try {
+      _htmlContent = await MapScreen._loadKakaoMapHtml();
+    } catch (e) {
+      debugPrint('HTML 템플릿 로드 오류: $e');
+      throw Exception('HTML 템플릿을 로드할 수 없습니다: $e');
+    }
+  }
 
 
   Future<Position> _getCurrentPosition() async {
@@ -243,7 +341,12 @@ class _MapScreenState extends State<MapScreen> {
       throw Exception('위치 권한이 영구적으로 거부되었습니다.');
     }
 
-    return await Geolocator.getCurrentPosition();
+    return await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.low,
+        timeLimit: Duration(seconds: 6),
+      ),
+    ).timeout(const Duration(seconds: 6));
   }
 
   Future<void> _loadNearbyStations() async {
@@ -266,12 +369,19 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       body: Stack(
         children: [
           _buildBody(),
-          // 오른쪽 하단에 버튼들 배치
-          if (_currentPosition != null)
+          // 지도 초기화 전 로딩 오버레이 (흰 화면 방지)
+          if (!_isLoading && !_mapInitialized && _errorMessage == null)
+            const ColoredBox(
+              color: Colors.white,
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          // 지도 초기화 완료 후 버튼 표시
+          if (_mapInitialized && _currentPosition != null)
             MapFloatingButtons(
               onSearchNearby: _searchNearbyStations,
               onMoveToCurrent: _moveToCurrentLocation,
@@ -356,27 +466,22 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onMapReady() {
     debugPrint('지도 준비 완료 이벤트 수신');
-    setState(() {
-      _mapReady = true;
-    });
+    setState(() { _mapReady = true; });
 
-    // adjustMapInset은 map 객체 생성 후(mapReady 이벤트)에 호출해야 relayout()이 동작한다.
-    // 여기서는 map이 없으므로 호출하지 않는다.
-
-    // Kakao SDK onload(mapLoaded)가 오면 _onKakaoSdkLoaded()에서 initMap을 호출한다.
-    // 5초 안에 mapLoaded가 수신되지 않으면 fallback으로 직접 호출 (네트워크 지연 대비).
     _kakaoInitFallbackTimer?.cancel();
-    _kakaoInitFallbackTimer = Timer(const Duration(seconds: 5), () {
+    _kakaoInitFallbackTimer = Timer(const Duration(milliseconds: 1200), () {
       if (mounted && !_kakaoSdkLoaded) {
         debugPrint('[kakaoFallback] mapLoaded 미수신 → fallback initMap 실행');
         _onKakaoSdkLoaded();
       }
     });
 
-    // 노선 ID가 있으면 실시간 버스 위치 추적 시작
     if (widget.routeId != null) {
       _startBusPositionTracking();
     }
+
+    // DOM 준비 → GPS+SDK 둘 다 ready면 즉시 initMap
+    _tryInitializeKakaoMap();
   }
 
   // Kakao SDK 로드 완료(mapLoaded) 또는 fallback 타이머에서 호출
@@ -384,6 +489,14 @@ class _MapScreenState extends State<MapScreen> {
     if (_kakaoSdkLoaded) return;
     _kakaoSdkLoaded = true;
     _kakaoInitFallbackTimer?.cancel();
+
+    // GPS도 준비됐으면 즉시 initMap, 아직이면 GPS 완료 시 _tryInitializeKakaoMap에서 처리
+    _tryInitializeKakaoMap();
+  }
+
+  // 좌표 기준 + SDK + DOM 세 조건 모두 충족 시 initMap 실행
+  void _tryInitializeKakaoMap() {
+    if (!_mapReady || !_kakaoSdkLoaded || !_gpsReady) return;
 
     _initializeKakaoMap();
 
@@ -399,10 +512,14 @@ class _MapScreenState extends State<MapScreen> {
   void _initializeKakaoMap() {
     if (!_mapReady) return;
 
-    final lat = _currentPosition?.latitude ?? 35.8714;
-    final lng = _currentPosition?.longitude ?? 128.6014;
+    if (_mapInitialized) return;
+
+    final lat = _currentPosition?.latitude ?? _defaultMapLat;
+    final lng = _currentPosition?.longitude ?? _defaultMapLng;
+    _initializedWithFallbackPosition = _currentPosition == null;
 
     _webViewController.runJavaScript('initMap($lat, $lng, 3);');
+    if (mounted) setState(() { _mapInitialized = true; });
   }
 
   void _scheduleNearbySearch({
@@ -738,6 +855,7 @@ class _MapScreenState extends State<MapScreen> {
           });
           break;
         case 'mapClick':
+          _hasUserInteractedWithMap = true;
           final rawTraceId = eventData['traceId'];
           final source = eventData['source']?.toString() ?? 'unknown';
           final traceId = rawTraceId is String && rawTraceId.trim().isNotEmpty
@@ -1143,6 +1261,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void _moveToCurrentLocation() {
     if (_mapReady && _currentPosition != null) {
+      _hasUserInteractedWithMap = true;
       _webViewController.runJavaScript(
           'moveToLocation(${_currentPosition!.latitude}, ${_currentPosition!.longitude}, 3);');
     }

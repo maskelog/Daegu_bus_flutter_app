@@ -83,6 +83,11 @@ class _HomeScreenState extends State<HomeScreen>
     alarmService.initialize();
     alarmService.addListener(_onAlarmChanged);
     _initializeData();
+    unawaited(
+      MapScreen.preloadKakaoMapHtml().catchError((Object e, StackTrace st) {
+        debugPrint('Kakao 지도 HTML 사전 로드 실패: $e');
+      }),
+    );
     _checkMapPermission();
     _loadBannerAd();
   }
@@ -509,15 +514,17 @@ class _HomeScreenState extends State<HomeScreen>
             Expanded(
               child: Stack(
                 children: [
-                  TabBarView(
-                    controller: _tabController,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      _buildMapScreen(),
-                      _buildMapTab(),
-                      _buildHomeTab(),
-                      _buildAlarmTab(),
-                    ],
+                  AnimatedBuilder(
+                    animation: _tabController,
+                    builder: (context, _) => IndexedStack(
+                      index: _tabController.index,
+                      children: [
+                        _buildMapScreen(),
+                        _buildMapTab(),
+                        _buildHomeTab(),
+                        _buildAlarmTab(),
+                      ],
+                    ),
                   ),
                   Positioned(
                     left: 0,
@@ -731,7 +738,10 @@ class _HomeScreenState extends State<HomeScreen>
     if (_mapPermissionGranted) {
       // 광고(50) + 갭(8) + 네브바 높이(icon24+text12+spacing2+padding18+container10 = 66) = 124
       const double mapBottomInset = 124.0;
-      return const MapScreen(bottomInset: mapBottomInset);
+      return MapScreen(
+        bottomInset: mapBottomInset,
+        initialNearbyStations: _nearbyStops,
+      );
     }
     return _buildMapRestrictedView();
   }
