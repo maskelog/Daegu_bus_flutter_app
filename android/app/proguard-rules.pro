@@ -53,11 +53,10 @@
 # 속성 보존
 -keepattributes Exceptions,InnerClasses,Signature,Deprecated,SourceFile,LineNumberTable,*Annotation*,EnclosingMethod
 
-# 릴리스에서는 Android Log 호출을 제거해 디버그 로그가 번들에 남지 않게 한다.
+# 릴리스에서는 verbose/debug/info 로그만 제거한다.
+# Log.w(경고), Log.e(오류)는 릴리스에서도 유지하여 크래시 추적을 가능하게 한다.
 -assumenosideeffects class android.util.Log {
-    public static int d(...);
     public static int v(...);
+    public static int d(...);
     public static int i(...);
-    public static int w(...);
-    public static int e(...);
 }
