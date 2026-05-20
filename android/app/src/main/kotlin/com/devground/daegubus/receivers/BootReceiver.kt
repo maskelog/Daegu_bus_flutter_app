@@ -32,6 +32,35 @@ class BootReceiver : BroadcastReceiver() {
         }.start()
     }
 
+    private fun resolveStationId(context: Context, bsId: String): String {
+        if (bsId.startsWith("7") && bsId.length == 10) return bsId
+        try {
+            val dbFile = context.getDatabasePath("bus_stops.db")
+            if (!dbFile.exists()) {
+                Log.w(TAG, "bus_stops.db 파일 없음, 원본 stationId 사용: $bsId")
+                return bsId
+            }
+            android.database.sqlite.SQLiteDatabase.openDatabase(
+                dbFile.absolutePath, null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            ).use { db ->
+                db.rawQuery("SELECT stationId FROM bus_stops WHERE bsId = ? LIMIT 1", arrayOf(bsId)).use { c ->
+                    if (c.moveToFirst()) {
+                        val stationId = c.getString(0)
+                        if (!stationId.isNullOrBlank()) {
+                            Log.d(TAG, "✅ stationId 변환: $bsId → $stationId")
+                            return stationId
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "stationId 변환 오류 ($bsId): ${e.message}")
+        }
+        Log.w(TAG, "stationId 변환 실패, 원본 사용: $bsId")
+        return bsId
+    }
+
     private fun rescheduleAllAlarms(context: Context) {
         val flutterPrefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val alarmSet: Set<String> = flutterPrefs.getStringSet("flutter.auto_alarms", null) ?: run {
@@ -52,7 +81,8 @@ class BootReceiver : BroadcastReceiver() {
                 val busNo = obj.optString("routeNo").takeIf { it.isNotBlank() } ?: continue
                 val stationName = obj.optString("stationName").takeIf { it.isNotBlank() } ?: continue
                 val routeId = obj.optString("routeId").takeIf { it.isNotBlank() } ?: continue
-                val stationId = obj.optString("stationId").takeIf { it.isNotBlank() } ?: continue
+                val rawStationId = obj.optString("stationId").takeIf { it.isNotBlank() } ?: continue
+                val stationId = resolveStationId(context, rawStationId)
                 val hour = obj.optInt("hour", -1).takeIf { it >= 0 } ?: continue
                 val minute = obj.optInt("minute", 0)
                 val useTTS = obj.optBoolean("useTTS", true)

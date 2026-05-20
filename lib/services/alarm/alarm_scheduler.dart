@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../main.dart' show logMessage, LogLevel;
 import '../../models/auto_alarm.dart';
 import '../../services/settings_service.dart';
+import '../../utils/database_helper.dart';
 import '../../utils/simple_tts_helper.dart';
 
 class AlarmScheduler {
@@ -47,12 +48,23 @@ class AlarmScheduler {
       final bool isImmediate =
           executionDelay.isNegative || executionDelay.inSeconds <= 30;
 
+      String effectiveStationId = alarm.stationId;
+      if (effectiveStationId.length < 10 || !effectiveStationId.startsWith('7')) {
+        final dbStationId = await DatabaseHelper().getStationIdFromBsId(effectiveStationId);
+        if (dbStationId != null && dbStationId.isNotEmpty) {
+          logMessage('✅ stationId 변환: $effectiveStationId → $dbStationId');
+          effectiveStationId = dbStationId;
+        } else {
+          logMessage('⚠️ stationId 변환 실패, 원본 사용: $effectiveStationId', level: LogLevel.warning);
+        }
+      }
+
       await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
         'alarmId': uniqueAlarmId.hashCode,
         'busNo': alarm.routeNo,
         'stationName': alarm.stationName,
         'routeId': alarm.routeId,
-        'stationId': alarm.stationId,
+        'stationId': effectiveStationId,
         'useTTS': alarm.useTTS,
         'hour': scheduledTime.hour,
         'minute': scheduledTime.minute,

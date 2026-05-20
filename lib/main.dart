@@ -785,15 +785,11 @@ class MyApp extends StatelessWidget {
             };
             final overlayStyle = isDarkMode
                 ? SystemUiOverlayStyle.light.copyWith(
-                    statusBarColor: Colors.transparent,
-                    systemNavigationBarColor: Colors.transparent,
                     systemNavigationBarIconBrightness: Brightness.light,
                     statusBarIconBrightness: Brightness.light,
                     statusBarBrightness: Brightness.dark,
                   )
                 : SystemUiOverlayStyle.dark.copyWith(
-                    statusBarColor: Colors.transparent,
-                    systemNavigationBarColor: Colors.transparent,
                     systemNavigationBarIconBrightness: Brightness.dark,
                     statusBarIconBrightness: Brightness.dark,
                     statusBarBrightness: Brightness.light,

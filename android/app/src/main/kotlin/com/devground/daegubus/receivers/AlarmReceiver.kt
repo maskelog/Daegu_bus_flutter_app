@@ -56,8 +56,9 @@ class AlarmReceiver : BroadcastReceiver() {
             val scheduledTime = intent.getLongExtra("scheduledTime", 0L)
             val timeDiff = Math.abs(currentTime - scheduledTime)
 
-            // 지연이 큰 경우(> 5분) 현재 실행은 건너뛰되, 다음 알람은 반드시 재설정
-            if (scheduledTime > 0 && (currentTime - scheduledTime) > 300000L) { // 5분 = 300초
+            // 알람이 예약 시각보다 15분 이상 늦게 도착한 경우에만 건너뜀.
+            // 알람은 사용자 설정 시각 5분 전에 예약되므로 실질적으로 사용자 시각 기준 10분 초과 지연일 때 skip.
+            if (scheduledTime > 0 && (currentTime - scheduledTime) > 900000L) { // 15분 = 900초
                 Log.w(TAG, "⚠️ 알람 지연 감지 (${(currentTime - scheduledTime)/1000}초). 현재 실행 건너뛰고 다음 알람을 재설정합니다.")
                 scheduleNextAlarmImmediate(context, intent)
                 return

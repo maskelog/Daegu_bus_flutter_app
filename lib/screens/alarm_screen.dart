@@ -8,6 +8,7 @@ import '../models/bus_stop.dart';
 import '../models/auto_alarm.dart';
 import '../models/favorite_bus.dart';
 import '../services/alarm_service.dart';
+import '../services/alarm/holiday_service.dart';
 import '../services/settings_service.dart';
 import 'search_screen.dart';
 import '../main.dart' show logMessage, LogLevel;
@@ -27,6 +28,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
   late SettingsService _settingsService;
   final Set<int> _selectedAlarms = {}; // 선택된 알람 인덱스
   bool _selectionMode = false; // 선택 모드 상태
+  List<DateTime> _holidays = [];
 
   @override
   void initState() {
@@ -34,6 +36,18 @@ class _AlarmScreenState extends State<AlarmScreen> {
     _settingsService = SettingsService();
     _loadAutoAlarms();
     _initSettings();
+    _loadHolidays();
+  }
+
+  Future<void> _loadHolidays() async {
+    final now = DateTime.now();
+    final svc = HolidayService();
+    final thisMonth = await svc.fetchHolidays(now.year, now.month);
+    final next = DateTime(now.year, now.month + 1);
+    final nextMonth = await svc.fetchHolidays(next.year, next.month);
+    if (mounted) {
+      setState(() => _holidays = [...thisMonth, ...nextMonth]);
+    }
   }
 
   Future<void> _initSettings() async {
@@ -542,7 +556,9 @@ class _AlarmScreenState extends State<AlarmScreen> {
     if (!alarm.isActive) return '';
     if (alarm.repeatDays.isEmpty) return '';
     try {
-      final next = alarm.getNextAlarmTime();
+      final next = alarm.getNextAlarmTime(
+        holidays: alarm.excludeHolidays ? _holidays : null,
+      );
       if (next == null) return '';
       final weekdays = ['월', '화', '수', '목', '금', '토', '일'];
       final wd = weekdays[next.weekday - 1];
@@ -1150,7 +1166,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
           DateTime.now().millisecondsSinceEpoch.toString(),
       routeNo: _selectedRouteNo!,
       stationName: _selectedStation!.name,
-      stationId: _selectedStation!.id,
+      stationId: _selectedStation!.getEffectiveStationId(),
       routeId: _selectedRouteId!,
       hour: _hour,
       minute: _minute,

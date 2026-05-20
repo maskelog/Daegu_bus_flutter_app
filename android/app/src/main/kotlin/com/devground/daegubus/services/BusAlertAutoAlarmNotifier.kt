@@ -45,6 +45,11 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
 
             if (Build.VERSION.SDK_INT >= 36) {
                 cleanupLegacyAutoAlarmChannels(notificationManager, autoAlarmChannelId)
+            } else {
+                // 진동 있는 구 채널 삭제 (알림 업데이트 시 재진동 방지)
+                try {
+                    notificationManager.deleteNotificationChannel(BusAlertService.CHANNEL_ID_AUTO_ALARM_LEGACY_OLD)
+                } catch (_: Exception) {}
             }
 
             if (notificationManager.getNotificationChannel(autoAlarmChannelId) == null) {
@@ -56,7 +61,7 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                     description = if (Build.VERSION.SDK_INT >= 36) {
                         "자동 알람 Live Update"
                     } else {
-                        "자동 알람 (무음/진동 모드에서도 울림)"
+                        "자동 알람 알림 (업데이트 시 무음)"
                     }
                     if (Build.VERSION.SDK_INT >= 36) {
                         setSound(null, null)
@@ -66,8 +71,7 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                         setShowBadge(false)
                     } else {
                         setSound(null, null)
-                        enableVibration(true)
-                        vibrationPattern = longArrayOf(0, 500, 300, 500, 300, 500)
+                        enableVibration(false)
                         enableLights(true)
                         lightColor = 0xFF2196F3.toInt()
                         setBypassDnd(true)
@@ -89,7 +93,7 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
         notificationManager: NotificationManager,
         keepChannelId: String
     ) {
-        listOf(BusAlertService.CHANNEL_ID_AUTO_ALARM_LEGACY, "auto_alarm_live_update_v2")
+        listOf(BusAlertService.CHANNEL_ID_AUTO_ALARM_LEGACY, BusAlertService.CHANNEL_ID_AUTO_ALARM_LEGACY_OLD, "auto_alarm_live_update_v2")
             .filter { it != keepChannelId }
             .forEach { channelId ->
                 val legacyChannel = notificationManager.getNotificationChannel(channelId) ?: return@forEach

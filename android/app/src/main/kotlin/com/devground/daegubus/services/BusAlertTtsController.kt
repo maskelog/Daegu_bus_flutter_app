@@ -185,11 +185,9 @@ class BusAlertTtsController(
                 }
             }
 
-            val streamType = if (forceSpeaker) {
-                AudioManager.STREAM_ALARM
-            } else if (earphoneOnly || audioOutputMode == OUTPUT_MODE_HEADSET) {
-                AudioManager.STREAM_MUSIC
-            } else if (useSpeaker) {
+            // All auto-alarm paths (earphoneOnly, forceSpeaker, speaker) use STREAM_ALARM
+            // so the alert is audible even in vibrate mode.
+            val streamType = if (forceSpeaker || earphoneOnly || useSpeaker) {
                 AudioManager.STREAM_ALARM
             } else {
                 AudioManager.STREAM_MUSIC

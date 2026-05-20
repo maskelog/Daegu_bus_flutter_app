@@ -368,7 +368,8 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         }
 
         // TTS 파라미터 설정
-        val streamType = if (forceSpeaker) AudioManager.STREAM_ALARM else if (forceEarphone) AudioManager.STREAM_MUSIC else if (getAudioOutputMode() == OUTPUT_MODE_SPEAKER) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
+        // Auto-alarm (forceEarphone) uses STREAM_ALARM so vibrate mode doesn't silence it.
+        val streamType = if (forceSpeaker || forceEarphone || getAudioOutputMode() == OUTPUT_MODE_SPEAKER) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
         val utteranceId = "tts_${System.currentTimeMillis()}"
         val volume = getTtsVolume()
 

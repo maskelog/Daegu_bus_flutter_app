@@ -345,17 +345,19 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     val searchType = call.argument<String>("searchType") ?: "web"
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
+                            val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
                             if (searchType == "local") {
-                                val databaseHelper = DatabaseHelper.getInstance(this@MainActivity)
                                 val stations = databaseHelper.searchStations(searchText)
                                 Log.d(TAG, "로컬 정류장 검색 결과: ${stations.size}개")
                                 val jsonArray = org.json.JSONArray()
                                 stations.forEach { station ->
+                                    val wincId = station.stationId?.takeIf { it.isNotBlank() } ?: station.bsId
                                     val jsonObj = org.json.JSONObject().apply {
                                         put("id", station.bsId)
                                         put("name", station.bsNm)
                                         put("isFavorite", false)
-                                        put("wincId", station.bsId)
+                                        put("wincId", wincId)
+                                        put("stationId", wincId)
                                         put("ngisXPos", station.longitude)
                                         put("ngisYPos", station.latitude)
                                         put("routeList", org.json.JSONArray())
@@ -369,11 +371,13 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 val jsonArray = org.json.JSONArray()
                                 stations.forEach { station ->
                                     Log.d(TAG, "Station - ID: ${station.bsId}, Name: ${station.bsNm}")
+                                    val wincId = databaseHelper.getStationIdByBsId(station.bsId) ?: station.bsId
                                     val jsonObj = org.json.JSONObject().apply {
                                         put("id", station.bsId)
                                         put("name", station.bsNm)
                                         put("isFavorite", false)
-                                        put("wincId", station.bsId)
+                                        put("wincId", wincId)
+                                        put("stationId", wincId)
                                         put("ngisXPos", 0.0)
                                         put("ngisYPos", 0.0)
                                         put("routeList", org.json.JSONArray())
@@ -604,14 +608,16 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 val jsonArray = JSONArray()
                                 stations.forEach { station ->
                                     val jsonObj = JSONObject().apply {
-                                        put("id", station.stationId ?: station.bsId)
+                                        val wincId = station.stationId ?: station.bsId
+                                        put("id", wincId)
                                         put("name", station.bsNm)
                                         put("isFavorite", false)
-                                        put("wincId", station.bsId)
+                                        put("wincId", wincId)
+                                        put("stationId", wincId)
                                         put("distance", station.distance)
                                         put("ngisXPos", station.longitude)
                                         put("ngisYPos", station.latitude)
-                                        put("routeList", JSONArray()) // Fix: JSONArray instead of string
+                                        put("routeList", JSONArray())
                                     }
                                     jsonArray.put(jsonObj)
                                 }

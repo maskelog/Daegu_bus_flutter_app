@@ -213,17 +213,17 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
                 Log.d(TAG, "주변 검색 바운딩 박스: Lat($minLat ~ $maxLat), Lon($minLon ~ $maxLon), Radius=${radiusInMeters}m")
 
                 if (searchText.isEmpty() || searchText == "*" || searchText.equals("all", ignoreCase = true)) {
-                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?" to
+                    "SELECT bsId, station_id as stationId, stop_name, latitude, longitude FROM bus_stops WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?" to
                             arrayOf(minLat.toString(), maxLat.toString(), minLon.toString(), maxLon.toString())
                 } else {
-                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE (stop_name LIKE ? OR bsId LIKE ?) AND (latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?)" to
+                    "SELECT bsId, station_id as stationId, stop_name, latitude, longitude FROM bus_stops WHERE (stop_name LIKE ? OR bsId LIKE ?) AND (latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?)" to
                             arrayOf("%$searchText%", "%$searchText%", minLat.toString(), maxLat.toString(), minLon.toString(), maxLon.toString())
                 }
             } else {
                 if (searchText.isEmpty() || searchText == "*" || searchText.equals("all", ignoreCase = true)) {
-                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops LIMIT 100" to null
+                    "SELECT bsId, station_id as stationId, stop_name, latitude, longitude FROM bus_stops LIMIT 100" to null
                 } else {
-                    "SELECT bsId, stop_name, latitude, longitude FROM bus_stops WHERE stop_name LIKE ? OR bsId LIKE ?" to
+                    "SELECT bsId, station_id as stationId, stop_name, latitude, longitude FROM bus_stops WHERE stop_name LIKE ? OR bsId LIKE ?" to
                             arrayOf("%$searchText%", "%$searchText%")
                 }
             }
@@ -234,12 +234,14 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
             db.rawQuery(query, args).use { cursor ->
                 if (cursor.moveToFirst()) {
                     val bsIdIndex = cursor.getColumnIndexOrThrow("bsId")
+                    val stationIdIndex = cursor.getColumnIndex("stationId")
                     val stopNameIndex = cursor.getColumnIndexOrThrow("stop_name")
                     val latitudeIndex = cursor.getColumnIndexOrThrow("latitude")
                     val longitudeIndex = cursor.getColumnIndexOrThrow("longitude")
 
                     do {
                         val bsId = cursor.getString(bsIdIndex)
+                        val stationId = if (stationIdIndex >= 0) cursor.getString(stationIdIndex)?.takeIf { it.isNotBlank() } ?: bsId else bsId
                         val stopName = cursor.getString(stopNameIndex)
                         val lat = cursor.getDouble(latitudeIndex)
                         val lon = cursor.getDouble(longitudeIndex)
@@ -254,7 +256,7 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
                                             bsNm = stopName,
                                             latitude = lat,
                                             longitude = lon,
-                                            stationId = bsId,
+                                            stationId = stationId,
                                             distance = distance
                                         )
                                     )
@@ -267,7 +269,7 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
                                     bsNm = stopName,
                                     latitude = lat,
                                     longitude = lon,
-                                    stationId = bsId
+                                    stationId = stationId
                                 )
                             )
                         }
@@ -286,6 +288,19 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
         // readableDatabase는 헬퍼가 관리하므로 여기서 직접 닫지 않음 (또는 닫아도 되지만 보통 helper를 통해 관리함)
         Log.d(TAG, "정류장 검색 결과: ${stations.size}개")
         return@withContext stations
+    }
+
+    // bsId → stationId(wincId) 변환
+    suspend fun getStationIdByBsId(bsId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val db = readableDatabase
+            db.rawQuery("SELECT station_id FROM bus_stops WHERE bsId = ? LIMIT 1", arrayOf(bsId)).use { c ->
+                if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "getStationIdByBsId 오류 ($bsId): ${e.message}")
+            null
+        }
     }
 
     // 데이터베이스 강제 재설치

@@ -55,7 +55,7 @@
             android:textSize="18sp"
             android:textStyle="bold" />
 
-        <View
+        <Space
             android:layout_width="0dp"
             android:layout_height="0dp"
             android:layout_weight="1" />
@@ -88,7 +88,7 @@
         android:layout_marginTop="10dp">
 
         <!-- 트랙 배경 -->
-        <View
+        <FrameLayout
             android:id="@+id/track_bg"
             android:layout_width="match_parent"
             android:layout_height="4dp"

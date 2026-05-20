@@ -54,7 +54,8 @@ class BusAlertService : Service() {
         private const val CHANNEL_ID_ERROR = "bus_tracking_error"
         private const val CHANNEL_NAME_ERROR = "추적 오류 알림"
         private const val CHANNEL_BUS_ALERTS = "bus_alerts"
-        internal const val CHANNEL_ID_AUTO_ALARM_LEGACY = "auto_alarm_lightweight"
+        internal const val CHANNEL_ID_AUTO_ALARM_LEGACY = "auto_alarm_silent_v1"
+        internal const val CHANNEL_ID_AUTO_ALARM_LEGACY_OLD = "auto_alarm_lightweight"
         internal const val CHANNEL_ID_AUTO_ALARM_LIVE_UPDATE = "auto_alarm_live_update_v3"
         internal const val CHANNEL_NAME_AUTO_ALARM = "자동 알람 (경량)"
 
@@ -315,6 +316,12 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     Log.i(TAG, "onStartCommand Received: Action = ${intent?.action}, StartId=$startId")
 
     val command = parseCommand(intent)
+    if (!isServiceActive && (command is ServiceCommand.StartAutoAlarmLightweight || command is ServiceCommand.StartForegroundTracking)) {
+        // Zombie state: service is alive but marked inactive. Re-activate for alarm/tracking start.
+        // Returning without startForeground() here causes ForegroundServiceDidNotStartInTimeException.
+        Log.i(TAG, "♻️ Zombie state — re-activating for ${command::class.simpleName}")
+        isServiceActive = true
+    }
     if (!isServiceActive && !command.isStopCommand) {
         Log.w(TAG, "Service not active, ignoring command: $command")
         return START_NOT_STICKY
@@ -473,6 +480,25 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 }
             }
 
+            // startForegroundService()를 호출한 경우 5초 이내에 startForeground()를 반드시 호출해야 함
+            // stationId 해결이나 추적 시작이 비동기여서 늦어지면 ForegroundServiceDidNotStartInTimeException 발생
+            if (!isInForeground) {
+                try {
+                    val placeholder = notificationHandler.buildOngoingNotification(mapOf())
+                    if (Build.VERSION.SDK_INT >= 36) {
+                        startForeground(ONGOING_NOTIFICATION_ID, placeholder, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(ONGOING_NOTIFICATION_ID, placeholder, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    } else {
+                        startForeground(ONGOING_NOTIFICATION_ID, placeholder)
+                    }
+                    isInForeground = true
+                    Log.d(TAG, "🔔 일반 알람: 포그라운드 서비스 즉시 시작")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 일반 알람 포그라운드 서비스 시작 오류: ${e.message}", e)
+                }
+            }
+
             val busNo = command.busNo ?: ""
             val stationName = command.stationName ?: ""
             val isUpdate = action == ACTION_UPDATE_TRACKING
@@ -600,7 +626,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                     isUpdate = isUpdate,
                     notificationId = ONGOING_NOTIFICATION_ID,
                     allBusesSummary = allBusesSummary,
-                    routeId = routeId
+                    routeId = routeId,
+                    stationId = resolvedStationId  // stationId 전달하여 즉시 유효성 검사 통과
                 )
             }
             // [AUTO ALARM 실시간 정보 즉시 갱신] autoAlarmTask 등 자동알람 진입점에서 실시간 정보 즉시 fetch
@@ -628,9 +655,15 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             val stationIdText = stationId ?: ""
 
             // 이미 같은 노선 자동알람 추적 중이면 재시작 방지 (이중 트리거 차단)
+            // 단, 10초 이상 지난 경우는 새 알람으로 간주하여 기존 종료 후 재시작
             if (isAutoAlarmMode && currentAutoAlarmRouteId == routeIdText && routeIdText.isNotBlank()) {
-                Log.w(TAG, "⚠️ 자동알람 이미 추적 중: $autoAlarmBusNo ($routeIdText) - 중복 시작 무시")
-                return START_NOT_STICKY
+                val timeSinceStart = System.currentTimeMillis() - autoAlarmStartTime
+                if (timeSinceStart < 10000L) {
+                    Log.w(TAG, "⚠️ 자동알람 이미 추적 중 (${timeSinceStart}ms 전 시작) - 중복 무시")
+                    return START_NOT_STICKY
+                }
+                Log.i(TAG, "ℹ️ 새 자동알람 요청 (이전 시작 ${timeSinceStart/1000}초 전) - 기존 종료 후 재시작")
+                stopAutoAlarmLightweight()
             }
 
             // intent extras로 전달된 alertOnArrivalOnly를 인스턴스 필드에 반영
