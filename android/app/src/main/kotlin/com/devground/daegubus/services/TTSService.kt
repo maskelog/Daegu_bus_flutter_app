@@ -43,6 +43,8 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     private var autoAlarmForceEarphone = false
     private var singleExecutionMode = false
 
+    private var googleTtsFailed = false
+
     // Handler for repeating TTS announcements
     private val ttsHandler = Handler(Looper.getMainLooper())
     private val ttsRunnable = object : Runnable {
@@ -195,23 +197,30 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun initializeTTS() {
-        // Log.d(TAG, "TTS 초기화 시작")
-        tts = TextToSpeech(this, this)
+        val googleTtsPkg = "com.google.android.tts"
+        val hasGoogleTts = try {
+            packageManager.getPackageInfo(googleTtsPkg, 0)
+            true
+        } catch (e: Exception) { false }
+
+        tts = if (hasGoogleTts && !googleTtsFailed) {
+            Log.d(TAG, "🔊 Google TTS 엔진으로 초기화 시도")
+            TextToSpeech(this, this, googleTtsPkg)
+        } else {
+            Log.d(TAG, "🔊 시스템 기본 TTS 엔진으로 초기화")
+            TextToSpeech(this, this)
+        }
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            // Log.d(TAG, "TTS 초기화 성공")
-
             val result = tts?.setLanguage(Locale.KOREAN)
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 // Log.e(TAG, "한국어가 지원되지 않습니다")
             }
 
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {
-                    // Log.d(TAG, "TTS 발화 시작: $utteranceId")
-                }
+                override fun onStart(utteranceId: String?) {}
 
                 override fun onDone(utteranceId: String?) {
                     Log.d(TAG, "TTS 발화 완료: $utteranceId")
@@ -225,7 +234,15 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             isInitialized = true
             startTracking()
         } else {
-            // Log.e(TAG, "TTS 초기화 실패: $status")
+            if (!googleTtsFailed) {
+                Log.w(TAG, "⚠️ Google TTS 초기화 실패, 시스템 기본 TTS로 폴백")
+                googleTtsFailed = true
+                tts?.shutdown()
+                tts = null
+                initializeTTS()
+            } else {
+                Log.e(TAG, "❌ 시스템 기본 TTS도 초기화 실패")
+            }
         }
     }
 
