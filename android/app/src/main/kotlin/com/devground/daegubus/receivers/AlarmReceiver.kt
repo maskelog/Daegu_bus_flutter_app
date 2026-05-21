@@ -16,29 +16,36 @@ class AlarmReceiver : BroadcastReceiver() {
         Log.d(TAG, "🔔 알람 수신: $action")
 
         if (action == "com.devground.daegubus.AUTO_ALARM") {
-            // ANR 방지를 위해 비동기 처리
-            val pendingResult = goAsync()
-            Thread {
-                try {
-                    handleOptimizedAutoAlarm(context.applicationContext, intent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ 알람 처리 중 오류", e)
-                } finally {
-                    try { pendingResult.finish() } catch (_: Exception) {}
-                }
-            }.start()
-        }
-    }
-    
-    /**
-     * 배터리 최적화된 자동알람 처리
-     * - 경량화된 알림만 표시
-     * - 불필요한 Foreground Service 사용 안함
-     * - 정확한 시간에만 실행
-     */
-    private fun handleOptimizedAutoAlarm(context: Context, intent: Intent) {
-        try {
-            val alarmId = intent.getIntExtra("alarmId", 0)
+            val currentTime = System.currentTimeMillis()
+            val scheduledTime = intent.getLongExtra("scheduledTime", 0L)
+
+            // 15분 초과 지연 → 서비스 시작 없이 재설정만
+            if (scheduledTime > 0 && (currentTime - scheduledTime) > 900000L) {
+                Log.w(TAG, "⚠️ 알람 15분 초과 지연, 재설정만 수행")
+                val pendingResult = goAsync()
+                Thread {
+                    try { scheduleNextAlarmImmediate(context.applicationContext, intent) }
+                    catch (e: Exception) { Log.e(TAG, "❌ 재설정 오류", e) }
+                    finally { try { pendingResult.finish() } catch (_: Exception) {} }
+                }.start()
+                return
+            }
+
+            // 10초 초과 이른 도착 → setAlarmClock으로 재설정
+            val earlyMs = scheduledTime - currentTime
+            if (scheduledTime > 0 && earlyMs > 10000L) {
+                Log.w(TAG, "⚠️ 알람 ${earlyMs/1000}초 이른 도착, 정확한 시각으로 재설정")
+                val pendingResult = goAsync()
+                Thread {
+                    try { rescheduleForExactTime(context.applicationContext, intent, scheduledTime) }
+                    catch (e: Exception) { Log.e(TAG, "❌ 재설정 오류", e) }
+                    finally { try { pendingResult.finish() } catch (_: Exception) {} }
+                }.start()
+                return
+            }
+
+            // Android 14+: FGS 시작 허용 윈도우는 onReceive() 메인 스레드에서 가장 안전
+            // goAsync()+Thread 조합 시 Samsung OneUI에서 허용 윈도우 만료 가능성 있음
             val busNo = intent.getStringExtra("busNo") ?: return
             val stationName = intent.getStringExtra("stationName") ?: return
             val routeId = intent.getStringExtra("routeId") ?: return
@@ -49,97 +56,13 @@ class AlarmReceiver : BroadcastReceiver() {
             val hour = intent.getIntExtra("hour", -1)
             val minute = intent.getIntExtra("minute", -1)
 
-            Log.d(TAG, "🔔 배터리 최적화된 자동 알람 처리: $busNo 번 버스, $stationName")
-
-            // 현재 시간 확인 (정확한 알람 시간인지 검증)
-            val currentTime = System.currentTimeMillis()
-            val scheduledTime = intent.getLongExtra("scheduledTime", 0L)
-            val timeDiff = Math.abs(currentTime - scheduledTime)
-
-            // 알람이 예약 시각보다 15분 이상 늦게 도착한 경우에만 건너뜀.
-            // 알람은 사용자 설정 시각 5분 전에 예약되므로 실질적으로 사용자 시각 기준 10분 초과 지연일 때 skip.
-            if (scheduledTime > 0 && (currentTime - scheduledTime) > 900000L) { // 15분 = 900초
-                Log.w(TAG, "⚠️ 알람 지연 감지 (${(currentTime - scheduledTime)/1000}초). 현재 실행 건너뛰고 다음 알람을 재설정합니다.")
-                scheduleNextAlarmImmediate(context, intent)
-                return
-            }
-
-            // 예정 시간보다 이른 경우 보정
-            val earlyMs = scheduledTime - currentTime
-            if (scheduledTime > 0 && earlyMs > 1500L) {
-                val earlySec = earlyMs / 1000
-                Log.w(TAG, "⚠️ 알람이 ${earlySec}초 일찍 도착함.")
-
-                if (earlyMs <= 10000L) {
-                    // 10초 이내 이른 도착: Thread.sleep으로 대기 (재스케줄링 반복 방지)
-                    Log.d(TAG, "⏰ ${earlyMs}ms 대기 후 실행합니다.")
-                    try { Thread.sleep(earlyMs) } catch (_: InterruptedException) {}
-                } else {
-                    // 10초 초과 이른 도착: 정확한 시각으로 재스케줄링
-                    Log.w(TAG, "⏰ 정확한 시각으로 재설정합니다.")
-                    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-                    val pendingIntent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                        android.app.PendingIntent.getBroadcast(
-                            context,
-                            intent.getIntExtra("alarmId", 0),
-                            intent,
-                            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-                        )
-                    } else {
-                        android.app.PendingIntent.getBroadcast(
-                            context,
-                            intent.getIntExtra("alarmId", 0),
-                            intent,
-                            android.app.PendingIntent.FLAG_UPDATE_CURRENT
-                        )
-                    }
-
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                        alarmManager.setAlarmClock(
-                            android.app.AlarmManager.AlarmClockInfo(scheduledTime, pendingIntent),
-                            pendingIntent
-                        )
-                    } else {
-                        alarmManager.setExact(
-                            android.app.AlarmManager.RTC_WAKEUP,
-                            scheduledTime,
-                            pendingIntent
-                        )
-                    }
-                    return
-                }
-            }
-
-            // 배터리 절약을 위한 경량화된 TTS 처리
-            // BusAlertService가 시작되면 자동으로 추적을 시작하고 데이터를 받아오면 그때 TTS를 호출하므로
-            // 여기서 직접 호출할 필요가 없음. 직접 호출 시 데이터가 없어 "곧 도착"으로 오발화됨.
-            /*
-            if (useTTS) {
-                val ttsIntent = Intent(context, TTSService::class.java).apply {
-                    action = "REPEAT_TTS_ALERT"
-                    putExtra("busNo", busNo)
-                    putExtra("stationName", stationName)
-                    putExtra("routeId", routeId)
-                    putExtra("stationId", stationId)
-                    putExtra("isAutoAlarm", true)
-                    putExtra("forceSpeaker", true)
-                    putExtra("singleExecution", true) // 단일 실행 모드
-                }
-
-                // 포그라운드 알림 제거 요구사항에 따라 일반 Service로 실행
-                context.startService(ttsIntent)
-                Log.d(TAG, "✅ 경량화된 TTS 서비스 시작")
-            }
-            */
-
-            // 경량화된 알림 서비스 시작
-            val busIntent = Intent(context, BusAlertService::class.java).apply {
-                action = BusAlertService.ACTION_START_AUTO_ALARM_LIGHTWEIGHT
+            val busIntent = Intent(context.applicationContext, BusAlertService::class.java).apply {
+                this.action = BusAlertService.ACTION_START_AUTO_ALARM_LIGHTWEIGHT
                 putExtra("busNo", busNo)
                 putExtra("stationName", stationName)
                 putExtra("routeId", routeId)
                 putExtra("stationId", stationId)
-                putExtra("remainingMinutes", -1) // 초기값 -1로 설정 (데이터 없음)
+                putExtra("remainingMinutes", -1)
                 putExtra("currentStation", "")
                 putExtra("useTTS", useTTS)
                 putExtra("isCommuteAlarm", isCommuteAlarm)
@@ -148,21 +71,53 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("alarmMinute", minute)
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(busIntent)
-            } else {
-                context.startService(busIntent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(busIntent)
+                } else {
+                    context.startService(busIntent)
+                }
+                Log.d(TAG, "✅ BusAlertService 시작 요청 완료 (메인 스레드)")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ BusAlertService 시작 실패: ${e.javaClass.simpleName}: ${e.message}", e)
             }
-            Log.d(TAG, "✅ 경량화된 알림 서비스 시작")
 
-            // 다음 알람 즉시 재설정 (중요: 현재 알람 실행 후 바로 다음 알람 설정)
-            scheduleNextAlarmImmediate(context, intent)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ 배터리 최적화된 자동 알람 처리 오류", e)
+            // 다음 알람 재설정은 별도 스레드에서 처리
+            val pendingResult = goAsync()
+            Thread {
+                try { scheduleNextAlarmImmediate(context.applicationContext, intent) }
+                catch (e: Exception) { Log.e(TAG, "❌ 다음 알람 설정 오류", e) }
+                finally { try { pendingResult.finish() } catch (_: Exception) {} }
+            }.start()
         }
     }
     
+    /** 정확한 시각으로 알람 재설정 (10초 초과 이른 도착 시) */
+    private fun rescheduleForExactTime(context: Context, intent: Intent, scheduledTime: Long) {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.app.PendingIntent.getBroadcast(
+                    context, intent.getIntExtra("alarmId", 0), intent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                )
+            } else {
+                android.app.PendingIntent.getBroadcast(
+                    context, intent.getIntExtra("alarmId", 0), intent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAlarmClock(android.app.AlarmManager.AlarmClockInfo(scheduledTime, pendingIntent), pendingIntent)
+            } else {
+                alarmManager.setExact(android.app.AlarmManager.RTC_WAKEUP, scheduledTime, pendingIntent)
+            }
+            Log.d(TAG, "⏰ 정확한 시각으로 재설정: ${java.util.Date(scheduledTime)}")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 정확한 시각 재설정 오류", e)
+        }
+    }
+
     /**
      * 다음 알람 즉시 재설정 - 반복 알람의 핵심 로직
      * AlarmManager를 사용하여 다음 알람을 바로 설정

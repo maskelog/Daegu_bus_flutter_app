@@ -44,7 +44,7 @@ class BootReceiver : BroadcastReceiver() {
                 dbFile.absolutePath, null,
                 android.database.sqlite.SQLiteDatabase.OPEN_READONLY
             ).use { db ->
-                db.rawQuery("SELECT stationId FROM bus_stops WHERE bsId = ? LIMIT 1", arrayOf(bsId)).use { c ->
+                db.rawQuery("SELECT station_id FROM bus_stops WHERE bsId = ? LIMIT 1", arrayOf(bsId)).use { c ->
                     if (c.moveToFirst()) {
                         val stationId = c.getString(0)
                         if (!stationId.isNullOrBlank()) {
