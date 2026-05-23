@@ -36,6 +36,7 @@ class AutoAlarmEngine {
           repeatDays: alarm.repeatDays ?? [],
           useTTS: alarm.useTTS,
           isActive: true,
+          isCommuteAlarm: alarm.isCommuteAlarm,
         );
 
         final json = autoAlarm.toJson();
@@ -59,6 +60,7 @@ class AutoAlarmEngine {
                 '일'
               ][d - 1]).join(", ")}',
         );
+        logMessage('  - 유형: ${autoAlarm.isCommuteAlarm ? "출근(스피커)" : "퇴근(이어폰)"}');
         logMessage('  - JSON: $jsonString');
 
         return jsonString;

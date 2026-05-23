@@ -29,6 +29,9 @@ class AlarmData {
   /// 자동 알람 여부
   final bool isAutoAlarm;
 
+  /// 출근(스피커) 알람 여부. false면 퇴근(이어폰) 알람.
+  final bool isCommuteAlarm;
+
   /// 반복 요일 (자동 알람 전용)
   final List<int>? repeatDays;
 
@@ -46,6 +49,7 @@ class AlarmData {
     this.currentStation,
     this.useTTS = true,
     this.isAutoAlarm = false,
+    this.isCommuteAlarm = false,
     this.repeatDays,
   })  : _remainingMinutes = remainingMinutes,
         _lastUpdated = DateTime.now();
@@ -68,6 +72,7 @@ class AlarmData {
       currentStation: json['currentStation'],
       useTTS: json['useTTS'] ?? true,
       isAutoAlarm: json['isAutoAlarm'] ?? false,
+      isCommuteAlarm: json['isCommuteAlarm'] ?? false,
       repeatDays: json['repeatDays'] != null
           ? List<int>.from(json['repeatDays'])
           : null,
@@ -86,6 +91,7 @@ class AlarmData {
       'currentStation': currentStation,
       'useTTS': useTTS,
       'isAutoAlarm': isAutoAlarm,
+      'isCommuteAlarm': isCommuteAlarm,
       'repeatDays': repeatDays,
     };
   }
@@ -139,6 +145,7 @@ class AlarmData {
     String? currentStation,
     bool? useTTS,
     bool? isAutoAlarm,
+    bool? isCommuteAlarm,
     List<int>? repeatDays,
   }) {
     return AlarmData(
@@ -151,6 +158,7 @@ class AlarmData {
       currentStation: currentStation ?? this.currentStation,
       useTTS: useTTS ?? this.useTTS,
       isAutoAlarm: isAutoAlarm ?? this.isAutoAlarm,
+      isCommuteAlarm: isCommuteAlarm ?? this.isCommuteAlarm,
       repeatDays: repeatDays ?? this.repeatDays,
     );
   }

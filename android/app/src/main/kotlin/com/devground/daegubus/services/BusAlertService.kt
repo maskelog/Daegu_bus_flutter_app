@@ -1740,7 +1740,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                             remainingMinutes = remainingMinutes,
                             forceSpeaker = forceSpeaker,
                             currentStation = busInfo.currentStation,
-                            isAutoAlarm = trackingInfo.isAutoAlarm
+                            isAutoAlarm = trackingInfo.isAutoAlarm,
+                            isCommuteAlarm = trackingInfo.isCommuteAlarm
                         )
 
                         trackingInfo.lastNotifiedMinutes = remainingMinutes

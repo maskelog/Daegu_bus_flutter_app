@@ -510,6 +510,7 @@ class AlarmService extends ChangeNotifier {
             scheduledTime: nextAlarmTime, // 올바른 다음 알람 시간 사용
             useTTS: autoAlarm.useTTS,
             isAutoAlarm: true,
+            isCommuteAlarm: autoAlarm.isCommuteAlarm,
             repeatDays: autoAlarm.repeatDays,
           );
 
@@ -717,6 +718,7 @@ class AlarmService extends ChangeNotifier {
     String stationName,
     int remainingMinutes, {
     bool isAutoAlarm = false,
+    bool isCommuteAlarm = false,
   }) async {
     try {
       // TTS 발화
@@ -725,8 +727,9 @@ class AlarmService extends ChangeNotifier {
           busNo: busNo,
           stationName: stationName,
           remainingMinutes: remainingMinutes,
-          earphoneOnly: !isAutoAlarm, // 일반 알람은 이어폰 전용, 자동 알람은 스피커 허용
+          earphoneOnly: !isCommuteAlarm,
           isAutoAlarm: isAutoAlarm, // 🔊 자동 알람 플래그 전달
+          forceSpeaker: isCommuteAlarm,
         );
       }
 
@@ -976,6 +979,7 @@ class AlarmService extends ChangeNotifier {
         currentStation: currentStation,
         useTTS: useTTS,
         isAutoAlarm: false,
+        isCommuteAlarm: false,
       );
 
       // 알람 저장 (키는 알람의 고유 ID 문자열 사용)
@@ -1674,6 +1678,7 @@ class AlarmService extends ChangeNotifier {
           scheduledTime: scheduledTime,
           useTTS: alarm.useTTS,
           isAutoAlarm: true,
+          isCommuteAlarm: alarm.isCommuteAlarm,
           repeatDays: alarm.repeatDays, // 반복 요일 정보 포함
         );
         _alarmFacade.autoAlarmsList.add(alarmData);

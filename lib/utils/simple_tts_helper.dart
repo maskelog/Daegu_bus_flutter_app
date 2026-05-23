@@ -393,6 +393,7 @@ class SimpleTTSHelper {
     int? remainingStops,
     bool earphoneOnly = true,
     bool isAutoAlarm = false, // 자동 알람 여부 추가
+    bool forceSpeaker = false,
   }) async {
     String message;
 
@@ -405,8 +406,8 @@ class SimpleTTSHelper {
       message = "$busNo번 버스가 약 $remainingMinutes분 후 도착 예정입니다.";
     }
 
-    // 자동 알람인 경우 강제 스피커 모드로 발화
-    if (isAutoAlarm) {
+    // 출근 알람처럼 명시적으로 요청된 경우에만 강제 스피커 모드로 발화
+    if (isAutoAlarm && forceSpeaker) {
       logMessage('🔊 자동 알람 TTS 발화 (강제 스피커 모드): $message', level: LogLevel.info);
       return await speak(message, force: true, earphoneOnly: false);
     }

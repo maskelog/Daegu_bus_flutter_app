@@ -112,13 +112,18 @@ class BusAlertTtsController(
         remainingMinutes: Int = -1,
         forceSpeaker: Boolean = false,
         currentStation: String? = null,
-        isAutoAlarm: Boolean = false
+        isAutoAlarm: Boolean = false,
+        isCommuteAlarm: Boolean = forceSpeaker
     ) {
         if (!useTextToSpeech) {
             Log.d(TAG, "🔇 TTS 비활성화 → TTSService 호출 안함")
             return
         }
         val isHeadset = isHeadsetConnected()
+        if (isAutoAlarm && !isCommuteAlarm && !forceSpeaker && !isHeadset) {
+            Log.w(TAG, "퇴근 자동알람이나 이어폰이 연결되어 있지 않아 TTSService 호출 안함")
+            return
+        }
         if (!forceSpeaker && !isAutoAlarm && audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadset) {
             Log.w(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTSService 호출 안함 (audioOutputMode=$audioOutputMode, isHeadset=$isHeadset)")
             return
@@ -133,6 +138,7 @@ class BusAlertTtsController(
             putExtra("remainingMinutes", remainingMinutes)
             putExtra("currentStation", (currentStation ?: "").toString())
             putExtra("isAutoAlarm", isAutoAlarm)
+            putExtra("isCommuteAlarm", isCommuteAlarm)
             if (forceSpeaker) putExtra("forceSpeaker", true)
         }
         context.startService(ttsIntent)

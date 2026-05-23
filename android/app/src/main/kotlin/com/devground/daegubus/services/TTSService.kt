@@ -116,6 +116,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                 val customMessage = intent.getStringExtra("ttsMessage")
                 val isBackup = intent.getBooleanExtra("isBackup", false)
                 val backupNumber = intent.getIntExtra("backupNumber", 0)
+                val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", forceSpeaker)
                 singleExecutionMode = intent.getBooleanExtra("singleExecution", false)
 
                 if (isBackup) {
@@ -124,12 +125,18 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                     Log.d(TAG, "🔊 TTS 요청: $busNo 번, $stationName (자동알람: $isAutoAlarm, forceSpeaker: $forceSpeaker)")
                 }
 
-                // 자동 알람이거나 forceSpeaker인 경우 이어폰 체크 우회
+                // 자동 알람이거나 forceSpeaker인 경우 별도 정책 적용
                 if (isAutoAlarm || forceSpeaker) {
-                    Log.d(TAG, "🔊 자동 알람/강제 스피커 TTS 요청 - 이어폰 체크 우회")
+                    val isReturnAlarm = isAutoAlarm && !isCommuteAlarm
+                    if (isReturnAlarm && !isHeadsetConnected()) {
+                        Log.d(TAG, "📵 퇴근 자동알람: 이어폰 미연결 → TTSService 발화 차단")
+                        return START_STICKY
+                    }
+
+                    Log.d(TAG, "🔊 자동 알람/강제 스피커 TTS 요청 - isCommuteAlarm=$isCommuteAlarm, forceSpeaker=$forceSpeaker")
                     isAutoAlarmMode = true
-                    autoAlarmForceSpeaker = forceSpeaker
-                    autoAlarmForceEarphone = isAutoAlarm && !forceSpeaker
+                    autoAlarmForceSpeaker = forceSpeaker && isCommuteAlarm
+                    autoAlarmForceEarphone = isReturnAlarm
 
                     if (isInitialized) {
                         handleAutoAlarmTTS(customMessage)
