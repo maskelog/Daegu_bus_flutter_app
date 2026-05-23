@@ -295,8 +295,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                         Log.d(TAG, "[DEBUG] AudioDeviceInfo: type=${device.type}, productName=${device.productName}, id=${device.id}, isSink=${device.isSink}")
                         if (device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
                             device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                            // TYPE_BLUETOOTH_A2DP 제외: isBluetoothA2dpOn으로 대체
-                            // (getDevices는 스트리밍 없이 프로필 연결된 BT 기기도 포함해 false-positive 유발)
+                            device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
                             // TYPE_USB_DEVICE 제외: 충전기 등 오디오 외 USB 장치도 포함돼 false-positive 유발
                             device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                             device.type == AudioDeviceInfo.TYPE_USB_HEADSET ||

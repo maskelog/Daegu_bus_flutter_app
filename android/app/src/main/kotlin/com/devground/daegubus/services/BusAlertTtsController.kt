@@ -312,9 +312,7 @@ class BusAlertTtsController(
                     val type = device.type
                     if (type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET ||
                         type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                        // TYPE_BLUETOOTH_A2DP은 isBluetoothA2dpOn으로 대신 체크:
-                        // getDevices는 오디오 스트리밍 없이 프로필만 연결된 BT 기기도 포함해
-                        // false-positive를 유발하므로 여기서 제외
+                        type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
                         type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                         type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET
                     ) {
