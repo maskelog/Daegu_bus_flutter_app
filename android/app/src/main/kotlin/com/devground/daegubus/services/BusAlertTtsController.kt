@@ -114,6 +114,10 @@ class BusAlertTtsController(
         currentStation: String? = null,
         isAutoAlarm: Boolean = false
     ) {
+        if (!useTextToSpeech) {
+            Log.d(TAG, "🔇 TTS 비활성화 → TTSService 호출 안함")
+            return
+        }
         val isHeadset = isHeadsetConnected()
         if (!forceSpeaker && !isAutoAlarm && audioOutputMode == OUTPUT_MODE_HEADSET && !isHeadset) {
             Log.w(TAG, "이어폰 전용 모드이나 이어폰이 연결되어 있지 않아 TTSService 호출 안함 (audioOutputMode=$audioOutputMode, isHeadset=$isHeadset)")
@@ -185,9 +189,9 @@ class BusAlertTtsController(
                 }
             }
 
-            // All auto-alarm paths (earphoneOnly, forceSpeaker, speaker) use STREAM_ALARM
-            // so the alert is audible even in vibrate mode.
-            val streamType = if (forceSpeaker || earphoneOnly || useSpeaker) {
+            // 출근(forceSpeaker/useSpeaker): STREAM_ALARM → 진동 모드에서도 스피커 발화
+            // 퇴근(earphoneOnly=true, useSpeaker=false): STREAM_MUSIC → 이어폰 라우팅
+            val streamType = if (useSpeaker) {
                 AudioManager.STREAM_ALARM
             } else {
                 AudioManager.STREAM_MUSIC
@@ -222,6 +226,20 @@ class BusAlertTtsController(
                     @Suppress("DEPRECATION")
                     audioManager.isSpeakerphoneOn = true
                 }
+            } else {
+                // 퇴근 알람(이어폰 라우팅): 스피커 설정 명시적 해제
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        audioManager.clearCommunicationDevice()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "clearCommunicationDevice 실패: ${e.message}")
+                        @Suppress("DEPRECATION")
+                        audioManager.isSpeakerphoneOn = false
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    audioManager.isSpeakerphoneOn = false
+                }
             }
 
             // DND(방해 금지) 모드 확인 — forceSpeaker(출근 알람)는 우회 시도
@@ -254,8 +272,14 @@ class BusAlertTtsController(
                 if (focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                     Log.w(TAG, "🔊 Audio focus 실패했지만 출근 알람이므로 강제 발화")
                 }
+                // KEY_PARAM_STREAM은 힌트만 제공 — 일부 TTS 엔진이 무시하므로 setAudioAttributes로 라우팅 보장
+                val audioAttrs = AudioAttributes.Builder()
+                    .setUsage(if (useSpeaker) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+                ttsEngine?.setAudioAttributes(audioAttrs)
                 ttsEngine?.setOnUtteranceProgressListener(createTtsListener())
-                Log.i(TAG, "TTS 발화: $text, outputMode=$audioOutputMode, headset=${isHeadsetConnected()}, utteranceId=$utteranceId")
+                Log.i(TAG, "TTS 발화: $text, outputMode=$audioOutputMode, headset=${isHeadsetConnected()}, utteranceId=$utteranceId, useSpeaker=$useSpeaker")
                 ttsEngine?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
             } else {
                 Log.e(TAG, "🔊 Audio focus request failed ($focusResult). Speak cancelled.")
@@ -288,7 +312,9 @@ class BusAlertTtsController(
                     val type = device.type
                     if (type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET ||
                         type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                        type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                        // TYPE_BLUETOOTH_A2DP은 isBluetoothA2dpOn으로 대신 체크:
+                        // getDevices는 오디오 스트리밍 없이 프로필만 연결된 BT 기기도 포함해
+                        // false-positive를 유발하므로 여기서 제외
                         type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                         type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET
                     ) {
@@ -310,7 +336,7 @@ class BusAlertTtsController(
     private fun requestAudioFocus(useSpeaker: Boolean): Int {
         val streamType = if (useSpeaker) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val usage = if (useSpeaker) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY
+            val usage = if (useSpeaker) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_MEDIA
             val audioAttributes = AudioAttributes.Builder()
                 .setUsage(usage)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)

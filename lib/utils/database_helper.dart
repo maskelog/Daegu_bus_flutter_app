@@ -19,10 +19,14 @@ class DatabaseHelper {
     _isInitializing = true;
 
     try {
-      // ✅ sqflite_ffi 초기화 - 메인 스레드에서 실행
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-      debugPrint('✅ sqflite_ffi 초기화 완료');
+      // Android/iOS는 네이티브 SQLite 사용, 데스크탑/테스트에서만 FFI 사용
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+        debugPrint('✅ sqflite_ffi 초기화 완료 (데스크탑)');
+      } else {
+        debugPrint('✅ 네이티브 SQLite 사용 (Android/iOS)');
+      }
 
       // 백그라운드에서 데이터베이스 초기화 시작
       final db = await compute(_initDatabaseInBackground, null);
@@ -45,9 +49,11 @@ class DatabaseHelper {
   // 백그라운드에서 실행될 DB 초기화 함수
   static Future<Database> _initDatabaseInBackground(void _) async {
     try {
-      // ✅ 백그라운드에서도 databaseFactory 설정
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
+      // Android/iOS는 네이티브 SQLite 사용, 데스크탑/테스트에서만 FFI 사용
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+      }
 
       final dbPath = await getDatabasesPath();
       final path = join(dbPath, databaseName);
@@ -63,8 +69,7 @@ class DatabaseHelper {
 
       final database = await openDatabase(
         path,
-        version: 1,
-        readOnly: true, // 읽기 전용으로 열어 성능 향상
+        readOnly: true,
       );
 
       // ✅ 데이터베이스 유효성 검증
@@ -88,7 +93,7 @@ class DatabaseHelper {
         await File(path).writeAsBytes(buffer, flush: true);
         debugPrint('DB 파일 재복사 성공');
 
-        final database = await openDatabase(path, version: 1, readOnly: true);
+        final database = await openDatabase(path, readOnly: true);
         await _validateDatabase(database);
         return database;
       } catch (retryError) {
@@ -132,8 +137,8 @@ class DatabaseHelper {
     // 아직 초기화되지 않았으면 초기화 시작
     _isInitializing = true;
     try {
-      // ✅ 메인 스레드에서 sqflite_ffi 초기화
-      if (!kIsWeb) {
+      // Android/iOS는 네이티브 SQLite 사용, 데스크탑/테스트에서만 FFI 사용
+      if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
         sqfliteFfiInit();
         databaseFactory = databaseFactoryFfi;
       }
@@ -172,8 +177,7 @@ class DatabaseHelper {
       }
     }
 
-    final database =
-        await openDatabase(path, version: databaseVersion, readOnly: true);
+    final database = await openDatabase(path, readOnly: true);
     await _validateDatabase(database);
     return database;
   }

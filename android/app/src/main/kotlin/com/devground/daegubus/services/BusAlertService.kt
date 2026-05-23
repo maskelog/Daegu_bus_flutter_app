@@ -141,6 +141,7 @@ class BusAlertService : Service() {
     private lateinit var trackingManager: BusAlertTrackingManager
     private lateinit var ttsController: BusAlertTtsController
     private var useTextToSpeech: Boolean = true
+    private var useVibration: Boolean = true
     private var audioOutputMode: Int = OUTPUT_MODE_AUTO
     private var ttsVolume: Float = 1.0f
     internal var isInForeground: Boolean = false
@@ -148,6 +149,7 @@ class BusAlertService : Service() {
     // Tracking State
     private val monitoringJobs = HashMap<String, Job>()
     private val activeTrackings = HashMap<String, TrackingInfo>()
+    private val pendingAutoAlarms = HashSet<String>() // 동기 중복 방지용 (coroutine 진입 전)
     private val monitoredRoutes = HashMap<String, Triple<String, String, Job?>>()
     private val cachedBusInfo = HashMap<String, BusInfo>()
     private val arrivingSoonNotified = HashSet<String>()
@@ -226,9 +228,12 @@ class BusAlertService : Service() {
             currentAlarmSound = flutterAlarmSound ?: DEFAULT_ALARM_SOUND
             useTextToSpeech = flutterUseTts || flutterAlarmSound == "tts"
             ttsController.setUseTts(useTextToSpeech)
+            useVibration = flutterPrefs.getBoolean("flutter.vibrate", true)
 
-            audioOutputMode = flutterPrefs.getLong("flutter.speaker_mode", OUTPUT_MODE_HEADSET.toLong()).toInt()
+            audioOutputMode = getFlutterLongPref(flutterPrefs, "speaker_mode", OUTPUT_MODE_HEADSET.toLong()).toInt()
             ttsController.setAudioOutputMode(audioOutputMode)
+            applicationContext.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+                .edit().putInt("speaker_mode", audioOutputMode).apply()
 
             notificationDisplayMode = getFlutterLongPref(flutterPrefs, "notificationDisplayMode", DISPLAY_MODE_ALARMED_ONLY.toLong()).toInt()
             ttsVolume = getFlutterFloatPref(flutterPrefs, "auto_alarm_volume", 1.0f).coerceIn(0f, 1f)
@@ -658,7 +663,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             // 단, 10초 이상 지난 경우는 새 알람으로 간주하여 기존 종료 후 재시작
             if (isAutoAlarmMode && currentAutoAlarmRouteId == routeIdText && routeIdText.isNotBlank()) {
                 val timeSinceStart = System.currentTimeMillis() - autoAlarmStartTime
-                if (timeSinceStart < 10000L) {
+                if (timeSinceStart < 60000L) {
                     Log.w(TAG, "⚠️ 자동알람 이미 추적 중 (${timeSinceStart}ms 전 시작) - 중복 무시")
                     return START_NOT_STICKY
                 }
@@ -1329,18 +1334,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 } catch (_: Exception) {}
             }, 1000)
 
-            // 자동알람 모드일 때 자동알람 알림도 실시간 업데이트
-            if (isAutoAlarmMode) {
-                val busInfo = activeTrackings.values.firstOrNull()?.lastBusInfo
-                autoAlarmNotifier.updateWithData(
-                    busNo = busNo,
-                    stationName = stationName,
-                    remainingMinutes = busInfo?.getRemainingMinutes() ?: remainingMinutes,
-                    remainingStops = busInfo?.remainingStops ?: "0",
-                    currentStation = currentStationFinal,
-                    routeTCd = activeTrackings.values.firstOrNull()?.routeTCd
-                )
-            }
+            // 자동알람 모드에서도 ONGOING 알림(추적 중지)으로 통일 — 별도 알림 없음
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ 알림 ${if(isIndividualAlarm) "생성" else "업데이트"} 오류: ${e.message}", e)
@@ -1428,7 +1422,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             if (useTextToSpeech) {
                 val ttsMessage = "다음 버스, 약 ${newMinutes}분 후 도착"
-                ttsController.speakTts(ttsMessage)
+                val isReturnAlarm = trackingInfo.isAutoAlarm && !trackingInfo.isCommuteAlarm
+                ttsController.speakTts(ttsMessage, earphoneOnly = isReturnAlarm, forceSpeaker = trackingInfo.isCommuteAlarm)
                 Log.d(TAG, "[TTS] 다음 버스 안내: $ttsMessage")
 
                 // 안내 상태 업데이트
@@ -1464,6 +1459,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (mode in OUTPUT_MODE_HEADSET..OUTPUT_MODE_AUTO) {
             audioOutputMode = mode
             ttsController.setAudioOutputMode(audioOutputMode)
+            applicationContext.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+                .edit().putInt("speaker_mode", mode).apply()
         }
     }
 
@@ -1724,23 +1721,12 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             if (shouldNotifyTts) {
                 val forceSpeaker = trackingInfo.isCommuteAlarm
                 
-                // 퇴근 알람 (이어폰 시 TTS, 미연결 시 진동) 처리를 위한 로직 추가
+                // 퇴근 알람: 이어폰 연결 시 이어폰으로만 TTS, 미연결 시 노티알림만
                 val isReturnAlarm = trackingInfo.isAutoAlarm && !trackingInfo.isCommuteAlarm
                 
                 if (isReturnAlarm && !ttsController.isHeadsetConnected()) {
-                    Log.d(TAG, "📳 퇴근 알람: 이어폰 미연결 상태이므로 TTS 건너뛰고 진동 발생")
-                    try {
-                        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            vibrator.vibrate(android.os.VibrationEffect.createOneShot(500, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
-                        } else {
-                            @Suppress("DEPRECATION")
-                            vibrator.vibrate(500)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "진동 발생 오류: ${e.message}")
-                    }
-                    
+                    // 퇴근 알람 + 이어폰 미연결: 노티알림만 (진동/TTS 없음)
+                    Log.d(TAG, "📵 퇴근 알람: 이어폰 미연결 → 노티알림만 (진동/TTS 없음)")
                     trackingInfo.lastNotifiedMinutes = remainingMinutes
                     trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
                 } else {
@@ -1769,7 +1755,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
                         val message =
                             "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
-                        ttsController.speakTts(message, forceSpeaker = forceSpeaker)
+                        ttsController.speakTts(message, earphoneOnly = isReturnAlarm, forceSpeaker = forceSpeaker)
 
                         trackingInfo.lastNotifiedMinutes = remainingMinutes
                         trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
@@ -2335,6 +2321,13 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
             Log.d(TAG, "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName, routeId=$routeId, stationId=$stationId, TTS=$useTTS")
 
+            // 동기 중복 방지: coroutine 시작 전 즉시 체크 (6ms 간격 중복 호출 차단)
+            if (routeId.isNotBlank() && (pendingAutoAlarms.contains(routeId) || activeTrackings.containsKey(routeId))) {
+                Log.w(TAG, "⚠️ 자동알람 중복 방지 (동기): $routeId 이미 처리 중 - 무시")
+                return
+            }
+            if (routeId.isNotBlank()) pendingAutoAlarms.add(routeId)
+
             // 자동알람 모드 활성화
             isAutoAlarmMode = true
             autoAlarmStartTime = System.currentTimeMillis()
@@ -2359,15 +2352,32 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             currentAutoAlarmStationName = stationName
             currentAutoAlarmRouteId = routeId
 
-            // 칩 cycling 상태 초기화
-            autoAlarmNotifier.resetChipState()
+            // 자동알람: 포그라운드 서비스 즉시 시작 (5초 제한 대응, ONGOING 알림 재사용)
+            if (!isInForeground) {
+                try {
+                    val placeholder = notificationHandler.buildOngoingNotification(mapOf())
+                    if (Build.VERSION.SDK_INT >= 36) {
+                        startForeground(ONGOING_NOTIFICATION_ID, placeholder, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(ONGOING_NOTIFICATION_ID, placeholder, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    } else {
+                        startForeground(ONGOING_NOTIFICATION_ID, placeholder)
+                    }
+                    isInForeground = true
+                    Log.d(TAG, "🔔 자동알람: 포그라운드 서비스 시작")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ 자동알람 포그라운드 시작 실패: ${e.message}", e)
+                }
+            }
 
-            // 경량화된 알림 표시
-            autoAlarmNotifier.showInitialNotification(busNo, stationName, remainingMinutes, currentStation)
-
-            // 🔊 TTS 미사용 시 알람 사운드만 재생 (TTS는 실제 데이터 도착 후 발화)
+            // 🔊 TTS 미사용 시 알람 사운드 재생 (퇴근 알람은 이어폰 연결 시에만)
             if (!useTTS) {
-                alarmSoundPlayer.play()
+                val isReturnAlarmStart = !isCommuteAlarm
+                if (!isReturnAlarmStart || ttsController.isHeadsetConnected()) {
+                    alarmSoundPlayer.play()
+                } else {
+                    Log.d(TAG, "📵 퇴근 알람: 이어폰 미연결 → 알람 사운드 재생 안함")
+                }
             }
 
             // 📌 핵심: 실시간 추적 시작 → 첫 API 응답 시 실제 도착 정보로 TTS 발화
@@ -2443,9 +2453,13 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             isAutoAlarmMode = false
             autoAlarmStartTime = 0L
+            if (autoAlarmRouteId.isNotBlank()) pendingAutoAlarms.remove(autoAlarmRouteId)
 
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
+
+            // activeTrackings이 비었으면 포그라운드 서비스 + ONGOING 노티도 중지
+            updateForegroundNotification()
 
             // Flutter에 종료 알림 전송 (재실행 방지용)
             MainActivity.sendFlutterEvent("onAutoAlarmStopped", mapOf(

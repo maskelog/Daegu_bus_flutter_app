@@ -185,10 +185,11 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                     Log.d(TAG, "✅ 자동알람: 포그라운드 서비스 시작")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ 포그라운드 서비스 시작 실패, notify 사용: ${e.message}")
-                    notificationManager.notify(BusAlertService.AUTO_ALARM_NOTIFICATION_ID, notification)
+                    notificationManager.notify(BusAlertService.ONGOING_NOTIFICATION_ID, notification)
                 }
             } else {
-                notificationManager.notify(BusAlertService.AUTO_ALARM_NOTIFICATION_ID, notification)
+                // 이미 포그라운드 상태 → 같은 ONGOING ID로 업데이트 (별도 알림 생성 방지)
+                notificationManager.notify(BusAlertService.ONGOING_NOTIFICATION_ID, notification)
             }
             Log.d(TAG, "✅ 자동알람 초기 알림 표시: $busNo ($stationName)")
 
@@ -456,7 +457,7 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                         Notification.FLAG_NO_CLEAR or
                         Notification.FLAG_PROMOTED_ONGOING
 
-                    notificationManager.notify(BusAlertService.AUTO_ALARM_NOTIFICATION_ID, builtNotification)
+                    notificationManager.notify(BusAlertService.ONGOING_NOTIFICATION_ID, builtNotification)
                     Log.d(TAG, "✅ 자동알람 Live Update 알림 갱신: $busNo, ${chipText}, 위치=$currentStation")
                     return
 
@@ -524,7 +525,7 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                 .setWhen(System.currentTimeMillis())
                 .build()
 
-            notificationManager.notify(BusAlertService.AUTO_ALARM_NOTIFICATION_ID, notification)
+            notificationManager.notify(BusAlertService.ONGOING_NOTIFICATION_ID, notification)
             Log.d(TAG, "✅ 자동알람 맞춤 레이아웃 알림 갱신: $busNo $arrivalInfoText ($stopsText)")
 
         } catch (e: Exception) {

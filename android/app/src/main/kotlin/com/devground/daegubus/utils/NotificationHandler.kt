@@ -341,16 +341,10 @@ class NotificationHandler(private val context: Context) {
                 }
             }
 
-            // 액션 추가
+            // 액션 추가 — 자동알람 전용 노티에 이미 "알람 끄기" 있으므로 ONGOING에는 "추적 중지"만 표시
             nativeBuilder.addAction(Notification.Action.Builder(
                 android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_stop_tracking),
                 "추적 중지", createStopPendingIntent()).build())
-            
-            if (activeTrackings.values.any { it.isAutoAlarm }) {
-                nativeBuilder.addAction(Notification.Action.Builder(
-                    android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_cancel),
-                    "중지", createStopAutoAlarmPendingIntent()).build())
-            }
 
             val builtNotification = nativeBuilder.build()
             // FLAG_PROMOTED_ONGOING 수동 설정 필수 —
@@ -387,10 +381,8 @@ class NotificationHandler(private val context: Context) {
 
         defaultContentIntent?.let { notificationBuilder.setContentIntent(it) }
 
+        // 자동알람 전용 노티에 이미 "알람 끄기" 있으므로 ONGOING에는 "추적 중지"만 표시
         notificationBuilder.addAction(R.drawable.ic_stop_tracking, "추적 중지", createStopPendingIntent())
-        if (activeTrackings.values.any { it.isAutoAlarm }) {
-            notificationBuilder.addAction(R.drawable.ic_cancel, "중지", createStopAutoAlarmPendingIntent())
-        }
 
         firstTracking?.lastBusInfo?.let { busInfo ->
             val stopsForChip = busInfo.remainingStops?.filter { it.isDigit() }?.toIntOrNull() ?: 0

@@ -7,8 +7,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.media.AudioManager
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -275,8 +276,6 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         val mode = prefs.getInt("speaker_mode", 0)
         Log.e(TAG, "🔴 getAudioOutputMode: AppSettings:speaker_mode=$mode, OUTPUT_MODE_HEADSET=$OUTPUT_MODE_HEADSET, BusService.OUTPUT_MODE_HEADSET=${BusAlertService.OUTPUT_MODE_HEADSET}")
-        // 상수 불일치 문제 수정: BusAlertService에서는 OUTPUT_MODE_HEADSET=2, 여기서는 OUTPUT_MODE_HEADSET=2
-        // 이어폰 전용모드인지 확인
         return mode
     }
 
@@ -296,12 +295,13 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
                         Log.d(TAG, "[DEBUG] AudioDeviceInfo: type=${device.type}, productName=${device.productName}, id=${device.id}, isSink=${device.isSink}")
                         if (device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
                             device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                            device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                            // TYPE_BLUETOOTH_A2DP 제외: isBluetoothA2dpOn으로 대체
+                            // (getDevices는 스트리밍 없이 프로필 연결된 BT 기기도 포함해 false-positive 유발)
+                            // TYPE_USB_DEVICE 제외: 충전기 등 오디오 외 USB 장치도 포함돼 false-positive 유발
                             device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                             device.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-                            device.type == AudioDeviceInfo.TYPE_USB_DEVICE || // USB 오디오 장치 추가
-                            device.type == AudioDeviceInfo.TYPE_BLE_HEADSET || // BLE 헤드셋 추가
-                            device.type == AudioDeviceInfo.TYPE_HEARING_AID) { // 보청기 추가
+                            device.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                            device.type == AudioDeviceInfo.TYPE_HEARING_AID) {
                             hasHeadset = true
                         }
                     }
@@ -328,14 +328,14 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             return
         }
 
-        // 자동 알람이 아닌 경우에만 이어폰 체크
+        // 이어폰 체크 (forceSpeaker=출근은 무시)
         if (!forceSpeaker) {
             val audioOutputMode = getAudioOutputMode()
             val headsetConnected = isHeadsetConnected()
 
-            // 이어폰 전용 모드인데 이어폰이 연결되어 있지 않으면 실행 안함
-            if (audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET && !headsetConnected) {
-                Log.d(TAG, "🚫 이어폰 전용 모드($audioOutputMode)이나 이어폰이 연결되어 있지 않아 TTS 실행 안함")
+            // 이어폰 전용 설정 또는 퇴근 알람(forceEarphone)인데 이어폰 미연결 → 발화 안함
+            if ((audioOutputMode == BusAlertService.OUTPUT_MODE_HEADSET || forceEarphone) && !headsetConnected) {
+                Log.d(TAG, "🚫 이어폰 미연결 → TTS 건너뜀 (mode=$audioOutputMode, forceEarphone=$forceEarphone)")
                 return
             }
         } else {
@@ -361,32 +361,53 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         // 스피커 사용 여부 결정
         val useSpeaker = if (forceEarphone) false else (forceSpeaker || getAudioOutputMode() == OUTPUT_MODE_SPEAKER)
 
-        // 오디오 설정
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         try {
-            // 스피커 모드 설정
-            audioManager.isSpeakerphoneOn = useSpeaker
-
-            // 사용자 피드백 반영: 볼륨 강제 최대화 로직 제거
-            // 사용자가 설정한 시스템 알람 볼륨 또는 앱 내 TTS 볼륨 설정을 따름
-            /*
-            if (forceSpeaker) {
-                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-                audioManager.setStreamVolume(
-                    AudioManager.STREAM_ALARM,
-                    (maxVolume * 0.9).toInt(), // 최대 볼륨의 90%
-                    0
-                )
-                Log.d(TAG, "🔊 자동 알람 볼륨 설정 (STREAM_ALARM): ${(maxVolume * 0.9).toInt()}/${maxVolume}")
+            if (useSpeaker) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        val devices = audioManager.availableCommunicationDevices
+                        val speakerDevice = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                        if (speakerDevice != null) {
+                            audioManager.setCommunicationDevice(speakerDevice)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "setCommunicationDevice 실패: ${e.message}")
+                        @Suppress("DEPRECATION")
+                        audioManager.isSpeakerphoneOn = true
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    audioManager.isSpeakerphoneOn = true
+                }
+            } else {
+                // 퇴근 알람(이어폰 라우팅): 스피커 설정 명시적 해제
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        audioManager.clearCommunicationDevice()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "clearCommunicationDevice 실패: ${e.message}")
+                        @Suppress("DEPRECATION")
+                        audioManager.isSpeakerphoneOn = false
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    audioManager.isSpeakerphoneOn = false
+                }
             }
-            */
         } catch (e: Exception) {
             Log.e(TAG, "❌ 오디오 설정 오류: ${e.message}")
         }
 
         // TTS 파라미터 설정
-        // Auto-alarm (forceEarphone) uses STREAM_ALARM so vibrate mode doesn't silence it.
-        val streamType = if (forceSpeaker || forceEarphone || getAudioOutputMode() == OUTPUT_MODE_SPEAKER) AudioManager.STREAM_ALARM else AudioManager.STREAM_MUSIC
+        // 출근(forceSpeaker): STREAM_ALARM → 항상 스피커
+        // 퇴근(forceEarphone): STREAM_MUSIC → 이어폰 연결 시 이어폰으로 라우팅
+        val streamType = when {
+            forceSpeaker -> AudioManager.STREAM_ALARM
+            forceEarphone -> AudioManager.STREAM_MUSIC
+            getAudioOutputMode() == OUTPUT_MODE_SPEAKER -> AudioManager.STREAM_ALARM
+            else -> AudioManager.STREAM_MUSIC
+        }
         val utteranceId = "tts_${System.currentTimeMillis()}"
         val volume = getTtsVolume()
 
@@ -411,7 +432,12 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             return 
         }
 
-        // TTS 발화
+        // TTS 발화 — KEY_PARAM_STREAM은 힌트만 제공, setAudioAttributes로 라우팅 보장
+        val audioAttrs = AudioAttributes.Builder()
+            .setUsage(if (useSpeaker) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+        tts?.setAudioAttributes(audioAttrs)
         val streamName = if (streamType == AudioManager.STREAM_ALARM) "ALARM" else "MUSIC"
         Log.i(TAG, "🔊 TTS 발화: $message, 스피커=$useSpeaker, 볼륨=$volume, forceSpeaker=$forceSpeaker, 스트림=$streamName")
         try {
