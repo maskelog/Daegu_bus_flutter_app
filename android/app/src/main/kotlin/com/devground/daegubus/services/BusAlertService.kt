@@ -94,7 +94,6 @@ class BusAlertService : Service() {
 
         // --- 서비스 내부 상수 ---
         const val DEFAULT_ALARM_SOUND = ""
-        private const val FLUTTER_DOUBLE_PREFIX = "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu"
         private const val MAX_CONSECUTIVE_ERRORS = 3
         private const val ARRIVAL_THRESHOLD_MINUTES = 60
 
@@ -236,7 +235,7 @@ class BusAlertService : Service() {
                 .edit().putInt("speaker_mode", audioOutputMode).apply()
 
             notificationDisplayMode = getFlutterLongPref(flutterPrefs, "notificationDisplayMode", DISPLAY_MODE_ALARMED_ONLY.toLong()).toInt()
-            ttsVolume = getFlutterFloatPref(flutterPrefs, "auto_alarm_volume", 1.0f).coerceIn(0f, 1f)
+            ttsVolume = 1.0f
             ttsController.setTtsVolume(ttsVolume)
             autoAlarmTimeoutMs = getFlutterLongPref(flutterPrefs, "auto_alarm_timeout_ms", 1800000L).coerceIn(300000L, 7200000L)
             // alertOnArrivalOnly는 intent extras로 전달됨 (setAlertOnArrivalOnly()로도 실시간 변경 가능)
@@ -255,28 +254,6 @@ class BusAlertService : Service() {
             is Long -> value
             is Int -> value.toLong()
             is String -> value.toLongOrNull() ?: defaultValue
-            else -> defaultValue
-        }
-    }
-
-    private fun getFlutterFloatPref(
-        flutterPrefs: android.content.SharedPreferences,
-        key: String,
-        defaultValue: Float
-    ): Float {
-        return when (val value = flutterPrefs.all["flutter.$key"]) {
-            is Float -> value
-            is Double -> value.toFloat()
-            is Long -> value.toFloat()
-            is Int -> value.toFloat()
-            is String -> {
-                val normalizedValue = if (value.startsWith(FLUTTER_DOUBLE_PREFIX)) {
-                    value.removePrefix(FLUTTER_DOUBLE_PREFIX)
-                } else {
-                    value
-                }
-                normalizedValue.toFloatOrNull() ?: defaultValue
-            }
             else -> defaultValue
         }
     }

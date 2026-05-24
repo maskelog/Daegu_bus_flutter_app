@@ -986,17 +986,15 @@ class AlarmService extends ChangeNotifier {
       _alarmFacade.activeAlarmsMap[alarmData.id] = alarmData;
       await _saveAlarms();
 
-      // 설정된 알람 볼륨 가져오기
       final settingsService = SettingsService();
       await settingsService.initialize();
-      final volume = settingsService.autoAlarmVolume;
 
       // TTS 알림 시작 (승차알람은 항상 TTS 발화 - 사용자가 직접 버튼 클릭)
       // isImmediateAlarm이 true이면 무조건 TTS 발화
       if (isImmediateAlarm || useTTS) {
         try {
           await SimpleTTSHelper.initialize();
-          await SimpleTTSHelper.setVolume(volume); // 볼륨 설정
+          await SimpleTTSHelper.setVolume(1.0);
 
           final shouldVibrate = vibrateOverride ??
               ((earphoneOnlyOverride == true) &&
@@ -1032,7 +1030,7 @@ class AlarmService extends ChangeNotifier {
 
           if (success) {
             logMessage(
-              '✅ 일반 알람 TTS 발화 완료 (볼륨: ${volume * 100}%, 모드: ${settingsService.getSpeakerModeName(speakerMode)})',
+              '✅ 일반 알람 TTS 발화 완료 (모드: ${settingsService.getSpeakerModeName(speakerMode)})',
               level: LogLevel.info,
             );
           } else {

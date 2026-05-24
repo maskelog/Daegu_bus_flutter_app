@@ -1501,19 +1501,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.success(true)
                     }
                 }
-                "setAutoAlarmVolume" -> {
-                    val volume = call.argument<Double>("volume") ?: 1.0
-                    try {
-                        if (busAlertService != null) {
-                            busAlertService?.setTtsVolume(volume)
-                        }
-                        Log.d(TAG, "자동 알람 볼륨 설정: ${volume * 100}%")
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "자동 알람 볼륨 설정 오류: ${e.message}")
-                        result.success(true)
-                    }
-                }
                 "setUseTts" -> {
                     val useTts = call.argument<Boolean>("useTts") ?: true
                     try {

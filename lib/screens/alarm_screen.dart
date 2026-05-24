@@ -659,56 +659,6 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                     children: [
                                       // 상단 Row에서 이미 제목과 추가 버튼을 제공하므로 여기서는 제거
                                       const SizedBox(height: 0),
-                                      // 자동 알람 볼륨 설정 추가
-                                      Consumer<SettingsService>(
-                                        builder:
-                                            (context, settingsService, child) {
-                                          return Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                '알람 볼륨',
-                                                style: TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: colorScheme.onSurface,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Row(
-                                                children: [
-                                                  Icon(Icons.volume_down,
-                                                      color: colorScheme
-                                                          .onSurfaceVariant),
-                                                  Expanded(
-                                                    child: Slider(
-                                                      value: settingsService
-                                                          .autoAlarmVolume,
-                                                      min: SettingsService
-                                                          .minAutoAlarmVolume,
-                                                      max: SettingsService
-                                                          .maxAutoAlarmVolume,
-                                                      divisions: 10,
-                                                      label:
-                                                          '${(settingsService.autoAlarmVolume * 100).round()}%',
-                                                      onChanged: (value) {
-                                                        settingsService
-                                                            .updateAutoAlarmVolume(
-                                                                value);
-                                                      },
-                                                    ),
-                                                  ),
-                                                  Icon(Icons.volume_up,
-                                                      color: colorScheme
-                                                          .onSurfaceVariant),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 16),
-                                            ],
-                                          );
-                                        },
-                                      ),
                                       const SizedBox(height: 24),
                                     ],
                                   ),
