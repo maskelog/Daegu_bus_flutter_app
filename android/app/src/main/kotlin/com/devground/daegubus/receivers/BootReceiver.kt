@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import com.devground.daegubus.utils.AutoAlarmScheduleCalculator
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -93,37 +94,12 @@ class BootReceiver : BroadcastReceiver() {
                 val repeatDays = IntArray(repeatDaysArray.length()) { repeatDaysArray.getInt(it) }
                 if (repeatDays.isEmpty()) continue
 
-                val calendar = Calendar.getInstance()
-                calendar.set(Calendar.HOUR_OF_DAY, hour)
-                calendar.set(Calendar.MINUTE, minute)
-                calendar.set(Calendar.SECOND, 0)
-                calendar.set(Calendar.MILLISECOND, 0)
-
-                // 다음 유효 발동 날짜 탐색
-                val now = Calendar.getInstance()
-                var scheduled = false
-                for (i in 0..7) {
-                    val testCal = Calendar.getInstance()
-                    if (i > 0) testCal.add(Calendar.DAY_OF_YEAR, i)
-                    testCal.set(Calendar.HOUR_OF_DAY, hour)
-                    testCal.set(Calendar.MINUTE, minute)
-                    testCal.set(Calendar.SECOND, 0)
-                    testCal.set(Calendar.MILLISECOND, 0)
-                    val dayOfWeek = testCal.get(Calendar.DAY_OF_WEEK)
-                    val mappedDay = if (dayOfWeek == Calendar.SUNDAY) 7 else dayOfWeek - 1
-                    if (repeatDays.contains(mappedDay) && testCal.timeInMillis > now.timeInMillis) {
-                        calendar.timeInMillis = testCal.timeInMillis
-                        scheduled = true
-                        break
-                    }
-                }
-                if (!scheduled) continue
-
-                // 5분 사전 추적
-                calendar.add(Calendar.MINUTE, -5)
-                if (calendar.timeInMillis < now.timeInMillis) {
-                    calendar.timeInMillis = now.timeInMillis + 5000
-                }
+                val nowMillis = System.currentTimeMillis()
+                val targetAlarmTime =
+                    AutoAlarmScheduleCalculator.findNextTargetTime(nowMillis, hour, minute, repeatDays)
+                        ?: continue
+                val trackingStartTime =
+                    AutoAlarmScheduleCalculator.trackingStartTime(targetAlarmTime, nowMillis)
 
                 val alarmIntent = Intent(context, AlarmReceiver::class.java).apply {
                     action = "com.devground.daegubus.AUTO_ALARM"
@@ -138,7 +114,8 @@ class BootReceiver : BroadcastReceiver() {
                     putExtra("hour", hour)
                     putExtra("minute", minute)
                     putExtra("repeatDays", repeatDays)
-                    putExtra("scheduledTime", calendar.timeInMillis)
+                    putExtra("scheduledTime", trackingStartTime)
+                    putExtra("targetAlarmTime", targetAlarmTime)
                 }
 
                 val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -155,14 +132,14 @@ class BootReceiver : BroadcastReceiver() {
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     alarmManager.setAlarmClock(
-                        AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent),
+                        AlarmManager.AlarmClockInfo(trackingStartTime, pendingIntent),
                         pendingIntent
                     )
                 } else {
-                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
+                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, trackingStartTime, pendingIntent)
                 }
 
-                Log.d(TAG, "✅ 자동알람 재등록: $busNo, $stationName → ${java.util.Date(calendar.timeInMillis)}")
+                Log.d(TAG, "✅ 자동알람 재등록: $busNo, $stationName → tracking=${java.util.Date(trackingStartTime)}, target=${java.util.Date(targetAlarmTime)}")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ 알람 재등록 오류 (개별): ${e.message}")
             }

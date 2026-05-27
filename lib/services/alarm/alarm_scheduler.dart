@@ -69,6 +69,7 @@ class AlarmScheduler {
         'hour': scheduledTime.hour,
         'minute': scheduledTime.minute,
         'repeatDays': alarm.repeatDays,
+        'scheduledTimeMillis': scheduledTime.millisecondsSinceEpoch,
         'isImmediate': isImmediate,
         'isCommuteAlarm': alarm.isCommuteAlarm,
         'alertOnArrivalOnly': SettingsService().alertOnArrivalOnly,

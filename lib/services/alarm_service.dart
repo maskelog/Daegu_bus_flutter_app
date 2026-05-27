@@ -780,6 +780,14 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
+  Future<void> cancelScheduledAutoAlarm(String alarmId) async {
+    final uniqueAlarmId = 'auto_alarm_$alarmId';
+    await _alarmFacade.nativeBridge.cancelNativeAutoAlarm(uniqueAlarmId.hashCode);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('last_scheduled_alarm_$uniqueAlarmId');
+  }
+
   /// 자동 알람 스케줄 삭제(실행 중 추적은 중단 후 스케줄 제거)
   Future<bool> deleteAutoAlarm(
     String busNo,
@@ -801,8 +809,19 @@ class AlarmService extends ChangeNotifier {
         );
       }
 
-      final alarmKey = '${busNo}_' + stationName + '_$routeId';
       final removedCount = _alarmFacade.autoAlarmsList.length;
+      final alarmsToDelete = _alarmFacade.autoAlarmsList
+          .where(
+            (alarm) =>
+                alarm.busNo == busNo &&
+                alarm.stationName == stationName &&
+                alarm.routeId == routeId,
+          )
+          .toList();
+      for (final alarm in alarmsToDelete) {
+        await cancelScheduledAutoAlarm(alarm.id);
+      }
+
       _alarmFacade.autoAlarmsList.removeWhere(
         (alarm) =>
             alarm.busNo == busNo &&
@@ -1193,14 +1212,6 @@ class AlarmService extends ChangeNotifier {
           level: LogLevel.warning,
         );
       }
-
-      // 자동 알람 스케줄이 있으면 당일 재실행만 방지 (스케줄 자체는 보존)
-      final hasAutoAlarmSchedule = _alarmFacade.autoAlarmsList.any(
-        (alarm) =>
-            alarm.busNo == busNo &&
-            alarm.stationName == stationName &&
-            alarm.routeId == routeId,
-      );
 
       _alarmFacade.removeCachedBusInfoByKey(cacheKey);
       logMessage('[$cacheKey] 버스 정보 캐시 즉시 제거', level: LogLevel.debug);
@@ -1641,8 +1652,10 @@ class AlarmService extends ChangeNotifier {
       for (var alarm in autoAlarms) {
         logMessage('📝 알람 처리 중: ${alarm.routeNo}번, ${alarm.stationName}');
 
+        await cancelScheduledAutoAlarm(alarm.id);
+
         if (!alarm.isActive) {
-          logMessage('  ⚠️ 비활성화된 알람 건너뛰기');
+          logMessage('  ⚠️ 비활성화된 알람 예약 취소 후 건너뛰기');
           continue;
         }
 
@@ -1685,7 +1698,6 @@ class AlarmService extends ChangeNotifier {
         await _alarmFacade.scheduleAutoAlarm(alarm, scheduledTime);
       }
 
-      await _alarmFacade.saveAutoAlarms();
       logMessage('✅ 자동 알람 업데이트 완료: ${_alarmFacade.autoAlarmsList.length}개');
     } catch (e) {
       logMessage('❌ 자동 알람 업데이트 오류: $e', level: LogLevel.error);

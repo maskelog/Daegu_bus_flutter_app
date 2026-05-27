@@ -6,7 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.devground.daegubus.services.BusAlertService
-import com.devground.daegubus.services.TTSService
+import com.devground.daegubus.utils.AutoAlarmScheduleCalculator
 
 class AlarmReceiver : BroadcastReceiver() {
     private val TAG = "AlarmReceiver"
@@ -18,10 +18,11 @@ class AlarmReceiver : BroadcastReceiver() {
         if (action == "com.devground.daegubus.AUTO_ALARM") {
             val currentTime = System.currentTimeMillis()
             val scheduledTime = intent.getLongExtra("scheduledTime", 0L)
+            val targetAlarmTime = intent.getLongExtra("targetAlarmTime", 0L)
 
-            // 15분 초과 지연 → 서비스 시작 없이 재설정만
-            if (scheduledTime > 0 && (currentTime - scheduledTime) > 900000L) {
-                Log.w(TAG, "⚠️ 알람 15분 초과 지연, 재설정만 수행")
+            // 오래된 알람만 폐기한다. 기준은 5분 전 사전추적 시각이 아니라 실제 알람 시각이다.
+            if (!AutoAlarmScheduleCalculator.shouldStartDeliveredAlarm(currentTime, scheduledTime, targetAlarmTime)) {
+                Log.w(TAG, "⚠️ 알람 장시간 지연, 재설정만 수행: scheduled=${java.util.Date(scheduledTime)}, target=${java.util.Date(targetAlarmTime)}, now=${java.util.Date(currentTime)}")
                 val pendingResult = goAsync()
                 Thread {
                     try { scheduleNextAlarmImmediate(context.applicationContext, intent) }
@@ -69,6 +70,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
                 putExtra("alarmHour", hour)
                 putExtra("alarmMinute", minute)
+                putExtra("targetAlarmTime", targetAlarmTime)
             }
 
             try {
@@ -139,37 +141,18 @@ class AlarmReceiver : BroadcastReceiver() {
             Log.d(TAG, "🔄 다음 자동 알람 즉시 재설정: ${busNo}번 버스, $hour:$minute, 반복 요일: ${repeatDays.joinToString(",")}")
 
             // 다음 알람 시간 계산
-            val calendar = java.util.Calendar.getInstance()
-            calendar.set(java.util.Calendar.HOUR_OF_DAY, hour)
-            calendar.set(java.util.Calendar.MINUTE, minute)
-            calendar.set(java.util.Calendar.SECOND, 0)
-            calendar.set(java.util.Calendar.MILLISECOND, 0)
+            val nowMillis = System.currentTimeMillis()
+            val nextTargetTime =
+                AutoAlarmScheduleCalculator.findNextTargetTime(nowMillis, hour, minute, repeatDays)
 
-            // 다음 유효한 알람 날짜 찾기
-            var nextAlarmSet = false
-            for (i in 1..7) {
-                val testCalendar = java.util.Calendar.getInstance()
-                testCalendar.add(java.util.Calendar.DAY_OF_YEAR, i)
-                val testDay = testCalendar.get(java.util.Calendar.DAY_OF_WEEK)
-                val testDayMapped = if (testDay == java.util.Calendar.SUNDAY) 7 else testDay - 1
-
-                if (repeatDays.contains(testDayMapped)) {
-                    calendar.add(java.util.Calendar.DAY_OF_YEAR, i)
-                    nextAlarmSet = true
-                    Log.d(TAG, "✅ 다음 알람 시간 계산됨: ${calendar.time}, 요일: $testDayMapped (${i}일 후)")
-                    break
-                }
-            }
-
-            if (!nextAlarmSet) {
+            if (nextTargetTime == null) {
                 Log.e(TAG, "❌ 다음 알람 시간을 찾을 수 없습니다")
                 return
             }
 
-            // 사전 추적: 설정 시간 5분 전부터 추적 시작 (버스 놓침 방지)
-            val EARLY_TRACKING_MINUTES = 5
-            calendar.add(java.util.Calendar.MINUTE, -EARLY_TRACKING_MINUTES)
-            Log.d(TAG, "⏰ 사전 추적: 원래 시간 ${hour}:${minute}, 실제 알람 ${calendar.time} (${EARLY_TRACKING_MINUTES}분 전)")
+            val trackingStartTime =
+                AutoAlarmScheduleCalculator.trackingStartTime(nextTargetTime, nowMillis)
+            Log.d(TAG, "⏰ 사전 추적: 원래 시간 ${hour}:${minute}, 실제 알람 ${java.util.Date(trackingStartTime)} (${AutoAlarmScheduleCalculator.EARLY_TRACKING_MINUTES}분 전), target=${java.util.Date(nextTargetTime)}")
 
             // AlarmManager로 다음 알람 설정
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
@@ -187,7 +170,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("hour", hour)
                 putExtra("minute", minute)
                 putExtra("repeatDays", repeatDays)
-                putExtra("scheduledTime", calendar.timeInMillis)
+                putExtra("scheduledTime", trackingStartTime)
+                putExtra("targetAlarmTime", nextTargetTime)
             }
 
             val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -209,18 +193,18 @@ class AlarmReceiver : BroadcastReceiver() {
             // 정확한 알람 설정
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setAlarmClock(
-                    android.app.AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent),
+                    android.app.AlarmManager.AlarmClockInfo(trackingStartTime, pendingIntent),
                     pendingIntent
                 )
             } else {
                 alarmManager.setExact(
                     android.app.AlarmManager.RTC_WAKEUP,
-                    calendar.timeInMillis,
+                    trackingStartTime,
                     pendingIntent
                 )
             }
 
-            Log.d(TAG, "✅ 다음 자동 알람 재설정 완료: ${busNo}번 버스, ${calendar.time}")
+            Log.d(TAG, "✅ 다음 자동 알람 재설정 완료: ${busNo}번 버스, tracking=${java.util.Date(trackingStartTime)}, target=${java.util.Date(nextTargetTime)}")
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ 다음 알람 즉시 재설정 오류", e)

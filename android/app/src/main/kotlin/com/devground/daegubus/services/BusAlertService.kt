@@ -325,6 +325,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val autoAlarmStationName = intent?.getStringExtra("stationName") ?: ""
     val alarmHour = intent?.getIntExtra("alarmHour", -1) ?: -1
     val alarmMinute = intent?.getIntExtra("alarmMinute", -1) ?: -1
+    val targetAlarmTime = intent?.getLongExtra("targetAlarmTime", 0L) ?: 0L
     val intentAlertOnArrivalOnly = intent?.getBooleanExtra("alertOnArrivalOnly", alertOnArrivalOnly) ?: alertOnArrivalOnly
 
     when (command) {
@@ -651,7 +652,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             // intent extras로 전달된 alertOnArrivalOnly를 인스턴스 필드에 반영
             alertOnArrivalOnly = intentAlertOnArrivalOnly
             Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $autoAlarmBusNo 번, $autoAlarmStationName, TTS=$useTTS, ArrivalOnly=$alertOnArrivalOnly")
-            handleAutoAlarmLightweight(autoAlarmBusNo, autoAlarmStationName, remainingMinutes, currentStationText, routeIdText, stationIdText, useTTS, isCommuteAlarm, alarmHour, alarmMinute)
+            handleAutoAlarmLightweight(autoAlarmBusNo, autoAlarmStationName, remainingMinutes, currentStationText, routeIdText, stationIdText, useTTS, isCommuteAlarm, alarmHour, alarmMinute, targetAlarmTime)
         }
         ServiceCommand.StopAutoAlarm -> {
             Log.i(TAG, "🛑 ACTION_STOP_AUTO_ALARM received")
@@ -2295,7 +2296,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
      * - 간단한 알림만 표시
      * - 5분 후 자동 종료
      */
-    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String, routeId: String, stationId: String, useTTS: Boolean = true, isCommuteAlarm: Boolean = false, alarmHour: Int = -1, alarmMinute: Int = -1) {
+    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String, routeId: String, stationId: String, useTTS: Boolean = true, isCommuteAlarm: Boolean = false, alarmHour: Int = -1, alarmMinute: Int = -1, targetAlarmTime: Long = 0L) {
         try {
             Log.d(TAG, "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName, routeId=$routeId, stationId=$stationId, TTS=$useTTS")
 
@@ -2311,7 +2312,9 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             autoAlarmStartTime = System.currentTimeMillis()
 
             // 정확한 알람 발화 시각 계산 (toggle OFF 모드용) - TrackingInfo에 저장 (다중 알람 독립 관리)
-            val computedTriggerTime = if (alarmHour >= 0 && alarmMinute >= 0) {
+            val computedTriggerTime = if (targetAlarmTime > 0L) {
+                targetAlarmTime
+            } else if (alarmHour >= 0 && alarmMinute >= 0) {
                 val cal = java.util.Calendar.getInstance().apply {
                     set(java.util.Calendar.HOUR_OF_DAY, alarmHour)
                     set(java.util.Calendar.MINUTE, alarmMinute)
@@ -2323,7 +2326,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             } else {
                 autoAlarmStartTime // Flutter 트리거: 즉시 발화
             }
-            Log.d(TAG, "⏰ 알람 발화 시각: ${java.util.Date(computedTriggerTime)}, alarmHour=$alarmHour, alarmMinute=$alarmMinute")
+            Log.d(TAG, "⏰ 알람 발화 시각: ${java.util.Date(computedTriggerTime)}, alarmHour=$alarmHour, alarmMinute=$alarmMinute, targetAlarmTime=$targetAlarmTime")
 
             // 정보 저장
             currentAutoAlarmBusNo = busNo

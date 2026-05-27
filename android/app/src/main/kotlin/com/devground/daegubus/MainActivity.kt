@@ -64,6 +64,7 @@ import com.devground.daegubus.services.BusApiService
 import com.devground.daegubus.services.BusAlertService
 import com.devground.daegubus.services.TTSService
 import com.devground.daegubus.services.StationTrackingService
+import com.devground.daegubus.utils.AutoAlarmScheduleCalculator
 import com.devground.daegubus.utils.DatabaseHelper
 
 import com.devground.daegubus.utils.NotificationHandler
@@ -1017,6 +1018,38 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.error("START_AUTO_ALARM_ERROR", "Failed to start auto alarm immediately", e.message)
                     }
                 }
+                "cancelNativeAutoAlarm" -> {
+                    val alarmId = call.argument<Int>("alarmId") ?: 0
+                    try {
+                        val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                        val alarmIntent = android.content.Intent(applicationContext, com.devground.daegubus.receivers.AlarmReceiver::class.java).apply {
+                            action = "com.devground.daegubus.AUTO_ALARM"
+                        }
+                        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            android.app.PendingIntent.FLAG_NO_CREATE or android.app.PendingIntent.FLAG_IMMUTABLE
+                        } else {
+                            android.app.PendingIntent.FLAG_NO_CREATE
+                        }
+                        val pendingIntent = android.app.PendingIntent.getBroadcast(
+                            applicationContext,
+                            alarmId,
+                            alarmIntent,
+                            flags
+                        )
+
+                        if (pendingIntent != null) {
+                            alarmManager.cancel(pendingIntent)
+                            pendingIntent.cancel()
+                            Log.i(TAG, "✅ 네이티브 자동알람 예약 취소 완료: alarmId=$alarmId")
+                        } else {
+                            Log.i(TAG, "ℹ️ 취소할 네이티브 자동알람 예약 없음: alarmId=$alarmId")
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 네이티브 자동알람 예약 취소 실패: ${e.message}", e)
+                        result.error("CANCEL_NATIVE_ALARM_FAILED", "Failed to cancel native alarm.", e.message)
+                    }
+                }
                 "scheduleNativeAlarm" -> {
                     val alarmId = call.argument<Int>("alarmId") ?: 0
                     val busNo = call.argument<String>("busNo") ?: ""
@@ -1029,6 +1062,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     val hour = call.argument<Int>("hour") ?: 0
                     val minute = call.argument<Int>("minute") ?: 0
                     val repeatDays = call.argument<ArrayList<Int>>("repeatDays")?.toIntArray() ?: intArrayOf()
+                    val requestedTargetTime = call.argument<Long>("scheduledTimeMillis") ?: 0L
                     
                     if (busNo.isBlank() || stationName.isBlank() || routeId.isBlank() || stationId.isBlank() || repeatDays.isEmpty()) {
                         result.error("INVALID_ARGUMENT", "필수 인자가 누락되었습니다", null)
@@ -1037,42 +1071,17 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     
                     try {
                         val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-                        val calendar = java.util.Calendar.getInstance()
-                        val now = java.util.Calendar.getInstance()
+                        val nowMillis = System.currentTimeMillis()
+                        val targetAlarmTime = requestedTargetTime.takeIf { it > nowMillis }
+                            ?: AutoAlarmScheduleCalculator.findNextTargetTime(nowMillis, hour, minute, repeatDays)
 
-                        calendar.set(java.util.Calendar.HOUR_OF_DAY, hour)
-                        calendar.set(java.util.Calendar.MINUTE, minute)
-                        calendar.set(java.util.Calendar.SECOND, 0)
-                        calendar.set(java.util.Calendar.MILLISECOND, 0)
-
-                        val currentDay = calendar.get(java.util.Calendar.DAY_OF_WEEK)
-                        val currentDayMapped = if (currentDay == java.util.Calendar.SUNDAY) 7 else currentDay - 1
-
-                        if (!repeatDays.contains(currentDayMapped) || calendar.timeInMillis <= now.timeInMillis) {
-                            var nextAlarmSet = false
-                            for (i in 1..7) {
-                                val testCalendar = java.util.Calendar.getInstance()
-                                testCalendar.add(java.util.Calendar.DAY_OF_YEAR, i)
-                                val testDay = testCalendar.get(java.util.Calendar.DAY_OF_WEEK)
-                                val testDayMapped = if (testDay == java.util.Calendar.SUNDAY) 7 else testDay - 1
-                                if (repeatDays.contains(testDayMapped)) {
-                                    calendar.add(java.util.Calendar.DAY_OF_YEAR, i)
-                                    nextAlarmSet = true
-                                    break
-                                }
-                            }
-                            if (!nextAlarmSet) {
-                                result.error("SCHEDULE_ERROR", "유효한 반복 요일을 찾을 수 없습니다", null)
-                                return@setMethodCallHandler
-                            }
+                        if (targetAlarmTime == null) {
+                            result.error("SCHEDULE_ERROR", "유효한 반복 요일을 찾을 수 없습니다", null)
+                            return@setMethodCallHandler
                         }
 
-                        // 5분 사전 추적
-                        val originalTimeMs = calendar.timeInMillis
-                        calendar.add(java.util.Calendar.MINUTE, -5)
-                        if (calendar.timeInMillis < now.timeInMillis && originalTimeMs > now.timeInMillis) {
-                            calendar.timeInMillis = now.timeInMillis + 3000
-                        }
+                        val trackingStartTime =
+                            AutoAlarmScheduleCalculator.trackingStartTime(targetAlarmTime, nowMillis)
 
                         val alarmIntent = android.content.Intent(applicationContext, com.devground.daegubus.receivers.AlarmReceiver::class.java).apply {
                             action = "com.devground.daegubus.AUTO_ALARM"
@@ -1087,7 +1096,8 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             putExtra("repeatDays", repeatDays)
                             putExtra("isCommuteAlarm", isCommuteAlarm)
                             putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
-                            putExtra("scheduledTime", calendar.timeInMillis)
+                            putExtra("scheduledTime", trackingStartTime)
+                            putExtra("targetAlarmTime", targetAlarmTime)
                         }
 
                         val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -1104,16 +1114,16 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             alarmManager.setAlarmClock(
-                                android.app.AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent),
+                                android.app.AlarmManager.AlarmClockInfo(trackingStartTime, pendingIntent),
                                 pendingIntent
                             )
                         } else {
                             alarmManager.setExact(
-                                android.app.AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent
+                                android.app.AlarmManager.RTC_WAKEUP, trackingStartTime, pendingIntent
                             )
                         }
 
-                        Log.d(TAG, "✅ Native AlarmManager 스케줄링 완료: ${busNo}번 버스, ${calendar.time}")
+                        Log.d(TAG, "✅ Native AlarmManager 스케줄링 완료: ${busNo}번 버스, tracking=${java.util.Date(trackingStartTime)}, target=${java.util.Date(targetAlarmTime)}")
                         result.success(true)
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ Native AlarmManager 스케줄링 실패: ${e.message}", e)

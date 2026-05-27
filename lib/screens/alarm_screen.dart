@@ -430,6 +430,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
     });
 
     if (!newIsActive) {
+      await alarmService.cancelScheduledAutoAlarm(currentAlarm.id);
       // 알람이 비활성화될 때만 네이티브 중지 요청
       await alarmService.stopAutoAlarm(
         currentAlarm.routeNo,
@@ -510,6 +511,7 @@ class _AlarmScreenState extends State<AlarmScreen> {
         .toList();
 
     for (var alarm in alarmsToDelete) {
+      await alarmService.cancelScheduledAutoAlarm(alarm.id);
       await alarmService.stopAutoAlarm(
         alarm.routeNo,
         alarm.stationName,
@@ -1125,7 +1127,7 @@ class _AutoAlarmEditScreenState extends State<AutoAlarmEditScreen> {
       excludeHolidays: _excludeHolidays,
       useTTS: _useTTS,
       isCommuteAlarm: _isCommuteAlarm,
-      isActive: true,
+      isActive: widget.autoAlarm?.isActive ?? true,
     );
 
     Navigator.pop(context, alarm);

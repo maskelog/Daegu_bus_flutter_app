@@ -48,6 +48,12 @@ class AlarmNativeBridge {
     await _methodChannel?.invokeMethod('forceStopTracking');
   }
 
+  Future<void> cancelNativeAutoAlarm(int alarmId) async {
+    await _methodChannel?.invokeMethod('cancelNativeAutoAlarm', {
+      'alarmId': alarmId,
+    });
+  }
+
   Future<void> stopAllTts() async {
     await _methodChannel?.invokeMethod('stopAllTts');
   }
