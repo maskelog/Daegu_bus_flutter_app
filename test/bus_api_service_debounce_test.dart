@@ -9,10 +9,11 @@ import 'package:daegu_bus_app/services/bus_api_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('searchStations completes all pending futures with latest results', () async {
+  test('searchStations completes all pending futures with latest results',
+      () async {
     SharedPreferences.setMockInitialValues({});
 
-    const channel = MethodChannel('com.example.daegu_bus_app/bus_api');
+    const channel = MethodChannel('com.devground.daegubus/bus_api');
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 

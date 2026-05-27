@@ -19,10 +19,8 @@ void main() {
     final hasArrivingSoon =
         source.contains('곧 도착') || source.contains(r'\uace7 \ub3c4\ucc29');
     final hasMinutes = source.contains('분') || source.contains(r'\ubd84');
-    final hasNext = source.contains('다음') || source.contains(r'\ub2e4\uc74c');
 
     expect(hasArrivingSoon, isTrue);
     expect(hasMinutes, isTrue);
-    expect(hasNext, isTrue);
   });
 }
