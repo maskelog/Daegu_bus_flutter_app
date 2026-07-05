@@ -13,7 +13,10 @@ import 'settings_service.dart';
 import '../main.dart' show logMessage, LogLevel;
 import '../utils/database_helper.dart';
 import 'alarm/alarm_facade.dart';
+import 'alarm/arrival_time_parser.dart';
+import 'alarm/auto_alarm_validator.dart';
 import 'alarm/cached_bus_info.dart';
+import 'alarm/station_id_resolver.dart';
 
 class AlarmService extends ChangeNotifier {
   final NotificationService _notificationService;
@@ -51,8 +54,8 @@ class AlarmService extends ChangeNotifier {
   })  : _notificationService = notificationService,
         _settingsService = settingsService {
     _alarmFacade = AlarmFacade(
-      validateRequiredFields: _validateRequiredFields,
-      resolveStationId: _getStationIdFromName,
+      validateRequiredFields: validateAutoAlarmFields,
+      resolveStationId: resolveStationIdFromName,
     );
     _setupMethodChannel();
   }
@@ -469,14 +472,14 @@ class AlarmService extends ChangeNotifier {
 
           // stationId가 없는 경우, stationName과 routeId로 찾아옴
           if (data['stationId'] == null || data['stationId'].isEmpty) {
-            data['stationId'] = _getStationIdFromName(
+            data['stationId'] = resolveStationIdFromName(
               data['stationName'],
               data['routeId'],
             );
           }
 
           // 필수 필드 검증
-          if (!_validateRequiredFields(data)) {
+          if (!validateAutoAlarmFields(data)) {
             logMessage('⚠️ 자동 알람 데이터 필수 필드 누락: $data', level: LogLevel.warning);
             continue;
           }
@@ -531,42 +534,6 @@ class AlarmService extends ChangeNotifier {
     } catch (e) {
       logMessage('❌ 자동 알람 로드 실패: $e', level: LogLevel.error);
     }
-  }
-
-  bool _validateRequiredFields(Map<String, dynamic> data) {
-    final requiredFields = [
-      'routeNo',
-      'stationId',
-      'routeId',
-      'stationName',
-      'repeatDays',
-    ];
-    // scheduledTime 또는 hour/minute 중 하나는 필수
-    if (data['scheduledTime'] == null &&
-        (data['hour'] == null || data['minute'] == null)) {
-      logMessage(
-        '! 자동 알람 데이터 필수 필드 누락: scheduledTime 또는 hour/minute',
-        level: LogLevel.error,
-      );
-      return false;
-    }
-
-    final missingFields = requiredFields
-        .where(
-          (field) =>
-              data[field] == null ||
-              (data[field] is String && data[field].isEmpty) ||
-              (data[field] is List && (data[field] as List).isEmpty),
-        )
-        .toList();
-    if (missingFields.isNotEmpty) {
-      logMessage(
-        '! 자동 알람 데이터 필수 필드 누락: [31m${missingFields.join(", ")}[0m',
-        level: LogLevel.error,
-      );
-      return false;
-    }
-    return true;
   }
 
   Future<bool> startBusMonitoringService({
@@ -1317,7 +1284,7 @@ class AlarmService extends ChangeNotifier {
           effectiveStationId.length < 10 ||
           !effectiveStationId.startsWith('7')) {
         // 먼저 매핑을 통해 stationId 가져오기
-        effectiveStationId = _getStationIdFromName(
+        effectiveStationId = resolveStationIdFromName(
           alarm.stationName,
           alarm.routeId,
         );
@@ -1475,7 +1442,7 @@ class AlarmService extends ChangeNotifier {
                     busInfo['현재정류소'] ??
                     '정보 없음';
 
-                final int remainingMinutes = _parseRemainingMinutes(
+                final int remainingMinutes = parseRemainingMinutes(
                   estimatedTime,
                 );
 
@@ -1555,77 +1522,6 @@ class AlarmService extends ChangeNotifier {
       logMessage('❌ 자동 알람 버스 정보 업데이트 오류: $e', level: LogLevel.error);
       return false;
     }
-  }
-
-  // ✅ 문자열 형태의 도착 시간을 분 단위 정수로 변환하는 메서드 개선
-  int _parseRemainingMinutes(dynamic estimatedTime) {
-    if (estimatedTime == null) return -1;
-
-    final String timeStr = estimatedTime.toString().trim();
-
-    // 곧 도착 관련
-    if (timeStr == '곧 도착' || timeStr == '전' || timeStr == '도착') return 0;
-
-    // 운행 종료 관련
-    if (timeStr == '운행종료' ||
-        timeStr == '운행 종료' ||
-        timeStr == '-' ||
-        timeStr == '운행종료.') {
-      return -1;
-    }
-
-    // 출발 예정 관련
-    if (timeStr.contains('출발예정') || timeStr.contains('기점출발')) return -1;
-
-    // 숫자 + '분' 형태 처리
-    if (timeStr.contains('분')) {
-      final numericValue = timeStr.replaceAll(RegExp(r'[^0-9]'), '');
-      return numericValue.isEmpty ? -1 : int.tryParse(numericValue) ?? -1;
-    }
-
-    // 순수 숫자인 경우
-    final numericValue = timeStr.replaceAll(RegExp(r'[^0-9]'), '');
-    if (numericValue.isNotEmpty) {
-      final minutes = int.tryParse(numericValue);
-      if (minutes != null && minutes >= 0 && minutes <= 180) {
-        // 3시간 이내만 유효
-        return minutes;
-      }
-    }
-
-    logMessage('⚠️ 파싱할 수 없는 도착 시간 형식: "$timeStr"', level: LogLevel.warning);
-    return -1;
-  }
-
-  /// 정류장 이름으로 stationId 매핑
-  String _getStationIdFromName(String stationName, String fallbackRouteId) {
-    // 알려진 정류장 이름과 stationId 매핑
-    final Map<String, String> stationMapping = {
-      '새동네아파트앞': '7021024000',
-      '새동네아파트건너': '7021023900',
-      '칠성고가도로하단': '7021051300',
-      '대구삼성창조캠퍼스3': '7021011000',
-      '대구삼성창조캠퍼스': '7021011200',
-      '동대구역': '7021052100',
-      '동대구역건너': '7021052000',
-      '경명여고건너': '7021024200',
-      '경명여고': '7021024100',
-    };
-
-    // 정확한 매칭 시도
-    if (stationMapping.containsKey(stationName)) {
-      return stationMapping[stationName]!;
-    }
-
-    // 부분 매칭 시도
-    for (var entry in stationMapping.entries) {
-      if (stationName.contains(entry.key) || entry.key.contains(stationName)) {
-        return entry.value;
-      }
-    }
-
-    // 매칭 실패 시 fallback 사용
-    return fallbackRouteId;
   }
 
   Future<void> updateAutoAlarms(List<AutoAlarm> autoAlarms) async {
