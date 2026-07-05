@@ -668,7 +668,6 @@ class _HomeScreenState extends State<HomeScreen>
             selectedStop: _selectedStop,
             stationArrivals: _stationArrivals,
             onStopSelected: _onSelectedStopChanged,
-            formatArrivalTime: _formatArrivalTime,
           ),
           // 즐겨찾기 정류장 섹션
           if (_favoriteStops.isNotEmpty) ...[
@@ -685,7 +684,6 @@ class _HomeScreenState extends State<HomeScreen>
               selectedStop: _selectedStop,
               stationArrivals: _stationArrivals,
               onStopSelected: _onSelectedStopChanged,
-              formatArrivalTime: _formatArrivalTime,
               onRemoveFavorite: _removeFavoriteStop,
             ),
           ],
@@ -970,16 +968,6 @@ class _HomeScreenState extends State<HomeScreen>
         ],
       ),
     );
-  }
-
-  String _formatArrivalTime(BusArrival arrival) {
-    final bus = arrival.firstBus;
-    if (bus == null) return "도착 정보 없음";
-    if (bus.isOutOfService) return "운행 종료";
-    final minutes = bus.getRemainingMinutes();
-    if (minutes < 0) return "운행 종료";
-    if (minutes <= 0) return "곧 도착";
-    return "$minutes분";
   }
 
   Future<void> _handleAlarmClick(BusArrival arrival, String stationId,

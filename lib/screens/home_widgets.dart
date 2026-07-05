@@ -30,8 +30,6 @@ typedef AlarmTapHandler = Future<void> Function(
   bool hasAlarm,
 );
 
-typedef ArrivalTimeFormatter = String Function(BusArrival arrival);
-
 class HomeSectionHeader extends StatelessWidget {
   const HomeSectionHeader({
     super.key,
@@ -83,7 +81,6 @@ class HomeNearbyStopsRow extends StatelessWidget {
     required this.selectedStop,
     required this.stationArrivals,
     required this.onStopSelected,
-    required this.formatArrivalTime,
   });
 
   final List<BusStop> nearbyStops;
@@ -91,7 +88,6 @@ class HomeNearbyStopsRow extends StatelessWidget {
   final BusStop? selectedStop;
   final Map<String, List<BusArrival>> stationArrivals;
   final ValueChanged<BusStop> onStopSelected;
-  final ArrivalTimeFormatter formatArrivalTime;
 
   @override
   Widget build(BuildContext context) {
@@ -219,7 +215,7 @@ class HomeNearbyStopsRow extends StatelessWidget {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              formatArrivalTime(topBus),
+                              topBus.getFirstArrivalTimeText(),
                               style: TextStyle(
                                 fontSize: 11,
                                 color: isSelected
@@ -260,7 +256,6 @@ class HomeFavoriteStopsRow extends StatelessWidget {
     required this.selectedStop,
     required this.stationArrivals,
     required this.onStopSelected,
-    required this.formatArrivalTime,
     required this.onRemoveFavorite,
   });
 
@@ -269,7 +264,6 @@ class HomeFavoriteStopsRow extends StatelessWidget {
   final BusStop? selectedStop;
   final Map<String, List<BusArrival>> stationArrivals;
   final ValueChanged<BusStop> onStopSelected;
-  final ArrivalTimeFormatter formatArrivalTime;
   final ValueChanged<BusStop> onRemoveFavorite;
 
   void _showAllFavoriteStops(BuildContext context) {
@@ -418,7 +412,7 @@ class HomeFavoriteStopsRow extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  formatArrivalTime(topBus),
+                                  topBus.getFirstArrivalTimeText(),
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: colorScheme.onSurfaceVariant,

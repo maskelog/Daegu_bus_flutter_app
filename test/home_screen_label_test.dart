@@ -13,14 +13,11 @@ void main() {
     expect(hasNextLabel, isFalse);
   });
 
-  test('home_screen uses Korean arrival labels', () {
-    final source = File('lib/screens/home_screen.dart').readAsStringSync();
+  test('arrival time labels are Korean (BusArrival model)', () {
+    // 홈 화면의 도착 라벨은 BusArrival.getFirstArrivalTimeText()에서 나온다.
+    final source = File('lib/models/bus_arrival.dart').readAsStringSync();
 
-    final hasArrivingSoon =
-        source.contains('곧 도착') || source.contains(r'\uace7 \ub3c4\ucc29');
-    final hasMinutes = source.contains('분') || source.contains(r'\ubd84');
-
-    expect(hasArrivingSoon, isTrue);
-    expect(hasMinutes, isTrue);
+    expect(source.contains('곧 도착'), isTrue);
+    expect(source.contains('분'), isTrue);
   });
 }

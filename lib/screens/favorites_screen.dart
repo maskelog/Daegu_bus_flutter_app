@@ -110,16 +110,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     }
   }
 
-  String _formatArrivalTime(BusArrival arrival) {
-    final bus = arrival.firstBus;
-    if (bus == null) return '도착 정보 없음';
-    if (bus.isOutOfService) return '운행 종료';
-    final minutes = bus.getRemainingMinutes();
-    if (minutes < 0) return '운행 종료';
-    if (minutes == 0) return '곧 도착';
-    return '$minutes분';
-  }
-
   Future<void> _toggleFavorite(FavoriteBus bus) async {
     final updated = FavoriteBusStore.toggle(_favoriteBuses, bus);
     await FavoriteBusStore.save(updated);
@@ -328,7 +318,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                           ),
                         ),
                         title: Text(
-                          _formatArrivalTime(arrival),
+                          arrival.getFirstArrivalTimeText(),
                           style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
                         ),
                         trailing: Icon(Icons.check_circle_outline, color: colorScheme.primary),
@@ -401,7 +391,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     subtitle: Text(
-                      _formatArrivalTime(arrival),
+                      arrival.getFirstArrivalTimeText(),
                       style: TextStyle(color: colorScheme.onSurfaceVariant),
                     ),
                     trailing: Icon(
@@ -643,7 +633,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     final arrivals = _stationArrivals[favorite.stationId] ?? const <BusArrival>[];
     final arrival = _pickArrivalForFavorite(arrivals, favorite);
     final bus = arrival.firstBus;
-    final timeText = bus == null ? '도착 정보 없음' : _formatArrivalTime(arrival);
+    final timeText = arrival.getFirstArrivalTimeText();
     final currentStation = bus?.currentStation ?? '위치 정보 없음';
     final minutes = bus?.getRemainingMinutes() ?? -1;
     final isArriving = minutes >= 0 && minutes <= 3;

@@ -48,49 +48,29 @@ class BusArrival {
     return firstBus?.getRemainingMinutes() ?? 0;
   }
 
+  static String _arrivalTimeText(BusInfo bus) {
+    if (bus.isOutOfService) return '운행 종료';
+    final minutes = bus.getRemainingMinutes();
+    if (minutes < 0) return '운행 종료';
+    if (minutes == 0) return '곧 도착';
+    return '$minutes분';
+  }
+
   String getFirstArrivalTimeText() {
     final first = firstBus;
-    if (first == null) {
-      return '\ub3c4\ucc29 \uc815\ubcf4 \uc5c6\uc74c';
-    }
-
-    if (first.isOutOfService) {
-      return '\uc6b4\ud589 \uc885\ub8cc';
-    }
-
-    final minutes = first.getRemainingMinutes();
-    if (minutes < 0) {
-      return '\uc6b4\ud589 \uc885\ub8cc';
-    }
-    if (minutes == 0) {
-      return '\uace7 \ub3c4\ucc29';
-    }
-    return '$minutes\ubd84';
+    if (first == null) return '도착 정보 없음';
+    return _arrivalTimeText(first);
   }
 
   String getSecondArrivalTimeText() {
     final second = secondBus;
-    if (second == null) {
-      return '';
-    }
-
-    if (second.isOutOfService) {
-      return '\uc6b4\ud589 \uc885\ub8cc';
-    }
-
-    final minutes = second.getRemainingMinutes();
-    if (minutes < 0) {
-      return '\uc6b4\ud589 \uc885\ub8cc';
-    }
-    if (minutes == 0) {
-      return '\uace7 \ub3c4\ucc29';
-    }
-    return '$minutes\ubd84';
+    if (second == null) return '';
+    return _arrivalTimeText(second);
   }
 
   String getSummaryText() {
     if (!hasArrival) {
-      return '\ub3c4\ucc29 \uc608\uc815 \ubc84\uc2a4 \uc5c6\uc74c';
+      return '도착 예정 버스 없음';
     }
 
     final first = getFirstArrivalTimeText();
@@ -118,6 +98,6 @@ class BusArrival {
 
   @override
   String toString() {
-    return 'BusArrival{routeNo: $routeNo, routeId: $routeId, busCount: \${busInfoList.length}}';
+    return 'BusArrival{routeNo: $routeNo, routeId: $routeId, busCount: ${busInfoList.length}}';
   }
 }
