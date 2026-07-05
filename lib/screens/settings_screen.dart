@@ -791,11 +791,12 @@ class _LiveUpdatesTileState extends State<_LiveUpdatesTile> {
         return;
       }
       final result = await PermissionService.canPostPromotedNotifications();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _enabled = result;
           _loading = false;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }

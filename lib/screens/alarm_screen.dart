@@ -655,13 +655,13 @@ class _AlarmScreenState extends State<AlarmScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.all(24),
                                   color: colorScheme.surface,
-                                  child: Column(
+                                  child: const Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
                                       // 상단 Row에서 이미 제목과 추가 버튼을 제공하므로 여기서는 제거
-                                      const SizedBox(height: 0),
-                                      const SizedBox(height: 24),
+                                      SizedBox(height: 0),
+                                      SizedBox(height: 24),
                                     ],
                                   ),
                                 ),

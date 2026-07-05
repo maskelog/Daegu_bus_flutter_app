@@ -439,7 +439,7 @@ class _HomeScreenState extends State<HomeScreen>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     const bannerHeight = 50.0; // AdSize.banner 표준 높이 - 광고 미표시 시에도 공간 유지
-    final navBottomOffset = bannerHeight + 8.0;
+    const navBottomOffset = bannerHeight + 8.0;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,

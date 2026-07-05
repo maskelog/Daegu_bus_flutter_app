@@ -165,10 +165,10 @@ class DioClient {
           onTimeout: () =>
               throw TimeoutException('네이티브 메서드 호출 시간 초과: $method', timeout),
         );
-      } on PlatformException catch (e) {
-        throw e;
+      } on PlatformException {
+        rethrow;
       } catch (e) {
-        throw e;
+        rethrow;
       }
     } catch (e) {
       logMessage('❌ 네이티브 메서드 호출 오류: $method - $e', level: LogLevel.error);

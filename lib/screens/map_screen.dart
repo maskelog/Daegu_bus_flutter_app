@@ -349,22 +349,6 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
     ).timeout(const Duration(seconds: 6));
   }
 
-  Future<void> _loadNearbyStations() async {
-    if (_currentPosition == null) {
-      debugPrint('현재 위치가 없어서 주변 정류장을 로드할 수 없습니다');
-      return;
-    }
-
-    await _searchNearbyStationsFromCoords(
-      _currentPosition!.latitude,
-      _currentPosition!.longitude,
-      isAuto: true,
-      allowFallback: false,
-      showMessage: false,
-      initialRadius: 2000.0,
-    );
-  }
-
   // 카카오맵 API 검색 기능 제거됨
 
   @override
@@ -649,7 +633,7 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
     _lastClickedLat = lat;
     _lastClickedLng = lng;
     debugPrint(
-      '[$traceId] 지도 클릭 기준 좌표 저장: lat=$lat, lng=$lng (anchor=${_lastClickedLat},${_lastClickedLng})',
+      '[$traceId] 지도 클릭 기준 좌표 저장: lat=$lat, lng=$lng (anchor=$_lastClickedLat,$_lastClickedLng)',
     );
   }
 
@@ -894,7 +878,7 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
             }
             break;
           }
-          _updateAnchorPosition(normalizedLat!, normalizedLng!, eventLabel);
+          _updateAnchorPosition(normalizedLat, normalizedLng, eventLabel);
           debugPrint(
             '지도 클릭: $lat, $lng → 클릭 위치 기준 주변 정류장 검색(trace=$eventLabel, source=$source)',
           );

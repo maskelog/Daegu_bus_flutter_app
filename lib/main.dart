@@ -415,9 +415,9 @@ class AppTheme {
     ),
 
     // Bottom Sheet Theme
-    bottomSheetTheme: BottomSheetThemeData(
+    bottomSheetTheme: const BottomSheetThemeData(
       backgroundColor: AppColorScheme.surfaceLight,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       elevation: 3,
@@ -534,9 +534,9 @@ class AppTheme {
       }),
     ),
 
-    bottomSheetTheme: BottomSheetThemeData(
+    bottomSheetTheme: const BottomSheetThemeData(
       backgroundColor: AppColorScheme.surfaceVariantDark,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       elevation: 3,

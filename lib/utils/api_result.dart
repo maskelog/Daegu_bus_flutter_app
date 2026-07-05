@@ -63,7 +63,7 @@ class BusApiResult<T> {
   /// 성공 시 콜백 실행
   BusApiResult<T> onSuccess(Function(T data) callback) {
     if (isSuccess && data != null) {
-      callback(data!);
+      callback(data as T);
     }
     return this;
   }
@@ -80,7 +80,7 @@ class BusApiResult<T> {
   BusApiResult<R> map<R>(R Function(T data) transform) {
     if (isSuccess && data != null) {
       try {
-        return BusApiResult.success(transform(data!));
+        return BusApiResult.success(transform(data as T));
       } catch (e) {
         return BusApiResult.error(
           BusApiError.parsingError,

@@ -342,8 +342,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                           setState(() { _favoriteBuses[index] = updated; });
                           await FavoriteBusStore.save(_favoriteBuses);
                           widget.onFavoritesUpdated(_favoriteBuses);
+                          if (ctx.mounted) Navigator.pop(ctx);
                           if (!mounted) return;
-                          Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('${arrival.routeNo}번으로 변경되었습니다.')),
                           );
@@ -416,7 +416,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         routeNo: arrival.routeNo,
                       );
                       await _toggleFavorite(favorite);
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('${arrival.routeNo}번 버스를 추가했습니다.')),

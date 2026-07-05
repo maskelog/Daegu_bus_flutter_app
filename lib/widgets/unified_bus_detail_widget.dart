@@ -1034,7 +1034,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
         widget.busArrival.routeId,
       );
       await NotificationService().cancelOngoingTracking();
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('승차 알람이 해제되었습니다'),
@@ -1061,7 +1061,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
         isImmediateAlarm: true,
         currentStation: bus?.currentStation ?? '',
       );
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('승차 알람이 설정되었습니다'),

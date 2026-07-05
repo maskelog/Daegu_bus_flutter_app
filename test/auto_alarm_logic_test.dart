@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:daegu_bus_app/models/auto_alarm.dart';
-import 'package:daegu_bus_app/services/settings_service.dart';
 
 void main() {
   group('AutoAlarm getNextAlarmTime Logic Tests', () {

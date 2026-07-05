@@ -221,7 +221,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
       await alarmService.deactivateAutoAlarm(
           alarm.busNo, alarm.stationName, alarm.routeId);
 
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text('${alarm.busNo}번 버스 자동 알람이 중지되었습니다.'),
@@ -229,7 +229,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('자동 알람 중지 중 오류가 발생했습니다.'),
@@ -476,7 +476,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
           // 강제 UI 업데이트
         });
         // BuildContext 사용 전에 mounted 상태 재확인
-        if (mounted) {
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${alarm.busNo}번 버스 알람이 취소되었습니다.')),
           );
@@ -487,7 +487,7 @@ class _ActiveAlarmPanelState extends State<ActiveAlarmPanel>
       setState(() {
         // 오류 발생 시에도 UI 업데이트
       });
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('알람 취소 중 오류가 발생했습니다.')),
       );
