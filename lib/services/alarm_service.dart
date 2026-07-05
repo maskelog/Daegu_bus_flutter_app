@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/auto_alarm.dart';
 import '../models/alarm_data.dart' as alarm_model;
@@ -13,6 +12,7 @@ import 'settings_service.dart';
 import '../main.dart' show logMessage, LogLevel;
 import '../utils/database_helper.dart';
 import 'alarm/alarm_facade.dart';
+import 'alarm/alarm_repository.dart';
 import 'alarm/arrival_time_parser.dart';
 import 'alarm/auto_alarm_validator.dart';
 import 'alarm/cached_bus_info.dart';
@@ -21,6 +21,7 @@ import 'alarm/station_id_resolver.dart';
 class AlarmService extends ChangeNotifier {
   final NotificationService _notificationService;
   final SettingsService _settingsService;
+  final AlarmRepository _repository = AlarmRepository();
   late final AlarmFacade _alarmFacade;
 
   bool get _useTTS => _settingsService.useTts;
@@ -377,45 +378,10 @@ class AlarmService extends ChangeNotifier {
 
   Future<void> loadAlarms() async {
     try {
-      // 백그라운드 메신저 상태 확인 및 초기화
-      if (!kIsWeb) {
-        try {
-          final rootIsolateToken = RootIsolateToken.instance;
-          if (rootIsolateToken != null) {
-            BackgroundIsolateBinaryMessenger.ensureInitialized(
-              rootIsolateToken,
-            );
-            logMessage('✅ BackgroundIsolateBinaryMessenger 초기화 성공');
-          } else {
-            logMessage(
-              '⚠️ RootIsolateToken이 null입니다. 메인 스레드에서 실행 중인지 확인하세요.',
-              level: LogLevel.warning,
-            );
-          }
-        } catch (e) {
-          logMessage(
-            '⚠️ BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
-            level: LogLevel.warning,
-          );
-        }
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final alarms = prefs.getStringList('alarms') ?? [];
-      _alarmFacade.activeAlarmsMap.clear();
-
-      for (var json in alarms) {
-        try {
-          final data = jsonDecode(json);
-          final alarm = alarm_model.AlarmData.fromJson(data);
-          if (_isAlarmValid(alarm)) {
-            final key = AlarmKeys.alarm(alarm.busNo, alarm.stationName, alarm.routeId);
-            _alarmFacade.activeAlarmsMap[key] = alarm;
-          }
-        } catch (e) {
-          logMessage('알람 데이터 파싱 오류: $e', level: LogLevel.error);
-        }
-      }
+      final loaded = await _repository.loadActiveAlarms();
+      _alarmFacade.activeAlarmsMap
+        ..clear()
+        ..addAll(loaded);
 
       logMessage('✅ 알람 로드 완료: ${_alarmFacade.activeAlarmsMap.length}개');
       notifyListeners();
@@ -424,79 +390,18 @@ class AlarmService extends ChangeNotifier {
     }
   }
 
-  bool _isAlarmValid(alarm_model.AlarmData alarm) {
-    final now = DateTime.now();
-    final difference = alarm.scheduledTime.difference(now);
-    return difference.inMinutes > -5; // 5분 이상 지난 알람은 제외
-  }
-
   Future<void> loadAutoAlarms() async {
     try {
-      // 백그라운드 메신저 상태 확인 및 초기화
-      if (!kIsWeb) {
-        try {
-          final rootIsolateToken = RootIsolateToken.instance;
-          if (rootIsolateToken != null) {
-            BackgroundIsolateBinaryMessenger.ensureInitialized(
-              rootIsolateToken,
-            );
-            logMessage('✅ 자동 알람용 BackgroundIsolateBinaryMessenger 초기화 성공');
-          } else {
-            logMessage(
-              '⚠️ 자동 알람 - RootIsolateToken이 null입니다',
-              level: LogLevel.warning,
-            );
-          }
-        } catch (e) {
-          logMessage(
-            '⚠️ 자동 알람 BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
-            level: LogLevel.warning,
-          );
-        }
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final alarms = prefs.getStringList('auto_alarms') ?? [];
-      logMessage('자동 알람 데이터 로드 시작: ${alarms.length}개');
-
+      final autoAlarms = await _repository.loadAutoAlarms();
       _alarmFacade.autoAlarmsList.clear();
 
-      for (var alarmJson in alarms) {
+      // 다음 알람 시간 계산에 쓸 공휴일·예외 날짜 (HolidayService가 캐싱)
+      final allHolidays = await _getUpcomingExclusionDates();
+
+      for (var autoAlarm in autoAlarms) {
         try {
-          final Map<String, dynamic> data = jsonDecode(alarmJson);
-
-          // scheduledTime이 문자열이면 DateTime으로 변환
-          if (data['scheduledTime'] is String) {
-            data['scheduledTime'] = DateTime.parse(data['scheduledTime']);
-          }
-
-          // stationId가 없는 경우, stationName과 routeId로 찾아옴
-          if (data['stationId'] == null || data['stationId'].isEmpty) {
-            data['stationId'] = resolveStationIdFromName(
-              data['stationName'],
-              data['routeId'],
-            );
-          }
-
-          // 필수 필드 검증
-          if (!validateAutoAlarmFields(data)) {
-            logMessage('⚠️ 자동 알람 데이터 필수 필드 누락: $data', level: LogLevel.warning);
-            continue;
-          }
-
-          // AutoAlarm 객체 생성하여 올바른 다음 알람 시간 계산
-          final autoAlarm = AutoAlarm.fromJson(data);
-
-          // 다음 알람 시간 계산하기 위해 공휴일 가져오기
-          final now = DateTime.now();
-          final currentMonthHolidays = await getHolidays(now.year, now.month);
-          final nextTargetMonth = now.month == 12 ? 1 : now.month + 1;
-          final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
-          final nextMonthHolidays = await getHolidays(nextTargetYear, nextTargetMonth);
-          final customExcludeDates = SettingsService().customExcludeDates;
-          final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays, ...customExcludeDates];
-
-          final nextAlarmTime = autoAlarm.getNextAlarmTime(holidays: allHolidays);
+          final nextAlarmTime =
+              autoAlarm.getNextAlarmTime(holidays: allHolidays);
           if (nextAlarmTime == null) {
             logMessage(
               '⚠️ 자동 알람 다음 시간 계산 실패: ${autoAlarm.routeNo}',
@@ -534,6 +439,21 @@ class AlarmService extends ChangeNotifier {
     } catch (e) {
       logMessage('❌ 자동 알람 로드 실패: $e', level: LogLevel.error);
     }
+  }
+
+  /// 이번 달·다음 달 공휴일 + 사용자 지정 예외 날짜.
+  Future<List<DateTime>> _getUpcomingExclusionDates() async {
+    final now = DateTime.now();
+    final currentMonthHolidays = await getHolidays(now.year, now.month);
+    final nextTargetMonth = now.month == 12 ? 1 : now.month + 1;
+    final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
+    final nextMonthHolidays =
+        await getHolidays(nextTargetYear, nextTargetMonth);
+    return [
+      ...currentMonthHolidays,
+      ...nextMonthHolidays,
+      ...SettingsService().customExcludeDates,
+    ];
   }
 
   Future<bool> startBusMonitoringService({
@@ -751,9 +671,7 @@ class AlarmService extends ChangeNotifier {
   Future<void> cancelScheduledAutoAlarm(String alarmId) async {
     final uniqueAlarmId = 'auto_alarm_$alarmId';
     await _alarmFacade.nativeBridge.cancelNativeAutoAlarm(uniqueAlarmId.hashCode);
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('last_scheduled_alarm_$uniqueAlarmId');
+    await _repository.removeScheduledAlarmMarker(uniqueAlarmId);
   }
 
   /// 자동 알람 스케줄 삭제(실행 중 추적은 중단 후 스케줄 제거)
@@ -1064,16 +982,7 @@ class AlarmService extends ChangeNotifier {
   }
 
   Future<void> _saveAlarms() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<String> alarms = _alarmFacade.activeAlarmsMap.values
-          .map((alarm) => jsonEncode(alarm.toJson()))
-          .toList();
-      await prefs.setStringList('alarms', alarms);
-      logMessage('✅ 알람 저장 완료: ${alarms.length}개');
-    } catch (e) {
-      logMessage('❌ 알람 저장 오류: $e', level: LogLevel.error);
-    }
+    await _repository.saveActiveAlarms(_alarmFacade.activeAlarmsMap.values);
   }
 
   // 특정 추적 중지 메서드 추가
@@ -1526,25 +1435,13 @@ class AlarmService extends ChangeNotifier {
 
   Future<void> updateAutoAlarms(List<AutoAlarm> autoAlarms) async {
     try {
-      // 백그라운드 메신저 상태 확인 및 초기화
-      if (!kIsWeb) {
-        try {
-          final rootIsolateToken = RootIsolateToken.instance;
-          if (rootIsolateToken != null) {
-            BackgroundIsolateBinaryMessenger.ensureInitialized(
-              rootIsolateToken,
-            );
-          }
-        } catch (e) {
-          logMessage(
-            '⚠️ updateAutoAlarms - BackgroundIsolateBinaryMessenger 초기화 오류 (무시): $e',
-            level: LogLevel.warning,
-          );
-        }
-      }
+      AlarmRepository.ensureBackgroundMessenger('updateAutoAlarms');
 
       logMessage('🔄 자동 알람 업데이트 시작: ${autoAlarms.length}개');
       _alarmFacade.autoAlarmsList.clear();
+
+      // 다음 알람 시간 계산에 쓸 공휴일·예외 날짜 (HolidayService가 캐싱)
+      final allHolidays = await _getUpcomingExclusionDates();
 
       for (var alarm in autoAlarms) {
         logMessage('📝 알람 처리 중: ${alarm.routeNo}번, ${alarm.stationName}');
@@ -1557,13 +1454,6 @@ class AlarmService extends ChangeNotifier {
         }
 
         final now = DateTime.now();
-        final currentMonthHolidays = await getHolidays(now.year, now.month);
-        final nextTargetMonth = now.month == 12 ? 1 : now.month + 1;
-        final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
-        final nextMonthHolidays = await getHolidays(nextTargetYear, nextTargetMonth);
-        final customExcludeDates = SettingsService().customExcludeDates;
-        final allHolidays = [...currentMonthHolidays, ...nextMonthHolidays, ...customExcludeDates];
-
         final DateTime? scheduledTime = alarm.getNextAlarmTime(holidays: allHolidays);
 
         if (scheduledTime == null) {
