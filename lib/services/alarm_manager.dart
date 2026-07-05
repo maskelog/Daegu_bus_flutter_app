@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'alarm/alarm_keys.dart';
 
 class AlarmManager {
   static const String _activeAlarmsKey = 'active_alarms';
@@ -39,7 +40,7 @@ class AlarmManager {
       debugPrint(
           '🐛 [DEBUG] [AlarmManager] 알람 추가 요청: $busNo, $stationName, $routeId');
 
-      final alarmKey = '${busNo}_${stationName}_$routeId';
+      final alarmKey = AlarmKeys.alarm(busNo, stationName, routeId);
 
       // 중복 체크
       final existingAlarms = await getActiveAlarms();
@@ -88,7 +89,7 @@ class AlarmManager {
       debugPrint(
           '🐛 [DEBUG] [AlarmManager] 알람 취소 요청: $busNo, $stationName, $routeId');
 
-      final alarmKey = '${busNo}_${stationName}_$routeId';
+      final alarmKey = AlarmKeys.alarm(busNo, stationName, routeId);
 
       // 캐시에서 제거
       _cachedAlarms.removeWhere((alarm) =>

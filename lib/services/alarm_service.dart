@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/auto_alarm.dart';
 import '../models/alarm_data.dart' as alarm_model;
+import 'alarm/alarm_keys.dart';
 import '../utils/simple_tts_helper.dart';
 import 'notification_service.dart';
 import 'settings_service.dart';
@@ -76,7 +77,7 @@ class AlarmService extends ChangeNotifier {
 
           // 중복 이벤트 방지 체크
           final String eventKey =
-              "${busNo}_${routeId}_${stationName}_cancellation";
+              AlarmKeys.cancellationEvent(busNo, stationName, routeId);
           if (timestamp != null &&
               _alarmFacade.state.processedEventTimestamps.containsKey(eventKey)) {
             final lastTimestamp = _alarmFacade.state.processedEventTimestamps[eventKey]!;
@@ -112,12 +113,12 @@ class AlarmService extends ChangeNotifier {
           );
 
           // 즉시 Flutter 측 상태 동기화 (낙관적 업데이트)
-          final String alarmKey = '${busNo}_${stationName}_$routeId';
+          final String alarmKey = AlarmKeys.alarm(busNo, stationName, routeId);
           final removedAlarm = _alarmFacade.activeAlarmsMap.remove(alarmKey);
 
           if (removedAlarm != null) {
             // 캐시 정리
-            final cacheKey = "${busNo}_$routeId";
+            final cacheKey = AlarmKeys.cache(busNo, routeId);
             _alarmFacade.removeCachedBusInfoByKey(cacheKey);
 
             // 추적 상태 업데이트
@@ -159,7 +160,7 @@ class AlarmService extends ChangeNotifier {
               );
 
               // 캐시 정리
-              final cacheKey = "${busNo}_$routeId";
+              final cacheKey = AlarmKeys.cache(busNo, routeId);
               _alarmFacade.removeCachedBusInfoByKey(cacheKey);
 
               // 추적 상태 업데이트
@@ -199,7 +200,7 @@ class AlarmService extends ChangeNotifier {
               );
 
           if (autoAlarmIndex != -1) {
-            final alarmKey = '${busNo}_${stationName}_$routeId';
+            final alarmKey = AlarmKeys.alarm(busNo, stationName, routeId);
             logMessage(
               '🔔 [노티피케이션] 자동 알람 취소 감지: $busNo번, $stationName',
               level: LogLevel.info,
@@ -405,7 +406,7 @@ class AlarmService extends ChangeNotifier {
           final data = jsonDecode(json);
           final alarm = alarm_model.AlarmData.fromJson(data);
           if (_isAlarmValid(alarm)) {
-            final key = "${alarm.busNo}_${alarm.stationName}_${alarm.routeId}";
+            final key = AlarmKeys.alarm(alarm.busNo, alarm.stationName, alarm.routeId);
             _alarmFacade.activeAlarmsMap[key] = alarm;
           }
         } catch (e) {
@@ -749,7 +750,7 @@ class AlarmService extends ChangeNotifier {
     String stationName,
     String routeId,
   ) async {
-    final alarmKey = '${busNo}_${stationName}_$routeId';
+    final alarmKey = AlarmKeys.alarm(busNo, stationName, routeId);
     _pendingAutoAlarmDeactivations.add(alarmKey);
 
     try {
@@ -985,7 +986,7 @@ class AlarmService extends ChangeNotifier {
         '🚌 일반 알람 설정 시작: $busNo번 버스, $stationName, $remainingMinutes분',
       );
 
-      final id = '${busNo}_${stationName}_$routeId';
+      final id = AlarmKeys.alarm(busNo, stationName, routeId);
 
       // 알람 데이터 생성
       final alarmData = alarm_model.AlarmData(
@@ -1191,8 +1192,8 @@ class AlarmService extends ChangeNotifier {
       '🚌 [Request] 알람 취소 요청: $busNo번 버스, $stationName, routeId: $routeId',
     );
 
-    final String alarmKey = '${busNo}_${stationName}_$routeId';
-    final String cacheKey = "${busNo}_$routeId";
+    final String alarmKey = AlarmKeys.alarm(busNo, stationName, routeId);
+    final String cacheKey = AlarmKeys.cache(busNo, routeId);
     bool shouldForceStopNative = false;
 
     try {

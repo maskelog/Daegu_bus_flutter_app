@@ -1,5 +1,6 @@
 import '../../main.dart' show logMessage;
 import 'alarm_state.dart';
+import 'alarm_keys.dart';
 import 'cached_bus_info.dart';
 
 class AlarmCache {
@@ -8,7 +9,7 @@ class AlarmCache {
   final AlarmState _state;
 
   CachedBusInfo? getCachedBusInfo(String busNo, String routeId) {
-    final key = "${busNo}_$routeId";
+    final key = AlarmKeys.cache(busNo, routeId);
     return _state.cachedBusInfo[key];
   }
 
@@ -17,7 +18,7 @@ class AlarmCache {
 
     if (_state.activeAlarms.isNotEmpty) {
       final alarm = _state.activeAlarms.values.first;
-      final key = "${alarm.busNo}_${alarm.routeId}";
+      final key = AlarmKeys.cache(alarm.busNo, alarm.routeId);
       final cachedInfo = _state.cachedBusInfo[key];
 
       if (cachedInfo != null) {
@@ -85,18 +86,18 @@ class AlarmCache {
       busNumber: busNo,
       routeId: routeId,
     );
-    final key = "${busNo}_$routeId";
+    final key = AlarmKeys.cache(busNo, routeId);
     _state.cachedBusInfo[key] = cachedInfo;
     logMessage('🚌 버스 정보 캐시 업데이트: $busNo번, $remainingMinutes분 후');
   }
 
   void updateCachedBusInfo(CachedBusInfo cachedInfo) {
-    final key = "${cachedInfo.busNo}_${cachedInfo.routeId}";
+    final key = AlarmKeys.cache(cachedInfo.busNo, cachedInfo.routeId);
     _state.cachedBusInfo[key] = cachedInfo;
   }
 
   void removeCachedBusInfo(String busNo, String routeId) {
-    final key = "${busNo}_$routeId";
+    final key = AlarmKeys.cache(busNo, routeId);
     _state.cachedBusInfo.remove(key);
   }
 
@@ -126,7 +127,7 @@ class AlarmCache {
       _state.activeAlarms.remove(key);
     }
 
-    final cacheKey = "${busNo}_$routeId";
+    final cacheKey = AlarmKeys.cache(busNo, routeId);
     _state.cachedBusInfo.remove(cacheKey);
 
     _state.autoAlarms.removeWhere(
