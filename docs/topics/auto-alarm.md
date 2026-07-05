@@ -1,7 +1,7 @@
 # 자동 알람 (출퇴근 알람)
 
 > 이 문서는 **현재 상태**를 서술한다. 변경 이력은 [devlog.md](../devlog.md)의 해당 날짜 참조.
-> 마지막 갱신: 2026-07-05 (devlog 2026-02-20 기반으로 초기 작성)
+> 마지막 갱신: 2026-07-05 (alarm/ 모듈 이관 반영)
 
 ## 개요
 
@@ -14,11 +14,18 @@
 
 - `models/auto_alarm.dart` — 알람 모델. `getNextAlarmTime({List<DateTime>? holidays})`가
   `excludeHolidays` 옵션에 따라 휴일을 건너뛰고 다음 알람 시각 계산
-- `services/alarm_service.dart` — 알람 CRUD·스케줄링 진입점 (로드 주기: 2분 간격 스로틀)
-- `services/alarm/` — 분리된 모듈:
-  - `alarm_facade.dart` — 외부 진입점, `HolidayService.fetchHolidays` 레퍼런스를 엔진에 주입
-  - `auto_alarm_engine.dart` — 다음 알람 계산·재예약 엔진
-  - `holiday_service.dart` — 공공데이터포털 공휴일 API + 메모리 캐시 (`_cache`)
+- `services/alarm_service.dart` — ChangeNotifier 코디네이터. CRUD 진입점·추적 제어·notifyListeners만 담당 (로드 주기: 2분 간격 스로틀)
+- `services/alarm/` — 실질 로직 모듈:
+  - `alarm_facade.dart` — state/cache/scheduler/engine 묶음의 진입점
+  - `alarm_repository.dart` — SharedPreferences 영속화 (알람 로드·저장, 유효성 필터)
+  - `alarm_event_handler.dart` — 네이티브→Flutter MethodChannel 이벤트 처리 (취소 동기화, 중복 이벤트 방지)
+  - `auto_alarm_engine.dart` — 자동 알람 저장·직렬화
+  - `auto_alarm_arrival_parser.dart` — 네이티브 도착 응답(String/List/Map) 정규화
+  - `arrival_time_parser.dart` — "5분"/"곧 도착"/"운행종료" → 분 변환
+  - `auto_alarm_validator.dart` — 자동 알람 JSON 필수 필드 검증
+  - `station_id_resolver.dart` — 정류장 이름→stationId 하드코딩 fallback 매핑
+  - `alarm_keys.dart` — 알람/캐시 키 표준 포맷 (반드시 이걸로만 키 생성)
+  - `holiday_service.dart` — 공공데이터포털 공휴일 API + 메모리 캐시
   - `alarm_scheduler.dart`, `alarm_native_bridge.dart`, `alarm_state.dart`, `alarm_cache.dart`
 - `services/settings_service.dart` — `customExcludeDates` (SharedPreferences 영구 저장)
 

@@ -1268,3 +1268,28 @@ createAlarmNotificationChannel()
 - `BusAlertService.kt` 2,519줄 — 2026-01-29 분리 이후에도 재비대화
 - `lib/services/alarm_service.dart` 1,707줄 — alarm/ 모듈로 이관 미완 (facade와 역할 중복)
 - `alarm_screen.dart` 1,630줄 / `map_screen.dart` 1,570줄 / `unified_bus_detail_widget.dart` 1,444줄
+
+---
+
+## 2026-07-05 (3차): alarm_service.dart → alarm/ 모듈 이관
+
+### 목표
+백로그의 "alarm_service.dart 1,707줄 — alarm/ 모듈 이관 미완" 해소.
+AlarmService를 ChangeNotifier 코디네이터로 축소 (1,707 → 1,123줄, −34%).
+
+### 이관 내역 (커밋 4건, 단계별 analyze+test 검증)
+1. **d661bc7** 유틸 이관: `station_id_resolver`(정류장 이름 매핑),
+   `arrival_time_parser`(도착 시간 문자열→분), `auto_alarm_validator`(필수 필드 검증)
+2. **3c3e69b** `alarm_repository.dart` 신설: SharedPreferences 로드/저장 전담.
+   3회 복붙돼 있던 BackgroundIsolateBinaryMessenger 초기화를 단일 헬퍼로.
+   '이번달+다음달 공휴일+customExcludeDates' 블록도 `_getUpcomingExclusionDates()`로
+   통합 (기존엔 알람 루프마다 재조회 → 호출당 1회로)
+3. **b0fe0f6** `alarm_event_handler.dart` 신설: ~250줄 `_handleMethodCall` 이관.
+   2회 통째로 중복이던 '알람 제거+캐시+추적 상태 정리'를 `_cleanupAfterRemoval`로,
+   중복 이벤트 타임스탬프 윈도우를 `_isDuplicateEvent`로 추출
+4. **4bf5771** `auto_alarm_arrival_parser.dart` 신설: refreshAutoAlarmBusInfo의
+   ~130줄 응답 정규화(String/List/Map, arrList/bus, 노선 매칭) 이관
+
+### 남은 구조
+- AlarmService에는 추적 제어(start/stop/cancel), CRUD 진입점, TTS 오케스트레이션,
+  notifyListeners만 남음. 추적 제어의 추가 분리는 선택적 후속 과제.
