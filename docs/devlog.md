@@ -1241,3 +1241,30 @@ createAlarmNotificationChannel()
 - 옛 경로를 가리키던 stale worktree(funny-fermat) 등록 prune, 깨진 `.git` 링크는
   `.git.disabled`로 보존 (브랜치 `claude/funny-fermat`는 미머지 WIP로 남아 있음)
 - pre-commit 훅: Dart 관련 파일이 스테이징된 경우에만 `flutter analyze` 실행하도록 수정
+
+---
+
+## 2026-07-05 (2차): 리팩토링 — dead code 제거 + 중복 로직 통합
+
+### 점검 결과
+- lib 전체 24,952줄 중 위젯 5개 파일(~2,737줄, 11%)이 어디서도 참조되지 않는 dead code로 확인
+- 알람/캐시 키 문자열 조립이 3개 파일 18곳에 중복 (과거 키 불일치 동기화 버그의 원인 패턴)
+- 도착 시간 라벨 포맷이 모델(BusArrival)에 있는데도 home/favorites 화면에 중복 구현
+
+### 수정 (커밋 3건)
+1. **c038e61** dead widget 제거: active_alarm_panel, bus_arrival_list, lightweight_bus_card,
+   bus_card, compact_bus_card (import·클래스명 검색으로 미사용 검증)
+2. **5aad377** `lib/services/alarm/alarm_keys.dart` 신설 — alarm/cache/cancellation 키 18곳 통합
+3. **7af3cc8** 도착 라벨 단일화: 화면별 `_formatArrivalTime` 삭제 →
+   `BusArrival.getFirstArrivalTimeText()` 사용, `ArrivalTimeFormatter` 콜백 파라미터 제거,
+   bus_arrival.dart unicode escape → 한글 리터럴 정규화, `toString()` `\$` 버그 수정,
+   라벨 회귀 테스트를 모델 파일 기준으로 갱신
+
+### 검증
+- 각 단계마다 `flutter analyze` 0건 + `flutter test` 28건 통과
+
+### 남은 리팩토링 백로그 (대형, 별도 세션 권장)
+- `MainActivity.kt` 2,588줄 — 메서드 채널 핸들러 분리 필요
+- `BusAlertService.kt` 2,519줄 — 2026-01-29 분리 이후에도 재비대화
+- `lib/services/alarm_service.dart` 1,707줄 — alarm/ 모듈로 이관 미완 (facade와 역할 중복)
+- `alarm_screen.dart` 1,630줄 / `map_screen.dart` 1,570줄 / `unified_bus_detail_widget.dart` 1,444줄
