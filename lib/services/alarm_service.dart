@@ -11,6 +11,7 @@ import 'notification_service.dart';
 import 'settings_service.dart';
 import '../main.dart' show logMessage, LogLevel;
 import '../utils/database_helper.dart';
+import 'alarm/alarm_event_handler.dart';
 import 'alarm/alarm_facade.dart';
 import 'alarm/alarm_repository.dart';
 import 'alarm/arrival_time_parser.dart';
@@ -23,6 +24,7 @@ class AlarmService extends ChangeNotifier {
   final SettingsService _settingsService;
   final AlarmRepository _repository = AlarmRepository();
   late final AlarmFacade _alarmFacade;
+  late final AlarmEventHandler _eventHandler;
 
   bool get _useTTS => _settingsService.useTts;
   Timer? _alarmCheckTimer;
@@ -63,265 +65,16 @@ class AlarmService extends ChangeNotifier {
 
   void _setupMethodChannel() {
     _methodChannel = const MethodChannel('com.devground.daegubus/bus_api');
-    _methodChannel?.setMethodCallHandler(_handleMethodCall);
+    _eventHandler = AlarmEventHandler(
+      facade: _alarmFacade,
+      saveAlarms: _saveAlarms,
+      notifyListeners: notifyListeners,
+      deactivateAutoAlarm: deactivateAutoAlarm,
+      isAutoAlarmDeactivationPending: _pendingAutoAlarmDeactivations.contains,
+      stopRealTimeBusUpdates: _notificationService.stopRealTimeBusUpdates,
+    );
+    _methodChannel?.setMethodCallHandler(_eventHandler.handleMethodCall);
     _alarmFacade.setMethodChannel(_methodChannel);
-  }
-
-  Future<dynamic> _handleMethodCall(MethodCall call) async {
-    try {
-      switch (call.method) {
-        case 'onAlarmCanceledFromNotification':
-          final Map<String, dynamic> args = Map<String, dynamic>.from(
-            call.arguments,
-          );
-          final String busNo = args['busNo'] ?? '';
-          final String routeId = args['routeId'] ?? '';
-          final String stationName = args['stationName'] ?? '';
-          final int? timestamp = args['timestamp'];
-
-          // 중복 이벤트 방지 체크
-          final String eventKey =
-              AlarmKeys.cancellationEvent(busNo, stationName, routeId);
-          if (timestamp != null &&
-              _alarmFacade.state.processedEventTimestamps.containsKey(eventKey)) {
-            final lastTimestamp = _alarmFacade.state.processedEventTimestamps[eventKey]!;
-            final timeDiff = timestamp - lastTimestamp;
-            if (timeDiff < 3000) {
-              // 3초 이내 중복 이벤트 무시
-              logMessage(
-                '⚠️ [중복방지] 이벤트 무시: $eventKey (${timeDiff}ms 전에 처리됨)',
-                level: LogLevel.warning,
-              );
-              return true;
-            }
-          }
-
-          // 이벤트 시간 기록
-          if (timestamp != null) {
-            _alarmFacade.state.processedEventTimestamps[eventKey] = timestamp;
-          }
-
-          // 오래된 이벤트 정리 (30초 이전)
-          final now = DateTime.now().millisecondsSinceEpoch;
-          final expiredKeys = _alarmFacade.state.processedEventTimestamps.entries
-              .where((entry) => now - entry.value > 30000)
-              .map((entry) => entry.key)
-              .toList();
-          for (var key in expiredKeys) {
-            _alarmFacade.state.processedEventTimestamps.remove(key);
-          }
-
-          logMessage(
-            '🔔 [노티피케이션] 네이티브에서 특정 알람 취소 이벤트 수신: $busNo번, $stationName, $routeId',
-            level: LogLevel.info,
-          );
-
-          // 즉시 Flutter 측 상태 동기화 (낙관적 업데이트)
-          final String alarmKey = AlarmKeys.alarm(busNo, stationName, routeId);
-          final removedAlarm = _alarmFacade.activeAlarmsMap.remove(alarmKey);
-
-          if (removedAlarm != null) {
-            // 캐시 정리
-            final cacheKey = AlarmKeys.cache(busNo, routeId);
-            _alarmFacade.removeCachedBusInfoByKey(cacheKey);
-
-            // 추적 상태 업데이트
-            if (_alarmFacade.trackedRouteId == routeId) {
-              _alarmFacade.trackedRouteId = null;
-              if (_alarmFacade.activeAlarmsMap.isEmpty) {
-                _alarmFacade.isTrackingMode = false;
-                logMessage(
-                  '🛑 추적 모드 비활성화 (취소된 알람이 추적 중이던 알람)',
-                  level: LogLevel.info,
-                );
-              }
-            } else if (_alarmFacade.activeAlarmsMap.isEmpty) {
-              _alarmFacade.isTrackingMode = false;
-              _alarmFacade.trackedRouteId = null;
-              logMessage('🛑 추적 모드 비활성화 (모든 알람 취소됨)', level: LogLevel.info);
-            }
-
-            // 상태 저장 및 UI 업데이트
-            await _saveAlarms();
-            notifyListeners();
-
-            logMessage(
-              '✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료: $alarmKey',
-              level: LogLevel.info,
-            );
-          } else {
-            // 키로 찾지 못한 경우 routeId로 검색하여 제거 (안전장치)
-            final fallbackKey = _alarmFacade.activeAlarmsMap.keys.firstWhere(
-              (k) => _alarmFacade.activeAlarmsMap[k]?.routeId == routeId,
-              orElse: () => '',
-            );
-
-            if (fallbackKey.isNotEmpty) {
-              _alarmFacade.activeAlarmsMap.remove(fallbackKey);
-              logMessage(
-                '🔔 [노티피케이션] 알람 취소 감지 및 제거 (RouteId 기반): $fallbackKey',
-                level: LogLevel.info,
-              );
-
-              // 캐시 정리
-              final cacheKey = AlarmKeys.cache(busNo, routeId);
-              _alarmFacade.removeCachedBusInfoByKey(cacheKey);
-
-              // 추적 상태 업데이트
-              if (_alarmFacade.trackedRouteId == routeId) {
-                _alarmFacade.trackedRouteId = null;
-                if (_alarmFacade.activeAlarmsMap.isEmpty) {
-                  _alarmFacade.isTrackingMode = false;
-                  logMessage(
-                    '🛑 추적 모드 비활성화 (취소된 알람이 추적 중이던 알람)',
-                    level: LogLevel.info,
-                  );
-                }
-              } else if (_alarmFacade.activeAlarmsMap.isEmpty) {
-                _alarmFacade.isTrackingMode = false;
-                _alarmFacade.trackedRouteId = null;
-                logMessage('🛑 추적 모드 비활성화 (모든 알람 취소됨)', level: LogLevel.info);
-              }
-
-              // 상태 저장 및 UI 업데이트
-              await _saveAlarms();
-              notifyListeners();
-
-              logMessage(
-                '✅ 네이티브 이벤트에 따른 Flutter 알람 동기화 완료 (RouteId 기반): $fallbackKey',
-                level: LogLevel.info,
-              );
-            } else {
-              // 자동 알람 목록에서 확인
-              logMessage(
-                  '🔍 [Debug] 자동 알람 검색 시작: busNo=$busNo, stationName=$stationName, routeId=$routeId');
-
-          final autoAlarmIndex = _alarmFacade.autoAlarmsList.indexWhere(
-                (a) =>
-                    a.busNo == busNo &&
-                    a.stationName == stationName &&
-                    a.routeId == routeId,
-              );
-
-          if (autoAlarmIndex != -1) {
-            final alarmKey = AlarmKeys.alarm(busNo, stationName, routeId);
-            logMessage(
-              '🔔 [노티피케이션] 자동 알람 취소 감지: $busNo번, $stationName',
-              level: LogLevel.info,
-            );
-            if (_pendingAutoAlarmDeactivations.contains(alarmKey)) {
-              logMessage(
-                '🛑 자동 알람 중단 요청 무시(이미 처리 중): $alarmKey',
-                level: LogLevel.debug,
-              );
-            } else {
-              await deactivateAutoAlarm(busNo, stationName, routeId);
-            }
-          } else {
-                // 일반 알람이 _activeAlarms에 없더라도, 혹시 모르니 강제로 키를 재구성해서 삭제 시도
-                // (키 생성 로직이 다를 수 있으므로)
-                logMessage(
-                  '⚠️ 해당 알람($alarmKey)이 Flutter에 없음 - 상태 정리 및 강제 UI 업데이트 수행',
-                  level: LogLevel.warning,
-                );
-
-                // 상태 정리
-                if (_alarmFacade.activeAlarmsMap.isEmpty && _alarmFacade.isTrackingMode) {
-                  _alarmFacade.isTrackingMode = false;
-                  _alarmFacade.trackedRouteId = null;
-                  logMessage('🛑 추적 모드 비활성화 (상태 정리)', level: LogLevel.info);
-                }
-
-                // UI 강제 업데이트
-                notifyListeners();
-              }
-            }
-          }
-
-          return true; // Acknowledge event received
-        case 'onAllAlarmsCanceled':
-          // 모든 알람 취소 이벤트 처리
-          logMessage(
-            '🛑🛑🛑 네이티브에서 모든 알람 취소 이벤트 수신 - 사용자가 "추적 중지" 버튼을 눌렀습니다!',
-            level: LogLevel.warning,
-          );
-
-          // 🛑 실시간 버스 업데이트 타이머 중지 (중요!)
-          try {
-            _notificationService.stopRealTimeBusUpdates();
-            logMessage('🛑 실시간 버스 업데이트 타이머 강제 중지 완료', level: LogLevel.info);
-          } catch (e) {
-            logMessage('❌ 실시간 버스 업데이트 타이머 중지 오류: $e', level: LogLevel.error);
-          }
-
-          // 모든 활성 알람 제거
-          if (_alarmFacade.activeAlarmsMap.isNotEmpty) {
-            _alarmFacade.activeAlarmsMap.clear();
-            _alarmFacade.clearCachedBusInfo();
-            _alarmFacade.isTrackingMode = false;
-            _alarmFacade.trackedRouteId = null;
-            await _saveAlarms();
-            logMessage('✅ 모든 알람 취소 완료 (네이티브 이벤트에 의해)', level: LogLevel.info);
-            notifyListeners();
-          }
-
-          return true;
-        case 'stopAutoAlarmFromBroadcast':
-          // 자동알람 중지 브로드캐스트 수신 처리
-          final Map<String, dynamic> args = Map<String, dynamic>.from(
-            call.arguments,
-          );
-          final String busNo = args['busNo'] ?? '';
-          final String stationName = args['stationName'] ?? '';
-          final String routeId = args['routeId'] ?? '';
-
-          logMessage(
-            '🔔 네이티브에서 자동알람 중지 브로드캐스트 수신: $busNo, $stationName, $routeId',
-            level: LogLevel.info,
-          );
-
-          // stopAutoAlarm 메서드 호출
-          try {
-            final result = await deactivateAutoAlarm(busNo, stationName, routeId);
-            if (result) {
-              logMessage(
-                '✅ 자동알람 중지 완료 (브로드캐스트에 의해): $busNo번',
-                level: LogLevel.info,
-              );
-            } else {
-              logMessage(
-                '❌ 자동알람 중지 실패 (브로드캐스트에 의해): $busNo번',
-                level: LogLevel.error,
-              );
-            }
-          } catch (e) {
-            logMessage('❌ 자동알람 중지 처리 오류: $e', level: LogLevel.error);
-          }
-
-          return true;
-
-        case 'onAutoAlarmStarted':
-          final Map<String, dynamic> args = Map<String, dynamic>.from(call.arguments);
-          logMessage('✅ [네이티브] 자동 알람 시작: ${args['busNo']}, ${args['stationName']}', level: LogLevel.info);
-          return true;
-
-        case 'onAutoAlarmStopped':
-          final Map<String, dynamic> stoppedArgs = Map<String, dynamic>.from(call.arguments);
-          logMessage('🛑 [네이티브] 자동 알람 종료: ${stoppedArgs['busNo']}, ${stoppedArgs['stationName']}', level: LogLevel.info);
-          return true;
-
-        default:
-          // Ensure other method calls are still handled if any exist
-          logMessage(
-            'Unhandled method call: ${call.method}',
-            level: LogLevel.warning,
-          );
-          return null;
-      }
-    } catch (e) {
-      logMessage('메서드 채널 핸들러 오류 (${call.method}): $e', level: LogLevel.error);
-      return null;
-    }
   }
 
   Future<void> initialize() async {
