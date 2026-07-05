@@ -1218,3 +1218,26 @@ createAlarmNotificationChannel()
 8. `setOngoing(true)` - 진행 중 알림
 9. `setCategory(Notification.CATEGORY_PROGRESS)` - 카테고리
 
+
+---
+
+## 2026-07-05: 지식 베이스 재구조화 + flutter analyze 이슈 전체 정리
+
+### 문서 구조 (커밋 b481122)
+- `docs/index.md`(진입점) + `docs/topics/`(live-update-notification, auto-alarm, tts-audio) 신설
+- devlog 중복 제거(구 AGENTS.md 쪽 2026-01-28 1~4차) 및 폐기 엔트리 `⚠️` 플래그
+- AGENTS.md에 "작업 후 devlog append + topic 갱신" 워크플로 규칙 추가
+
+### analyze 이슈 30건 정리 (커밋 424d1ba)
+- `dart fix --apply` 20건: const, 문자열 interpolation, `rethrow`, 불필요 단언/중괄호,
+  unused import, `data!` → `data as T` (api_result.dart)
+- `use_build_context_synchronously` 9건: 파라미터/builder로 받은 context를 State의
+  `mounted` 대신 `context.mounted`로 가드 (favorites_screen, active_alarm_panel,
+  unified_bus_detail_widget)
+- `map_screen.dart`의 미사용 `_loadNearbyStations()` 삭제
+- 검증: `flutter analyze` 0건, `flutter test` 28건 전체 통과
+
+### 부수 정리
+- 옛 경로를 가리키던 stale worktree(funny-fermat) 등록 prune, 깨진 `.git` 링크는
+  `.git.disabled`로 보존 (브랜치 `claude/funny-fermat`는 미머지 WIP로 남아 있음)
+- pre-commit 훅: Dart 관련 파일이 스테이징된 경우에만 `flutter analyze` 실행하도록 수정
