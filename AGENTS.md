@@ -14,6 +14,12 @@
 - `android/app/src/main/kotlin/com/devground/daegubus/` — 네이티브 알림·버스 추적 (core / models / receivers / services / utils)
 - applicationId `com.devground.daegubus`, compileSdk/targetSdk 36
 
+## 문서
+- 진입점: `docs/index.md` — 작업 전 관련 주제 문서(`docs/topics/*.md`)를 먼저 확인할 것
+- `docs/topics/*.md`는 "지금 무엇이 참인가"(현재형), `docs/devlog.md`는 "언제 무엇을 했나"(append-only)
+
 ## 규칙
 - 알림은 `NotificationCompat.Builder` 기반을 유지할 것 (2026-02-16 결정 — 배경은 devlog 참조)
-- 개발 이력·의사결정 기록은 `docs/devlog.md`에 추가할 것. **이 파일(AGENTS.md)에 일지를 쓰지 말 것.**
+- 작업 후: ① `docs/devlog.md`에 엔트리 추가 ② 관련 `docs/topics/*.md`를 현재 상태로 갱신
+  (새 주제면 문서 생성 후 `docs/index.md`에 등록). **이 파일(AGENTS.md)에 일지를 쓰지 말 것.**
+- devlog의 기존 엔트리를 무효화하는 변경이면 해당 엔트리에 `> ⚠️ 폐기됨 (날짜)` 인용구를 붙일 것
