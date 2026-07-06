@@ -139,6 +139,41 @@ void main() {
     expect(prefs.getString('holidays_cache_2027'), jsonEncode(['2027-08-15']));
   });
 
+  test('fallback 음력 공휴일이 확정 공휴일과 일치한다 (2025·2026 교차 검증)', () {
+    final service = HolidayService.internal();
+
+    // 기준값: upstream 확정 데이터(CDN)에서 실측한 관공서 공휴일
+    final holidays2025 = service.fallbackHolidaysForYear(2025);
+    expect(
+      holidays2025,
+      containsAll([
+        DateTime(2025, 1, 28), DateTime(2025, 1, 29), DateTime(2025, 1, 30), // 설날
+        DateTime(2025, 5, 5), // 부처님오신날 (어린이날과 겹침)
+        DateTime(2025, 10, 5), DateTime(2025, 10, 6), DateTime(2025, 10, 7), // 추석
+      ]),
+    );
+
+    final holidays2026 = service.fallbackHolidaysForYear(2026);
+    expect(
+      holidays2026,
+      containsAll([
+        DateTime(2026, 2, 16), DateTime(2026, 2, 17), DateTime(2026, 2, 18), // 설날
+        DateTime(2026, 5, 24), // 부처님오신날
+        DateTime(2026, 9, 24), DateTime(2026, 9, 25), DateTime(2026, 9, 26), // 추석
+      ]),
+    );
+
+    // 양력 고정 8일 + 음력 7일
+    expect(holidays2026, hasLength(15));
+  });
+
+  test('fallback은 변환 테이블 범위(~2049) 밖에서는 양력 고정만 반환한다', () {
+    final service = HolidayService.internal();
+    final holidays2099 = service.fallbackHolidaysForYear(2099);
+    expect(holidays2099, hasLength(8));
+    expect(holidays2099, contains(DateTime(2099, 1, 1)));
+  });
+
   test('유효한 공휴일 이름이 하나라도 겹치면 유지한다', () async {
     SharedPreferences.setMockInitialValues({});
     final requests = <Uri>[];

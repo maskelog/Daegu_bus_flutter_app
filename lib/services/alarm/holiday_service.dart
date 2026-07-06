@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
+import 'package:korean_lunar_utils/korean_lunar_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show logMessage, LogLevel;
@@ -96,20 +97,22 @@ class HolidayService {
       return fromAsset;
     }
 
-    // 5. 최후 fallback: 양력 고정 공휴일만 계산해서 반환.
+    // 5. 최후 fallback: 양력 고정 + 음력 계산 공휴일을 반환.
     // 결과는 메모리에 캐시하지 않는다 — 다음 호출에서 재시도
     // (_lastFailureAt이 30분 과호출을 막는다)
     logMessage(
-      '❌ 공휴일 데이터 로드 실패: $year — 양력 고정 공휴일로 대체',
+      '❌ 공휴일 데이터 로드 실패: $year — 계산된 공휴일로 대체',
       level: LogLevel.error,
     );
-    return _fixedSolarHolidays(year);
+    return fallbackHolidaysForYear(year);
   }
 
-  /// 연도 데이터가 전혀 없을 때의 최후 fallback — 양력 고정 공휴일만.
-  /// 설날·추석·부처님오신날·대체공휴일은 계산할 수 없으므로 부분적이지만,
-  /// 빈 리스트(신정에도 알람이 울림)보다는 낫다.
-  List<DateTime> _fixedSolarHolidays(int year) => [
+  /// 연도 데이터가 전혀 없을 때의 최후 fallback.
+  /// 양력 고정 공휴일 + 음력 변환으로 계산한 설날·부처님오신날·추석 연휴.
+  /// 대체공휴일 규칙은 적용하지 못하므로 부분적이지만,
+  /// 빈 리스트(신정·설날에도 알람이 울림)보다는 낫다.
+  @visibleForTesting
+  List<DateTime> fallbackHolidaysForYear(int year) => [
         DateTime(year, 1, 1), // 신정
         DateTime(year, 3, 1), // 삼일절
         DateTime(year, 5, 5), // 어린이날
@@ -118,7 +121,42 @@ class HolidayService {
         DateTime(year, 10, 3), // 개천절
         DateTime(year, 10, 9), // 한글날
         DateTime(year, 12, 25), // 기독탄신일
+        ..._lunarHolidays(year),
       ];
+
+  /// 음력 공휴일: 설날 연휴(음력 1/1 ± 1일), 부처님오신날(음력 4/8),
+  /// 추석 연휴(음력 8/15 ± 1일). korean_lunar_utils의 변환 테이블 기반이며,
+  /// 정확성은 테스트에서 확정 공휴일 데이터(2025·2026)와 교차 검증한다.
+  List<DateTime> _lunarHolidays(int year) {
+    // 변환 테이블 지원 범위(1900~2049) 밖이면 계산하지 않는다
+    if (year < 1900 || year > 2049) return const [];
+
+    final dates = <DateTime>[];
+    try {
+      final seollal =
+          LunarSolarConverter.convertLunarToSolar(DateTime(year, 1, 1));
+      dates.addAll([
+        seollal.subtract(const Duration(days: 1)),
+        seollal,
+        seollal.add(const Duration(days: 1)),
+      ]);
+
+      final buddhaDay =
+          LunarSolarConverter.convertLunarToSolar(DateTime(year, 4, 8));
+      dates.add(buddhaDay);
+
+      final chuseok =
+          LunarSolarConverter.convertLunarToSolar(DateTime(year, 8, 15));
+      dates.addAll([
+        chuseok.subtract(const Duration(days: 1)),
+        chuseok,
+        chuseok.add(const Duration(days: 1)),
+      ]);
+    } catch (e) {
+      logMessage('⚠️ 음력 공휴일 계산 실패($year): $e', level: LogLevel.warning);
+    }
+    return dates;
+  }
 
   _PersistedHolidays? _readPersisted(SharedPreferences prefs, int year) {
     try {
