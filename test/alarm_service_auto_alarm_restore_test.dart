@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:daegu_bus_app/models/auto_alarm.dart';
+import 'package:daegu_bus_app/services/alarm/alarm_keys.dart';
 import 'package:daegu_bus_app/services/alarm_service.dart';
 import 'package:daegu_bus_app/services/notification_service.dart';
 import 'package:daegu_bus_app/services/settings_service.dart';
@@ -163,9 +164,13 @@ void main() {
 
     await service.cancelScheduledAutoAlarm(alarmId);
 
-    expect(calls, hasLength(1));
-    expect(calls.single.method, 'cancelNativeAutoAlarm');
-    expect(calls.single.arguments['alarmId'], uniqueAlarmId.hashCode);
+    // 현행 ID + 구버전 ID 2종(Dart hashCode, Math.abs(Java hash))을 함께 취소한다.
+    expect(calls.map((call) => call.method).toSet(), {'cancelNativeAutoAlarm'});
+    final cancelledIds =
+        calls.map((call) => call.arguments['alarmId'] as int).toList();
+    expect(cancelledIds.first, AlarmKeys.autoAlarmNativeId(alarmId));
+    expect(cancelledIds, contains(uniqueAlarmId.hashCode));
+    expect(cancelledIds, contains(AlarmKeys.javaStringHashCode(alarmId).abs()));
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.containsKey('last_scheduled_alarm_$uniqueAlarmId'), isFalse);
@@ -218,13 +223,15 @@ void main() {
 
     await service.updateAutoAlarms([AutoAlarm.fromJson(editedAlarm)]);
 
-    expect(calls.map((call) => call.method), [
-      'cancelNativeAutoAlarm',
-      'scheduleNativeAlarm',
-    ]);
-    final uniqueAlarmId = 'auto_alarm_${editedAlarm['id']}';
-    expect(calls.first.arguments['alarmId'], uniqueAlarmId.hashCode);
-    expect(calls.last.arguments['alarmId'], uniqueAlarmId.hashCode);
+    // 취소(현행 + 구버전 ID들)가 모두 스케줄 등록보다 먼저 와야 한다.
+    expect(calls.last.method, 'scheduleNativeAlarm');
+    expect(
+      calls.sublist(0, calls.length - 1).map((call) => call.method).toSet(),
+      {'cancelNativeAutoAlarm'},
+    );
+    final nativeId = AlarmKeys.autoAlarmNativeId(editedAlarm['id'] as String);
+    expect(calls.first.arguments['alarmId'], nativeId);
+    expect(calls.last.arguments['alarmId'], nativeId);
     expect(calls.last.arguments['scheduledTimeMillis'],
         now.millisecondsSinceEpoch);
 
