@@ -1,6 +1,10 @@
 package com.devground.daegubus.utils
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
+import android.os.Build
+import android.util.Log
 import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -63,6 +67,49 @@ object AutoAlarmScheduleCalculator {
         }
 
         return null
+    }
+
+    /**
+     * 정확한 알람 등록 공통 진입점.
+     *
+     * Android 12(API 31~32)에서는 사용자가 설정에서 정확한 알람 권한을 회수할 수
+     * 있고(canScheduleExactAlarms=false), 그 상태로 setAlarmClock을 부르면
+     * SecurityException이 난다. Android 13+는 USE_EXACT_ALARM이라 회수 불가.
+     * 권한이 없으면 setAndAllowWhileIdle(부정확 — Doze 유지보수 윈도우에 발화)로
+     * 저하해서 최소한 알람이 소실되지는 않게 한다.
+     *
+     * @return true면 정확한 알람(setAlarmClock)으로 등록됨
+     */
+    fun scheduleExactAlarm(
+        alarmManager: AlarmManager,
+        triggerAtMillis: Long,
+        pendingIntent: PendingIntent,
+        logTag: String,
+    ): Boolean {
+        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            alarmManager.canScheduleExactAlarms()
+        if (canExact) {
+            try {
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(triggerAtMillis, pendingIntent),
+                    pendingIntent
+                )
+                return true
+            } catch (e: SecurityException) {
+                Log.w(logTag, "⚠️ 정확한 알람 등록 거부(SecurityException), 부정확 알람으로 저하: ${e.message}")
+            }
+        } else {
+            Log.w(logTag, "⚠️ 정확한 알람 권한 없음(canScheduleExactAlarms=false), 부정확 알람으로 저하")
+        }
+        return try {
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent
+            )
+            false
+        } catch (e: Exception) {
+            Log.e(logTag, "❌ 부정확 알람 등록도 실패: ${e.message}")
+            false
+        }
     }
 
     fun trackingStartTime(targetTimeMillis: Long, nowMillis: Long): Long {

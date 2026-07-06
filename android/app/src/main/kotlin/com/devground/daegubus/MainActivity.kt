@@ -1018,6 +1018,13 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         result.error("START_AUTO_ALARM_ERROR", "Failed to start auto alarm immediately", e.message)
                     }
                 }
+                "canScheduleExactAlarms" -> {
+                    // Android 12(API 31~32)에서만 회수 가능. 13+는 USE_EXACT_ALARM으로 항상 true.
+                    val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                    val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                        alarmManager.canScheduleExactAlarms()
+                    result.success(canExact)
+                }
                 "cancelNativeAutoAlarm" -> {
                     val alarmId = call.argument<Int>("alarmId") ?: 0
                     try {
@@ -1123,15 +1130,11 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             )
                         }
 
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            alarmManager.setAlarmClock(
-                                android.app.AlarmManager.AlarmClockInfo(trackingStartTime, pendingIntent),
-                                pendingIntent
-                            )
-                        } else {
-                            alarmManager.setExact(
-                                android.app.AlarmManager.RTC_WAKEUP, trackingStartTime, pendingIntent
-                            )
+                        val exact = AutoAlarmScheduleCalculator.scheduleExactAlarm(
+                            alarmManager, trackingStartTime, pendingIntent, TAG
+                        )
+                        if (!exact) {
+                            Log.w(TAG, "⚠️ ${busNo}번 자동알람이 부정확 알람으로 등록됨 — 설정에서 '알람 및 리마인더' 권한 확인 필요")
                         }
 
                         // 재부팅 재등록(BootReceiver)용 네이티브 저장소에 기록.

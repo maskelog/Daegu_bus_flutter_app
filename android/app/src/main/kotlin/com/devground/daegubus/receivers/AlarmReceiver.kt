@@ -109,11 +109,9 @@ class AlarmReceiver : BroadcastReceiver() {
                     android.app.PendingIntent.FLAG_UPDATE_CURRENT
                 )
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAlarmClock(android.app.AlarmManager.AlarmClockInfo(scheduledTime, pendingIntent), pendingIntent)
-            } else {
-                alarmManager.setExact(android.app.AlarmManager.RTC_WAKEUP, scheduledTime, pendingIntent)
-            }
+            AutoAlarmScheduleCalculator.scheduleExactAlarm(
+                alarmManager, scheduledTime, pendingIntent, TAG
+            )
             Log.d(TAG, "⏰ 정확한 시각으로 재설정: ${java.util.Date(scheduledTime)}")
         } catch (e: Exception) {
             Log.e(TAG, "❌ 정확한 시각 재설정 오류", e)
@@ -197,19 +195,10 @@ class AlarmReceiver : BroadcastReceiver() {
                 )
             }
 
-            // 정확한 알람 설정
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAlarmClock(
-                    android.app.AlarmManager.AlarmClockInfo(trackingStartTime, pendingIntent),
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    android.app.AlarmManager.RTC_WAKEUP,
-                    trackingStartTime,
-                    pendingIntent
-                )
-            }
+            // 정확한 알람 설정 (권한 회수 시 부정확 알람으로 저하)
+            AutoAlarmScheduleCalculator.scheduleExactAlarm(
+                alarmManager, trackingStartTime, pendingIntent, TAG
+            )
 
             Log.d(TAG, "✅ 다음 자동 알람 재설정 완료: ${busNo}번 버스, tracking=${java.util.Date(trackingStartTime)}, target=${java.util.Date(nextTargetTime)}")
 

@@ -110,14 +110,9 @@ class BootReceiver : BroadcastReceiver() {
                     )
                 }
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setAlarmClock(
-                        AlarmManager.AlarmClockInfo(trackingStartTime, pendingIntent),
-                        pendingIntent
-                    )
-                } else {
-                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, trackingStartTime, pendingIntent)
-                }
+                AutoAlarmScheduleCalculator.scheduleExactAlarm(
+                    alarmManager, trackingStartTime, pendingIntent, TAG
+                )
 
                 Log.d(TAG, "✅ 자동알람 재등록: $busNo, $stationName → tracking=${java.util.Date(trackingStartTime)}, target=${java.util.Date(targetAlarmTime)}")
             } catch (e: Exception) {
