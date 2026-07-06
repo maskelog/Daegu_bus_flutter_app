@@ -27,7 +27,11 @@
   - `alarm_keys.dart` — 알람/캐시 키 표준 포맷 (반드시 이걸로만 키 생성)
   - `holiday_service.dart` — 한국 공휴일 조회 (싱글턴). 우선순위:
     메모리 → 영속 캐시(7일 TTL) → CDN(jsdelivr open-data, 성공 시 영속화) →
-    만료 캐시 → 번들 에셋(assets/holidays/2024~2027.json). 실패는 30분 백오프 후 재시도
+    만료 캐시 → 번들 에셋(assets/holidays/2024~2027.json) → 양력 고정 공휴일 8일.
+    실패는 30분 백오프 후 재시도.
+    **주의**: upstream(월력요항 기반)에 제헌절·노동절이 공휴일처럼 섞여 오므로
+    파싱 시 이름으로 걸러낸다(대체공휴일 포함) — "안 울려서 지각"보다 "울리는"
+    쪽이 안전하다는 원칙. 노동절 휴무 사용자는 커스텀 예외 날짜로 추가
   - `alarm_scheduler.dart`, `alarm_native_bridge.dart`, `alarm_state.dart`, `alarm_cache.dart`
 - `services/settings_service.dart` — `customExcludeDates` (SharedPreferences 영구 저장)
 
