@@ -62,8 +62,10 @@
   스킵한다(탐색 창 60일). 앱을 1개월 이상 안 열면 목록이 낡을 수 있다(우아한 저하).
 - **알람 등록은 `AutoAlarmScheduleCalculator.scheduleExactAlarm`으로만**: Android
   12(API 31~32)에서 정확한 알람 권한이 회수된 경우 `setAndAllowWhileIdle`(부정확)로
-  저하해 알람 소실을 막는다. `setAlarmClock`을 직접 부르지 말 것. Flutter는
-  `canScheduleExactAlarms` 메서드 채널로 권한 상태를 조회할 수 있다.
+  저하해 알람 소실을 막는다. `setAlarmClock`을 직접 부르지 말 것.
+  권한 상태는 permission 채널의 `canScheduleExactAlarms`로 조회
+  (`PermissionService.canScheduleExactAlarms()`), 설정 화면 알람 섹션의
+  `_ExactAlarmTile`이 회수 상태를 안내하고 시스템 권한 화면으로 유도한다.
 - 예약 실패 시 별도 "백업 알람"은 없다 — 네이티브가 이미 5분 전(trackingStartTime)에
   발화하므로 중복이다. 실패는 TTS 안내만 한다(`_notifySchedulingFailure`).
 - **발화 시점 공휴일 게이트**(`HolidayGate`): 스케줄 등록 후 지정된 임시공휴일 대응.
