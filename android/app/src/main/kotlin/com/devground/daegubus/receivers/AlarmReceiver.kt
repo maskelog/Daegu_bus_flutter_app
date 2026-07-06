@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import com.devground.daegubus.services.BusAlertService
 import com.devground.daegubus.utils.AutoAlarmScheduleCalculator
+import com.devground.daegubus.utils.HolidayGate
 
 class AlarmReceiver : BroadcastReceiver() {
     private val TAG = "AlarmReceiver"
@@ -54,8 +55,23 @@ class AlarmReceiver : BroadcastReceiver() {
             val useTTS = intent.getBooleanExtra("useTTS", true)
             val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
             val alertOnArrivalOnly = intent.getBooleanExtra("alertOnArrivalOnly", false)
+            val gateExcludeHolidays = intent.getBooleanExtra("excludeHolidays", false)
             val hour = intent.getIntExtra("hour", -1)
             val minute = intent.getIntExtra("minute", -1)
+
+            // 발화 시점 공휴일 게이트 1단계: 저장된 예외 날짜 확인 (스케줄 등록 이후
+            // 앱이 갱신해 둔 임시공휴일·커스텀 예외 대응). 해당하면 추적을 시작하지
+            // 않고 다음 알람만 체인한다. 2단계(CDN 신선 조회)는 BusAlertService에서.
+            if (gateExcludeHolidays && HolidayGate.isTodayInStoredExcludedDates(context)) {
+                Log.w(TAG, "🚫 오늘은 공휴일/예외 날짜 - 추적 시작 생략, 다음 알람만 재설정: $busNo")
+                val pendingResult = goAsync()
+                Thread {
+                    try { scheduleNextAlarmImmediate(context.applicationContext, intent) }
+                    catch (e: Exception) { Log.e(TAG, "❌ 다음 알람 설정 오류", e) }
+                    finally { try { pendingResult.finish() } catch (_: Exception) {} }
+                }.start()
+                return
+            }
 
             val busIntent = Intent(context.applicationContext, BusAlertService::class.java).apply {
                 this.action = BusAlertService.ACTION_START_AUTO_ALARM_LIGHTWEIGHT
@@ -68,6 +84,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("useTTS", useTTS)
                 putExtra("isCommuteAlarm", isCommuteAlarm)
                 putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
+                putExtra("excludeHolidays", gateExcludeHolidays)
                 putExtra("alarmHour", hour)
                 putExtra("alarmMinute", minute)
                 putExtra("targetAlarmTime", targetAlarmTime)

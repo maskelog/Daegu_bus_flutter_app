@@ -651,8 +651,9 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             // intent extras로 전달된 alertOnArrivalOnly를 인스턴스 필드에 반영
             alertOnArrivalOnly = intentAlertOnArrivalOnly
+            val excludeHolidays = intent?.getBooleanExtra("excludeHolidays", false) ?: false
             Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $autoAlarmBusNo 번, $autoAlarmStationName, TTS=$useTTS, ArrivalOnly=$alertOnArrivalOnly")
-            handleAutoAlarmLightweight(autoAlarmBusNo, autoAlarmStationName, remainingMinutes, currentStationText, routeIdText, stationIdText, useTTS, isCommuteAlarm, alarmHour, alarmMinute, targetAlarmTime)
+            handleAutoAlarmLightweight(autoAlarmBusNo, autoAlarmStationName, remainingMinutes, currentStationText, routeIdText, stationIdText, useTTS, isCommuteAlarm, alarmHour, alarmMinute, targetAlarmTime, excludeHolidays)
         }
         ServiceCommand.StopAutoAlarm -> {
             Log.i(TAG, "🛑 ACTION_STOP_AUTO_ALARM received")
@@ -2296,7 +2297,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
      * - 간단한 알림만 표시
      * - 5분 후 자동 종료
      */
-    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String, routeId: String, stationId: String, useTTS: Boolean = true, isCommuteAlarm: Boolean = false, alarmHour: Int = -1, alarmMinute: Int = -1, targetAlarmTime: Long = 0L) {
+    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String, routeId: String, stationId: String, useTTS: Boolean = true, isCommuteAlarm: Boolean = false, alarmHour: Int = -1, alarmMinute: Int = -1, targetAlarmTime: Long = 0L, excludeHolidays: Boolean = false) {
         try {
             Log.d(TAG, "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName, routeId=$routeId, stationId=$stationId, TTS=$useTTS")
 
@@ -2348,6 +2349,21 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                     Log.d(TAG, "🔔 자동알람: 포그라운드 서비스 시작")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ 자동알람 포그라운드 시작 실패: ${e.message}", e)
+                }
+            }
+
+            // 발화 시점 공휴일 게이트 2단계: CDN 신선 조회 (백그라운드, 3초 타임아웃).
+            // 스케줄 등록 이후 지정된 임시공휴일을 앱 실행 없이도 잡는다.
+            // 조회 실패(null)면 알람을 막지 않는다.
+            if (excludeHolidays) {
+                serviceScope.launch {
+                    val isHoliday = withContext(Dispatchers.IO) {
+                        com.devground.daegubus.utils.HolidayGate.isTodayHolidayFresh()
+                    }
+                    if (isHoliday == true) {
+                        Log.w(TAG, "🚫 오늘이 공휴일로 확인됨(신선 조회) - 자동알람 중단: $busNo")
+                        stopAutoAlarmLightweight()
+                    }
                 }
             }
 
