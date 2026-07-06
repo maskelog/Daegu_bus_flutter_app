@@ -123,6 +123,15 @@ class AlarmRepository {
     return result;
   }
 
+  /// 구버전(비결정적 alarmId) 네이티브 알람 정리를 1회만 수행하기 위한 플래그.
+  /// 최초 호출에서만 true를 돌려주고 플래그를 기록한다.
+  Future<bool> shouldCleanLegacyAlarmIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('legacy_alarm_ids_cleaned_v1') ?? false) return false;
+    await prefs.setBool('legacy_alarm_ids_cleaned_v1', true);
+    return true;
+  }
+
   /// 예약된 자동 알람의 마지막 스케줄 마커 제거.
   Future<void> removeScheduledAlarmMarker(String uniqueAlarmId) async {
     final prefs = await SharedPreferences.getInstance();

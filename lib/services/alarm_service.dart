@@ -147,6 +147,14 @@ class AlarmService extends ChangeNotifier {
       final autoAlarms = await _repository.loadAutoAlarms();
       _alarmFacade.autoAlarmsList.clear();
 
+      // 구버전 alarmId로 등록된 잔여 네이티브 알람 정리 (앱 업데이트 후 1회)
+      if (await _repository.shouldCleanLegacyAlarmIds()) {
+        for (final autoAlarm in autoAlarms) {
+          await cancelScheduledAutoAlarm(autoAlarm.id);
+        }
+        logMessage('✅ 구버전 alarmId 잔여 알람 정리 완료 (${autoAlarms.length}건)');
+      }
+
       // 다음 알람 시간 계산에 쓸 공휴일·예외 날짜 (HolidayService가 캐싱)
       final allHolidays = await _getUpcomingExclusionDates();
 
@@ -426,7 +434,22 @@ class AlarmService extends ChangeNotifier {
 
   Future<void> cancelScheduledAutoAlarm(String alarmId) async {
     final uniqueAlarmId = 'auto_alarm_$alarmId';
-    await _alarmFacade.nativeBridge.cancelNativeAutoAlarm(uniqueAlarmId.hashCode);
+
+    // 현행 ID (결정적 해시 — 스케줄 등록과 동일)
+    await _alarmFacade.nativeBridge
+        .cancelNativeAutoAlarm(AlarmKeys.autoAlarmNativeId(alarmId));
+
+    // 구버전 잔여 알람 정리:
+    // ① 과거 Flutter가 쓰던 Dart String.hashCode 기반 ID
+    // ② 과거 BootReceiver가 쓰던 Math.abs(Java hash(id)) 기반 ID
+    final legacyDartId = uniqueAlarmId.hashCode;
+    final legacyBootId = AlarmKeys.javaStringHashCode(alarmId).abs();
+    for (final legacyId in {legacyDartId, legacyBootId}) {
+      if (legacyId != AlarmKeys.autoAlarmNativeId(alarmId)) {
+        await _alarmFacade.nativeBridge.cancelNativeAutoAlarm(legacyId);
+      }
+    }
+
     await _repository.removeScheduledAlarmMarker(uniqueAlarmId);
   }
 

@@ -8,9 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.devground.daegubus.utils.AutoAlarmScheduleCalculator
-import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Calendar
 
 class BootReceiver : BroadcastReceiver() {
     private val TAG = "BootReceiver"
@@ -33,71 +31,52 @@ class BootReceiver : BroadcastReceiver() {
         }.start()
     }
 
-    private fun resolveStationId(context: Context, bsId: String): String {
-        if (bsId.startsWith("7") && bsId.length == 10) return bsId
-        try {
-            val dbFile = context.getDatabasePath("bus_stops.db")
-            if (!dbFile.exists()) {
-                Log.w(TAG, "bus_stops.db 파일 없음, 원본 stationId 사용: $bsId")
-                return bsId
-            }
-            android.database.sqlite.SQLiteDatabase.openDatabase(
-                dbFile.absolutePath, null,
-                android.database.sqlite.SQLiteDatabase.OPEN_READONLY
-            ).use { db ->
-                db.rawQuery("SELECT station_id FROM bus_stops WHERE bsId = ? LIMIT 1", arrayOf(bsId)).use { c ->
-                    if (c.moveToFirst()) {
-                        val stationId = c.getString(0)
-                        if (!stationId.isNullOrBlank()) {
-                            Log.d(TAG, "✅ stationId 변환: $bsId → $stationId")
-                            return stationId
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "stationId 변환 오류 ($bsId): ${e.message}")
-        }
-        Log.w(TAG, "stationId 변환 실패, 원본 사용: $bsId")
-        return bsId
-    }
-
     private fun rescheduleAllAlarms(context: Context) {
-        val flutterPrefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val alarmSet: Set<String> = flutterPrefs.getStringSet("flutter.auto_alarms", null) ?: run {
+        // scheduleNativeAlarm(MainActivity)이 기록해 두는 네이티브 저장소.
+        // FlutterSharedPreferences의 StringList는 플러그인이 인코딩된 String으로
+        // 저장하므로 getStringSet으로는 읽을 수 없다 — 반드시 이 저장소를 쓸 것.
+        val store = context.getSharedPreferences("auto_alarm_store", Context.MODE_PRIVATE)
+        val entries = store.all.values.filterIsInstance<String>()
+        if (entries.isEmpty()) {
             Log.d(TAG, "저장된 자동알람 없음")
             return
         }
-        val alarmListJson: List<String> = alarmSet.toList()
 
-        Log.d(TAG, "자동알람 재등록 대상: ${alarmListJson.size}개")
+        Log.d(TAG, "자동알람 재등록 대상: ${entries.size}개")
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val excludedDates = AutoAlarmScheduleCalculator.loadExcludedDates(context)
 
-        for (alarmJson in alarmListJson) {
+        for (alarmJson in entries) {
             try {
                 val obj = JSONObject(alarmJson)
-                if (!obj.optBoolean("isActive", true)) continue
-
-                val alarmId = Math.abs(obj.optString("id", "0").hashCode())
-                val busNo = obj.optString("routeNo").takeIf { it.isNotBlank() } ?: continue
+                // 예약 당시 Flutter가 부여한 ID를 그대로 재사용한다 (재계산 금지 —
+                // 계산 방식이 갈리면 취소되지 않는 유령 알람이 생긴다).
+                val alarmId = obj.optInt("alarmId", 0)
+                val busNo = obj.optString("busNo").takeIf { it.isNotBlank() } ?: continue
                 val stationName = obj.optString("stationName").takeIf { it.isNotBlank() } ?: continue
                 val routeId = obj.optString("routeId").takeIf { it.isNotBlank() } ?: continue
-                val rawStationId = obj.optString("stationId").takeIf { it.isNotBlank() } ?: continue
-                val stationId = resolveStationId(context, rawStationId)
+                val stationId = obj.optString("stationId").takeIf { it.isNotBlank() } ?: continue
                 val hour = obj.optInt("hour", -1).takeIf { it >= 0 } ?: continue
                 val minute = obj.optInt("minute", 0)
                 val useTTS = obj.optBoolean("useTTS", true)
                 val isCommuteAlarm = obj.optBoolean("isCommuteAlarm", true)
-                val alertOnArrivalOnly = flutterPrefs.getBoolean("flutter.alert_on_arrival_only", false)
+                val excludeHolidays = obj.optBoolean("excludeHolidays", false)
+                val alertOnArrivalOnly = try {
+                    context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                        .getBoolean("flutter.alert_on_arrival_only", obj.optBoolean("alertOnArrivalOnly", false))
+                } catch (e: Exception) {
+                    obj.optBoolean("alertOnArrivalOnly", false)
+                }
 
                 val repeatDaysArray = obj.optJSONArray("repeatDays") ?: continue
                 val repeatDays = IntArray(repeatDaysArray.length()) { repeatDaysArray.getInt(it) }
                 if (repeatDays.isEmpty()) continue
 
                 val nowMillis = System.currentTimeMillis()
-                val targetAlarmTime =
-                    AutoAlarmScheduleCalculator.findNextTargetTime(nowMillis, hour, minute, repeatDays)
-                        ?: continue
+                val targetAlarmTime = AutoAlarmScheduleCalculator.findNextTargetTime(
+                    nowMillis, hour, minute, repeatDays,
+                    if (excludeHolidays) excludedDates else emptySet(),
+                ) ?: continue
                 val trackingStartTime =
                     AutoAlarmScheduleCalculator.trackingStartTime(targetAlarmTime, nowMillis)
 
@@ -111,6 +90,7 @@ class BootReceiver : BroadcastReceiver() {
                     putExtra("useTTS", useTTS)
                     putExtra("isCommuteAlarm", isCommuteAlarm)
                     putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
+                    putExtra("excludeHolidays", excludeHolidays)
                     putExtra("hour", hour)
                     putExtra("minute", minute)
                     putExtra("repeatDays", repeatDays)

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../main.dart' show logMessage, LogLevel;
 import '../../models/auto_alarm.dart';
 import '../../services/settings_service.dart';
+import 'alarm_keys.dart';
 import '../../utils/database_helper.dart';
 import '../../utils/simple_tts_helper.dart';
 
@@ -60,7 +61,9 @@ class AlarmScheduler {
       }
 
       await _methodChannel?.invokeMethod('scheduleNativeAlarm', {
-        'alarmId': uniqueAlarmId.hashCode,
+        // Dart String.hashCode는 버전 간 안정성이 없어 결정적 해시로 고정
+        // (BootReceiver가 저장·재사용하는 ID와 반드시 일치해야 함)
+        'alarmId': AlarmKeys.autoAlarmNativeId(alarm.id),
         'busNo': alarm.routeNo,
         'stationName': alarm.stationName,
         'routeId': alarm.routeId,

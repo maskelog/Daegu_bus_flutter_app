@@ -1044,6 +1044,10 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         } else {
                             Log.i(TAG, "ℹ️ 취소할 네이티브 자동알람 예약 없음: alarmId=$alarmId")
                         }
+                        // 재부팅 재등록 저장소에서도 제거
+                        applicationContext
+                            .getSharedPreferences("auto_alarm_store", Context.MODE_PRIVATE)
+                            .edit().remove(alarmId.toString()).apply()
                         result.success(true)
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ 네이티브 자동알람 예약 취소 실패: ${e.message}", e)
@@ -1129,6 +1133,26 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                                 android.app.AlarmManager.RTC_WAKEUP, trackingStartTime, pendingIntent
                             )
                         }
+
+                        // 재부팅 재등록(BootReceiver)용 네이티브 저장소에 기록.
+                        // alarmId를 그대로 저장해 두므로 재등록 시 재계산이 필요 없다.
+                        val storeEntry = org.json.JSONObject().apply {
+                            put("alarmId", alarmId)
+                            put("busNo", busNo)
+                            put("stationName", stationName)
+                            put("routeId", routeId)
+                            put("stationId", stationId)
+                            put("useTTS", useTTS)
+                            put("isCommuteAlarm", isCommuteAlarm)
+                            put("alertOnArrivalOnly", alertOnArrivalOnly)
+                            put("excludeHolidays", excludeHolidays)
+                            put("hour", hour)
+                            put("minute", minute)
+                            put("repeatDays", org.json.JSONArray(repeatDays.toList()))
+                        }
+                        applicationContext
+                            .getSharedPreferences("auto_alarm_store", Context.MODE_PRIVATE)
+                            .edit().putString(alarmId.toString(), storeEntry.toString()).apply()
 
                         Log.d(TAG, "✅ Native AlarmManager 스케줄링 완료: ${busNo}번 버스, tracking=${java.util.Date(trackingStartTime)}, target=${java.util.Date(targetAlarmTime)}")
                         result.success(true)
