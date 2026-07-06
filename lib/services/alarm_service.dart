@@ -194,6 +194,8 @@ class AlarmService extends ChangeNotifier {
   }
 
   /// 이번 달·다음 달 공휴일 + 사용자 지정 예외 날짜.
+  /// 네이티브 재스케줄 경로(AlarmReceiver/BootReceiver)에서도 같은 판단을
+  /// 할 수 있도록 결과를 prefs(excluded_dates)로 내려둔다.
   Future<List<DateTime>> _getUpcomingExclusionDates() async {
     final now = DateTime.now();
     final currentMonthHolidays = await getHolidays(now.year, now.month);
@@ -201,11 +203,13 @@ class AlarmService extends ChangeNotifier {
     final nextTargetYear = now.month == 12 ? now.year + 1 : now.year;
     final nextMonthHolidays =
         await getHolidays(nextTargetYear, nextTargetMonth);
-    return [
+    final dates = [
       ...currentMonthHolidays,
       ...nextMonthHolidays,
       ...SettingsService().customExcludeDates,
     ];
+    await _repository.saveExcludedDates(dates);
+    return dates;
   }
 
   Future<bool> startBusMonitoringService({

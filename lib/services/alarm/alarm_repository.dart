@@ -128,4 +128,25 @@ class AlarmRepository {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('last_scheduled_alarm_$uniqueAlarmId');
   }
+
+  /// 공휴일·커스텀 예외 날짜를 네이티브가 읽을 수 있는 형태로 저장.
+  ///
+  /// 네이티브(AlarmReceiver 체인·BootReceiver)는 앱 실행 없이 다음 알람을
+  /// 재계산하므로, excludeHolidays 판단에 쓸 날짜 목록을 String(JSON)으로
+  /// 내려둔다. setString은 FlutterSharedPreferences에 평문으로 저장되어
+  /// Kotlin에서 getString("flutter.excluded_dates")로 읽힌다.
+  Future<void> saveExcludedDates(List<DateTime> dates) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final formatted = dates
+          .map((d) => '${d.year.toString().padLeft(4, '0')}-'
+              '${d.month.toString().padLeft(2, '0')}-'
+              '${d.day.toString().padLeft(2, '0')}')
+          .toSet()
+          .toList();
+      await prefs.setString('excluded_dates', jsonEncode(formatted));
+    } catch (e) {
+      logMessage('❌ 예외 날짜 저장 오류: $e', level: LogLevel.error);
+    }
+  }
 }

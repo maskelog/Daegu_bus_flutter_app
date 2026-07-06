@@ -73,6 +73,7 @@ class AlarmScheduler {
         'isImmediate': isImmediate,
         'isCommuteAlarm': alarm.isCommuteAlarm,
         'alertOnArrivalOnly': SettingsService().alertOnArrivalOnly,
+        'excludeHolidays': alarm.excludeHolidays,
       });
 
       logMessage(

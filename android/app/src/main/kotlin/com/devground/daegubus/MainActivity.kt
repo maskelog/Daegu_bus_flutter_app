@@ -1063,17 +1063,23 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                     val minute = call.argument<Int>("minute") ?: 0
                     val repeatDays = call.argument<ArrayList<Int>>("repeatDays")?.toIntArray() ?: intArrayOf()
                     val requestedTargetTime = call.argument<Long>("scheduledTimeMillis") ?: 0L
-                    
+                    val excludeHolidays = call.argument<Boolean>("excludeHolidays") ?: false
+
                     if (busNo.isBlank() || stationName.isBlank() || routeId.isBlank() || stationId.isBlank() || repeatDays.isEmpty()) {
                         result.error("INVALID_ARGUMENT", "필수 인자가 누락되었습니다", null)
                         return@setMethodCallHandler
                     }
-                    
+
                     try {
                         val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
                         val nowMillis = System.currentTimeMillis()
+                        val excludedDates = if (excludeHolidays) {
+                            AutoAlarmScheduleCalculator.loadExcludedDates(applicationContext)
+                        } else {
+                            emptySet()
+                        }
                         val targetAlarmTime = requestedTargetTime.takeIf { it > nowMillis }
-                            ?: AutoAlarmScheduleCalculator.findNextTargetTime(nowMillis, hour, minute, repeatDays)
+                            ?: AutoAlarmScheduleCalculator.findNextTargetTime(nowMillis, hour, minute, repeatDays, excludedDates)
 
                         if (targetAlarmTime == null) {
                             result.error("SCHEDULE_ERROR", "유효한 반복 요일을 찾을 수 없습니다", null)
@@ -1096,6 +1102,7 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                             putExtra("repeatDays", repeatDays)
                             putExtra("isCommuteAlarm", isCommuteAlarm)
                             putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
+                            putExtra("excludeHolidays", excludeHolidays)
                             putExtra("scheduledTime", trackingStartTime)
                             putExtra("targetAlarmTime", targetAlarmTime)
                         }

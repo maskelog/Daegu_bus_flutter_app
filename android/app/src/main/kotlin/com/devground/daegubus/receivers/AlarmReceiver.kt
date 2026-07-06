@@ -134,16 +134,22 @@ class AlarmReceiver : BroadcastReceiver() {
             val useTTS = intent.getBooleanExtra("useTTS", true)
             val isCommuteAlarm = intent.getBooleanExtra("isCommuteAlarm", false)
             val alertOnArrivalOnly = intent.getBooleanExtra("alertOnArrivalOnly", false)
+            val excludeHolidays = intent.getBooleanExtra("excludeHolidays", false)
             val hour = intent.getIntExtra("hour", 0)
             val minute = intent.getIntExtra("minute", 0)
             val repeatDays = intent.getIntArrayExtra("repeatDays") ?: return
 
-            Log.d(TAG, "🔄 다음 자동 알람 즉시 재설정: ${busNo}번 버스, $hour:$minute, 반복 요일: ${repeatDays.joinToString(",")}")
+            Log.d(TAG, "🔄 다음 자동 알람 즉시 재설정: ${busNo}번 버스, $hour:$minute, 반복 요일: ${repeatDays.joinToString(",")}, 공휴일 제외: $excludeHolidays")
 
-            // 다음 알람 시간 계산
+            // 다음 알람 시간 계산 (공휴일 제외 알람은 Flutter가 내려둔 제외 날짜 반영)
             val nowMillis = System.currentTimeMillis()
+            val excludedDates = if (excludeHolidays) {
+                AutoAlarmScheduleCalculator.loadExcludedDates(context)
+            } else {
+                emptySet()
+            }
             val nextTargetTime =
-                AutoAlarmScheduleCalculator.findNextTargetTime(nowMillis, hour, minute, repeatDays)
+                AutoAlarmScheduleCalculator.findNextTargetTime(nowMillis, hour, minute, repeatDays, excludedDates)
 
             if (nextTargetTime == null) {
                 Log.e(TAG, "❌ 다음 알람 시간을 찾을 수 없습니다")
@@ -167,6 +173,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 putExtra("useTTS", useTTS)
                 putExtra("isCommuteAlarm", isCommuteAlarm)
                 putExtra("alertOnArrivalOnly", alertOnArrivalOnly)
+                putExtra("excludeHolidays", excludeHolidays)
                 putExtra("hour", hour)
                 putExtra("minute", minute)
                 putExtra("repeatDays", repeatDays)
