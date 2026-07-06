@@ -133,6 +133,20 @@ class PermissionService {
     }
   }
 
+  /// 정확한 알람 권한 상태 조회.
+  /// Android 12(API 31~32)에서만 사용자가 끌 수 있고, 13+는 항상 true.
+  /// 조회 실패 시 true(알람 흐름을 막지 않음).
+  static Future<bool> canScheduleExactAlarms() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _methodChannel.invokeMethod<bool>('canScheduleExactAlarms') ??
+          true;
+    } catch (e) {
+      logMessage('⚠️ 정확한 알람 권한 조회 실패: $e', level: LogLevel.warning);
+      return true;
+    }
+  }
+
   /// 정확한 알람 권한 요청 (Android 12+)
   static Future<void> requestExactAlarmPermission() async {
     if (!Platform.isAndroid) return;

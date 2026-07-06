@@ -124,6 +124,10 @@ class SettingsScreen extends StatelessWidget {
                 title: '알람',
                 icon: Icons.alarm_outlined,
                 children: [
+                  if (Platform.isAndroid) ...[
+                    const _ExactAlarmTile(),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                  ],
                   _buildAlarmSoundSelector(context, settingsService),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   _buildAutoAlarmTimeoutDropdown(context, settingsService),
@@ -762,6 +766,81 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+/// 정확한 알람("알람 및 리마인더") 권한 안내 타일.
+///
+/// Android 12(API 31~32)에서는 사용자가 이 권한을 끌 수 있고, 꺼지면 자동
+/// 알람이 부정확 알람으로 저하되어 몇 분 지연될 수 있다. 13+는 항상 허용.
+class _ExactAlarmTile extends StatefulWidget {
+  const _ExactAlarmTile();
+
+  @override
+  State<_ExactAlarmTile> createState() => _ExactAlarmTileState();
+}
+
+class _ExactAlarmTileState extends State<_ExactAlarmTile> {
+  bool? _granted; // null = 해당 없음 (SDK < 31)
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      if (androidInfo.version.sdkInt < 31) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      final result = await PermissionService.canScheduleExactAlarms();
+      if (mounted) {
+        setState(() {
+          _granted = result;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading || _granted == null) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final granted = _granted!;
+
+    return ListTile(
+      leading: Icon(
+        granted ? Icons.alarm_on_rounded : Icons.alarm_off_rounded,
+        color: granted ? colorScheme.primary : colorScheme.error,
+      ),
+      title: const Text('정확한 알람 권한'),
+      subtitle: Text(
+        granted
+            ? '허용됨 - 자동 알람이 정확한 시각에 울립니다'
+            : '꺼져 있음 - 자동 알람이 지연될 수 있습니다. 탭하여 허용',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: granted ? colorScheme.onSurfaceVariant : colorScheme.error,
+        ),
+      ),
+      trailing: granted
+          ? Icon(Icons.check_circle_outline, color: colorScheme.primary)
+          : Icon(Icons.open_in_new, color: colorScheme.error),
+      onTap: granted
+          ? null
+          : () async {
+              await PermissionService.requestExactAlarmPermission();
+              await _check();
+            },
     );
   }
 }

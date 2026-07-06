@@ -162,6 +162,13 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
             _permissionMethodChannel?.setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "canScheduleExactAlarms" -> {
+                        // Android 12(API 31~32)에서만 회수 가능. 13+는 USE_EXACT_ALARM으로 항상 true.
+                        val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                            alarmManager.canScheduleExactAlarms()
+                        result.success(canExact)
+                    }
                     "isIgnoringBatteryOptimizations" -> {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -1017,13 +1024,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                         Log.e(TAG, "❌ 즉시 자동알람 시작 실패: ${e.message}", e)
                         result.error("START_AUTO_ALARM_ERROR", "Failed to start auto alarm immediately", e.message)
                     }
-                }
-                "canScheduleExactAlarms" -> {
-                    // Android 12(API 31~32)에서만 회수 가능. 13+는 USE_EXACT_ALARM으로 항상 true.
-                    val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-                    val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                        alarmManager.canScheduleExactAlarms()
-                    result.success(canExact)
                 }
                 "cancelNativeAutoAlarm" -> {
                     val alarmId = call.argument<Int>("alarmId") ?: 0
