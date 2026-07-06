@@ -96,11 +96,29 @@ class HolidayService {
       return fromAsset;
     }
 
-    // 빈 결과는 메모리에 캐시하지 않는다 — 다음 호출에서 재시도
+    // 5. 최후 fallback: 양력 고정 공휴일만 계산해서 반환.
+    // 결과는 메모리에 캐시하지 않는다 — 다음 호출에서 재시도
     // (_lastFailureAt이 30분 과호출을 막는다)
-    logMessage('❌ 공휴일 데이터 로드 실패: $year', level: LogLevel.error);
-    return const [];
+    logMessage(
+      '❌ 공휴일 데이터 로드 실패: $year — 양력 고정 공휴일로 대체',
+      level: LogLevel.error,
+    );
+    return _fixedSolarHolidays(year);
   }
+
+  /// 연도 데이터가 전혀 없을 때의 최후 fallback — 양력 고정 공휴일만.
+  /// 설날·추석·부처님오신날·대체공휴일은 계산할 수 없으므로 부분적이지만,
+  /// 빈 리스트(신정에도 알람이 울림)보다는 낫다.
+  List<DateTime> _fixedSolarHolidays(int year) => [
+        DateTime(year, 1, 1), // 신정
+        DateTime(year, 3, 1), // 삼일절
+        DateTime(year, 5, 5), // 어린이날
+        DateTime(year, 6, 6), // 현충일
+        DateTime(year, 8, 15), // 광복절
+        DateTime(year, 10, 3), // 개천절
+        DateTime(year, 10, 9), // 한글날
+        DateTime(year, 12, 25), // 기독탄신일
+      ];
 
   _PersistedHolidays? _readPersisted(SharedPreferences prefs, int year) {
     try {
@@ -165,14 +183,40 @@ class HolidayService {
     }
   }
 
-  /// CDN·에셋 공통 포맷: {"yyyy-MM-dd": "이름", ...}
+  /// 관공서 공휴일이 아닌데 월력요항 기반 데이터에 섞여 오는 이름들.
+  ///
+  /// - 제헌절: 2008년부터 공휴일이 아님 (2026·2027 upstream 데이터에 잘못 포함)
+  /// - 노동절(근로자의 날): 관공서 공휴일이 아니고 버스도 평일 운행 —
+  ///   알람이 안 울려 지각하는 것보다 울리는 쪽이 안전하다.
+  ///   쉬는 사용자는 커스텀 예외 날짜로 직접 추가할 수 있다.
+  ///
+  /// "대체공휴일(제헌절)" 형태도 걸러지도록 부분 문자열로 매칭한다.
+  static const List<String> _nonPublicHolidayNames = ['제헌절', '노동절', '근로자의 날'];
+
+  /// CDN·에셋 공통 포맷: {"yyyy-MM-dd": ["이름", ...], ...}
   List<DateTime> _parse(String raw) {
     final decoded = jsonDecode(raw) as Map<String, dynamic>;
-    return decoded.keys
-        .map(_parseDate)
-        .whereType<DateTime>()
-        .toList(growable: false);
+    final dates = <DateTime>[];
+    decoded.forEach((key, value) {
+      final date = _parseDate(key);
+      if (date == null) return;
+
+      // 같은 날짜에 유효한 공휴일이 하나라도 겹치면 유지
+      // (예: 어린이날+부처님오신날), 전부 비공휴일 이름이면 제외.
+      final names = value is List
+          ? value.map((e) => e.toString()).toList()
+          : <String>[value.toString()];
+      final allNonPublic =
+          names.isNotEmpty && names.every(_isNonPublicHoliday);
+      if (allNonPublic) return;
+
+      dates.add(date);
+    });
+    return dates;
   }
+
+  bool _isNonPublicHoliday(String name) =>
+      _nonPublicHolidayNames.any((blocked) => name.contains(blocked));
 
   DateTime? _parseDate(String key) {
     final parts = key.split('-');

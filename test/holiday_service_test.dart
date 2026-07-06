@@ -94,22 +94,64 @@ void main() {
     expect(requests, hasLength(1));
   });
 
-  test('실패는 영구 캐시되지 않고, 30분 내 재호출은 CDN을 건너뛴다', () async {
+  test('완전 실패 시 양력 고정 공휴일로 대체하고, 30분 내 재호출은 CDN을 건너뛴다', () async {
     SharedPreferences.setMockInitialValues({});
     final requests = <Uri>[];
     final service =
         HolidayService.internal(client: failingClient(requests));
 
-    // 에셋이 없는 연도 → 완전 실패 → 빈 리스트
-    final first = await service.fetchHolidays(2099, 1);
-    expect(first, isEmpty);
+    // 에셋이 없는 연도 → 완전 실패 → 양력 고정 공휴일 fallback
+    final january = await service.fetchHolidays(2099, 1);
+    expect(january, [DateTime(2099, 1, 1)]); // 신정
     expect(requests, hasLength(1));
+
+    final february = await service.fetchHolidays(2099, 2);
+    expect(february, isEmpty); // 2월엔 양력 고정 공휴일 없음 (설날은 계산 불가)
 
     // 직후 재호출: 실패가 메모리에 눌러앉지 않았으므로 다시 시도하되,
     // 30분 백오프 때문에 CDN 요청은 추가로 나가지 않는다
-    final second = await service.fetchHolidays(2099, 1);
-    expect(second, isEmpty);
     expect(requests, hasLength(1));
+  });
+
+  test('제헌절·노동절과 그 대체공휴일은 걸러진다', () async {
+    SharedPreferences.setMockInitialValues({});
+    final requests = <Uri>[];
+    final body = jsonEncode({
+      '2027-05-01': ['노동절'],
+      '2027-05-03': ['대체공휴일(노동절)'],
+      '2027-07-17': ['제헌절'],
+      '2027-07-19': ['대체공휴일(제헌절)'],
+      '2027-08-15': ['광복절'],
+    });
+    final service =
+        HolidayService.internal(client: countingClient(200, body, requests));
+
+    final may = await service.fetchHolidays(2027, 5);
+    final july = await service.fetchHolidays(2027, 7);
+    final august = await service.fetchHolidays(2027, 8);
+
+    expect(may, isEmpty);
+    expect(july, isEmpty);
+    expect(august, [DateTime(2027, 8, 15)]);
+
+    // 영속 캐시에도 걸러진 결과만 저장된다
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('holidays_cache_2027'), jsonEncode(['2027-08-15']));
+  });
+
+  test('유효한 공휴일 이름이 하나라도 겹치면 유지한다', () async {
+    SharedPreferences.setMockInitialValues({});
+    final requests = <Uri>[];
+    final body = jsonEncode({
+      '2025-05-05': ['어린이날', '부처님오신날'],
+      '2025-05-01': ['노동절', '어린이날'], // 가상의 겹침 — 유효 이름 존재
+    });
+    final service =
+        HolidayService.internal(client: countingClient(200, body, requests));
+
+    final may = await service.fetchHolidays(2025, 5);
+
+    expect(may, containsAll([DateTime(2025, 5, 5), DateTime(2025, 5, 1)]));
   });
 
   test('동시 호출은 CDN 요청 1회로 합류한다', () async {
