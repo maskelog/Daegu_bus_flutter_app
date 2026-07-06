@@ -139,39 +139,61 @@ void main() {
     expect(prefs.getString('holidays_cache_2027'), jsonEncode(['2027-08-15']));
   });
 
-  test('fallback 음력 공휴일이 확정 공휴일과 일치한다 (2025·2026 교차 검증)', () {
+  test('fallback이 확정 공휴일을 재현한다 — 2025~2027 전체 대조 (대체공휴일 포함)', () {
     final service = HolidayService.internal();
 
-    // 기준값: upstream 확정 데이터(CDN)에서 실측한 관공서 공휴일
-    final holidays2025 = service.fallbackHolidaysForYear(2025);
-    expect(
-      holidays2025,
-      containsAll([
-        DateTime(2025, 1, 28), DateTime(2025, 1, 29), DateTime(2025, 1, 30), // 설날
-        DateTime(2025, 5, 5), // 부처님오신날 (어린이날과 겹침)
-        DateTime(2025, 10, 5), DateTime(2025, 10, 6), DateTime(2025, 10, 7), // 추석
-      ]),
-    );
+    // 기준값: upstream 확정 데이터(CDN)에서 실측한 관공서 공휴일.
+    // fallback이 계산할 수 없는 임시공휴일·선거일만 제외한 전체 목록.
+    expect(service.fallbackHolidaysForYear(2025), [
+      DateTime(2025, 1, 1),
+      DateTime(2025, 1, 28), DateTime(2025, 1, 29), DateTime(2025, 1, 30),
+      DateTime(2025, 3, 1), DateTime(2025, 3, 3), // 삼일절(토) → 월요일 대체
+      DateTime(2025, 5, 5), DateTime(2025, 5, 6), // 어린이날+부처님오신날 겹침 → 대체
+      DateTime(2025, 6, 6),
+      DateTime(2025, 8, 15),
+      DateTime(2025, 10, 3),
+      DateTime(2025, 10, 5), DateTime(2025, 10, 6), DateTime(2025, 10, 7),
+      DateTime(2025, 10, 8), // 추석 연휴 중 일요일(10/5) → 대체
+      DateTime(2025, 10, 9),
+      DateTime(2025, 12, 25),
+    ]);
 
-    final holidays2026 = service.fallbackHolidaysForYear(2026);
-    expect(
-      holidays2026,
-      containsAll([
-        DateTime(2026, 2, 16), DateTime(2026, 2, 17), DateTime(2026, 2, 18), // 설날
-        DateTime(2026, 5, 24), // 부처님오신날
-        DateTime(2026, 9, 24), DateTime(2026, 9, 25), DateTime(2026, 9, 26), // 추석
-      ]),
-    );
+    expect(service.fallbackHolidaysForYear(2026), [
+      DateTime(2026, 1, 1),
+      DateTime(2026, 2, 16), DateTime(2026, 2, 17), DateTime(2026, 2, 18),
+      DateTime(2026, 3, 1), DateTime(2026, 3, 2), // 삼일절(일) → 대체
+      DateTime(2026, 5, 5),
+      DateTime(2026, 5, 24), DateTime(2026, 5, 25), // 부처님오신날(일) → 대체
+      DateTime(2026, 6, 6), // 현충일(토) — 대체 없음
+      DateTime(2026, 8, 15), DateTime(2026, 8, 17), // 광복절(토) → 일요일 건너뛰고 월요일
+      DateTime(2026, 9, 24), DateTime(2026, 9, 25), DateTime(2026, 9, 26),
+      DateTime(2026, 10, 3), DateTime(2026, 10, 5), // 개천절(토) → 대체
+      DateTime(2026, 10, 9),
+      DateTime(2026, 12, 25),
+    ]);
 
-    // 양력 고정 8일 + 음력 7일
-    expect(holidays2026, hasLength(15));
+    expect(service.fallbackHolidaysForYear(2027), [
+      DateTime(2027, 1, 1),
+      DateTime(2027, 2, 6), DateTime(2027, 2, 7), DateTime(2027, 2, 8),
+      DateTime(2027, 2, 9), // 설날 연휴 중 일요일(2/7) → 대체
+      DateTime(2027, 3, 1),
+      DateTime(2027, 5, 5),
+      DateTime(2027, 5, 13),
+      DateTime(2027, 6, 6), // 현충일(일) — 대체 없음
+      DateTime(2027, 8, 15), DateTime(2027, 8, 16), // 광복절(일) → 대체
+      DateTime(2027, 9, 14), DateTime(2027, 9, 15), DateTime(2027, 9, 16),
+      DateTime(2027, 10, 3), DateTime(2027, 10, 4), // 개천절(일) → 대체
+      DateTime(2027, 10, 9), DateTime(2027, 10, 11), // 한글날(토) → 대체
+      DateTime(2027, 12, 25), DateTime(2027, 12, 27), // 성탄절(토) → 대체
+    ]);
   });
 
-  test('fallback은 변환 테이블 범위(~2049) 밖에서는 양력 고정만 반환한다', () {
+  test('fallback은 변환 테이블 범위(~2049) 밖에서는 음력 공휴일을 계산하지 않는다', () {
     final service = HolidayService.internal();
     final holidays2099 = service.fallbackHolidaysForYear(2099);
-    expect(holidays2099, hasLength(8));
     expect(holidays2099, contains(DateTime(2099, 1, 1)));
+    // 설날(1~2월 음력)·추석(9~10월 음력)은 미계산 — 9월에 날짜가 없어야 한다
+    expect(holidays2099.where((d) => d.month == 9), isEmpty);
   });
 
   test('유효한 공휴일 이름이 하나라도 겹치면 유지한다', () async {

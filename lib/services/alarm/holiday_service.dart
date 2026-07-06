@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
-import 'package:korean_lunar_utils/korean_lunar_utils.dart';
+import 'package:klc/klc.dart' as klc;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show logMessage, LogLevel;
@@ -108,54 +108,118 @@ class HolidayService {
   }
 
   /// 연도 데이터가 전혀 없을 때의 최후 fallback.
-  /// 양력 고정 공휴일 + 음력 변환으로 계산한 설날·부처님오신날·추석 연휴.
-  /// 대체공휴일 규칙은 적용하지 못하므로 부분적이지만,
-  /// 빈 리스트(신정·설날에도 알람이 울림)보다는 낫다.
+  /// 양력 고정 공휴일 + 음력 변환으로 계산한 설날·부처님오신날·추석 연휴에
+  /// 「관공서의 공휴일에 관한 규정」 제3조의 대체공휴일 규칙을 적용한다.
+  /// (임시공휴일·선거일은 계산할 수 없으므로 여전히 부분적이다)
+  ///
+  /// 규칙 요약 — 대체공휴일이 생기는 조건:
+  /// - 설·추석 연휴: 연휴 중 하루가 일요일이거나 다른 공휴일과 겹칠 때
+  /// - 어린이날·부처님오신날·기독탄신일: 토·일 또는 다른 공휴일과 겹칠 때
+  /// - 삼일절·광복절·개천절·한글날: 토·일과 겹칠 때
+  /// - 신정·현충일: 대체공휴일 없음
+  /// 대체일은 겹친 날(연휴는 연휴 끝) 이후 첫 번째 비공휴일 평일.
   @visibleForTesting
-  List<DateTime> fallbackHolidaysForYear(int year) => [
-        DateTime(year, 1, 1), // 신정
-        DateTime(year, 3, 1), // 삼일절
-        DateTime(year, 5, 5), // 어린이날
-        DateTime(year, 6, 6), // 현충일
-        DateTime(year, 8, 15), // 광복절
-        DateTime(year, 10, 3), // 개천절
-        DateTime(year, 10, 9), // 한글날
-        DateTime(year, 12, 25), // 기독탄신일
-        ..._lunarHolidays(year),
-      ];
+  List<DateTime> fallbackHolidaysForYear(int year) {
+    final noSubstitute = [
+      DateTime(year, 1, 1), // 신정
+      DateTime(year, 6, 6), // 현충일
+    ];
+    final weekendRule = [
+      DateTime(year, 3, 1), // 삼일절
+      DateTime(year, 8, 15), // 광복절
+      DateTime(year, 10, 3), // 개천절
+      DateTime(year, 10, 9), // 한글날
+    ];
+    final buddhaDay = _lunarToSolarOrNull(year, 4, 8); // 부처님오신날
+    final overlapRule = [
+      DateTime(year, 5, 5), // 어린이날
+      DateTime(year, 12, 25), // 기독탄신일
+      if (buddhaDay != null) buddhaDay,
+    ];
+    final seollalRun = _lunarRun(year, 1, 1); // 설날 연휴 (전날~다음날)
+    final chuseokRun = _lunarRun(year, 8, 15); // 추석 연휴
 
-  /// 음력 공휴일: 설날 연휴(음력 1/1 ± 1일), 부처님오신날(음력 4/8),
-  /// 추석 연휴(음력 8/15 ± 1일). korean_lunar_utils의 변환 테이블 기반이며,
-  /// 정확성은 테스트에서 확정 공휴일 데이터(2025·2026)와 교차 검증한다.
-  List<DateTime> _lunarHolidays(int year) {
-    // 변환 테이블 지원 범위(1900~2049) 밖이면 계산하지 않는다
-    if (year < 1900 || year > 2049) return const [];
-
-    final dates = <DateTime>[];
-    try {
-      final seollal =
-          LunarSolarConverter.convertLunarToSolar(DateTime(year, 1, 1));
-      dates.addAll([
-        seollal.subtract(const Duration(days: 1)),
-        seollal,
-        seollal.add(const Duration(days: 1)),
-      ]);
-
-      final buddhaDay =
-          LunarSolarConverter.convertLunarToSolar(DateTime(year, 4, 8));
-      dates.add(buddhaDay);
-
-      final chuseok =
-          LunarSolarConverter.convertLunarToSolar(DateTime(year, 8, 15));
-      dates.addAll([
-        chuseok.subtract(const Duration(days: 1)),
-        chuseok,
-        chuseok.add(const Duration(days: 1)),
-      ]);
-    } catch (e) {
-      logMessage('⚠️ 음력 공휴일 계산 실패($year): $e', level: LogLevel.warning);
+    // 겹침 판정용 카운트 (같은 날짜에 공휴일 2개 = 겹침, 예: 2025 어린이날+부처님오신날)
+    final allBase = <DateTime>[
+      ...noSubstitute,
+      ...weekendRule,
+      ...overlapRule,
+      ...seollalRun,
+      ...chuseokRun,
+    ];
+    final counts = <DateTime, int>{};
+    for (final d in allBase) {
+      counts[d] = (counts[d] ?? 0) + 1;
     }
-    return dates;
+    final holidays = counts.keys.toSet();
+
+    bool isWeekend(DateTime d) =>
+        d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
+    bool overlapsOther(DateTime d) => (counts[d] ?? 0) > 1;
+
+    // 대체공휴일 청구: (기준일 anchor) 목록. 같은 날짜의 겹침은 1건으로 센다.
+    final anchors = <DateTime>[];
+    for (final run in [seollalRun, chuseokRun]) {
+      if (run.isEmpty) continue;
+      final runEnd = run.last;
+      for (final day in run) {
+        if (day.weekday == DateTime.sunday || overlapsOther(day)) {
+          anchors.add(runEnd);
+        }
+      }
+    }
+    for (final d in weekendRule) {
+      if (isWeekend(d)) anchors.add(d);
+    }
+    for (final d in overlapRule.toSet()) {
+      if (isWeekend(d) || overlapsOther(d)) anchors.add(d);
+    }
+
+    // 대체일 배정: anchor 이후 첫 비공휴일 평일 (이미 배정된 대체일도 회피)
+    final substitutes = <DateTime>{};
+    for (final anchor in anchors..sort()) {
+      var candidate = anchor.add(const Duration(days: 1));
+      while (isWeekend(candidate) ||
+          holidays.contains(candidate) ||
+          substitutes.contains(candidate)) {
+        candidate = candidate.add(const Duration(days: 1));
+      }
+      substitutes.add(candidate);
+    }
+
+    return [...holidays, ...substitutes]..sort();
+  }
+
+  /// 음력 연휴(당일 ± 1일)를 양력으로. 변환 불가면 빈 리스트.
+  List<DateTime> _lunarRun(int year, int lunarMonth, int lunarDay) {
+    final day = _lunarToSolarOrNull(year, lunarMonth, lunarDay);
+    if (day == null) return const [];
+    return [
+      day.subtract(const Duration(days: 1)),
+      day,
+      day.add(const Duration(days: 1)),
+    ];
+  }
+
+  /// klc(한국천문연구원 기준 KoreanLunarCalendar 포트)의 음력→양력 변환.
+  /// 지원 범위(1900~2049) 밖이거나 실패하면 null.
+  ///
+  /// 주의: 중국력 기반 변환기를 쓰면 안 된다 — 자오선 차이(UTC+8/+9)로
+  /// 한국 설날과 하루 어긋나는 해가 있다 (예: 2027년 중국 춘절 2/6, 한국 설날 2/7).
+  /// 정확성은 테스트에서 확정 공휴일 데이터(2025~2027)와 교차 검증한다.
+  DateTime? _lunarToSolarOrNull(int year, int lunarMonth, int lunarDay) {
+    if (year < 1900 || year > 2049) return null;
+    try {
+      if (!klc.setLunarDate(year, lunarMonth, lunarDay, false)) return null;
+      final parsed = DateTime.parse(klc.getSolarIsoFormat());
+      return DateTime(parsed.year, parsed.month, parsed.day);
+    } catch (e) {
+      logMessage(
+        '⚠️ 음력 변환 실패($year-$lunarMonth-$lunarDay): $e',
+        level: LogLevel.warning,
+      );
+      return null;
+    }
   }
 
   _PersistedHolidays? _readPersisted(SharedPreferences prefs, int year) {
