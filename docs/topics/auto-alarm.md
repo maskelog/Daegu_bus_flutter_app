@@ -36,6 +36,21 @@
 - `workers/` — WorkManager 기반 백그라운드 실행
 - `receivers/` — 부팅/알람 브로드캐스트 수신
 
+## 네이티브 스케줄링 계약 (2026-07-06 확립 — 어길 시 유령 알람·공휴일 오발화)
+
+- **alarmId는 `AlarmKeys.autoAlarmNativeId(id)`로만 생성** (결정적 Java-style 해시).
+  네이티브는 이 값을 `auto_alarm_store`에 저장해 재사용할 뿐, 절대 재계산하지 않는다.
+  과거 Dart `String.hashCode`/`Math.abs(javaHash)` 혼용이 "삭제해도 계속 울리는" 유령
+  알람의 원인이었고, 취소 시 legacy ID 2종도 함께 정리한다.
+- **재부팅 재등록은 네이티브 prefs `auto_alarm_store` 기반** (MainActivity
+  `scheduleNativeAlarm`이 기록, `cancelNativeAutoAlarm`이 제거, BootReceiver가 읽음).
+  FlutterSharedPreferences의 StringList는 플러그인이 인코딩된 String으로 저장하므로
+  Kotlin `getStringSet`으로 읽을 수 없다 — 옛 방식은 재부팅 재등록이 아예 동작하지 않았다.
+- **공휴일 제외는 네이티브 경로에도 적용**: Flutter가 `excluded_dates` prefs 키(JSON,
+  "yyyy-MM-dd")로 2개월치 제외 날짜를 내려두고, `excludeHolidays` 플래그가 인텐트
+  extras로 왕복한다. `AutoAlarmScheduleCalculator.findNextTargetTime`이 해당 날짜를
+  스킵한다(탐색 창 60일). 앱을 1개월 이상 안 열면 목록이 낡을 수 있다(우아한 저하).
+
 ## 동작 규칙
 
 - 알람 계산 전에 **현재 달 + 다음 달(2개월치)** 공휴일을 로드해서 `getNextAlarmTime(holidays:)`에 전달
