@@ -25,7 +25,9 @@
   - `auto_alarm_validator.dart` — 자동 알람 JSON 필수 필드 검증
   - `station_id_resolver.dart` — 정류장 이름→stationId 하드코딩 fallback 매핑
   - `alarm_keys.dart` — 알람/캐시 키 표준 포맷 (반드시 이걸로만 키 생성)
-  - `holiday_service.dart` — 공공데이터포털 공휴일 API + 메모리 캐시
+  - `holiday_service.dart` — 한국 공휴일 조회 (싱글턴). 우선순위:
+    메모리 → 영속 캐시(7일 TTL) → CDN(jsdelivr open-data, 성공 시 영속화) →
+    만료 캐시 → 번들 에셋(assets/holidays/2024~2027.json). 실패는 30분 백오프 후 재시도
   - `alarm_scheduler.dart`, `alarm_native_bridge.dart`, `alarm_state.dart`, `alarm_cache.dart`
 - `services/settings_service.dart` — `customExcludeDates` (SharedPreferences 영구 저장)
 
