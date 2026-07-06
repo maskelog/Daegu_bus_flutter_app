@@ -98,76 +98,22 @@ class AlarmScheduler {
       logMessage(
         '✅ 자동 알람 예약 성공: ${alarm.routeNo} at $scheduledTime (${executionDelay.inMinutes}분 후), 작업 ID: native_alarm_$uniqueAlarmId',
       );
-
-      if (executionDelay.inSeconds > 30) {
-        await _scheduleBackupAlarm(alarm, uniqueAlarmId.hashCode, scheduledTime);
-        logMessage(
-          '✅ 백업 알람 등록: ${alarm.routeNo}번, ${executionDelay.inMinutes}분 후 실행',
-          level: LogLevel.info,
-        );
-      }
     } catch (e) {
       logMessage('❌ 자동 알람 예약 오류: $e', level: LogLevel.error);
-      await _scheduleLocalBackupAlarm(alarm, scheduledTime);
+      await _notifySchedulingFailure(alarm);
     }
   }
 
-  Future<void> _scheduleLocalBackupAlarm(
-    AutoAlarm alarm,
-    DateTime scheduledTime,
-  ) async {
+  /// 예약 실패를 사용자에게 알린다. 별도의 백업 알람은 없다 —
+  /// 네이티브가 이미 알람 시각 5분 전(trackingStartTime)에 발화하므로
+  /// 같은 시각의 "백업"은 중복일 뿐이다.
+  Future<void> _notifySchedulingFailure(AutoAlarm alarm) async {
     try {
-      logMessage(
-        '⏰ 로컬 백업 알람 등록 시도: ${alarm.routeNo}, ${alarm.stationName}',
-        level: LogLevel.debug,
-      );
-
-      try {
-        await SimpleTTSHelper.speak(
-          "${alarm.routeNo}번 버스 자동 알람 예약에 문제가 발생했습니다. 앱을 다시 실행해 주세요.",
-        );
-      } catch (e) {
-        logMessage('🔊 TTS 알림 실패: $e', level: LogLevel.error);
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final alarmInfo = {
-        'routeNo': alarm.routeNo,
-        'stationName': alarm.stationName,
-        'scheduledTime': scheduledTime.toIso8601String(),
-        'registeredAt': DateTime.now().toIso8601String(),
-        'hasSchedulingError': true,
-      };
-
-      await prefs.setString('alarm_scheduling_error', jsonEncode(alarmInfo));
-      await prefs.setBool('has_alarm_scheduling_error', true);
-
-      logMessage('⏰ 로컬 백업 알람 정보 저장 완료', level: LogLevel.debug);
-    } catch (e) {
-      logMessage('❌ 로컬 백업 알람 등록 실패: $e', level: LogLevel.error);
-    }
-  }
-
-  Future<void> _scheduleBackupAlarm(
-    AutoAlarm alarm,
-    int id,
-    DateTime scheduledTime,
-  ) async {
-    try {
-      final backupTime = scheduledTime.subtract(const Duration(minutes: 5));
-      final now = DateTime.now();
-      if (backupTime.isBefore(now)) {
-        logMessage(
-          '⚠️ 백업 알람 시간($backupTime)이 현재($now)보다 빠릅니다. 백업 알람 등록 취소.',
-        );
-        return;
-      }
-
-      logMessage(
-        '✅ 네이티브 백업 알람 스케줄링 요청 완료: ${alarm.routeNo} at $backupTime',
+      await SimpleTTSHelper.speak(
+        "${alarm.routeNo}번 버스 자동 알람 예약에 문제가 발생했습니다. 앱을 다시 실행해 주세요.",
       );
     } catch (e) {
-      logMessage('❌ 백업 알람 예약 오류: $e', level: LogLevel.error);
+      logMessage('🔊 TTS 알림 실패: $e', level: LogLevel.error);
     }
   }
 }
