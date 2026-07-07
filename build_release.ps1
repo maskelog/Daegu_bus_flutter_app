@@ -31,6 +31,9 @@ if ($Apk) {
         --build-name="$BuildName" `
         --build-number="$BuildNumber" `
         --dart-define-from-file=.env.json
+    if ($LASTEXITCODE -ne 0) {
+        throw "flutter build apk failed with exit code $LASTEXITCODE"
+    }
 
     Write-Host "✅ APK 생성 완료: build/app/outputs/flutter-apk/app-release.apk"
 } else {
@@ -42,6 +45,9 @@ if ($Apk) {
         --obfuscate `
         --split-debug-info=build/debug-info `
         --dart-define-from-file=.env.json
+    if ($LASTEXITCODE -ne 0) {
+        throw "flutter build appbundle failed with exit code $LASTEXITCODE"
+    }
 
     Write-Host "✅ AAB 생성 완료: build/app/outputs/bundle/release/app-release.aab"
 }
