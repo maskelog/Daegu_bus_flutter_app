@@ -9,6 +9,7 @@
 | [topics/live-update-notification.md](topics/live-update-notification.md) | Android 16 Live Update / Samsung Now Bar 알림 — 현행 아키텍처, 작동 조건, 함정, 폐기된 접근 |
 | [topics/auto-alarm.md](topics/auto-alarm.md) | 출퇴근 자동 알람 — 공휴일 제외, 커스텀 예외 날짜, 모듈 구성 |
 | [topics/tts-audio.md](topics/tts-audio.md) | TTS·오디오 출력 정책 — 출근(스피커)/퇴근(이어폰) 분기 |
+| [topics/method-channels.md](topics/method-channels.md) | Flutter ↔ 네이티브 메서드 채널 — 채널 5개, channels/ 핸들러 구조, 함정 |
 
 ## 시간순 로그
 
