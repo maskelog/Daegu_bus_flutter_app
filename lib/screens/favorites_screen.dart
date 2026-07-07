@@ -9,6 +9,7 @@ import '../models/favorite_bus.dart';
 import '../services/alarm_service.dart';
 import '../services/api_service.dart';
 import '../utils/favorite_bus_store.dart';
+import '../utils/boarding_alarm_actions.dart';
 import '../widgets/unified_bus_detail_widget.dart';
 import '../widgets/android16_progress_bar.dart';
 import 'search_screen.dart';
@@ -906,37 +907,14 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   }
 
   Future<void> _handleEarphoneAlarm(FavoriteBus favorite, BusArrival arrival) async {
-    final bus = arrival.firstBus;
-    if (bus == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('도착 정보가 없습니다.')),
-      );
-      return;
-    }
-    final minutes = bus.getRemainingMinutes();
-    if (minutes < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('운행 종료 상태입니다.')),
-      );
-      return;
-    }
-    final alarmService = Provider.of<AlarmService>(context, listen: false);
-    await alarmService.setOneTimeAlarm(
-      favorite.routeNo,
-      favorite.stationName,
-      minutes,
+    await BoardingAlarmActions.setEarphoneAlarm(
+      context,
+      alarmService: Provider.of<AlarmService>(context, listen: false),
+      busNo: favorite.routeNo,
+      stationName: favorite.stationName,
       routeId: favorite.routeId,
       stationId: favorite.stationId,
-      useTTS: true,
-      isImmediateAlarm: true,
-      earphoneOnlyOverride: true,
-      currentStation: bus.currentStation,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${favorite.routeNo}번 버스 이어폰 알람을 설정했습니다.'),
-      ),
+      bus: arrival.firstBus,
     );
   }
 

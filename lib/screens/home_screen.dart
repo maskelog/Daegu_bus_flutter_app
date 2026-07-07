@@ -24,6 +24,7 @@ import '../models/bus_route.dart';
 import '../widgets/station_loading_widget.dart';
 import '../models/favorite_bus.dart';
 import '../utils/favorite_bus_store.dart';
+import '../utils/boarding_alarm_actions.dart';
 import '../utils/favorite_stop_store.dart';
 import '../utils/home_search_result_sync.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -972,75 +973,15 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _handleAlarmClick(BusArrival arrival, String stationId,
       String stationName, bool hasAlarm) async {
-    final alarmService = Provider.of<AlarmService>(context, listen: false);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final bus = arrival.firstBus;
-    if (bus == null) return;
-    final minutes = bus.getRemainingMinutes();
-    final routeNo = arrival.routeNo;
-    final routeId = arrival.routeId;
-
-    try {
-      if (hasAlarm) {
-        await alarmService.cancelAlarmByRoute(routeNo, stationName, routeId);
-        if (mounted) {
-          scaffoldMessenger.showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.notifications_off,
-                      color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
-                  Text('$routeNo번 알람이 해제되었습니다.'),
-                ],
-              ),
-            ),
-          );
-        }
-      } else {
-        if (minutes <= 0) {
-          if (mounted) {
-            scaffoldMessenger.showSnackBar(
-              const SnackBar(content: Text('버스가 이미 도착했거나 지나갔습니다.')),
-            );
-          }
-          return;
-        }
-        await alarmService.setOneTimeAlarm(
-          routeNo,
-          stationName,
-          minutes,
-          routeId: routeId,
-          stationId: stationId,
-          useTTS: true,
-          isImmediateAlarm: true,
-          currentStation: bus.currentStation,
-        );
-        if (mounted) {
-          final theme = Theme.of(context);
-          scaffoldMessenger.showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.notifications_active,
-                      color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text('$routeNo번 버스 $minutes분 후 알람이 설정되었습니다.'),
-                  ),
-                ],
-              ),
-              backgroundColor: theme.colorScheme.primary,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(content: Text('알람 처리에 실패했습니다: $e')),
-        );
-      }
-    }
+    await BoardingAlarmActions.toggle(
+      context,
+      alarmService: Provider.of<AlarmService>(context, listen: false),
+      busNo: arrival.routeNo,
+      stationName: stationName,
+      routeId: arrival.routeId,
+      stationId: stationId,
+      bus: arrival.firstBus,
+      hasAlarm: hasAlarm,
+    );
   }
 }

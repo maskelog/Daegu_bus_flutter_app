@@ -12,6 +12,7 @@ import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 import '../utils/favorite_bus_store.dart';
 import '../utils/simple_tts_helper.dart';
+import '../utils/boarding_alarm_actions.dart';
 
 /// 통합된 버스 상세정보 위젯 (최적화 버전)
 class UnifiedBusDetailWidget extends StatefulWidget {
@@ -1024,51 +1025,17 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
     HapticFeedback.lightImpact();
     if (!mounted) return;
 
-    final alarmService = Provider.of<AlarmService>(context, listen: false);
-    final remainingMinutes = bus?.getRemainingMinutes() ?? -1;
-
-    if (hasAlarm) {
-      await alarmService.cancelAlarmByRoute(
-        widget.busArrival.routeNo,
-        widget.stationName,
-        widget.busArrival.routeId,
-      );
-      await NotificationService().cancelOngoingTracking();
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('승차 알람이 해제되었습니다'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } else {
-      if (remainingMinutes <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('버스가 이미 도착했거나 곧 도착합니다'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return;
-      }
-      await alarmService.setOneTimeAlarm(
-        widget.busArrival.routeNo,
-        widget.stationName,
-        remainingMinutes,
-        routeId: widget.busArrival.routeId,
-        stationId: widget.stationId,
-        useTTS: true,
-        isImmediateAlarm: true,
-        currentStation: bus?.currentStation ?? '',
-      );
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('승차 알람이 설정되었습니다'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
+    await BoardingAlarmActions.toggle(
+      context,
+      alarmService: Provider.of<AlarmService>(context, listen: false),
+      busNo: widget.busArrival.routeNo,
+      stationName: widget.stationName,
+      routeId: widget.busArrival.routeId,
+      stationId: widget.stationId,
+      bus: bus,
+      hasAlarm: hasAlarm,
+      cancelOngoingNotification: true,
+    );
   }
 
   @override
