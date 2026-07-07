@@ -77,7 +77,17 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   if (Platform.isAndroid) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
-                    const _LiveUpdatesTile(),
+                    const _PermissionStatusTile(
+                      minSdk: 36,
+                      check: PermissionService.canPostPromotedNotifications,
+                      request:
+                          PermissionService.requestPromotedNotificationPermission,
+                      title: '실시간 정보 (Live Updates)',
+                      grantedSubtitle: '활성화됨 - 상태바 / Now Bar에 버스 정보 표시',
+                      deniedSubtitle: '비활성화됨 - 탭하여 설정 열기',
+                      grantedIcon: Icons.update_rounded,
+                      deniedIcon: Icons.update_rounded,
+                    ),
                   ],
                 ],
               ),
@@ -125,7 +135,16 @@ class SettingsScreen extends StatelessWidget {
                 icon: Icons.alarm_outlined,
                 children: [
                   if (Platform.isAndroid) ...[
-                    const _ExactAlarmTile(),
+                    const _PermissionStatusTile(
+                      minSdk: 31,
+                      check: PermissionService.canScheduleExactAlarms,
+                      request: PermissionService.requestExactAlarmPermission,
+                      title: '정확한 알람 권한',
+                      grantedSubtitle: '허용됨 - 자동 알람이 정확한 시각에 울립니다',
+                      deniedSubtitle: '꺼져 있음 - 자동 알람이 지연될 수 있습니다. 탭하여 허용',
+                      grantedIcon: Icons.alarm_on_rounded,
+                      deniedIcon: Icons.alarm_off_rounded,
+                    ),
                     const Divider(height: 1, indent: 16, endIndent: 16),
                   ],
                   _buildAlarmSoundSelector(context, settingsService),
@@ -770,19 +789,36 @@ class _CustomExcludeDatesScreenState extends State<_CustomExcludeDatesScreen> {
   }
 }
 
-/// 정확한 알람("알람 및 리마인더") 권한 안내 타일.
+/// 권한/기능 상태를 보여주고, 꺼져 있으면 탭으로 시스템 설정을 여는 공용 타일.
 ///
-/// Android 12(API 31~32)에서는 사용자가 이 권한을 끌 수 있고, 꺼지면 자동
-/// 알람이 부정확 알람으로 저하되어 몇 분 지연될 수 있다. 13+는 항상 허용.
-class _ExactAlarmTile extends StatefulWidget {
-  const _ExactAlarmTile();
+/// [minSdk] 미만 기기에서는 아무것도 그리지 않는다.
+class _PermissionStatusTile extends StatefulWidget {
+  const _PermissionStatusTile({
+    required this.minSdk,
+    required this.check,
+    required this.request,
+    required this.title,
+    required this.grantedSubtitle,
+    required this.deniedSubtitle,
+    required this.grantedIcon,
+    required this.deniedIcon,
+  });
+
+  final int minSdk;
+  final Future<bool> Function() check;
+  final Future<void> Function() request;
+  final String title;
+  final String grantedSubtitle;
+  final String deniedSubtitle;
+  final IconData grantedIcon;
+  final IconData deniedIcon;
 
   @override
-  State<_ExactAlarmTile> createState() => _ExactAlarmTileState();
+  State<_PermissionStatusTile> createState() => _PermissionStatusTileState();
 }
 
-class _ExactAlarmTileState extends State<_ExactAlarmTile> {
-  bool? _granted; // null = 해당 없음 (SDK < 31)
+class _PermissionStatusTileState extends State<_PermissionStatusTile> {
+  bool? _granted; // null = 해당 없음 (SDK < minSdk)
   bool _loading = true;
 
   @override
@@ -794,11 +830,11 @@ class _ExactAlarmTileState extends State<_ExactAlarmTile> {
   Future<void> _check() async {
     try {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
-      if (androidInfo.version.sdkInt < 31) {
+      if (androidInfo.version.sdkInt < widget.minSdk) {
         if (mounted) setState(() => _loading = false);
         return;
       }
-      final result = await PermissionService.canScheduleExactAlarms();
+      final result = await widget.check();
       if (mounted) {
         setState(() {
           _granted = result;
@@ -820,14 +856,12 @@ class _ExactAlarmTileState extends State<_ExactAlarmTile> {
 
     return ListTile(
       leading: Icon(
-        granted ? Icons.alarm_on_rounded : Icons.alarm_off_rounded,
+        granted ? widget.grantedIcon : widget.deniedIcon,
         color: granted ? colorScheme.primary : colorScheme.error,
       ),
-      title: const Text('정확한 알람 권한'),
+      title: Text(widget.title),
       subtitle: Text(
-        granted
-            ? '허용됨 - 자동 알람이 정확한 시각에 울립니다'
-            : '꺼져 있음 - 자동 알람이 지연될 수 있습니다. 탭하여 허용',
+        granted ? widget.grantedSubtitle : widget.deniedSubtitle,
         style: theme.textTheme.bodySmall?.copyWith(
           color: granted ? colorScheme.onSurfaceVariant : colorScheme.error,
         ),
@@ -838,76 +872,7 @@ class _ExactAlarmTileState extends State<_ExactAlarmTile> {
       onTap: granted
           ? null
           : () async {
-              await PermissionService.requestExactAlarmPermission();
-              await _check();
-            },
-    );
-  }
-}
-
-class _LiveUpdatesTile extends StatefulWidget {
-  const _LiveUpdatesTile();
-
-  @override
-  State<_LiveUpdatesTile> createState() => _LiveUpdatesTileState();
-}
-
-class _LiveUpdatesTileState extends State<_LiveUpdatesTile> {
-  bool? _enabled; // null = not applicable (SDK < 36)
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _check();
-  }
-
-  Future<void> _check() async {
-    try {
-      final androidInfo = await DeviceInfoPlugin().androidInfo;
-      if (androidInfo.version.sdkInt < 36) {
-        if (mounted) setState(() => _loading = false);
-        return;
-      }
-      final result = await PermissionService.canPostPromotedNotifications();
-      if (mounted) {
-        setState(() {
-          _enabled = result;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading || _enabled == null) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final enabled = _enabled!;
-
-    return ListTile(
-      leading: Icon(
-        Icons.update_rounded,
-        color: enabled ? colorScheme.primary : colorScheme.error,
-      ),
-      title: const Text('실시간 정보 (Live Updates)'),
-      subtitle: Text(
-        enabled ? '활성화됨 - 상태바 / Now Bar에 버스 정보 표시' : '비활성화됨 - 탭하여 설정 열기',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: enabled ? colorScheme.onSurfaceVariant : colorScheme.error,
-        ),
-      ),
-      trailing: enabled
-          ? Icon(Icons.check_circle_outline, color: colorScheme.primary)
-          : Icon(Icons.open_in_new, color: colorScheme.error),
-      onTap: enabled
-          ? null
-          : () async {
-              await PermissionService.requestPromotedNotificationPermission();
+              await widget.request();
               await _check();
             },
     );
