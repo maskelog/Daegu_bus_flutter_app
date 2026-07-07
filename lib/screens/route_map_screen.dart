@@ -4,6 +4,7 @@ import '../models/bus_route.dart';
 import '../models/route_station.dart';
 import '../services/api_service.dart';
 import '../widgets/home_search_bar.dart';
+import '../widgets/unified_bus_detail_widget.dart';
 import 'map_screen.dart';
 
 class RouteMapScreen extends StatefulWidget {
@@ -49,9 +50,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     // 정류장 목록과 상세 정보를 병렬 요청하되, 먼저 도착하는 쪽부터 UI 반영
     final stationsFuture = ApiService.getRouteStations(route.id).then((data) {
       if (!mounted) return;
-      final stations = data
-          .map((s) => RouteStation.fromJson(s))
-          .toList()
+      final stations = data.map((s) => RouteStation.fromJson(s)).toList()
         ..sort((a, b) => a.sequenceNo.compareTo(b.sequenceNo));
       setState(() {
         _routeStations = stations;
@@ -100,6 +99,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       backgroundColor: colorScheme.surface,
       showDragHandle: true,
       builder: (_) => _StationArrivalsSheet(
+        parentContext: context,
         station: station,
         currentRouteNo: _selectedRoute?.routeNo,
       ),
@@ -116,84 +116,85 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       body: SafeArea(
         bottom: false,
         child: Column(
-        children: [
-          if (widget.showHeader)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Row(
-                children: [
-                  HeaderCircleButton(
-                    icon: Icons.arrow_back_rounded,
-                    semanticLabel: '뒤로가기',
-                    semanticHint: '이전 화면으로 이동',
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: HeaderTitlePill(
-                      leadingIcon: Icons.directions_bus_rounded,
-                      title: _selectedRoute != null
-                          ? '${_selectedRoute!.routeNo}번 버스'
-                          : '버스 노선',
-                    ),
-                  ),
-                  if (_selectedRoute != null && _routeStations.isNotEmpty) ...[
-                    const SizedBox(width: 10),
-                    HeaderCircleButton(
-                      icon: Icons.map_rounded,
-                      semanticLabel: '지도',
-                      semanticHint: '지도에서 보기',
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => MapScreen(
-                              routeId: _selectedRoute!.id,
-                              routeStations: _routeStations,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          if (_isLoading && _selectedRoute == null)
-            const LinearProgressIndicator(minHeight: 2),
-          if (_errorMessage != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
+          children: [
+            if (widget.showHeader)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Row(
                   children: [
-                    Icon(Icons.error_outline, color: colorScheme.error),
-                    const SizedBox(width: 8),
+                    HeaderCircleButton(
+                      icon: Icons.arrow_back_rounded,
+                      semanticLabel: '뒤로가기',
+                      semanticHint: '이전 화면으로 이동',
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Text(
-                        _errorMessage!,
-                        style: TextStyle(color: colorScheme.onErrorContainer),
+                      child: HeaderTitlePill(
+                        leadingIcon: Icons.directions_bus_rounded,
+                        title: _selectedRoute != null
+                            ? '${_selectedRoute!.routeNo}번 버스'
+                            : '버스 노선',
                       ),
                     ),
+                    if (_selectedRoute != null &&
+                        _routeStations.isNotEmpty) ...[
+                      const SizedBox(width: 10),
+                      HeaderCircleButton(
+                        icon: Icons.map_rounded,
+                        semanticLabel: '지도',
+                        semanticHint: '지도에서 보기',
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MapScreen(
+                                routeId: _selectedRoute!.id,
+                                routeStations: _routeStations,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ],
                 ),
               ),
-            ),
-          Expanded(
-            child: _selectedRoute != null
-                ? _buildRouteDetails()
-                : const _EmptyState(
-                    icon: Icons.route,
-                    title: '버스 노선 검색',
-                    subtitle: '상단 검색창에서 버스 번호를 입력하세요',
+            if (_isLoading && _selectedRoute == null)
+              const LinearProgressIndicator(minHeight: 2),
+            if (_errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-          ),
-        ],
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: colorScheme.error),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(color: colorScheme.onErrorContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            Expanded(
+              child: _selectedRoute != null
+                  ? _buildRouteDetails()
+                  : const _EmptyState(
+                      icon: Icons.route,
+                      title: '버스 노선 검색',
+                      subtitle: '상단 검색창에서 버스 번호를 입력하세요',
+                    ),
+            ),
+          ],
         ),
       ),
     );
@@ -279,12 +280,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                                 ),
                               ),
                               if (station.stationType == StationType.start)
-                                _stationTag('기점',
-                                    colorScheme.primaryContainer,
+                                _stationTag('기점', colorScheme.primaryContainer,
                                     colorScheme.onPrimaryContainer)
                               else if (station.stationType == StationType.end)
-                                _stationTag('종점',
-                                    colorScheme.errorContainer,
+                                _stationTag('종점', colorScheme.errorContainer,
                                     colorScheme.onErrorContainer),
                               const SizedBox(width: 4),
                               Icon(
@@ -320,22 +319,19 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   Widget _buildRouteHeaderCard(
       BusRoute route, ThemeData theme, ColorScheme colorScheme) {
     final typeName = '대구 ${route.getRouteTypeName()}버스';
-    final hasStart = route.startPoint.trim().isNotEmpty &&
-        route.startPoint != '출발지 정보 없음';
+    final hasStart =
+        route.startPoint.trim().isNotEmpty && route.startPoint != '출발지 정보 없음';
     final hasEnd =
         route.endPoint.trim().isNotEmpty && route.endPoint != '도착지 정보 없음';
-    final corridor = (hasStart && hasEnd)
-        ? '${route.startPoint} ↔ ${route.endPoint}'
-        : null;
+    final corridor =
+        (hasStart && hasEnd) ? '${route.startPoint} ↔ ${route.endPoint}' : null;
 
     final desc = _parseDescription(route.routeDescription);
-    final firstLast =
-        (desc.firstTm != null && desc.lastTm != null)
-            ? '${desc.firstTm} ~ ${desc.lastTm}'
-            : null;
-    final intervalLabel = desc.interval != null
-        ? '배차간격 ${desc.interval}'
+    final firstLast = (desc.firstTm != null && desc.lastTm != null)
+        ? '${desc.firstTm} ~ ${desc.lastTm}'
         : null;
+    final intervalLabel =
+        desc.interval != null ? '배차간격 ${desc.interval}' : null;
     final tripLabel = desc.tripCount != null ? '${desc.tripCount}회' : null;
 
     final line1 = [typeName, if (corridor != null) corridor].join(' | ');
@@ -388,7 +384,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   _RouteDescription _parseDescription(String? raw) {
     if (raw == null || raw.isEmpty) return const _RouteDescription();
     // 우선 " | " 구분자로 파싱 시도 (avgTm/comNm 내부의 쉼표 보존)
-    List<String> parts = raw.contains(' | ') ? raw.split(' | ') : raw.split(', ');
+    List<String> parts =
+        raw.contains(' | ') ? raw.split(' | ') : raw.split(', ');
     String? interval;
     String? company;
     String? firstTm;
@@ -402,11 +399,21 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       final v = pending!.trim();
       if (v.isNotEmpty && v != '정보 없음') {
         switch (pendingKey) {
-          case 'interval': interval = v; break;
-          case 'company': company = v; break;
-          case 'first': firstTm = v; break;
-          case 'last': lastTm = v; break;
-          case 'trip': tripCount = v; break;
+          case 'interval':
+            interval = v;
+            break;
+          case 'company':
+            company = v;
+            break;
+          case 'first':
+            firstTm = v;
+            break;
+          case 'last':
+            lastTm = v;
+            break;
+          case 'trip':
+            tripCount = v;
+            break;
         }
       }
       pending = null;
@@ -418,15 +425,20 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       String? key;
       String? value;
       if (p.startsWith('배차간격:')) {
-        key = 'interval'; value = p.substring(5).trim();
+        key = 'interval';
+        value = p.substring(5).trim();
       } else if (p.startsWith('업체:')) {
-        key = 'company'; value = p.substring(3).trim();
+        key = 'company';
+        value = p.substring(3).trim();
       } else if (p.startsWith('첫차:')) {
-        key = 'first'; value = p.substring(3).trim();
+        key = 'first';
+        value = p.substring(3).trim();
       } else if (p.startsWith('막차:')) {
-        key = 'last'; value = p.substring(3).trim();
+        key = 'last';
+        value = p.substring(3).trim();
       } else if (p.startsWith('운행횟수:')) {
-        key = 'trip'; value = p.substring(5).trim();
+        key = 'trip';
+        value = p.substring(5).trim();
       }
 
       if (key != null) {
@@ -466,7 +478,6 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       ),
     );
   }
-
 }
 
 class _RouteDescription {
@@ -527,10 +538,12 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _StationArrivalsSheet extends StatefulWidget {
+  final BuildContext parentContext;
   final RouteStation station;
   final String? currentRouteNo;
 
   const _StationArrivalsSheet({
+    required this.parentContext,
     required this.station,
     this.currentRouteNo,
   });
@@ -543,10 +556,12 @@ class _StationArrivalsSheetState extends State<_StationArrivalsSheet> {
   bool _isLoading = true;
   String? _errorMessage;
   List<BusArrival> _arrivals = [];
+  late String _effectiveStationId;
 
   @override
   void initState() {
     super.initState();
+    _effectiveStationId = widget.station.stationId;
     _load();
   }
 
@@ -557,6 +572,7 @@ class _StationArrivalsSheetState extends State<_StationArrivalsSheet> {
         final converted =
             await ApiService.getStationIdFromBsId(widget.station.stationId);
         if (converted != null && converted.isNotEmpty) {
+          _effectiveStationId = converted;
           arrivals = await ApiService.getStationInfo(converted);
         }
       }
@@ -647,6 +663,18 @@ class _StationArrivalsSheetState extends State<_StationArrivalsSheet> {
                     return ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!widget.parentContext.mounted) return;
+                          showUnifiedBusDetailModal(
+                            widget.parentContext,
+                            a,
+                            _effectiveStationId,
+                            widget.station.stationName,
+                          );
+                        });
+                      },
                       title: Text(
                         '${a.routeNo}번',
                         style: TextStyle(
