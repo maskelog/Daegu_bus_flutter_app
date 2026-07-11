@@ -160,6 +160,15 @@ class AlarmService extends ChangeNotifier {
 
       for (var autoAlarm in autoAlarms) {
         try {
+          if (!autoAlarm.isActive) {
+            await cancelScheduledAutoAlarm(autoAlarm.id);
+            logMessage(
+              '⏸️ 비활성화된 자동 알람 예약 정리: ${autoAlarm.routeNo}',
+              level: LogLevel.info,
+            );
+            continue;
+          }
+
           final nextAlarmTime =
               autoAlarm.getNextAlarmTime(holidays: allHolidays);
           if (nextAlarmTime == null) {

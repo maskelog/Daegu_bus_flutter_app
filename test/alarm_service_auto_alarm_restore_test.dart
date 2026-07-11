@@ -69,6 +69,64 @@ void main() {
     messenger.setMockMethodCallHandler(channel, null);
   });
 
+  test(
+      'loadAutoAlarms keeps inactive alarms disabled and cancels stale schedule',
+      () async {
+    final rawNow = DateTime.now().add(const Duration(minutes: 10));
+    final now = DateTime(
+      rawNow.year,
+      rawNow.month,
+      rawNow.day,
+      rawNow.hour,
+      rawNow.minute,
+    );
+    const alarmId = 'inactive-alarm';
+    SharedPreferences.setMockInitialValues({
+      'legacy_alarm_ids_cleaned_v1': true,
+      'auto_alarms': [
+        jsonEncode({
+          'id': alarmId,
+          'routeNo': '623',
+          'stationName': '비활성정류장',
+          'stationId': '7000000002',
+          'routeId': 'R002',
+          'scheduledTime': now.toIso8601String(),
+          'repeatDays': [now.weekday],
+          'useTTS': true,
+          'isActive': false,
+          'isCommuteAlarm': true,
+        }),
+      ],
+    });
+
+    const channel = MethodChannel('com.devground.daegubus/bus_api');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return true;
+    });
+
+    final service = AlarmService(
+      notificationService: NotificationService(),
+      settingsService: SettingsService(),
+    );
+
+    await service.loadAutoAlarms();
+
+    expect(service.autoAlarms, isEmpty);
+    expect(
+        calls.where((call) => call.method == 'scheduleNativeAlarm'), isEmpty);
+    final cancelledIds = calls
+        .where((call) => call.method == 'cancelNativeAutoAlarm')
+        .map((call) => call.arguments['alarmId'] as int)
+        .toSet();
+    expect(cancelledIds, contains(AlarmKeys.autoAlarmNativeId(alarmId)));
+
+    messenger.setMockMethodCallHandler(channel, null);
+  });
+
   test('updateAutoAlarms preserves inactive alarms in preferences', () async {
     final rawNow = DateTime.now().add(const Duration(minutes: 10));
     final now = DateTime(
