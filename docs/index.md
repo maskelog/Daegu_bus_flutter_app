@@ -11,6 +11,7 @@
 | [topics/tts-audio.md](topics/tts-audio.md) | TTS·오디오 출력 정책 — 출근(스피커)/퇴근(이어폰) 분기 |
 | [topics/method-channels.md](topics/method-channels.md) | Flutter ↔ 네이티브 메서드 채널 — 채널 5개, channels/ 핸들러 구조, 함정 |
 | [topics/bus-detail-ui.md](topics/bus-detail-ui.md) | 버스 상세 모달 — 노선도 진입, 즐겨찾기·승차 알람 액션 |
+| [topics/route-branding.md](topics/route-branding.md) | 노선 배지 색상 — 직행/급행/순환/간선/지선/출근/군위/투어/DRT 팔레트 |
 
 ## 시간순 로그
 
@@ -35,3 +36,4 @@
 `BUS_INFO_ISSUE_FIX.md`, `LIVE_UPDATE_INTEGRATION.md`, `MATERIAL3_EXPRESSIVE_COMPLETE.md`,
 `MATERIAL3_EXPRESSIVE_UPGRADE.md`, `OPTIMIZATION_SUMMARY.md`, `plan.md`, `PLAY_STORE_COMPLIANCE.md`
 (`Requirements.md`, `README.md`는 유지)
+

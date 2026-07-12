@@ -15,14 +15,8 @@ import '../services/settings_service.dart';
 import '../utils/favorite_bus_store.dart';
 import '../utils/simple_tts_helper.dart';
 import '../utils/boarding_alarm_actions.dart';
+import '../utils/route_branding.dart';
 
-Color _getRouteAccentColor(String routeNo, ColorScheme colorScheme) {
-  return routeNo.contains('급행') ? const Color(0xFFE53935) : colorScheme.primary;
-}
-
-Color _getRouteOnAccentColor(String routeNo, ColorScheme colorScheme) {
-  return routeNo.contains('급행') ? Colors.white : colorScheme.onPrimary;
-}
 /// 통합된 버스 상세정보 위젯 (최적화 버전)
 class UnifiedBusDetailWidget extends StatefulWidget {
   final BusArrival busArrival;
@@ -471,8 +465,11 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
   Widget _buildCompactCard() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final routeAccentColor = _getRouteAccentColor(widget.busArrival.routeNo, colorScheme);
-    final routeOnAccentColor = _getRouteOnAccentColor(widget.busArrival.routeNo, colorScheme);
+    final routeBrand = resolveRouteBranding(routeNo: widget.busArrival.routeNo);
+    final routeAccentColor = routeBrand?.backgroundColor ?? colorScheme.primary;
+    final routeOnAccentColor = routeBrand?.foregroundColor ?? colorScheme.onPrimary;
+    final routeBorderColor = routeBrand?.borderColor ?? routeAccentColor;
+    final routeBorderWidth = routeBrand?.borderWidth ?? 0;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -504,6 +501,12 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
                       decoration: BoxDecoration(
                         color: routeAccentColor,
                         borderRadius: BorderRadius.circular(20),
+                        border: routeBorderWidth > 0
+                            ? Border.all(
+                                color: routeBorderColor,
+                                width: routeBorderWidth,
+                              )
+                            : null,
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -758,7 +761,8 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
       ),
       builder: (context, hasAlarm, child) {
         final colorScheme = Theme.of(context).colorScheme;
-        final routeAccentColor = _getRouteAccentColor(widget.busArrival.routeNo, colorScheme);
+        final routeBrand = resolveRouteBranding(routeNo: widget.busArrival.routeNo);
+        final routeAccentColor = routeBrand?.emphasisColor ?? colorScheme.primary;
             // 디버깅 로그 (개발 모드에서만)
         if (kDebugMode) {
           debugPrint(
@@ -1085,6 +1089,11 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final busList = widget.busArrival.busInfoList;
+    final routeBrand = resolveRouteBranding(routeNo: widget.busArrival.routeNo);
+    final routeAccentColor = routeBrand?.emphasisColor ?? colorScheme.primary;
+    final routeOnAccentColor = routeBrand?.foregroundColor ?? colorScheme.onPrimary;
+    final routeBorderColor = routeBrand?.borderColor ?? routeAccentColor;
+    final routeBorderWidth = routeBrand?.borderWidth ?? 0;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.55,
@@ -1120,18 +1129,17 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                         color: Colors.transparent,
                         child: Ink(
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                _getRouteAccentColor(widget.busArrival.routeNo, colorScheme),
-                                _getRouteAccentColor(widget.busArrival.routeNo, colorScheme).withAlpha(204),
-                              ],
-                            ),
+                            color: routeAccentColor,
                             borderRadius: BorderRadius.circular(12),
+                            border: routeBorderWidth > 0
+                                ? Border.all(
+                                    color: routeBorderColor,
+                                    width: routeBorderWidth,
+                                  )
+                                : null,
                             boxShadow: [
                               BoxShadow(
-                                color: colorScheme.primary.withAlpha(77),
+                                color: routeBorderColor.withAlpha(77),
                                 blurRadius: 8,
                                 offset: const Offset(0, 3),
                               ),
@@ -1148,25 +1156,25 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       Icons.directions_bus_rounded,
                                       size: 20,
-                                      color: Colors.white,
+                                      color: routeOnAccentColor,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
                                       widget.busArrival.routeNo,
-                                      style: const TextStyle(
-                                        color: Colors.white,
+                                      style: TextStyle(
+                                        color: routeOnAccentColor,
                                         fontWeight: FontWeight.w800,
                                         fontSize: 16,
                                       ),
                                     ),
                                     const SizedBox(width: 5),
-                                    const Icon(
+                                    Icon(
                                       Icons.route_rounded,
                                       size: 16,
-                                      color: Colors.white,
+                                      color: routeOnAccentColor,
                                     ),
                                   ],
                                 ),
@@ -1264,12 +1272,14 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
     ColorScheme colorScheme,
     int busCount,
   ) {
+    final routeBrand = resolveRouteBranding(routeNo: widget.busArrival.routeNo);
+    final routeAccentColor = routeBrand?.emphasisColor ?? colorScheme.primary;
     return Row(
       children: [
         Icon(
           Icons.directions_bus_filled_rounded,
           size: 20,
-          color: _getRouteAccentColor(widget.busArrival.routeNo, colorScheme),
+          color: routeAccentColor,
         ),
         const SizedBox(width: 8),
         Text(
@@ -1506,6 +1516,13 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
     );
   }
 }
+
+
+
+
+
+
+
 
 
 

@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import '../widgets/station_item.dart';
 import '../widgets/unified_bus_detail_widget.dart';
 import '../utils/debouncer.dart';
+import '../utils/route_branding.dart';
 import '../widgets/home_search_bar.dart';
 import 'route_map_screen.dart';
 
@@ -437,32 +438,30 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Color _routeColor(BusRoute route, ColorScheme colorScheme, Brightness b) {
+  RouteBranding? _routeBranding(BusRoute route) {
+    return resolveRouteBrandingForRoute(route);
+  }
+
+  Color _routeColor(BusRoute route, ColorScheme colorScheme, Brightness brightness) {
+    final branding = _routeBranding(route);
+    if (branding != null) {
+      return branding.backgroundColor;
+    }
+
     switch (route.getRouteType()) {
       case BusRouteType.express:
-        return b == Brightness.dark
-            ? const Color(0xFFFF6B6B)
-            : const Color(0xFFE53E3E);
+        return const Color(0xFFE60012);
       case BusRouteType.seat:
-        return b == Brightness.dark
-            ? const Color(0xFF4DABF7)
-            : const Color(0xFF2B6CB0);
+        return colorScheme.primary;
       default:
-        return b == Brightness.dark
+        return brightness == Brightness.dark
             ? const Color(0xFF51CF66)
             : const Color(0xFF38A169);
     }
   }
 
   String _routeTypeLabel(BusRoute route) {
-    switch (route.getRouteType()) {
-      case BusRouteType.express:
-        return '급행';
-      case BusRouteType.seat:
-        return '좌석';
-      default:
-        return '일반';
-    }
+    return _routeBranding(route)?.label ?? route.getRouteTypeName();
   }
 
   String _routeSubtitle(BusRoute route) {
@@ -477,7 +476,11 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildRouteTile(BusRoute route) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final badgeColor = _routeColor(route, colorScheme, theme.brightness);
+    final brand = _routeBranding(route);
+    final badgeColor = brand?.backgroundColor ?? _routeColor(route, colorScheme, theme.brightness);
+    final badgeTextColor = brand?.foregroundColor ?? Colors.white;
+    final badgeBorderColor = brand?.borderColor ?? badgeColor;
+    final badgeBorderWidth = brand?.borderWidth ?? 0;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () {
@@ -498,6 +501,9 @@ class _SearchScreenState extends State<SearchScreen> {
               decoration: BoxDecoration(
                 color: badgeColor,
                 shape: BoxShape.circle,
+                border: badgeBorderWidth > 0
+                    ? Border.all(color: badgeBorderColor, width: badgeBorderWidth)
+                    : null,
               ),
               alignment: Alignment.center,
               child: Padding(
@@ -507,8 +513,8 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: Text(
                     route.routeNo,
                     maxLines: 1,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: badgeTextColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
                     ),
@@ -536,13 +542,15 @@ class _SearchScreenState extends State<SearchScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: badgeColor.withValues(alpha: 0.15),
+                          color: badgeBorderWidth > 0
+                              ? badgeBorderColor.withValues(alpha: 0.08)
+                              : badgeColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          _routeTypeLabel(route),
+                          brand?.label ?? _routeTypeLabel(route),
                           style: TextStyle(
-                            color: badgeColor,
+                            color: badgeTextColor,
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                           ),
@@ -831,3 +839,12 @@ class _StationItemWrapperState extends State<_StationItemWrapper> {
     );
   }
 }
+
+
+
+
+
+
+
+
+

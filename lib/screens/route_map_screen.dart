@@ -5,6 +5,7 @@ import '../models/route_station.dart';
 import '../services/api_service.dart';
 import '../widgets/home_search_bar.dart';
 import '../widgets/unified_bus_detail_widget.dart';
+import '../utils/route_branding.dart';
 import 'map_screen.dart';
 
 class RouteMapScreen extends StatefulWidget {
@@ -318,7 +319,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
 
   Widget _buildRouteHeaderCard(
       BusRoute route, ThemeData theme, ColorScheme colorScheme) {
-    final typeName = '대구 ${route.getRouteTypeName()}버스';
+    final brandLabel = resolveRouteBrandingForRoute(route)?.label ?? route.getRouteTypeName();
+    final typeName = '대구 $brandLabel' '버스';
     final hasStart =
         route.startPoint.trim().isNotEmpty && route.startPoint != '출발지 정보 없음';
     final hasEnd =
@@ -710,3 +712,11 @@ class _StationArrivalsSheetState extends State<_StationArrivalsSheet> {
     );
   }
 }
+
+
+
+
+
+
+
+

@@ -67,9 +67,7 @@ void main() {
       if (widget is! Ink) return false;
       final decoration = widget.decoration;
       if (decoration is! BoxDecoration) return false;
-      final gradient = decoration.gradient;
-      if (gradient is! LinearGradient) return false;
-      return gradient.colors.first == const Color(0xFFE53935);
+      return decoration.color == const Color(0xFFE60012);
     });
     expect(redRouteButtonFinder, findsWidgets);
   });
@@ -114,6 +112,7 @@ void main() {
     expect(redTimeTextFinder, findsWidgets);
   });
 }
+
 
 
 

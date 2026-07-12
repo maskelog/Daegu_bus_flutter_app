@@ -26,6 +26,7 @@ import '../models/favorite_bus.dart';
 import '../utils/favorite_bus_store.dart';
 import '../utils/boarding_alarm_actions.dart';
 import '../utils/favorite_stop_store.dart';
+import '../utils/route_branding.dart';
 import '../utils/home_search_result_sync.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/permission_service.dart';
@@ -424,15 +425,19 @@ class _HomeScreenState extends State<HomeScreen>
 
   Color _getBusColor(
       BuildContext context, BusArrival arrival, bool isLowFloor) {
-    final routeType = _routeTypeCache[arrival.routeId];
+    final branding = resolveRouteBranding(routeNo: arrival.routeNo);
+    if (branding != null) {
+      return branding.backgroundColor;
+    }
 
-    if (routeType == BusRouteType.express || arrival.routeNo.contains('급행')) {
-      return const Color(0xFFE53935);
+    final routeType = _routeTypeCache[arrival.routeId];
+    if (routeType == BusRouteType.express) {
+      return const Color(0xFFE60012);
     }
     if (isLowFloor) {
       return const Color(0xFF2196F3);
     }
-    return const Color(0xFF757575);
+    return Theme.of(context).colorScheme.primary;
   }
 
   @override
@@ -985,3 +990,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 }
+
+
+

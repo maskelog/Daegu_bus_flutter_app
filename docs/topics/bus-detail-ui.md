@@ -9,7 +9,7 @@
   `showUnifiedBusDetailModal()`이 통합 버스 상세 모달을 연다.
 - 상세 모달 상단의 버스 번호 배지는 48dp 이상의 터치 영역을 가진 노선도 버튼이다.
   번호 오른쪽의 `Icons.route_rounded`가 이동 가능함을 표시하고, 툴팁과 TalkBack에는
-  `N번 노선도 보기`로 노출된다.
+  `N번 노선도 보기`로 노출된다. 배지 색은 노선 배지 색상 규칙을 따른다.
 - 노선도 버튼은 현재 `routeId`와 `routeNo`로 `RouteMapScreen`을 열며, 상세 모달은
   교체되어 시스템 뒤로가기로 원래 화면에 복귀한다.
 - 상세 모달의 즐겨찾기와 승차 알람 버튼은 각각 기존 저장소와
@@ -51,6 +51,8 @@
 - `lib/screens/route_map_screen.dart`
 - `test/unified_bus_detail_route_icon_test.dart`
 - `test/unified_bus_detail_arrival_design_test.dart`
+
+
 
 
 
