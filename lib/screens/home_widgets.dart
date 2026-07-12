@@ -8,6 +8,7 @@ import '../models/bus_arrival.dart';
 import '../models/bus_stop.dart';
 import '../models/favorite_bus.dart';
 import '../services/alarm_service.dart';
+import '../utils/route_branding.dart';
 import '../widgets/station_number_badge.dart';
 import '../widgets/unified_bus_detail_widget.dart';
 
@@ -800,8 +801,14 @@ class HomeRouteItem extends StatelessWidget {
     final bus = arrival.firstBus;
     if (bus == null) return const SizedBox.shrink();
 
-    final minutes = bus.getRemainingMinutes();
     final isLowFloor = bus.isLowFloor;
+    final routeBrand = resolveRouteBranding(routeNo: arrival.routeNo);
+    final routeBadgeColor = routeBrand?.backgroundColor ?? getBusColor(context, arrival, isLowFloor);
+    final routeBadgeTextColor = routeBrand?.foregroundColor ?? Colors.white;
+    final routeBadgeBorderColor = routeBrand?.borderColor ?? routeBadgeColor;
+    final routeBadgeBorderWidth = routeBrand?.borderWidth ?? 0;
+
+    final minutes = bus.getRemainingMinutes();
     final isOutOfService = bus.isOutOfService;
 
     // 1st Bus
@@ -872,14 +879,17 @@ class HomeRouteItem extends StatelessWidget {
                 width: 50,
                 height: 28,
                 decoration: BoxDecoration(
-                  color: getBusColor(context, arrival, isLowFloor),
+                  color: routeBadgeColor,
                   borderRadius: BorderRadius.circular(6),
+                  border: routeBadgeBorderWidth > 0
+                      ? Border.all(color: routeBadgeBorderColor, width: routeBadgeBorderWidth)
+                      : null,
                 ),
                 child: Center(
                   child: Text(
                     arrival.routeNo,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: routeBadgeTextColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),
