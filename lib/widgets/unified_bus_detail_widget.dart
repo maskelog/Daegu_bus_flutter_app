@@ -16,6 +16,13 @@ import '../utils/favorite_bus_store.dart';
 import '../utils/simple_tts_helper.dart';
 import '../utils/boarding_alarm_actions.dart';
 
+Color _getRouteAccentColor(String routeNo, ColorScheme colorScheme) {
+  return routeNo.contains('급행') ? const Color(0xFFE53935) : colorScheme.primary;
+}
+
+Color _getRouteOnAccentColor(String routeNo, ColorScheme colorScheme) {
+  return routeNo.contains('급행') ? Colors.white : colorScheme.onPrimary;
+}
 /// 통합된 버스 상세정보 위젯 (최적화 버전)
 class UnifiedBusDetailWidget extends StatefulWidget {
   final BusArrival busArrival;
@@ -464,6 +471,8 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
   Widget _buildCompactCard() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final routeAccentColor = _getRouteAccentColor(widget.busArrival.routeNo, colorScheme);
+    final routeOnAccentColor = _getRouteOnAccentColor(widget.busArrival.routeNo, colorScheme);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -493,7 +502,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: colorScheme.primary,
+                        color: routeAccentColor,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
@@ -502,13 +511,13 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
                           Icon(
                             Icons.directions_bus,
                             size: 16,
-                            color: colorScheme.onPrimary,
+                            color: routeOnAccentColor,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             widget.busArrival.routeNo,
                             style: theme.textTheme.labelLarge?.copyWith(
-                              color: colorScheme.onPrimary,
+                              color: routeOnAccentColor,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -748,7 +757,9 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
         widget.busArrival.routeId,
       ),
       builder: (context, hasAlarm, child) {
-        // 디버깅 로그 (개발 모드에서만)
+        final colorScheme = Theme.of(context).colorScheme;
+        final routeAccentColor = _getRouteAccentColor(widget.busArrival.routeNo, colorScheme);
+            // 디버깅 로그 (개발 모드에서만)
         if (kDebugMode) {
           debugPrint(
               '🔄 풀 Selector 리빌드: ${widget.busArrival.routeNo}번, hasAlarm=$hasAlarm');
@@ -773,7 +784,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
                   Row(
                     children: [
                       Icon(Icons.directions_bus,
-                          color: Theme.of(context).colorScheme.primary,
+                          color: routeAccentColor,
                           size: 24),
                       const SizedBox(width: 12),
                       Expanded(
@@ -811,8 +822,10 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
                                   .headlineMedium
                                   ?.copyWith(
                                     color: _currentBus.isOutOfService
-                                        ? Theme.of(context).colorScheme.error
-                                        : Theme.of(context).colorScheme.primary,
+                                        ? colorScheme.onSurfaceVariant
+                                        : (_remainingTime <= 3
+                                            ? colorScheme.error
+                                            : colorScheme.onSurfaceVariant),
                                     fontWeight: FontWeight.bold,
                                   ),
                             ),
@@ -853,7 +866,7 @@ class _UnifiedBusDetailWidgetState extends State<UnifiedBusDetailWidget>
                                     Icons.accessible,
                                     size: 16,
                                     color:
-                                        Theme.of(context).colorScheme.primary,
+                                        routeAccentColor,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
@@ -1111,8 +1124,8 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                colorScheme.primary,
-                                colorScheme.primary.withAlpha(204),
+                                _getRouteAccentColor(widget.busArrival.routeNo, colorScheme),
+                                _getRouteAccentColor(widget.busArrival.routeNo, colorScheme).withAlpha(204),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(12),
@@ -1256,7 +1269,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
         Icon(
           Icons.directions_bus_filled_rounded,
           size: 20,
-          color: colorScheme.primary,
+          color: _getRouteAccentColor(widget.busArrival.routeNo, colorScheme),
         ),
         const SizedBox(width: 8),
         Text(
@@ -1291,22 +1304,15 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
     final colorScheme = theme.colorScheme;
     final minutes = bus.getRemainingMinutes();
     final isArriving = minutes >= 0 && minutes <= 3;
-    final isExpressRoute = _isExpressRoute();
-    final routeAccentColor = _getRouteAccentColor(colorScheme);
-    final routeOnAccentColor = _getRouteOnAccentColor(colorScheme);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isMainBus
-            ? routeAccentColor.withAlpha(102)
-            : colorScheme.surfaceContainerHighest,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isMainBus
-              ? routeAccentColor.withAlpha(102)
-              : colorScheme.outlineVariant.withAlpha(77),
+          color: colorScheme.outlineVariant.withAlpha(77),
           width: isMainBus ? 1.5 : 1,
         ),
       ),
@@ -1316,15 +1322,9 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: isExpressRoute
-                  ? routeAccentColor
-                  : isMainBus
-                      ? colorScheme.primary
-                      : colorScheme.surfaceContainerHigh,
+              color: colorScheme.surfaceContainerHigh,
               border: Border.all(
-                color: isExpressRoute
-                    ? routeAccentColor.withAlpha(128)
-                    : Colors.transparent,
+                color: Colors.transparent,
                 width: 1,
               ),
               borderRadius: BorderRadius.circular(6),
@@ -1335,21 +1335,15 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                 Icon(
                   isMainBus ? Icons.looks_one_rounded : Icons.looks_two_rounded,
                   size: 14,
-                  color: isExpressRoute
-                      ? routeOnAccentColor
-                      : isMainBus
-                          ? colorScheme.onPrimary
-                          : colorScheme.onSurfaceVariant,
+                  color: isMainBus
+                      ? colorScheme.onSurfaceVariant
+                      : colorScheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   arrivalLabel,
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: isExpressRoute
-                        ? routeOnAccentColor
-                        : isMainBus
-                            ? colorScheme.onPrimary
-                            : colorScheme.onSurfaceVariant,
+                    color: colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1365,9 +1359,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                 decoration: BoxDecoration(
                   color: bus.isOutOfService
                       ? colorScheme.surfaceContainerHigh
-                      : isArriving
-                          ? colorScheme.errorContainer
-                          : routeAccentColor.withAlpha(128),
+                      : colorScheme.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -1385,16 +1377,14 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                             ? colorScheme.onSurfaceVariant
                             : isArriving
                                 ? colorScheme.error
-                                : routeAccentColor,
+                                : colorScheme.onSurfaceVariant,
                       ),
                     ),
                     if (!bus.isOutOfService)
                       Text(
                         minutes == 0 ? '도착' : '분',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: isArriving
-                              ? colorScheme.error.withAlpha(179)
-                              : routeAccentColor.withAlpha(179),
+                          color: colorScheme.onSurfaceVariant.withAlpha(179),
                         ),
                       ),
                   ],
@@ -1410,9 +1400,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                         Icon(
                           Icons.location_on,
                           size: 16,
-                          color: isMainBus
-                              ? routeAccentColor
-                              : colorScheme.onSurfaceVariant,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(width: 4),
                         Expanded(
@@ -1491,7 +1479,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                             border: Border.all(
                               color: hasAlarm
                                   ? colorScheme.error.withAlpha(128)
-                                  : routeAccentColor.withAlpha(77),
+                                  : colorScheme.outlineVariant.withAlpha(77),
                               width: 1.5,
                             ),
                             borderRadius: BorderRadius.circular(8),
@@ -1503,7 +1491,7 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
                             size: 22,
                             color: hasAlarm
                                 ? colorScheme.onErrorContainer
-                                : routeAccentColor,
+                                : colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -1516,24 +1504,20 @@ class _BusDetailModalContentState extends State<_BusDetailModalContent> {
         ],
       ),
     );
-  }  bool _isExpressRoute() {
-    return widget.busArrival.routeNo.contains('급행');
-  }
-
-  Color _getRouteAccentColor(ColorScheme colorScheme) {
-    if (_isExpressRoute()) {
-      return const Color(0xFFE53935);
-    }
-    return colorScheme.primary;
-  }
-
-  Color _getRouteOnAccentColor(ColorScheme colorScheme) {
-    if (_isExpressRoute()) {
-      return Colors.white;
-    }
-    return colorScheme.onPrimary;
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
