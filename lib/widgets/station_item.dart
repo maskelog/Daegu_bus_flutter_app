@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../models/bus_stop.dart';
+import 'station_number_badge.dart';
 
 class StationItem extends StatelessWidget {
   final BusStop station;
@@ -58,13 +60,7 @@ class StationItem extends StatelessWidget {
                   const SizedBox(width: 8),
                   // 정류장 번호 (있는 경우)
                   if (station.wincId != null && station.wincId!.isNotEmpty)
-                    Text(
-                      station.wincId!,
-                      style: TextStyle(
-                        color: colorScheme.onSurfaceVariant,
-                        fontSize: 14,
-                      ),
-                    ),
+                    StationNumberBadge(stationNumber: station.wincId!),
                   const Spacer(),
                   // 즐겨찾기 버튼
                   if (onFavoriteToggle != null)

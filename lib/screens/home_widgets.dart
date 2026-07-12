@@ -8,6 +8,7 @@ import '../models/bus_arrival.dart';
 import '../models/bus_stop.dart';
 import '../models/favorite_bus.dart';
 import '../services/alarm_service.dart';
+import '../widgets/station_number_badge.dart';
 import '../widgets/unified_bus_detail_widget.dart';
 
 typedef BusColorResolver = Color Function(
@@ -728,14 +729,10 @@ class HomeMainStationCard extends StatelessWidget {
                           color: colorScheme.onSurface,
                         ),
                       ),
-                      if (selectedStop!.id.isNotEmpty)
-                        Text(
-                          '정류장 번호: ${selectedStop!.id}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
+                      if (selectedStop!.id.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        StationNumberBadge(stationNumber: selectedStop!.id),
+                      ],
                     ],
                   ),
                 ),
