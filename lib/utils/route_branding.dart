@@ -87,10 +87,10 @@ RouteBranding? resolveRouteBranding({
       borderWidth: 0,
     );
   }
-  if (haystack.contains('출근')) {
+  if (routeNo == '4010' || haystack.contains('출근맞춤') || haystack.contains('출근')) {
     return const RouteBranding(
       type: RouteBrandType.commute,
-      label: '출근',
+      label: '출근맞춤',
       backgroundColor: _routeCommuteBackground,
       foregroundColor: Colors.white,
       borderColor: _routeCommuteBackground,
@@ -157,4 +157,3 @@ RouteBranding? resolveRouteBrandingForRoute(BusRoute route) {
     routeTp: route.routeTp,
   );
 }
-
