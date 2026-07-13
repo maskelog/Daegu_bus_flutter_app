@@ -9,7 +9,6 @@ import '../models/bus_stop.dart';
 import '../models/favorite_bus.dart';
 import '../services/alarm_service.dart';
 import '../utils/route_branding.dart';
-import '../widgets/station_number_badge.dart';
 import '../widgets/unified_bus_detail_widget.dart';
 
 typedef BusColorResolver = Color Function(
@@ -719,22 +718,13 @@ class HomeMainStationCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        selectedStop!.name,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.onSurface,
-                        ),
-                      ),
-                      if (selectedStop!.id.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        StationNumberBadge(stationNumber: selectedStop!.id),
-                      ],
-                    ],
+                  child: Text(
+                    selectedStop!.name,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurface,
+                    ),
                   ),
                 ),
                 IconButton(

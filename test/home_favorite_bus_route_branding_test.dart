@@ -1,5 +1,6 @@
 import 'package:daegu_bus_app/models/bus_arrival.dart';
 import 'package:daegu_bus_app/models/bus_info.dart';
+import 'package:daegu_bus_app/models/bus_stop.dart';
 import 'package:daegu_bus_app/screens/home_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'helpers/test_app.dart';
 
 void main() {
+  testWidgets('selected home station card hides the internal station id', (tester) async {
+    await tester.pumpWidget(await buildTestMaterialApp(
+      home: Material(
+        child: HomeMainStationCard(
+          selectedStop: BusStop(
+            id: '7021024000',
+            stationId: '7021024000',
+            name: '새동네아파트앞',
+          ),
+          isLoading: false,
+          errorMessage: null,
+          busArrivals: const [],
+          onClearSelectedStop: () {},
+          getBusColor: (_, __, ___) => Colors.blue,
+          isFavoriteBus: (_) => false,
+          onToggleFavorite: (_, __) async {},
+          onAlarmTap: (_, __, ___, ____) async {},
+        ),
+      ),
+    ));
+
+    expect(find.text('새동네아파트앞'), findsOneWidget);
+    expect(find.text('7021024000'), findsNothing);
+  });
+
   testWidgets('favorite bus route chip uses route branding colors', (tester) async {
     final arrival = BusArrival(
       routeNo: '직행1',
