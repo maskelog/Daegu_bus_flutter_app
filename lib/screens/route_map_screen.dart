@@ -161,8 +161,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                         icon: Icons.map_rounded,
                         semanticLabel: '지도',
                         semanticHint: '지도에서 보기',
-                        onPressed: () {
-                          Navigator.push(
+                        onPressed: () async {
+                          final result = await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (context) => MapScreen(
@@ -171,6 +171,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                               ),
                             ),
                           );
+                          // 지도에서 '홈에서 보기' 선택 시 홈까지 전달
+                          if (result is BusStop && mounted) {
+                            _showStationOnHome(result);
+                          }
                         },
                       ),
                     ],

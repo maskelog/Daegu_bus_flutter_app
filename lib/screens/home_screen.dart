@@ -790,6 +790,10 @@ class _HomeScreenState extends State<HomeScreen>
       return MapScreen(
         bottomInset: mapBottomInset,
         initialNearbyStations: _nearbyStops,
+        onShowStationOnHome: (stop) {
+          _tabController.animateTo(2); // 홈 탭
+          _onSelectedStopChanged(stop);
+        },
       );
     }
     return _buildMapRestrictedView();

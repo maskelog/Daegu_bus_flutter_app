@@ -1,7 +1,7 @@
 # Live Update 알림 (Android 16 / Samsung Now Bar)
 
 > 이 문서는 **현재 상태**를 서술한다. 변경 이력·시행착오의 전체 맥락은 [devlog.md](../devlog.md)의 해당 날짜 참조.
-> 마지막 갱신: 2026-07-05 (devlog 2026-01-28 ~ 2026-03-15 기반으로 초기 작성)
+> 마지막 갱신: 2026-07-13 (Android 16 / One UI 8 실기기 검증 반영)
 
 ## 개요
 
@@ -58,6 +58,13 @@ Live Update 승격 정보가 시스템에 전달되지 않았다. Google 공식 
 - `android.ongoingActivityNoti.*` extras Bundle을 `addExtras()`로 병합 (One UI 7 전용 필드)
 - One UI 7의 Live Notifications는 삼성 화이트리스트 앱만 직접 사용 가능.
   One UI 8부터는 Android 16 표준 API로 자동 지원되므로 표준 API 구현이 본선.
+
+## 실기기 검증 상태
+
+- Galaxy S25 Ultra (`SM-S938N`), Android 16(API 36), One UI 8에서 Live Update와
+  Samsung Now Bar 표시·갱신이 정상 작동한다.
+- `POST_PROMOTED_NOTIFICATIONS`, 알림, 정확 알람, FGS 권한과 배터리 최적화 예외가
+  허용된 상태에서 검증했다.
 
 ## 폐기된 접근 (다시 쓰지 말 것)
 
