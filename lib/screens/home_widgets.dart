@@ -804,7 +804,10 @@ class HomeRouteItem extends StatelessWidget {
     final isLowFloor = bus.isLowFloor;
     final routeBrand = resolveRouteBranding(routeNo: arrival.routeNo);
     final routeBadgeColor = routeBrand?.backgroundColor ?? getBusColor(context, arrival, isLowFloor);
-    final routeBadgeTextColor = routeBrand?.foregroundColor ?? Colors.white;
+    final routeBadgeTextColor = routeBrand?.foregroundColor ??
+        (ThemeData.estimateBrightnessForColor(routeBadgeColor) == Brightness.light
+            ? Colors.black
+            : Colors.white);
     final routeBadgeBorderColor = routeBrand?.borderColor ?? routeBadgeColor;
     final routeBadgeBorderWidth = routeBrand?.borderWidth ?? 0;
 
