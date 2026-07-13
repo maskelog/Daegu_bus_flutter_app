@@ -483,13 +483,17 @@ class _SearchScreenState extends State<SearchScreen> {
     final badgeBorderWidth = brand?.borderWidth ?? 0;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        final result = await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => RouteMapScreen(initialRoute: route),
           ),
         );
+        // 노선도에서 '홈에서 이 정류장 보기'를 선택한 경우 홈까지 전달
+        if (result is BusStop && mounted) {
+          Navigator.of(context).pop(result);
+        }
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),

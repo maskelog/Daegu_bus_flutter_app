@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/bus_arrival.dart';
 import '../models/bus_route.dart';
+import '../models/bus_stop.dart';
 import '../models/route_station.dart';
 import '../services/api_service.dart';
 import '../widgets/home_search_bar.dart';
@@ -12,10 +13,15 @@ class RouteMapScreen extends StatefulWidget {
   final BusRoute? initialRoute;
   final bool showHeader;
 
+  /// 홈 탭에 임베드된 경우 정류장을 홈에서 보여주기 위한 콜백.
+  /// null이면 (검색에서 push된 경우) BusStop을 결과로 pop한다.
+  final ValueChanged<BusStop>? onShowStationOnHome;
+
   const RouteMapScreen({
     super.key,
     this.initialRoute,
     this.showHeader = true,
+    this.onShowStationOnHome,
   });
 
   @override
@@ -103,8 +109,18 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
         parentContext: context,
         station: station,
         currentRouteNo: _selectedRoute?.routeNo,
+        onShowOnHome: _showStationOnHome,
       ),
     );
+  }
+
+  void _showStationOnHome(BusStop stop) {
+    final callback = widget.onShowStationOnHome;
+    if (callback != null) {
+      callback(stop);
+    } else {
+      Navigator.of(context).pop(stop);
+    }
   }
 
   @override
@@ -543,11 +559,13 @@ class _StationArrivalsSheet extends StatefulWidget {
   final BuildContext parentContext;
   final RouteStation station;
   final String? currentRouteNo;
+  final ValueChanged<BusStop> onShowOnHome;
 
   const _StationArrivalsSheet({
     required this.parentContext,
     required this.station,
     this.currentRouteNo,
+    required this.onShowOnHome,
   });
 
   @override
@@ -706,10 +724,34 @@ class _StationArrivalsSheetState extends State<_StationArrivalsSheet> {
                   },
                 ),
               ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isLoading ? null : _openOnHome,
+                icon: const Icon(Icons.home_rounded, size: 18),
+                label: const Text('홈에서 이 정류장 보기'),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  void _openOnHome() {
+    final stop = BusStop(
+      id: widget.station.stationId,
+      name: widget.station.stationName,
+      stationId: _effectiveStationId,
+      latitude: widget.station.latitude,
+      longitude: widget.station.longitude,
+    );
+    Navigator.of(context).pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!widget.parentContext.mounted) return;
+      widget.onShowOnHome(stop);
+    });
   }
 }
 

@@ -728,10 +728,16 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildMapTab() {
-    return const SafeArea(
+    return SafeArea(
       top: true,
       bottom: false,
-      child: RouteMapScreen(showHeader: false),
+      child: RouteMapScreen(
+        showHeader: false,
+        onShowStationOnHome: (stop) {
+          _tabController.animateTo(2); // 홈 탭
+          _onSelectedStopChanged(stop);
+        },
+      ),
     );
   }
 
