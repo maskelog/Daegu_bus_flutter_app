@@ -24,6 +24,26 @@ class AutoAlarmEngine {
     try {
       logMessage('🔄 자동 알람 저장 시작...');
       final prefs = await SharedPreferences.getInstance();
+
+      // _state.autoAlarms에는 활성 알람만 들어 있다. 저장소를 통째로
+      // 덮어쓰면 off 상태 알람이 유실되므로, 기존 저장분 중 비활성
+      // 알람은 그대로 보존해서 함께 기록한다.
+      final existing = prefs.getStringList('auto_alarms') ?? [];
+      final activeIds =
+          _state.autoAlarms.map((alarm) => alarm.id).toSet();
+      final preservedInactive = <String>[];
+      for (final entry in existing) {
+        try {
+          final data = jsonDecode(entry) as Map<String, dynamic>;
+          if (data['isActive'] == false &&
+              !activeIds.contains(data['id']?.toString())) {
+            preservedInactive.add(entry);
+          }
+        } catch (_) {
+          // 파싱 불가 항목은 보존 대상에서 제외
+        }
+      }
+
       final List<String> alarms = _state.autoAlarms.map((alarm) {
         final autoAlarm = AutoAlarm(
           id: alarm.id,
@@ -66,8 +86,13 @@ class AutoAlarmEngine {
         return jsonString;
       }).toList();
 
-      logMessage('📊 저장할 알람 수: ${alarms.length}개');
-      await prefs.setStringList('auto_alarms', alarms);
+      logMessage(
+        '📊 저장할 알람 수: 활성 ${alarms.length}개 + 비활성 보존 ${preservedInactive.length}개',
+      );
+      await prefs.setStringList(
+        'auto_alarms',
+        [...alarms, ...preservedInactive],
+      );
 
       final savedAlarms = prefs.getStringList('auto_alarms') ?? [];
       logMessage('✅ 자동 알람 저장 완료');
