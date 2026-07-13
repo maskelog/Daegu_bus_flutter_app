@@ -214,7 +214,11 @@ class NotificationHandler(private val context: Context) {
                 val currentMinutes = busInfo.getRemainingMinutes()
                 val prevMinutes = lastRemainingMinutesByRoute[routeId]
                 if (prevMinutes != null && currentMinutes >= 0 && prevMinutes >= 0 && currentMinutes != prevMinutes) {
-                    shouldVibrateOnChange = true
+                    // 자동알람은 설정 시각 5분 전부터 사전 추적하므로, ETA 변경만으로
+                    // 진동하면 설정 시각 전에 진동이 울린다 — 도착 임박일 때만 진동
+                    if (!info.isAutoAlarm || isArrivalImminent(busInfo)) {
+                        shouldVibrateOnChange = true
+                    }
                 }
                 lastRemainingMinutesByRoute[routeId] = currentMinutes
             }
@@ -546,6 +550,20 @@ class NotificationHandler(private val context: Context) {
             val maxOffset = (trackWidthPx - context.resources.getDimensionPixelSize(R.dimen.notification_bus_icon_size)).coerceAtLeast(0)
             setFloat(R.id.notification_bus_icon, "setTranslationX", (maxOffset * progressPercent / 100.0).toFloat().coerceIn(0f, maxOffset.toFloat()))
         }
+    }
+
+    /**
+     * 도착 임박 판정: 남은 정거장 1~2개 또는 3분 이내("곧 도착" 포함).
+     * remainingStops 기본값 "0"은 정보 없음 placeholder이므로 임박으로 치지 않고,
+     * "전"/"도착" 같은 상태 문자열도 BusAlertService의 alertOnArrivalOnly 판정과
+     * 같은 이유로 시간 조건에서 제외한다.
+     */
+    private fun isArrivalImminent(busInfo: com.devground.daegubus.models.BusInfo): Boolean {
+        val stops = busInfo.remainingStops.filter { it.isDigit() }.toIntOrNull()
+        val minutes = busInfo.getRemainingMinutes()
+        val isTimeBasedClose = busInfo.estimatedTime == "곧 도착" ||
+            (busInfo.estimatedTime.contains("분") && minutes in 0..3)
+        return (stops != null && stops in 1..2) || isTimeBasedClose
     }
 
     private fun isVibrationEnabled(): Boolean {
