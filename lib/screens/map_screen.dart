@@ -49,12 +49,17 @@ class MapScreen extends StatefulWidget {
   final List<BusStop>? initialNearbyStations; // 홈화면에서 전달받은 주변 정류장
   final double bottomInset; // 하단 광고+네비게이션 높이 (버튼/축적도 겹침 방지)
 
+  /// 홈 탭에 임베드된 경우 정류장을 홈에서 보여주기 위한 콜백.
+  /// null이면 (다른 화면에서 push된 경우) BusStop을 결과로 pop한다.
+  final ValueChanged<BusStop>? onShowStationOnHome;
+
   const MapScreen({
     super.key,
     this.routeId,
     this.routeStations,
     this.initialNearbyStations,
     this.bottomInset = 0.0,
+    this.onShowStationOnHome,
   });
 
   @override
@@ -168,6 +173,9 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
   String? _errorMessage;
   String? _htmlContent;
   String? _lastMapTraceId;
+
+  /// 마지막으로 클릭한(도착정보 조회 가능한) 정류장 — 하단 액션 카드에 표시
+  BusStop? _actionStation;
   double? _lastClickedLat;
   double? _lastClickedLng;
   double? _lastCenterLat;
@@ -371,9 +379,72 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
               onMoveToCurrent: _moveToCurrentLocation,
               bottomInset: widget.bottomInset,
             ),
+          if (_actionStation != null) _buildStationActionCard(context),
         ],
       ),
     );
+  }
+
+  /// 선택한 정류장을 홈에서 볼 수 있는 하단 액션 카드
+  Widget _buildStationActionCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Positioned(
+      left: 16,
+      right: 72, // 우측 FAB(주변 검색/현재 위치)와 겹침 방지
+      bottom: widget.bottomInset + 16,
+      child: SafeArea(
+        top: false,
+        child: Card(
+          elevation: 4,
+          color: colorScheme.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 4, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _actionStation!.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _showActionStationOnHome,
+                  icon: const Icon(Icons.home_rounded, size: 18),
+                  label: const Text('홈에서 보기'),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  onPressed: () => setState(() => _actionStation = null),
+                  tooltip: '닫기',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showActionStationOnHome() {
+    final stop = _actionStation;
+    if (stop == null) return;
+    final callback = widget.onShowStationOnHome;
+    if (callback != null) {
+      callback(stop);
+    } else {
+      Navigator.of(context).pop(stop);
+    }
   }
 
   Widget _buildBody() {
@@ -840,6 +911,10 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
           break;
         case 'mapClick':
           _hasUserInteractedWithMap = true;
+          // 빈 지도를 클릭하면 정류장 액션 카드 닫기
+          if (_actionStation != null) {
+            setState(() => _actionStation = null);
+          }
           final rawTraceId = eventData['traceId'];
           final source = eventData['source']?.toString() ?? 'unknown';
           final traceId = rawTraceId is String && rawTraceId.trim().isNotEmpty
@@ -985,7 +1060,9 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
     if (selectedStation != null) {
       debugPrint(
           '정류장 정보 표시: ${selectedStation.name} (ID: ${selectedStation.stationId})');
-      // _showBusInfoBottomSheet(selectedStation); // 삭제됨
+      if (_isValidStationId(selectedStation.getEffectiveStationId())) {
+        setState(() => _actionStation = selectedStation);
+      }
     } else {
       debugPrint('정류장 정보를 찾을 수 없음: $stationName');
 
@@ -1353,6 +1430,13 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
 
       final arrivals = await _getStationInfoFromCache(stationId!);
       if (!mounted || requestId != _stationInfoRequestSequence) return;
+
+      // API 검색 fallback까지 거쳐 확정된 정류장을 액션 카드에 반영
+      if (selectedStation != null) {
+        setState(() {
+          _actionStation = selectedStation!.copyWith(stationId: stationId);
+        });
+      }
 
       final busInfoText =
           arrivals.isNotEmpty ? _formatBusInfoForMap(arrivals) : '도착 예정 버스 없음';
