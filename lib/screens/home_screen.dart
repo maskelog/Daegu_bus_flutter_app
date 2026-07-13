@@ -203,6 +203,39 @@ class _HomeScreenState extends State<HomeScreen>
     _setupPeriodicRefresh();
   }
 
+  bool _isFavoriteStop(BusStop stop) =>
+      _favoriteStops.any((item) => item.id == stop.id);
+
+  Future<void> _toggleFavoriteStop(BusStop stop) async {
+    if (_isFavoriteStop(stop)) {
+      await _removeFavoriteStop(stop);
+      return;
+    }
+    try {
+      final updatedStops = [..._favoriteStops, stop.copyWith(isFavorite: true)];
+      await FavoriteStopStore.save(updatedStops);
+
+      if (!mounted) return;
+      setState(() {
+        _favoriteStops
+          ..clear()
+          ..addAll(updatedStops);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${stop.name} 즐겨찾기에 추가되었습니다'),
+          action: SnackBarAction(
+            label: '확인',
+            onPressed: () {},
+          ),
+        ),
+      );
+    } catch (e) {
+      logMessage('즐겨찾기 추가 오류: $e', level: LogLevel.error);
+    }
+  }
+
   Future<void> _removeFavoriteStop(BusStop stop) async {
     try {
       final updatedStops =
@@ -716,6 +749,12 @@ class _HomeScreenState extends State<HomeScreen>
             errorMessage: _errorMessage,
             busArrivals: _busArrivals,
             onClearSelectedStop: _clearSelectedStop,
+            isFavoriteStop:
+                _selectedStop != null && _isFavoriteStop(_selectedStop!),
+            onToggleFavoriteStop: () {
+              final stop = _selectedStop;
+              if (stop != null) _toggleFavoriteStop(stop);
+            },
             getBusColor: _getBusColor,
             isFavoriteBus: _isFavoriteBus,
             onToggleFavorite: _toggleFavoriteBus,

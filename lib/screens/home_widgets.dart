@@ -684,6 +684,8 @@ class HomeMainStationCard extends StatelessWidget {
     required this.errorMessage,
     required this.busArrivals,
     required this.onClearSelectedStop,
+    required this.isFavoriteStop,
+    required this.onToggleFavoriteStop,
     required this.getBusColor,
     required this.isFavoriteBus,
     required this.onToggleFavorite,
@@ -695,6 +697,8 @@ class HomeMainStationCard extends StatelessWidget {
   final String? errorMessage;
   final List<BusArrival> busArrivals;
   final VoidCallback onClearSelectedStop;
+  final bool isFavoriteStop;
+  final VoidCallback onToggleFavoriteStop;
   final BusColorResolver getBusColor;
   final FavoriteBusPredicate isFavoriteBus;
   final FavoriteToggleHandler onToggleFavorite;
@@ -726,6 +730,18 @@ class HomeMainStationCard extends StatelessWidget {
                       color: colorScheme.onSurface,
                     ),
                   ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    isFavoriteStop
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    color: isFavoriteStop
+                        ? Colors.amber
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                  onPressed: onToggleFavoriteStop,
+                  tooltip: isFavoriteStop ? '즐겨찾기 해제' : '즐겨찾기 추가',
                 ),
                 IconButton(
                   icon: Icon(

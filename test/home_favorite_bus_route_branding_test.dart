@@ -21,6 +21,8 @@ void main() {
           errorMessage: null,
           busArrivals: const [],
           onClearSelectedStop: () {},
+          isFavoriteStop: false,
+          onToggleFavoriteStop: () {},
           getBusColor: (_, __, ___) => Colors.blue,
           isFavoriteBus: (_) => false,
           onToggleFavorite: (_, __) async {},
