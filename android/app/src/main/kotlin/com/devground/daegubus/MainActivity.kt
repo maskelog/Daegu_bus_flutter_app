@@ -144,10 +144,11 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
-            // Edge-to-edge: Flutter 앱은 FlutterActivity → android.app.Activity 상속으로
-            // ComponentActivity 확장함수인 enableEdgeToEdge() 불가.
-            // WindowCompat + WindowInsetsControllerCompat 으로 동등하게 처리.
-            WindowCompat.setDecorFitsSystemWindows(window, false)
+            super.onCreate(savedInstanceState)
+
+            // FlutterActivity는 ComponentActivity가 아니므로 AndroidX Activity 확장함수 대신
+            // Views용 WindowCompat API로 하위 버전까지 동일한 edge-to-edge 정책을 적용한다.
+            WindowCompat.enableEdgeToEdge(window)
             val insetsController = WindowInsetsControllerCompat(window, window.decorView)
             insetsController.isAppearanceLightStatusBars = false
             insetsController.isAppearanceLightNavigationBars = false
@@ -155,8 +156,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 window.isNavigationBarContrastEnforced = false
             }
-
-            super.onCreate(savedInstanceState)
 
             // WebView 디버깅 활성화 (개발 중에만)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
