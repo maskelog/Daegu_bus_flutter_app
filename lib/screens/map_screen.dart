@@ -43,6 +43,100 @@ class _TimedCacheEntry<T> {
   }
 }
 
+class StationMapActionCard extends StatelessWidget {
+  final String stationName;
+  final VoidCallback onShowOnHome;
+  final VoidCallback onClose;
+
+  const StationMapActionCard({
+    super.key,
+    required this.stationName,
+    required this.onShowOnHome,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 4,
+      color: colorScheme.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          children: [
+            Expanded(
+              child: Semantics(
+                label: '$stationName 도착정보 보기',
+                button: true,
+                excludeSemantics: true,
+                child: InkWell(
+                  key: const Key('map_show_station_on_home_button'),
+                  onTap: onShowOnHome,
+                  child: SizedBox(
+                    height: 48,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.home_rounded,
+                            size: 20,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '도착정보 보기',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.fade,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(
+                                  color: colorScheme.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            VerticalDivider(
+              width: 1,
+              thickness: 1,
+              indent: 10,
+              endIndent: 10,
+              color: colorScheme.outlineVariant,
+            ),
+            IconButton(
+              constraints: const BoxConstraints.tightFor(
+                width: 48,
+                height: 48,
+              ),
+              onPressed: onClose,
+              icon: Icon(
+                Icons.close_rounded,
+                size: 20,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              tooltip: '선택한 정류장 닫기',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class MapScreen extends StatefulWidget {
   final String? routeId;
   final List<RouteStation>? routeStations;
@@ -86,9 +180,8 @@ class MapScreen extends StatefulWidget {
       return Future.value(_cachedKakaoMapHtml!);
     }
 
-    return _kakaoMapHtmlFuture ??= rootBundle
-        .loadString('assets/kakao_map.html')
-        .then((htmlTemplate) {
+    return _kakaoMapHtmlFuture ??=
+        rootBundle.loadString('assets/kakao_map.html').then((htmlTemplate) {
       final html = htmlTemplate.replaceAll('YOUR_KAKAO_API_KEY', kakaoApiKey);
       _cachedKakaoMapHtml = html;
       _cachedKakaoMapKey = kakaoApiKey;
@@ -135,7 +228,8 @@ class MapScreen extends StatefulWidget {
   }
 }
 
-class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixin {
+class _MapScreenState extends State<MapScreen>
+    with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
   static const double _defaultMapLat = 35.8714;
@@ -152,7 +246,8 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
   Timer? _searchThrottleTimer;
   Timer? _kakaoInitFallbackTimer;
   bool _kakaoSdkLoaded = false;
-  final Debouncer _mapSearchDebouncer = Debouncer(delay: const Duration(milliseconds: 350));
+  final Debouncer _mapSearchDebouncer =
+      Debouncer(delay: const Duration(milliseconds: 350));
   final Map<String, Future<List<BusStop>>> _nearbyInFlight = {};
   final Map<String, _TimedCacheEntry<List<BusStop>>> _nearbyCache = {};
   final Map<String, Future<List<BusArrival>>> _stationInfoInFlight = {};
@@ -222,7 +317,9 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
 
       // 2. WebView 즉시 시작 → Kakao SDK 다운로드가 GPS 취득과 병렬로 진행됨
       _initializeWebView();
-      setState(() { _isLoading = false; });
+      setState(() {
+        _isLoading = false;
+      });
       debugPrint('[$initTrace] WebView 시작 - GPS 병렬 취득 시작');
 
       // 3. 노선 정류장 처리 (동기)
@@ -238,7 +335,8 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
       // 4. 마지막 위치만 빠르게 읽고, 지도 초기화는 GPS 실시간 취득을 기다리지 않음
       _currentPosition = await _getLastKnownPosition();
       if (_currentPosition != null) {
-        debugPrint('[$initTrace] 마지막 위치 사용: ${_currentPosition?.latitude}, ${_currentPosition?.longitude}');
+        debugPrint(
+            '[$initTrace] 마지막 위치 사용: ${_currentPosition?.latitude}, ${_currentPosition?.longitude}');
       } else {
         debugPrint('[$initTrace] 마지막 위치 없음 - 대구 기본 좌표로 먼저 지도 표시');
       }
@@ -295,7 +393,8 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
       if (!hasMeaningfulChange) return;
 
       setState(() => _currentPosition = position);
-      debugPrint('[$initTrace] 현재 GPS 위치 갱신: ${position.latitude}, ${position.longitude}');
+      debugPrint(
+          '[$initTrace] 현재 GPS 위치 갱신: ${position.latitude}, ${position.longitude}');
 
       if (!_mapReady) return;
 
@@ -329,7 +428,6 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
       throw Exception('HTML 템플릿을 로드할 수 없습니다: $e');
     }
   }
-
 
   Future<Position> _getCurrentPosition() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -387,50 +485,16 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
 
   /// 선택한 정류장을 홈에서 볼 수 있는 하단 액션 카드
   Widget _buildStationActionCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     return Positioned(
       left: 16,
       right: 72, // 우측 FAB(주변 검색/현재 위치)와 겹침 방지
       bottom: widget.bottomInset + 16,
       child: SafeArea(
         top: false,
-        child: Card(
-          elevation: 4,
-          color: colorScheme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 4, 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _actionStation!.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.tonalIcon(
-                  onPressed: _showActionStationOnHome,
-                  icon: const Icon(Icons.home_rounded, size: 18),
-                  label: const Text('홈에서 보기'),
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  onPressed: () => setState(() => _actionStation = null),
-                  tooltip: '닫기',
-                ),
-              ],
-            ),
-          ),
+        child: StationMapActionCard(
+          stationName: _actionStation!.name,
+          onShowOnHome: _showActionStationOnHome,
+          onClose: () => setState(() => _actionStation = null),
         ),
       ),
     );
@@ -498,14 +562,16 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
             _onMapReady();
           },
           onWebResourceError: (WebResourceError error) {
-            debugPrint('[$webTrace] WebView 오류: code=${error.errorCode}, type=${error.errorType}, description=${error.description}');
+            debugPrint(
+                '[$webTrace] WebView 오류: code=${error.errorCode}, type=${error.errorType}, description=${error.description}');
           },
         ),
       )
       ..addJavaScriptChannel(
         'mapEvent',
         onMessageReceived: (JavaScriptMessage message) {
-          debugPrint('지도 이벤트 수신(trace=${_lastMapTraceId ?? 'N/A'}): ${message.message}');
+          debugPrint(
+              '지도 이벤트 수신(trace=${_lastMapTraceId ?? 'N/A'}): ${message.message}');
           _handleMapEvent(message.message);
         },
       );
@@ -521,7 +587,9 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
 
   void _onMapReady() {
     debugPrint('지도 준비 완료 이벤트 수신');
-    setState(() { _mapReady = true; });
+    setState(() {
+      _mapReady = true;
+    });
 
     _kakaoInitFallbackTimer?.cancel();
     _kakaoInitFallbackTimer = Timer(const Duration(milliseconds: 1200), () {
@@ -574,7 +642,11 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
     _initializedWithFallbackPosition = _currentPosition == null;
 
     _webViewController.runJavaScript('initMap($lat, $lng, 3);');
-    if (mounted) setState(() { _mapInitialized = true; });
+    if (mounted) {
+      setState(() {
+        _mapInitialized = true;
+      });
+    }
   }
 
   void _scheduleNearbySearch({
@@ -643,14 +715,16 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
           'type': 'route',
           'seq': station.sequenceNo,
         });
-        routeKeys.add('${station.latitude!.toStringAsFixed(5)},${station.longitude!.toStringAsFixed(5)}');
+        routeKeys.add(
+            '${station.latitude!.toStringAsFixed(5)},${station.longitude!.toStringAsFixed(5)}');
       }
     }
 
     // 주변 정류장 (nearby, 노선 정류장과 중복 제거)
     for (final station in _nearbyStations) {
       if (station.latitude != null && station.longitude != null) {
-        final key = '${station.latitude!.toStringAsFixed(5)},${station.longitude!.toStringAsFixed(5)}';
+        final key =
+            '${station.latitude!.toStringAsFixed(5)},${station.longitude!.toStringAsFixed(5)}';
         if (!routeKeys.contains(key)) {
           stationList.add({
             'lat': station.latitude!,
@@ -665,8 +739,10 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
     }
 
     // 배치 + 증분 업데이트: JS 1회 호출로 전체 처리
-    _webViewController.runJavaScript('setStationMarkers(${_toJsString(jsonEncode(stationList))});');
-    debugPrint('마커 업데이트: 노선 ${_routeStations.length}개 + 주변 ${_nearbyStations.length}개 → 총 ${stationList.length}개');
+    _webViewController.runJavaScript(
+        'setStationMarkers(${_toJsString(jsonEncode(stationList))});');
+    debugPrint(
+        '마커 업데이트: 노선 ${_routeStations.length}개 + 주변 ${_nearbyStations.length}개 → 총 ${stationList.length}개');
   }
 
   String _toJsString(Object? value) => jsonEncode(value ?? '');
@@ -675,7 +751,8 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
     return '${prefix}_${requestId}_${DateTime.now().millisecondsSinceEpoch}';
   }
 
-  String _stationCoordinateCacheKey(double latitude, double longitude, double radiusMeters) {
+  String _stationCoordinateCacheKey(
+      double latitude, double longitude, double radiusMeters) {
     // ~200m 격자 스냅: 인접 이동 시 캐시 히트율 향상 (1/500도 ≈ 222m)
     final snapLat = (latitude * 500).round() / 500.0;
     final snapLng = (longitude * 500).round() / 500.0;
@@ -709,24 +786,26 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
   }
 
   Future<List<BusStop>> _getNearbyStationsFromCache(
-    double latitude,
-    double longitude,
-    double radiusMeters,
-    {String? traceId}
-  ) async {
-    final effectiveTraceId = traceId ?? _buildTraceId('cache', _nearbyRequestSequence + 1);
-    final cacheKey = _stationCoordinateCacheKey(latitude, longitude, radiusMeters);
-    debugPrint('[$effectiveTraceId] findNearby cache check key=$cacheKey lat=$latitude lng=$longitude radius=$radiusMeters');
+      double latitude, double longitude, double radiusMeters,
+      {String? traceId}) async {
+    final effectiveTraceId =
+        traceId ?? _buildTraceId('cache', _nearbyRequestSequence + 1);
+    final cacheKey =
+        _stationCoordinateCacheKey(latitude, longitude, radiusMeters);
+    debugPrint(
+        '[$effectiveTraceId] findNearby cache check key=$cacheKey lat=$latitude lng=$longitude radius=$radiusMeters');
 
     final cached = _nearbyCache[cacheKey];
     if (cached != null && !cached.isExpired(_nearbyCacheTtl)) {
-      debugPrint('[$effectiveTraceId] findNearby cache hit key=$cacheKey size=${cached.value.length}');
+      debugPrint(
+          '[$effectiveTraceId] findNearby cache hit key=$cacheKey size=${cached.value.length}');
       return cached.value;
     }
 
     final existing = _nearbyInFlight[cacheKey];
     if (existing != null) {
-      debugPrint('[$effectiveTraceId] findNearby cache in-flight join key=$cacheKey');
+      debugPrint(
+          '[$effectiveTraceId] findNearby cache in-flight join key=$cacheKey');
       return existing;
     }
 
@@ -769,9 +848,9 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
         }
       }
     }
-    final resolvedRadii = searchRadii.toList()
-      ..sort((a, b) => a.compareTo(b));
-    final effectiveTraceId = traceId ?? _buildTraceId('fallback', _nearbyRequestSequence + 1);
+    final resolvedRadii = searchRadii.toList()..sort((a, b) => a.compareTo(b));
+    final effectiveTraceId =
+        traceId ?? _buildTraceId('fallback', _nearbyRequestSequence + 1);
 
     debugPrint(
       '[$effectiveTraceId] findNearby fallback radii 계획: ${resolvedRadii.join(", ")}',
@@ -787,7 +866,8 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
         radius,
         traceId: effectiveTraceId,
       );
-      debugPrint('[$effectiveTraceId] findNearby fallback radius=$radius result=${stations.length}');
+      debugPrint(
+          '[$effectiveTraceId] findNearby fallback radius=$radius result=${stations.length}');
       if (stations.isNotEmpty) return stations;
     }
     debugPrint('[$effectiveTraceId] findNearby fallback all failed');
@@ -837,12 +917,14 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
 
   void _handleMapEvent(String message) {
     try {
-      final preview = message.length > 240 ? '${message.substring(0, 240)}…' : message;
+      final preview =
+          message.length > 240 ? '${message.substring(0, 240)}…' : message;
       debugPrint('WebView 원본 메시지: $preview');
 
       final decoded = jsonDecode(message);
       if (decoded is! Map<String, dynamic>) {
-        debugPrint('지도 이벤트 형식 오류: payload는 Map이 아닙니다. type=${decoded.runtimeType}');
+        debugPrint(
+            '지도 이벤트 형식 오류: payload는 Map이 아닙니다. type=${decoded.runtimeType}');
         return;
       }
 
@@ -864,8 +946,8 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
           debugPrint('지도 초기화 완료 → relayout 및 인셋 적용');
           // map 객체가 생성된 시점이므로 adjustMapInset(relayout 포함) 또는 relayout 단독 호출
           if (widget.bottomInset > 0) {
-            _webViewController.runJavaScript(
-                'adjustMapInset(${widget.bottomInset});');
+            _webViewController
+                .runJavaScript('adjustMapInset(${widget.bottomInset});');
           } else {
             _webViewController.runJavaScript('if(map) map.relayout();');
           }
@@ -886,20 +968,20 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
           final dpr = eventData['dpr'];
           debugPrint(
               '맵 메트릭스: level=$lvl, m/px=${mpp?.toStringAsFixed(3)}, center=($lat,$lng), dpr=$dpr');
-          
+
           if (mpp is num) _lastMpp = mpp.toDouble();
 
           if (_isFiniteCoordinate(lat) && _isFiniteCoordinate(lng)) {
-             _lastCenterLat = lat;
-             _lastCenterLng = lng;
-             
-             // 지도 드래그/이동 멈춤 시 자동 검색 (500ms 디바운스 적용됨)
-             _scheduleNearbySearch(
-               lat: lat,
-               lng: lng,
-               visibleOnly: true, // 너무 넓지 않게
-               isAuto: true,
-             );
+            _lastCenterLat = lat;
+            _lastCenterLng = lng;
+
+            // 지도 드래그/이동 멈춤 시 자동 검색 (500ms 디바운스 적용됨)
+            _scheduleNearbySearch(
+              lat: lat,
+              lng: lng,
+              visibleOnly: true, // 너무 넓지 않게
+              isAuto: true,
+            );
           }
           break;
         case 'mapError':
@@ -920,9 +1002,11 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
           final traceId = rawTraceId is String && rawTraceId.trim().isNotEmpty
               ? rawTraceId
               : null;
-          final eventLabel = traceId ?? _buildTraceId('manualClick', _nearbyRequestSequence + 1);
+          final eventLabel = traceId ??
+              _buildTraceId('manualClick', _nearbyRequestSequence + 1);
           _lastMapTraceId = eventLabel;
-          debugPrint('[$eventLabel] mapClick 처리 시작 source=$source trace=$eventLabel');
+          debugPrint(
+              '[$eventLabel] mapClick 처리 시작 source=$source trace=$eventLabel');
           final rawLat = eventData['latitude'];
           final rawLng = eventData['longitude'];
           final lat = _toCoordinate(rawLat);
@@ -930,14 +1014,18 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
           debugPrint(
             'mapClick raw payload trace=$eventLabel source=$source rawLat=$rawLat(${rawLat?.runtimeType}), rawLng=$rawLng(${rawLng?.runtimeType}), mapReady=$_mapReady, currentPosition=$_currentPosition',
           );
-          final normalizedLat = lat != null ? double.tryParse(lat.toStringAsFixed(6)) : null;
-          final normalizedLng = lng != null ? double.tryParse(lng.toStringAsFixed(6)) : null;
+          final normalizedLat =
+              lat != null ? double.tryParse(lat.toStringAsFixed(6)) : null;
+          final normalizedLng =
+              lng != null ? double.tryParse(lng.toStringAsFixed(6)) : null;
           debugPrint(
             'mapClick trace=$eventLabel rawLat=$rawLat(${_typeLabel(rawLat)}), rawLng=$rawLng(${_typeLabel(rawLng)}), '
             'parsed=($normalizedLat, $normalizedLng)',
           );
-          if (!_isFiniteCoordinate(lat) || !_isFiniteCoordinate(lng) ||
-              normalizedLat == null || normalizedLng == null) {
+          if (!_isFiniteCoordinate(lat) ||
+              !_isFiniteCoordinate(lng) ||
+              normalizedLat == null ||
+              normalizedLng == null) {
             debugPrint('지도 클릭 좌표 파싱 실패 trace=$eventLabel data=$data');
             if (_currentPosition != null) {
               debugPrint('지도 클릭 좌표 파싱 실패 후 현재 위치로 fallback trace=$eventLabel');
@@ -1249,7 +1337,8 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
         );
         return;
       }
-      debugPrint('[$eventTraceId] findNearby request#$requestId result count=${stations.length}');
+      debugPrint(
+          '[$eventTraceId] findNearby request#$requestId result count=${stations.length}');
       if (!stations.isNotEmpty && !isAuto && showMessage) {
         debugPrint('[$eventTraceId] 지도 클릭 수동 검색 결과 0개');
       }
@@ -1259,7 +1348,8 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
             .map((station) =>
                 '${station.name}(${station.distance?.toStringAsFixed(0)}m)')
             .toList();
-        debugPrint('[$eventTraceId] findNearby request#$requestId preview=${preview.join(' | ')}');
+        debugPrint(
+            '[$eventTraceId] findNearby request#$requestId preview=${preview.join(' | ')}');
       }
 
       setState(() {
@@ -1313,7 +1403,8 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
     } finally {
       if (!isAuto && _manualNearbyRequestPendingId == requestId) {
         _manualNearbyRequestPendingId = 0;
-        debugPrint('[$eventTraceId] 수동 주변 정류장 검색 완료 처리: pendingId=$requestId 초기화');
+        debugPrint(
+            '[$eventTraceId] 수동 주변 정류장 검색 완료 처리: pendingId=$requestId 초기화');
       }
     }
   }
@@ -1593,7 +1684,6 @@ class _MapScreenState extends State<MapScreen> with AutomaticKeepAliveClientMixi
       initialRadius: 2000.0,
     );
   }
-
 
   void _startBusPositionTracking() {
     if (widget.routeId == null) return;
