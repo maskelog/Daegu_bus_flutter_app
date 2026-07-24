@@ -13,8 +13,11 @@
 | [topics/bus-detail-ui.md](topics/bus-detail-ui.md) | 버스 상세 모달 — 노선도 진입, 즐겨찾기·승차 알람 액션 |
 | [topics/home-favorite-bus.md](topics/home-favorite-bus.md) | 홈 즐겨찾기 버스 카드 — 브랜드 색상 기반 노선 칩 |
 | [topics/station-ui.md](topics/station-ui.md) | 정류장 번호 배지 — 다크모드 대비가 높은 테마 대응 칩 |
+| [topics/edge-to-edge.md](topics/edge-to-edge.md) | Android 15/16 edge-to-edge — 현행 설정, 인셋 처리, Play 지원 중단 API 경고 |
+| [topics/follow-up-status.md](topics/follow-up-status.md) | 현재 후속 확인 항목 — 배포·실기기·SDK 도구 검증 대기 상태 |
 | [topics/map-station-home-flow.md](topics/map-station-home-flow.md) | 지도 정류장 선택 → 홈 전환 — 임베드/푸시 화면의 결과 전달 흐름 |
 | [topics/route-branding.md](topics/route-branding.md) | 노선 배지 색상 — 직행/급행/순환/간선/지선/출근맞춤/군위/투어/DRT 팔레트 |
+| [topics/release-versioning.md](topics/release-versioning.md) | 릴리스 버전 관리 — versionName/versionCode 증가 규칙과 현행 버전 |
 
 ## 시간순 로그
 

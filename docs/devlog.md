@@ -1772,3 +1772,125 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
   - 앱 콜드 스타트와 알림·Promoted Notification·정확 알람·진동·위치·FGS 권한 정상.
 - Play Console의 최신 프로덕션/내부 테스트 버전이 `62 (1.0.3)`임을 확인해 다음
   `versionCode 63`이 미사용 상태임을 확인했다. 게시되지 않은 Console 변경과 정책 문제는 없다.
+
+## 2026-07-14: Android 15/16 edge-to-edge 권고 반영
+
+### 수정
+- `MainActivity`의 수동 `setDecorFitsSystemWindows(false)`를 AndroidX Views 권고 API인
+  `WindowCompat.enableEdgeToEdge(window)`로 교체하고 `super.onCreate()` 뒤에 적용했다.
+- 네이티브 Material 컴포넌트를 사용하지 않는데 포함돼 있던 Material 1.12.0 직접 의존성을
+  제거해 릴리스 APK에서 `MaterialDatePicker`와 해당 지원 중단 시스템 바 호출 시작점을 제거했다.
+- edge-to-edge 설정 회귀 테스트와 현재 상태 문서를 추가했다.
+
+### 확인된 상위 의존성 한계
+- Play Console 버전 62의 발견 항목은 `setNavigationBarDividerColor`, `setStatusBarColor`,
+  `setNavigationBarColor`이다.
+- 새 APK에도 Flutter 3.35.6 Android 임베딩 및 AndroidX 하위 버전 호환 코드의 API 참조는
+  남는다. 앱 코드의 직접 호출은 아니므로 Console 경고 해소 여부는 새 APK 업로드 분석 후 확인한다.
+
+### 검증
+- `flutter test test/edge_to_edge_config_test.dart` 2개 통과.
+- `flutter analyze` 통과.
+- `./gradlew :app:compileDebugKotlin` 통과.
+- `build_release.ps1 -Apk` 성공: `1.0.3+63`, AAB 미생성.
+- 새 릴리스 APK에서 `MaterialDatePicker` 부재를 `apkanalyzer`로 확인했다.
+
+## 2026-07-14 (2차): 지도 도착정보 액션 중복 정리
+
+- 버스핀 팝업과 하단 카드에 정류장명이 이중 표시되던 구조를 정리해, 정류장 정보는
+  버스핀에만 표시하고 하단에는 `도착정보 보기` CTA와 닫기만 남겼다.
+- 시각적 정류장명을 제거해도 `_actionStation`으로 홈 전환 대상은 유지되며, TalkBack용
+  의미 레이블에는 선택한 정류장명과 행동을 함께 제공한다.
+- CTA와 닫기 버튼의 터치 영역을 각각 48dp 이상으로 고정했다.
+- `flutter test test/map_station_action_card_test.dart` 2개 통과.
+- Galaxy S25 Ultra(`SM-S938N`), Android 16 실기기에 `1.0.3+63` 릴리스 APK를
+  덮어써 설치한 뒤, 버스핀의 정류장·도착 정보와 하단 `도착정보 보기` CTA가 중복 없이
+  표시되고 홈 전환이 정상 작동함을 ADB로 확인했다.
+- `flutter analyze` 및 `build_release.ps1 -Apk` 통과. AAB는 생성하지 않았다.
+
+## 2026-07-14 (3차): 지도 도착정보 버튼 크기 조정
+
+> ⚠️ 폐기됨 (2026-07-14): 폭 80% 제한은 실기기에서 레이블을 두 줄로 만들어 제거했다.
+
+- 하단 `도착정보 보기` 버튼 폭을 기존의 80%로 줄이고 시각 높이를 48dp에서 40dp로
+  조정했다.
+- Material의 패딩된 터치 영역을 적용해 시각 크기와 별개로 최소 48dp 터치 높이는
+  유지했다.
+- 위젯 테스트에서 377dp 카드 기준 버튼 폭 234.4dp, 시각 높이 40dp, 터치 높이 48dp
+  이상을 검증했다.
+- `flutter test test/map_station_action_card_test.dart` 2개 및 `flutter analyze` 통과.
+
+## 2026-07-14 (4차): 내부 테스트용 1.0.4 버전 준비
+
+> ⚠️ 폐기됨 (2026-07-14): 아래 SHA-256의 첫 AAB는 지도 CTA 수정본으로 교체됐다.
+
+- 이전 내부 테스트 번들 `1.0.3+63` 이후 사용자 표시 버전을 `1.0.4`로 올렸다.
+- 동일 applicationId의 Android `versionCode`는 감소하거나 재사용할 수 없으므로 빌드
+  번호를 `1`로 초기화하지 않고 다음 값인 `64`를 적용해 `1.0.4+64`로 설정했다.
+- Play Console 관리용 릴리스 이름은 필요하면 `1.0.4 (1)`을 사용할 수 있지만, AAB의
+  실제 버전은 `versionName=1.0.4`, `versionCode=64`다.
+- `.\build_release.ps1`로 서명·R8 난독화·리소스 축소된 AAB 빌드에 성공했다.
+  - 산출물: `build/app/outputs/bundle/release/app-release.aab` (48,478,216 bytes)
+  - SHA-256: `BBC416BFC1B23F51889D7E7723196F0AC9886452D67BD5931E1A063618BE7604`
+  - 패키징 manifest: `com.devground.daegubus`, `versionName=1.0.4`, `versionCode=64`
+- `flutter analyze` 통과.
+
+## 2026-07-14 (5차): 지도 도착정보 CTA 한 줄·높이 개선
+
+> ⚠️ 폐기됨 (2026-07-15): 내부 FilledButton과 4dp 카드 패딩 구조를 단일 48dp 카드로 교체했다.
+
+- Galaxy S25 Ultra(`SM-S938N`, Android 16, 화면 밀도 560dpi)에서 80% 폭으로 줄인
+  `도착정보 보기`가 `도착정보 보` / `기` 두 줄로 표시되는 현상을 ADB 캡처로 재현했다.
+- 원인인 `FractionallySizedBox(widthFactor: 0.8)`를 제거해 CTA가 남는 폭을 사용하도록
+  하고, 레이블을 명시적으로 한 줄 처리했다.
+- 카드 상하 패딩을 12dp에서 4dp로 줄이고 X 아이콘을 20dp로 낮췄다. CTA와 닫기
+  버튼의 실제 터치 높이/영역은 각각 48dp 이상을 유지한다.
+- 위젯 테스트 2개와 `flutter analyze`가 통과했다.
+- 로컬 릴리스 APK는 Play 배포 앱과 서명이 달라 실기기 덮어쓰기가 거부됐다. 앱 삭제는
+  하지 않아 사용자 데이터를 보존했으며, 내부 테스트 배포 후 실기기 확인이 필요하다.
+- 수정본 `1.0.4+64` AAB 빌드 성공:
+  - 크기: 48,477,767 bytes
+  - SHA-256: `E5F8210A1E4ED78F282865627CAE8A133844BAD852FFFA03EBC096A6DE5A1626`
+
+## 2026-07-15: 내부 테스트 AAB versionCode 65 준비
+
+- `pubspec.yaml`을 `1.0.4+65`로 올려 다음 Google Play 내부 테스트 업로드를 준비했다.
+- `flutter analyze` 통과.
+- `.\build_release.ps1` AAB 빌드 성공:
+  - 패키지: `com.devground.daegubus`
+  - `versionName=1.0.4`, `versionCode=65`
+  - 크기: 48,477,748 bytes
+  - SHA-256: `4095982196912368AA093057E279EA627270E5CCCB49B5B3A63C0601CDCE46DC`
+- 빌드 중 Android Studio와 command-line tools 간 SDK XML 버전 불일치 경고가 1건
+  출력됐으나 Gradle 작업과 AAB 생성은 성공했다.
+
+## 2026-07-15 (2차): 지도 도착정보 액션 단일 카드화
+
+- 하단 액션의 바깥 카드 안에 있던 `FilledButton`을 제거해 중첩 상자 표현을 없앴다.
+- 바깥 카드 높이를 48dp로 줄이고, 왼쪽 액션은 `InkWell` 리플과 TalkBack 의미 레이블을
+  유지했다. 오른쪽 닫기 버튼도 독립된 48dp 터치 영역을 유지한다.
+- 두 액션 사이에는 얇은 세로 구분선만 남겨 단일 표면 안에서 역할을 구분한다.
+- `flutter test test/map_station_action_card_test.dart` 2개 및 `flutter analyze` 통과.
+
+## 2026-07-15 (2차): 배포·검증 후속 상태 문서화
+
+- `1.0.4+65`는 로컬 AAB 빌드 완료 상태이며, Play Console 업로드·내부 테스트 배포·
+  Play 배포본 실기기 검증이 완료됐다고 간주하지 않도록 릴리스 상태 단계를 문서화했다.
+- 지도 CTA의 최신 한 줄 레이아웃은 위젯 테스트까지 확인됐고, Play 배포본에서의
+  실기기 확인은 후속 항목으로 분리했다.
+- Play Console 지원 중단 API 재분석과 SDK XML 버전 불일치 경고 해소도 현재 후속
+  확인 항목으로 모았다.
+- `docs/topics/follow-up-status.md`를 추가하고 문서 색인에 등록했다.
+
+## 2026-07-15 (3차): versionCode 65 배포 확인 및 66 준비
+
+- 사용자 확인으로 `1.0.4+65`의 Google Play 전체 출시가 완료됐고, 지도에서 홈 화면으로
+  정류장 도착 정보를 여는 흐름과 홈 정류장 즐겨찾기 별표가 정상 표시됨을 기록했다.
+- 내부 FilledButton을 제거한 단일 48dp 지도 액션 카드 변경을 다음 배포에 포함하기 위해
+  `pubspec.yaml`을 `1.0.4+66`으로 올렸다.
+- `flutter test test/map_station_action_card_test.dart` 2개와 `flutter analyze` 통과.
+- `.\build_release.ps1` AAB 빌드 성공:
+  - 패키지: `com.devground.daegubus`
+  - `versionName=1.0.4`, `versionCode=66`
+  - 크기: 48,477,294 bytes
+  - SHA-256: `AE6D71EB19546A98B9EB17089837FE94F5D2E7FF4473D3B8A5FF1797F6901EB5`
