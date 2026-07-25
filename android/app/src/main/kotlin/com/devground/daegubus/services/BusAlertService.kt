@@ -96,36 +96,6 @@ class BusAlertService : Service() {
         const val DEFAULT_ALARM_SOUND = ""
         private const val MAX_CONSECUTIVE_ERRORS = 3
         private const val ARRIVAL_THRESHOLD_MINUTES = 60
-
-        sealed class ServiceCommand {
-            object StopAll : ServiceCommand()
-            object StopAutoAlarm : ServiceCommand()
-            data class StopRoute(
-                val routeId: String,
-                val busNo: String,
-                val stationName: String,
-                val notificationId: Int,
-                val isAutoAlarm: Boolean,
-                val shouldRemoveFromList: Boolean
-            ) : ServiceCommand()
-            data class StartTracking(
-                val routeId: String,
-                val stationId: String,
-                val stationName: String,
-                val busNo: String,
-                val notificationId: Int,
-                val isAutoAlarm: Boolean
-            ) : ServiceCommand()
-            data class StartForegroundTracking(
-                val stationId: String?,
-                val stationName: String?,
-                val busNo: String?
-            ) : ServiceCommand()
-            object StartAutoAlarmLightweight : ServiceCommand()
-            object Unknown : ServiceCommand()
-            val isStopCommand: Boolean
-                get() = this is StopAll || this is StopAutoAlarm || this is StopRoute
-        }
     }
 
     private val binder = LocalBinder()
@@ -255,42 +225,6 @@ class BusAlertService : Service() {
             is Int -> value.toLong()
             is String -> value.toLongOrNull() ?: defaultValue
             else -> defaultValue
-        }
-    }
-
-    private fun parseCommand(intent: Intent?): ServiceCommand {
-        return when (intent?.action) {
-            ACTION_STOP_TRACKING -> ServiceCommand.StopAll
-            ACTION_STOP_AUTO_ALARM -> ServiceCommand.StopAutoAlarm
-            ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> ServiceCommand.StopRoute(
-                routeId = intent.getStringExtra("routeId") ?: return ServiceCommand.Unknown,
-                busNo = intent.getStringExtra("busNo") ?: return ServiceCommand.Unknown,
-                stationName = intent.getStringExtra("stationName") ?: "",
-                notificationId = intent.getIntExtra("notificationId", -1),
-                isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false),
-                shouldRemoveFromList = intent.getBooleanExtra("shouldRemoveFromList", true)
-            )
-            ACTION_START_TRACKING -> ServiceCommand.StartTracking(
-                routeId = intent.getStringExtra("routeId") ?: return ServiceCommand.Unknown,
-                stationId = intent.getStringExtra("stationId") ?: return ServiceCommand.Unknown,
-                stationName = intent.getStringExtra("stationName") ?: "",
-                busNo = intent.getStringExtra("busNo") ?: "",
-                notificationId = intent.getIntExtra("notificationId", -1),
-                isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
-            )
-            ACTION_START_TRACKING_FOREGROUND, ACTION_UPDATE_TRACKING -> ServiceCommand.StartForegroundTracking(
-                stationId = intent.getStringExtra("stationId"),
-                stationName = intent.getStringExtra("stationName"),
-                busNo = intent.getStringExtra("busNo")
-            )
-            ACTION_START_AUTO_ALARM_LIGHTWEIGHT -> ServiceCommand.StartAutoAlarmLightweight
-            ACTION_CANCEL_NOTIFICATION,
-            ACTION_START_TTS_TRACKING,
-            ACTION_STOP_TTS_TRACKING,
-            ACTION_STOP_BUS_ALERT_TRACKING,
-            ACTION_SET_ALARM_SOUND,
-            ACTION_SHOW_NOTIFICATION -> ServiceCommand.Unknown
-            else -> ServiceCommand.Unknown
         }
     }
 
