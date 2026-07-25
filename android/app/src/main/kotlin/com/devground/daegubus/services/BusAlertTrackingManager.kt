@@ -1,5 +1,8 @@
 package com.devground.daegubus.services
 
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
 import android.util.Log
 import com.devground.daegubus.models.BusInfo
 import kotlinx.coroutines.CancellationException
@@ -19,10 +22,17 @@ class BusAlertTrackingManager(
     private val updateForegroundNotification: () -> Unit,
     private val checkArrivalAndNotify: (TrackingInfo, BusInfo) -> Unit,
     private val checkNextBusAndNotify: (TrackingInfo, BusInfo) -> Unit,
-    private val stopTrackingForRoute: (String, Boolean) -> Unit,
     private val ttsController: BusAlertTtsController,
     private val useTextToSpeechProvider: () -> Boolean,
     private val arrivalThresholdMinutes: Int,
+    private val service: Service,
+    private val monitoredRoutes: MutableMap<String, Triple<String, String, Job?>>,
+    private val arrivingSoonNotified: MutableSet<String>,
+    private val hasNotifiedTts: MutableSet<String>,
+    private val hasNotifiedArrival: MutableSet<String>,
+    private val generateNotificationId: (String) -> Int,
+    private val setInForeground: (Boolean) -> Unit,
+    private val ongoingNotificationId: Int,
 ) {
     companion object {
         private const val TAG = "BusAlertService"
@@ -151,7 +161,7 @@ class BusAlertTrackingManager(
                             if (currentInfo.consecutiveErrors >= 3) {
                                 if (!currentInfo.isAutoAlarm) {
                                     Log.e(TAG, "Stopping tracking for $routeId due to errors.")
-                                    stopTrackingForRoute(routeId, true)
+                                    stopTrackingForRoute(routeId, cancelNotification = true)
                                 } else {
                                     Log.w(TAG, "⚠️ 자동 알람 ($routeId) 연속 오류 발생. 다음 버스 추적을 위해 서비스 유지.")
                                 }
@@ -167,11 +177,66 @@ class BusAlertTrackingManager(
                 if (currentTrackingInfo != null && !currentTrackingInfo.isAutoAlarm) {
                     if (activeTrackings.containsKey(routeId)) {
                         Log.w(TAG, "Tracker coroutine for $routeId ended unexpectedly (scope cancellation?). Triggering cleanup.")
-                        stopTrackingForRoute(routeId, true)
+                        stopTrackingForRoute(routeId, cancelNotification = true)
                     }
                 } else if (currentTrackingInfo?.isAutoAlarm == true) {
                     Log.d(TAG, "자동 알람 ($routeId) 코루틴 종료. 다음 버스 추적을 위해 서비스 유지.")
                 }
+            }
+        }
+    }
+
+    // [ADD] Stop tracking for a specific route (optionally cancel notification)
+    fun stopTrackingForRoute(routeId: String, stationId: String? = null, busNo: String? = null, cancelNotification: Boolean = false, notificationId: Int? = null) {
+        serviceScope.launch {
+            Log.i(TAG, "--- stopTrackingForRoute called: routeId=$routeId, stationId=$stationId, busNo=$busNo, cancelNotification=$cancelNotification, notificationId=$notificationId ---")
+            try {
+                // 1. 추적 작업 취소 및 데이터 정리
+                monitoringJobs[routeId]?.cancel()
+                monitoringJobs.remove(routeId)
+                activeTrackings.remove(routeId)
+                monitoredRoutes.remove(routeId)
+                arrivingSoonNotified.remove(routeId)
+                hasNotifiedTts.remove(routeId)
+                hasNotifiedArrival.remove(routeId)
+
+                Log.d(TAG, "✅ 추적 데이터 정리 완료: $routeId, 남은 추적: ${activeTrackings.size}개")
+
+                // 2. 알림 취소 처리
+                if (cancelNotification) {
+                    val notificationManager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+                    // 개별 알림 ID 계산 및 취소
+                    val specificNotificationId = notificationId ?: generateNotificationId(routeId)
+                    try {
+                        notificationManager.cancel(specificNotificationId)
+                        Log.d(TAG, "✅ 개별 알림 취소: routeId=$routeId, notificationId=$specificNotificationId")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 개별 알림 취소 실패: ${e.message}")
+                    }
+                }
+
+                // 3. 포그라운드 알림 업데이트 또는 서비스 종료
+                if (activeTrackings.isEmpty()) {
+                    // 모든 추적이 끝났을 때만 포그라운드 서비스 종료
+                    try {
+                        service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                        setInForeground(false)
+                        val notificationManager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        notificationManager.cancel(ongoingNotificationId)
+                        Log.d(TAG, "✅ 모든 추적 종료 - 포그라운드 서비스 중지")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ 포그라운드 서비스 중지 오류: ${e.message}", e)
+                    }
+                    service.stopSelf()
+                } else {
+                    // 다른 추적이 남아있으면 포그라운드 알림만 업데이트
+                    Log.d(TAG, "🔄 다른 추적 존재 (${activeTrackings.size}개), 포그라운드 알림 업데이트")
+                    updateForegroundNotification()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ stopTrackingForRoute 오류: ${e.message}", e)
             }
         }
     }
