@@ -1772,3 +1772,34 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
   - 앱 콜드 스타트와 알림·Promoted Notification·정확 알람·진동·위치·FGS 권한 정상.
 - Play Console의 최신 프로덕션/내부 테스트 버전이 `62 (1.0.3)`임을 확인해 다음
   `versionCode 63`이 미사용 상태임을 확인했다. 게시되지 않은 Console 변경과 정책 문제는 없다.
+
+## 2026-07-25: BusAlertService.kt 분리 — 1단계 (명령 파싱 분리)
+
+`docs/refactoring-plan.md` 작업 1의 1단계(명령 파싱 분리)만 진행했다.
+
+### 수정
+- `sealed class ServiceCommand`와 `parseCommand()`를 `BusAlertCommandParser.kt`(신규,
+  같은 `services` 패키지)로 이동했다. `intent.getStringExtra` 등 Intent extras만
+  읽는 순수 함수라 Context/서비스 상태 의존이 없어 계획서가 권장한 첫 단계였다.
+- verbatim 이동: 본문은 들여쓰기 차이와 로컬 `ACTION_*` 별칭 대신 `BusActions.*`를
+  직접 참조하는 것만 다르고 로직은 동일함을 `diff`로 대조했다.
+- `ServiceCommand`가 같은 패키지의 top-level 선언이 되면서 `BusAlertService.kt` 쪽의
+  `parseCommand(intent)` 호출부와 `is ServiceCommand.X` 사용부는 수정 없이 그대로
+  컴파일된다 (Kotlin이 멤버 함수 제거 후 패키지 top-level 함수로 자동 해석).
+- `BusAlertService.kt`: 2,535 → 2,469줄.
+
+### 남은 작업 (작업 1의 2~4단계, 다음 세션)
+- 2단계 `stopSpecificTracking`(642~853행)/`stopAllTracking`/`stopTrackingForRoute`
+  통합 이동은 `this`(Context/Service), `isInForeground`, `stopForeground`/`stopSelf`,
+  WorkManager, 브로드캐스트, 여러 HashMap 상태에 강하게 결합돼 있어 1단계보다
+  훨씬 위험도가 높다. 실기기 스모크 없이 한 세션에서 밀어붙이지 않기로 하고
+  여기서 멈췄다.
+- 3단계(자동알람 경량 모드 이동), 4단계(알림 조립 이동)는 아직 손대지 않음.
+
+### 검증
+- `.\gradlew.bat :app:compileDebugKotlin`이 저장소에 커밋돼 있지 않아(`.gitignore`
+  대상) `C:\Users\sh953\.gradle\wrapper\dists\gradle-8.11.1-bin\...\bin\gradle.bat
+  --project-dir android :app:compileDebugKotlin`로 대체 실행해 통과를 확인했다.
+  (Flutter가 최초 빌드 시 `gradlew`/`gradlew.bat`를 생성해준다 — 이후 세션에서는
+  일반 `.\gradlew.bat` 사용 가능할 것.)
+- `git show HEAD:...` 원본과 신규 파일을 `diff`로 대조해 이관 누락이 없음을 확인.
