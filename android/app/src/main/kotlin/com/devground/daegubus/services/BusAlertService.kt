@@ -96,36 +96,6 @@ class BusAlertService : Service() {
         const val DEFAULT_ALARM_SOUND = ""
         private const val MAX_CONSECUTIVE_ERRORS = 3
         private const val ARRIVAL_THRESHOLD_MINUTES = 60
-
-        sealed class ServiceCommand {
-            object StopAll : ServiceCommand()
-            object StopAutoAlarm : ServiceCommand()
-            data class StopRoute(
-                val routeId: String,
-                val busNo: String,
-                val stationName: String,
-                val notificationId: Int,
-                val isAutoAlarm: Boolean,
-                val shouldRemoveFromList: Boolean
-            ) : ServiceCommand()
-            data class StartTracking(
-                val routeId: String,
-                val stationId: String,
-                val stationName: String,
-                val busNo: String,
-                val notificationId: Int,
-                val isAutoAlarm: Boolean
-            ) : ServiceCommand()
-            data class StartForegroundTracking(
-                val stationId: String?,
-                val stationName: String?,
-                val busNo: String?
-            ) : ServiceCommand()
-            object StartAutoAlarmLightweight : ServiceCommand()
-            object Unknown : ServiceCommand()
-            val isStopCommand: Boolean
-                get() = this is StopAll || this is StopAutoAlarm || this is StopRoute
-        }
     }
 
     private val binder = LocalBinder()
@@ -206,12 +176,17 @@ class BusAlertService : Service() {
             ::updateForegroundNotification,
             ::checkArrivalAndNotify,
             ::checkNextBusAndNotify,
-            { routeId, cancelNotification ->
-                stopTrackingForRoute(routeId, cancelNotification = cancelNotification)
-            },
             ttsController,
             { useTextToSpeech },
             ARRIVAL_THRESHOLD_MINUTES,
+            this,
+            monitoredRoutes,
+            arrivingSoonNotified,
+            hasNotifiedTts,
+            hasNotifiedArrival,
+            ::generateNotificationId,
+            { isInForeground = it },
+            ONGOING_NOTIFICATION_ID,
         )
         loadSettings()
         notificationHandler.createNotificationChannels()
@@ -255,42 +230,6 @@ class BusAlertService : Service() {
             is Int -> value.toLong()
             is String -> value.toLongOrNull() ?: defaultValue
             else -> defaultValue
-        }
-    }
-
-    private fun parseCommand(intent: Intent?): ServiceCommand {
-        return when (intent?.action) {
-            ACTION_STOP_TRACKING -> ServiceCommand.StopAll
-            ACTION_STOP_AUTO_ALARM -> ServiceCommand.StopAutoAlarm
-            ACTION_STOP_SPECIFIC_ROUTE_TRACKING -> ServiceCommand.StopRoute(
-                routeId = intent.getStringExtra("routeId") ?: return ServiceCommand.Unknown,
-                busNo = intent.getStringExtra("busNo") ?: return ServiceCommand.Unknown,
-                stationName = intent.getStringExtra("stationName") ?: "",
-                notificationId = intent.getIntExtra("notificationId", -1),
-                isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false),
-                shouldRemoveFromList = intent.getBooleanExtra("shouldRemoveFromList", true)
-            )
-            ACTION_START_TRACKING -> ServiceCommand.StartTracking(
-                routeId = intent.getStringExtra("routeId") ?: return ServiceCommand.Unknown,
-                stationId = intent.getStringExtra("stationId") ?: return ServiceCommand.Unknown,
-                stationName = intent.getStringExtra("stationName") ?: "",
-                busNo = intent.getStringExtra("busNo") ?: "",
-                notificationId = intent.getIntExtra("notificationId", -1),
-                isAutoAlarm = intent.getBooleanExtra("isAutoAlarm", false)
-            )
-            ACTION_START_TRACKING_FOREGROUND, ACTION_UPDATE_TRACKING -> ServiceCommand.StartForegroundTracking(
-                stationId = intent.getStringExtra("stationId"),
-                stationName = intent.getStringExtra("stationName"),
-                busNo = intent.getStringExtra("busNo")
-            )
-            ACTION_START_AUTO_ALARM_LIGHTWEIGHT -> ServiceCommand.StartAutoAlarmLightweight
-            ACTION_CANCEL_NOTIFICATION,
-            ACTION_START_TTS_TRACKING,
-            ACTION_STOP_TTS_TRACKING,
-            ACTION_STOP_BUS_ALERT_TRACKING,
-            ACTION_SET_ALARM_SOUND,
-            ACTION_SHOW_NOTIFICATION -> ServiceCommand.Unknown
-            else -> ServiceCommand.Unknown
         }
     }
 
@@ -1163,12 +1102,17 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             ::updateForegroundNotification,
             ::checkArrivalAndNotify,
             ::checkNextBusAndNotify,
-            { routeId, cancelNotification ->
-                stopTrackingForRoute(routeId, cancelNotification = cancelNotification)
-            },
             ttsController,
             { useTextToSpeech },
             ARRIVAL_THRESHOLD_MINUTES,
+            this,
+            monitoredRoutes,
+            arrivingSoonNotified,
+            hasNotifiedTts,
+            hasNotifiedArrival,
+            ::generateNotificationId,
+            { isInForeground = it },
+            ONGOING_NOTIFICATION_ID,
         )
         loadSettings()
         notificationHandler.createNotificationChannels()
@@ -2133,59 +2077,10 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
     }
 
-    // [ADD] Stop tracking for a specific route (optionally cancel notification)
+    // BusAlertTrackingManager.stopTrackingForRoute로 이관 (2026-07-25). Public 시그니처는
+    // 채널 핸들러(BusApiChannelHandler/BusTrackingChannelHandler)가 호출하므로 유지.
     fun stopTrackingForRoute(routeId: String, stationId: String? = null, busNo: String? = null, cancelNotification: Boolean = false, notificationId: Int? = null) {
-        serviceScope.launch {
-            Log.i(TAG, "--- stopTrackingForRoute called: routeId=$routeId, stationId=$stationId, busNo=$busNo, cancelNotification=$cancelNotification, notificationId=$notificationId ---")
-            try {
-                // 1. 추적 작업 취소 및 데이터 정리
-                monitoringJobs[routeId]?.cancel()
-                monitoringJobs.remove(routeId)
-                activeTrackings.remove(routeId)
-                monitoredRoutes.remove(routeId)
-                arrivingSoonNotified.remove(routeId)
-                hasNotifiedTts.remove(routeId)
-                hasNotifiedArrival.remove(routeId)
-
-                Log.d(TAG, "✅ 추적 데이터 정리 완료: $routeId, 남은 추적: ${activeTrackings.size}개")
-
-                // 2. 알림 취소 처리
-                if (cancelNotification) {
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-                    // 개별 알림 ID 계산 및 취소
-                    val specificNotificationId = notificationId ?: generateNotificationId(routeId)
-                    try {
-                        notificationManager.cancel(specificNotificationId)
-                        Log.d(TAG, "✅ 개별 알림 취소: routeId=$routeId, notificationId=$specificNotificationId")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ 개별 알림 취소 실패: ${e.message}")
-                    }
-                }
-
-                // 3. 포그라운드 알림 업데이트 또는 서비스 종료
-                if (activeTrackings.isEmpty()) {
-                    // 모든 추적이 끝났을 때만 포그라운드 서비스 종료
-                    try {
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                        isInForeground = false
-                        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                        notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                        Log.d(TAG, "✅ 모든 추적 종료 - 포그라운드 서비스 중지")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ 포그라운드 서비스 중지 오류: ${e.message}", e)
-                    }
-                    stopSelf()
-                } else {
-                    // 다른 추적이 남아있으면 포그라운드 알림만 업데이트
-                    Log.d(TAG, "🔄 다른 추적 존재 (${activeTrackings.size}개), 포그라운드 알림 업데이트")
-                    updateForegroundNotification()
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ stopTrackingForRoute 오류: ${e.message}", e)
-            }
-        }
+        trackingManager.stopTrackingForRoute(routeId, stationId, busNo, cancelNotification, notificationId)
     }
 
     // 포그라운드 알림 갱신

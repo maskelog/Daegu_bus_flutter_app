@@ -1918,3 +1918,89 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
 - **이 검증은 로컬 sideload 기준이며 Play 배포본 검증이 아니다.**
   `docs/topics/release-versioning.md`의 "검증됨" 단계(Play 배포본 실기기 확인)는
   아직 미충족 상태다.
+
+## 2026-07-25: BusAlertService.kt 분리 — 1단계 (명령 파싱 분리)
+
+`docs/refactoring-plan.md` 작업 1의 1단계(명령 파싱 분리)만 진행했다.
+
+### 수정
+- `sealed class ServiceCommand`와 `parseCommand()`를 `BusAlertCommandParser.kt`(신규,
+  같은 `services` 패키지)로 이동했다. `intent.getStringExtra` 등 Intent extras만
+  읽는 순수 함수라 Context/서비스 상태 의존이 없어 계획서가 권장한 첫 단계였다.
+- verbatim 이동: 본문은 들여쓰기 차이와 로컬 `ACTION_*` 별칭 대신 `BusActions.*`를
+  직접 참조하는 것만 다르고 로직은 동일함을 `diff`로 대조했다.
+- `ServiceCommand`가 같은 패키지의 top-level 선언이 되면서 `BusAlertService.kt` 쪽의
+  `parseCommand(intent)` 호출부와 `is ServiceCommand.X` 사용부는 수정 없이 그대로
+  컴파일된다 (Kotlin이 멤버 함수 제거 후 패키지 top-level 함수로 자동 해석).
+- `BusAlertService.kt`: 2,535 → 2,469줄.
+
+### 남은 작업 (작업 1의 2~4단계, 다음 세션)
+- 2단계 `stopSpecificTracking`(642~853행)/`stopAllTracking`/`stopTrackingForRoute`
+  통합 이동은 `this`(Context/Service), `isInForeground`, `stopForeground`/`stopSelf`,
+  WorkManager, 브로드캐스트, 여러 HashMap 상태에 강하게 결합돼 있어 1단계보다
+  훨씬 위험도가 높다. 실기기 스모크 없이 한 세션에서 밀어붙이지 않기로 하고
+  여기서 멈췄다.
+- 3단계(자동알람 경량 모드 이동), 4단계(알림 조립 이동)는 아직 손대지 않음.
+
+### 검증
+- `.\gradlew.bat :app:compileDebugKotlin`이 저장소에 커밋돼 있지 않아(`.gitignore`
+  대상) `C:\Users\sh953\.gradle\wrapper\dists\gradle-8.11.1-bin\...\bin\gradle.bat
+  --project-dir android :app:compileDebugKotlin`로 대체 실행해 통과를 확인했다.
+  (Flutter가 최초 빌드 시 `gradlew`/`gradlew.bat`를 생성해준다 — 이후 세션에서는
+  일반 `.\gradlew.bat` 사용 가능할 것.)
+- `git show HEAD:...` 원본과 신규 파일을 `diff`로 대조해 이관 누락이 없음을 확인.
+
+## 2026-07-25 (2차): BusAlertService.kt 분리 — 2단계 축소 (stopTrackingForRoute만 이동)
+
+계획서 작업 1의 2단계("중지 로직 통합": `stopSpecificTracking`/`stopAllTracking`/
+`stopTrackingForRoute`)를 시도했으나, 세 함수를 한 번에 옮기기엔 위험도가 너무
+높다고 판단해 `stopTrackingForRoute` 하나만 이동하고 멈췄다.
+
+### 조사 결과 — 왜 세 함수를 한 번에 옮기지 않았나
+- `stopTrackingForRoute`(53행)는 이미 public API(채널 핸들러가 직접 호출)이고,
+  이미 `BusAlertTrackingManager` 생성자에 콜백으로 주입되어 자기 자신을 되부르는
+  구조였다 — 옮기면 오히려 간접 호출 한 겹이 없어진다. 필요한 의존성도
+  `Service` 참조 + 컬렉션 4개 + 콜백 3개로 국한된다.
+- 반면 `stopSpecificTracking`(212행)과 `stopAllTracking`(171행)은 서비스
+  라이프사이클 상태(`isServiceActive`, `instance`(companion), `isManuallyStoppedByUser`,
+  `lastManualStopTime`, `isAutoAlarmMode`, `autoAlarmStartTime`)를 직접 쓰고,
+  `stopSpecificTracking`이 `stopAllTracking()`을 내부에서 호출하는 등 서로 얽혀
+  있다. WorkManager 태그 취소, `checkAndStopServiceIfNeeded`/
+  `sendCancellationBroadcast`/`sendAllCancellationBroadcast`/`stopMonitoringTimer`/
+  `stopTtsTracking` 같은 private 헬퍼도 다른 코드 경로(예: `checkArrivalAndNotify`,
+  `updateForegroundNotification`)와 공유돼 있어, 옮기려면 생성자 콜백을 10개
+  이상 더 추가해야 했다.
+- 이 정도 규모의 상태 이관은 계획서가 명시한 함정(포그라운드 서비스 타이밍,
+  코루틴 스코프 소유권)이 실제로 발생할 수 있는 지점이고, 실기기 스모크
+  없이는 `stopSelf()`/`stopForeground()` 순서가 꼬여도 컴파일만으로는 못 잡는다.
+  그래서 여기서 멈추고 다음 세션(실기기 접근 가능할 때)으로 미뤘다.
+
+### 수정
+- `BusAlertTrackingManager`가 `service: Service`, `monitoredRoutes`,
+  `arrivingSoonNotified`, `hasNotifiedTts`, `hasNotifiedArrival`,
+  `generateNotificationId`(콜백), `setInForeground`(콜백), `ongoingNotificationId`를
+  생성자로 받도록 확장하고 `stopTrackingForRoute`를 그 안으로 이동했다.
+  `BusAlertNotificationUpdater`가 이미 쓰고 있던 "Service 참조를 직접 주입"
+  패턴을 그대로 따랐다.
+- verbatim 이동: 본문 차이는 `getSystemService`/`stopForeground`/`stopSelf`
+  앞에 `service.`를 붙인 것과 `isInForeground = false` → `setInForeground(false)`,
+  `ONGOING_NOTIFICATION_ID` → `ongoingNotificationId` 뿐임을 `diff`로 확인.
+- `BusAlertTrackingManager.startTrackingInternal`의 자체 오류 복구 경로(2곳)에서
+  이전엔 생성자 콜백 `stopTrackingForRoute(routeId, true)`를 호출했는데, 실제
+  함수 시그니처의 두 번째 파라미터는 `stationId`이므로 `cancelNotification = true`
+  named argument로 고쳐 호출했다 (기계적 치환이 아니라 의미를 보존하기 위한
+  필수 수정).
+- `BusAlertService.stopTrackingForRoute`의 public 시그니처는 그대로 두고 본문만
+  `trackingManager.stopTrackingForRoute(...)` 위임으로 교체했다.
+- `BusAlertService.kt`: 2,469 → 2,430줄.
+
+### 남은 작업 (작업 1의 2단계 나머지 + 3~4단계)
+- `stopSpecificTracking`/`stopAllTracking` 통합 이동은 다음 세션에서, 가능하면
+  실기기 스모크(승차 알람 중지, 자동알람 중지, 모든 추적 중지 후 서비스 종료)를
+  준비해두고 진행할 것.
+- 3단계(자동알람 경량 모드 이동), 4단계(알림 조립 이동)는 아직 손대지 않음.
+
+### 검증
+- `gradle.bat --project-dir android :app:compileDebugKotlin` 통과.
+- `git show HEAD:...` 원본과 신규 위치를 `diff`로 대조해 의도한 치환 외
+  변경이 없음을 확인 (위 "수정" 항목의 치환 목록과 diff 결과가 일치).
