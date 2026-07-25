@@ -103,12 +103,12 @@ class BusAlertService : Service() {
         Log.e(TAG, "Unhandled coroutine exception", e)
     }
     internal val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob() + exceptionHandler)
-    private val mainHandler = Handler(Looper.getMainLooper())
+    internal val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var busApiService: BusApiService
-    private lateinit var notificationHandler: NotificationHandler
+    internal lateinit var notificationHandler: NotificationHandler
     private lateinit var notificationUpdater: BusAlertNotificationUpdater
     private lateinit var trackingManager: BusAlertTrackingManager
-    private lateinit var ttsController: BusAlertTtsController
+    internal lateinit var ttsController: BusAlertTtsController
     private var useTextToSpeech: Boolean = true
     private var useVibration: Boolean = true
     private var audioOutputMode: Int = OUTPUT_MODE_AUTO
@@ -116,11 +116,11 @@ class BusAlertService : Service() {
     internal var isInForeground: Boolean = false
 
     // Tracking State
-    private val monitoringJobs = HashMap<String, Job>()
-    private val activeTrackings = HashMap<String, TrackingInfo>()
-    private val pendingAutoAlarms = HashSet<String>() // 동기 중복 방지용 (coroutine 진입 전)
-    private val monitoredRoutes = HashMap<String, Triple<String, String, Job?>>()
-    private val cachedBusInfo = HashMap<String, BusInfo>()
+    internal val monitoringJobs = HashMap<String, Job>()
+    internal val activeTrackings = HashMap<String, TrackingInfo>()
+    internal val pendingAutoAlarms = HashSet<String>() // 동기 중복 방지용 (coroutine 진입 전)
+    internal val monitoredRoutes = HashMap<String, Triple<String, String, Job?>>()
+    internal val cachedBusInfo = HashMap<String, BusInfo>()
     private val arrivingSoonNotified = HashSet<String>()
     private var isTtsTrackingActive = false
 
@@ -129,15 +129,15 @@ class BusAlertService : Service() {
     private var currentAlarmSound: String = DEFAULT_ALARM_SOUND
     private var notificationDisplayMode: Int = DISPLAY_MODE_ALARMED_ONLY
     private var backupUpdateJob: Job? = null
-    private var autoAlarmTimeoutRunnable: Runnable? = null
+    internal var autoAlarmTimeoutRunnable: Runnable? = null
 
     // 배터리 최적화를 위한 자동알람 모드
-    private var isAutoAlarmMode = false
-    private var autoAlarmStartTime = 0L
-    private var autoAlarmTimeoutMs = 1800000L // 기본 30분, 설정으로 변경 가능
+    internal var isAutoAlarmMode = false
+    internal var autoAlarmStartTime = 0L
+    internal var autoAlarmTimeoutMs = 1800000L // 기본 30분, 설정으로 변경 가능
     private var alertOnArrivalOnly = false // 도착 임박 시에만 알림 (3정거장/3분)
 
-    private val alarmSoundPlayer = BusAlertAlarmSoundPlayer(this)
+    internal val alarmSoundPlayer = BusAlertAlarmSoundPlayer(this)
     private val autoAlarmNotifier = BusAlertAutoAlarmNotifier(this)
     
     // 추적 중지 후 재시작 방지를 위한 플래그
@@ -600,14 +600,14 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                     return START_NOT_STICKY
                 }
                 Log.i(TAG, "ℹ️ 새 자동알람 요청 (이전 시작 ${timeSinceStart/1000}초 전) - 기존 종료 후 재시작")
-                stopAutoAlarmLightweight()
+                autoAlarmNotifier.stopAutoAlarmLightweight()
             }
 
             // intent extras로 전달된 alertOnArrivalOnly를 인스턴스 필드에 반영
             alertOnArrivalOnly = intentAlertOnArrivalOnly
             val excludeHolidays = intent?.getBooleanExtra("excludeHolidays", false) ?: false
             Log.d(TAG, "🔔 자동알람 경량화 모드 시작: $autoAlarmBusNo 번, $autoAlarmStationName, TTS=$useTTS, ArrivalOnly=$alertOnArrivalOnly")
-            handleAutoAlarmLightweight(autoAlarmBusNo, autoAlarmStationName, remainingMinutes, currentStationText, routeIdText, stationIdText, useTTS, isCommuteAlarm, alarmHour, alarmMinute, targetAlarmTime, excludeHolidays)
+            autoAlarmNotifier.handleAutoAlarmLightweight(autoAlarmBusNo, autoAlarmStationName, remainingMinutes, currentStationText, routeIdText, stationIdText, useTTS, isCommuteAlarm, alarmHour, alarmMinute, targetAlarmTime, excludeHolidays)
         }
         ServiceCommand.StopAutoAlarm -> {
             Log.i(TAG, "🛑 ACTION_STOP_AUTO_ALARM received")
@@ -619,7 +619,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             // 자동알람 전체 종료: 경량화 알림 + 모든 추적 중지
             try {
-                stopAutoAlarmLightweight()
+                autoAlarmNotifier.stopAutoAlarmLightweight()
             } catch (_: Exception) { }
 
             // Flutter에 취소 이벤트 전달
@@ -707,7 +707,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         fun getService(): BusAlertService = this@BusAlertService
     }
 
-    private fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false, alarmId: Int? = null, isCommuteAlarm: Boolean = false, exactAlarmTriggerTime: Long? = null) {
+    internal fun startTracking(routeId: String, stationId: String, stationName: String, busNo: String, isAutoAlarm: Boolean = false, alarmId: Int? = null, isCommuteAlarm: Boolean = false, exactAlarmTriggerTime: Long? = null) {
         serviceScope.launch {
             try {
                 Log.d(TAG, "🚀 startTracking 코루틴 시작: $busNo ($routeId), stationId=$stationId, isAutoAlarm=$isAutoAlarm")
@@ -1083,6 +1083,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
     }
 
+    // BusAlertAutoAlarmNotifier.updateAutoAlarmBusInfo로 이관 (2026-07-25). 저장소 전체
+    // grep 결과 외부 호출부가 없었지만 public API라 위임 스텁은 남겨둔다.
     fun updateAutoAlarmBusInfo(
         busNo: String,
         stationName: String,
@@ -1091,48 +1093,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         remainingMinutes: Int,
         currentStation: String
     ) {
-        Log.d(TAG, "🔄 updateAutoAlarmBusInfo: $busNo, $stationName, $remainingMinutes, '$currentStation'")
-        val info = activeTrackings[routeId] ?: TrackingInfo(
-            routeId = routeId,
-            stationName = stationName,
-            busNo = busNo,
-            stationId = stationId
-        ).also { activeTrackings[routeId] = it }
-
-        // 운행종료 판단 로직 개선 - 기점출발예정, 차고지행 등은 운행종료가 아님
-        val isOutOfService = (currentStation.contains("운행종료")) ||
-                            (currentStation.contains("차고지") && remainingMinutes < 0)
-
-        Log.d(TAG, "🔍 [updateAutoAlarmBusInfo] 운행종료 판단: remainingMinutes=$remainingMinutes, currentStation='$currentStation', isOutOfService=$isOutOfService")
-
-        val busInfo = BusInfo(
-            currentStation = currentStation,
-            estimatedTime = if (isOutOfService) "운행종료" else when {
-                remainingMinutes < 0 -> currentStation // 기점출발예정 등의 정보 표시
-                remainingMinutes == 0 -> "곧 도착"
-                remainingMinutes == 1 -> "1분"
-                else -> "${remainingMinutes}분"
-            },
-            remainingStops = info.lastBusInfo?.remainingStops ?: "0",
-            busNumber = busNo,
-            isLowFloor = info.lastBusInfo?.isLowFloor ?: false,
-            isOutOfService = isOutOfService
-        )
-        info.lastBusInfo = busInfo
-        info.lastUpdateTime = System.currentTimeMillis()
-        info.stationId = stationId
-
-        showOngoingBusTracking(
-            busNo = busNo,
-            stationName = stationName,
-            remainingMinutes = busInfo.getRemainingMinutes(),
-            currentStation = busInfo.currentStation,
-            isUpdate = true,
-            notificationId = ONGOING_NOTIFICATION_ID,
-            allBusesSummary = null,
-            routeId = routeId,
-            stationId = stationId
-        )
+        autoAlarmNotifier.updateAutoAlarmBusInfo(busNo, stationName, routeId, stationId, remainingMinutes, currentStation)
     }
 
     // [추가] 다음 버스로 전환되었는지 확인하고 TTS 안내
@@ -1675,7 +1636,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     }
 
     // 포그라운드 알림 갱신
-    private fun updateForegroundNotification() {
+    internal fun updateForegroundNotification() {
         try {
             if (activeTrackings.isEmpty()) {
                 Log.d(TAG, "활성 추적 없음, 포그라운드 알림 취소")
@@ -1773,191 +1734,12 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     }
 
     // 현재 실행 중인 자동 알람 정보
-    private var currentAutoAlarmBusNo: String = ""
-    private var currentAutoAlarmStationName: String = ""
-    private var currentAutoAlarmRouteId: String = ""
+    internal var currentAutoAlarmBusNo: String = ""
+    internal var currentAutoAlarmStationName: String = ""
+    internal var currentAutoAlarmRouteId: String = ""
 
-    /**
-     * 배터리 절약을 위한 자동알람 경량화 모드
-     * - Foreground Service 사용 안함 (하지만 추적을 위해 필요하다면 사용)
-     * - 간단한 알림만 표시
-     * - 5분 후 자동 종료
-     */
-    private fun handleAutoAlarmLightweight(busNo: String, stationName: String, remainingMinutes: Int, currentStation: String, routeId: String, stationId: String, useTTS: Boolean = true, isCommuteAlarm: Boolean = false, alarmHour: Int = -1, alarmMinute: Int = -1, targetAlarmTime: Long = 0L, excludeHolidays: Boolean = false) {
-        try {
-            Log.d(TAG, "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName, routeId=$routeId, stationId=$stationId, TTS=$useTTS")
-
-            // 동기 중복 방지: coroutine 시작 전 즉시 체크 (6ms 간격 중복 호출 차단)
-            if (routeId.isNotBlank() && (pendingAutoAlarms.contains(routeId) || activeTrackings.containsKey(routeId))) {
-                Log.w(TAG, "⚠️ 자동알람 중복 방지 (동기): $routeId 이미 처리 중 - 무시")
-                return
-            }
-            if (routeId.isNotBlank()) pendingAutoAlarms.add(routeId)
-
-            // 자동알람 모드 활성화
-            isAutoAlarmMode = true
-            autoAlarmStartTime = System.currentTimeMillis()
-
-            // 정확한 알람 발화 시각 계산 (toggle OFF 모드용) - TrackingInfo에 저장 (다중 알람 독립 관리)
-            val computedTriggerTime = if (targetAlarmTime > 0L) {
-                targetAlarmTime
-            } else if (alarmHour >= 0 && alarmMinute >= 0) {
-                val cal = java.util.Calendar.getInstance().apply {
-                    set(java.util.Calendar.HOUR_OF_DAY, alarmHour)
-                    set(java.util.Calendar.MINUTE, alarmMinute)
-                    set(java.util.Calendar.SECOND, 0)
-                    set(java.util.Calendar.MILLISECOND, 0)
-                }
-                // 이미 지났으면 현재 시각 사용
-                if (cal.timeInMillis < autoAlarmStartTime) autoAlarmStartTime else cal.timeInMillis
-            } else {
-                autoAlarmStartTime // Flutter 트리거: 즉시 발화
-            }
-            Log.d(TAG, "⏰ 알람 발화 시각: ${java.util.Date(computedTriggerTime)}, alarmHour=$alarmHour, alarmMinute=$alarmMinute, targetAlarmTime=$targetAlarmTime")
-
-            // 정보 저장
-            currentAutoAlarmBusNo = busNo
-            currentAutoAlarmStationName = stationName
-            currentAutoAlarmRouteId = routeId
-
-            // 자동알람: 포그라운드 서비스 즉시 시작 (5초 제한 대응, ONGOING 알림 재사용)
-            if (!isInForeground) {
-                try {
-                    val placeholder = notificationHandler.buildOngoingNotification(mapOf())
-                    if (Build.VERSION.SDK_INT >= 36) {
-                        startForeground(ONGOING_NOTIFICATION_ID, placeholder, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        startForeground(ONGOING_NOTIFICATION_ID, placeholder, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-                    } else {
-                        startForeground(ONGOING_NOTIFICATION_ID, placeholder)
-                    }
-                    isInForeground = true
-                    Log.d(TAG, "🔔 자동알람: 포그라운드 서비스 시작")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ 자동알람 포그라운드 시작 실패: ${e.message}", e)
-                }
-            }
-
-            // 발화 시점 공휴일 게이트 2단계: CDN 신선 조회 (백그라운드, 3초 타임아웃).
-            // 스케줄 등록 이후 지정된 임시공휴일을 앱 실행 없이도 잡는다.
-            // 조회 실패(null)면 알람을 막지 않는다.
-            if (excludeHolidays) {
-                serviceScope.launch {
-                    val isHoliday = withContext(Dispatchers.IO) {
-                        com.devground.daegubus.utils.HolidayGate.isTodayHolidayFresh()
-                    }
-                    if (isHoliday == true) {
-                        Log.w(TAG, "🚫 오늘이 공휴일로 확인됨(신선 조회) - 자동알람 중단: $busNo")
-                        stopAutoAlarmLightweight()
-                    }
-                }
-            }
-
-            // 🔊 TTS 미사용 시 알람 사운드 재생 (퇴근 알람은 이어폰 연결 시에만)
-            if (!useTTS) {
-                val isReturnAlarmStart = !isCommuteAlarm
-                if (!isReturnAlarmStart || ttsController.isHeadsetConnected()) {
-                    alarmSoundPlayer.play()
-                } else {
-                    Log.d(TAG, "📵 퇴근 알람: 이어폰 미연결 → 알람 사운드 재생 안함")
-                }
-            }
-
-            // 📌 핵심: 실시간 추적 시작 → 첫 API 응답 시 실제 도착 정보로 TTS 발화
-            // (기존: 의미 없는 "알람이 시작되었습니다" 멘트 제거 → 실제 "N분 후 도착" 발화)
-            if (routeId.isNotBlank() && stationId.isNotBlank()) {
-                Log.d(TAG, "🔔 자동알람: 실시간 추적 시작 ($routeId, $stationId)")
-                addMonitoredRoute(routeId, stationId, stationName)
-                startTracking(routeId, stationId, stationName, busNo, isAutoAlarm = true, isCommuteAlarm = isCommuteAlarm, exactAlarmTriggerTime = computedTriggerTime)
-            } else {
-                Log.e(TAG, "❌ 자동알람: routeId 또는 stationId 누락으로 추적 불가")
-            }
-
-            // Flutter에 시작 알림 전송 (중복 실행 방지용)
-            MainActivity.sendFlutterEvent("onAutoAlarmStarted", mapOf(
-                "busNo" to busNo,
-                "stationName" to stationName,
-                "routeId" to routeId,
-                "timestamp" to System.currentTimeMillis()
-            ))
-
-            // 설정 기반 자동 종료 스케줄링 (취소 가능한 Runnable 사용)
-            autoAlarmTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
-            autoAlarmTimeoutRunnable = Runnable {
-                autoAlarmTimeoutRunnable = null
-                if (isAutoAlarmMode && (System.currentTimeMillis() - autoAlarmStartTime) >= autoAlarmTimeoutMs) {
-                    Log.d(TAG, "🔔 자동알람 경량화 모드 타임아웃으로 종료")
-                    stopAutoAlarmLightweight()
-                }
-            }
-            mainHandler.postDelayed(autoAlarmTimeoutRunnable!!, autoAlarmTimeoutMs)
-
-            Log.d(TAG, "✅ 자동알람 경량화 모드 시작 완료")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ 자동알람 경량화 모드 처리 오류: ${e.message}", e)
-        }
-    }
-
-    /**
-     * 자동알람 경량화 모드 종료
-     */
-    private fun stopAutoAlarmLightweight() {
-        try {
-            Log.d("BusAlertService", "🔔 자동알람 경량화 모드 종료")
-
-            autoAlarmTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
-            autoAlarmTimeoutRunnable = null
-
-            alarmSoundPlayer.stop()
-
-            // TTS 추적 중지
-            try {
-                ttsController.stopTtsServiceTracking()
-                Log.d("BusAlertService", "✅ TTS 추적 중지 완료")
-            } catch (e: Exception) {
-                Log.w("BusAlertService", "⚠️ TTS 추적 중지 오류 (무시): ${e.message}")
-            }
-
-            // 자동알람 추적에 해당하는 모니터링 작업 취소
-            val autoAlarmRouteId = currentAutoAlarmRouteId
-            if (autoAlarmRouteId.isNotBlank()) {
-                try {
-                    monitoringJobs[autoAlarmRouteId]?.cancel()
-                    monitoringJobs.remove(autoAlarmRouteId)
-                    activeTrackings.remove(autoAlarmRouteId)
-                    monitoredRoutes.remove(autoAlarmRouteId)
-                    cachedBusInfo.remove(autoAlarmRouteId)
-                    Log.d("BusAlertService", "✅ 자동알람 모니터링 작업 취소 완료: $autoAlarmRouteId")
-                } catch (e: Exception) {
-                    Log.w("BusAlertService", "⚠️ 자동알람 모니터링 취소 오류 (무시): ${e.message}")
-                }
-            }
-
-            isAutoAlarmMode = false
-            autoAlarmStartTime = 0L
-            if (autoAlarmRouteId.isNotBlank()) pendingAutoAlarms.remove(autoAlarmRouteId)
-
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID)
-
-            // activeTrackings이 비었으면 포그라운드 서비스 + ONGOING 노티도 중지
-            updateForegroundNotification()
-
-            // Flutter에 종료 알림 전송 (재실행 방지용)
-            MainActivity.sendFlutterEvent("onAutoAlarmStopped", mapOf(
-                "timestamp" to System.currentTimeMillis(),
-                "busNo" to currentAutoAlarmBusNo,
-                "stationName" to currentAutoAlarmStationName,
-                "routeId" to currentAutoAlarmRouteId
-            ))
-
-            Log.d("BusAlertService", "✅ 자동알람 경량화 모드 종료 완료")
-
-        } catch (e: Exception) {
-            Log.e("BusAlertService", "❌ 자동알람 경량화 모드 종료 오류: ${e.message}", e)
-        }
-    }
+    // handleAutoAlarmLightweight/stopAutoAlarmLightweight는 BusAlertAutoAlarmNotifier로
+    // 이관 (2026-07-25).
 }
 
 class NotificationDismissReceiver : android.content.BroadcastReceiver() {
