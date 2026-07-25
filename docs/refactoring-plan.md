@@ -16,7 +16,9 @@
 
 ## 작업 목록 (우선순위순)
 
-- [ ] 작업 1: BusAlertService.kt 분리 (2,535줄) — **최우선**
+- [x] 작업 1: BusAlertService.kt 분리 (2,535줄 → 1,620줄, 2026-07-25 완료. ~1,200줄
+      목표는 못 미쳤으나 계획서에 명시된 4단계는 모두 verbatim 이동 + diff 대조로 완료됨.
+      실기기 검증 필요 — devlog 2026-07-25 (2~4차) 참조)
 - [ ] 작업 2: UI 위젯 테스트 보강 — 작업 3~5의 선행 조건
 - [ ] 작업 3: map_screen.dart 분리 (1,578줄) — 작업 2 완료 후
 - [ ] 작업 4: unified_bus_detail_widget.dart 분리 (1,411줄) — 작업 2 완료 후
@@ -82,69 +84,86 @@ diff /tmp/old.txt /tmp/new.txt   # 함수 목록이면 grep -oE 'fun \w+' 등으
 
 ---
 
-## 작업 1: BusAlertService.kt 분리 — 최우선
+## 작업 1: BusAlertService.kt 분리 — 완료 (2026-07-25)
+
+> ✅ 4단계 모두 완료. `BusAlertService.kt`: 2,535 → 1,620줄 (목표였던 ~1,200줄에는
+> 못 미침 — 남은 것은 대부분 서비스 라이프사이클 자체(onCreate/onStartCommand/
+> onDestroy)와 여러 협력 클래스에 걸친 조정 로직이라 추가 분리는 새로운 판단이
+> 필요해 이 작업 범위 밖으로 남겨둔다). 각 단계 verbatim 이동을 `git diff HEAD`로
+> 대조 확인, 컴파일 통과. **실기기(adb) 검증은 아직 못 함** — devlog
+> 2026-07-25 (2~4차) 엔트리에 확인해야 할 구체적 시나리오를 남겨뒀다.
 
 **목표**: 2,535줄 → 코어 서비스 ~1,200줄 이하. 서비스 라이프사이클·상태 소유는
 남기고, 독립 가능한 로직을 협력 클래스로 이동.
 
-### 현재 구조
-2026-01-29에 1차 분리된 협력 클래스들이 이미 있다 (같은 `services/` 패키지):
+### 최종 구조 (2026-07-25 기준)
 
 | 파일 | 줄 | 역할 |
 |---|---|---|
+| `BusAlertService.kt` | 1,620 | 서비스 라이프사이클·상태 소유, 협력 클래스로의 위임 |
+| `BusAlertAutoAlarmNotifier.kt` | 870 | 자동알람 알림 + 경량 모드 (2026-07-25 확장) |
+| `BusAlertTrackingManager.kt` | 705 | 추적 루프 + 중지 로직 (2026-07-25 확장) |
 | `BusAlertTtsController.kt` | 384 | TTS 발화·오디오 라우팅 |
-| `BusAlertAutoAlarmNotifier.kt` | 635 | 자동알람 알림 |
-| `BusAlertTrackingManager.kt` | 178 | 추적 상태 관리 |
-| `BusAlertNotificationUpdater.kt` | 61 | 알림 갱신 |
+| `BusAlertNotificationUpdater.kt` | 293 | 알림 조립·갱신 (2026-07-25 확장) |
 | `BusAlertAlarmSoundPlayer.kt` | 97 | 알람음 재생 |
+| `BusAlertCommandParser.kt` | 70 | ServiceCommand 파싱 (2026-07-25 신규) |
 | `BusAlertParsers.kt` | 46 | 파싱 |
 | `TrackingInfo.kt` | 25 | 추적 데이터 모델 |
 
-재비대화된 큰 블록 (2026-07-07 기준 대략 위치 — 실행 시 재확인):
-- `parseCommand` + `onStartCommand` 명령 디스패치: 261~689행 (~430줄)
-- `stopSpecificTracking`: 708~922행 (~215줄)
-- `checkArrivalAndNotify`: 1652~1773행
-- `updateTrackingInfoFromFlutter` / `updateTrackingNotification`: 1773~1964행
-- `stopAllTracking`: 1964~2137행 (~170줄)
-- `handleAutoAlarmLightweight` / `stopAutoAlarmLightweight`: 2300~2478행
-
-### 분리 방향 (단계 = 커밋 단위)
-1. **명령 파싱 분리**: `parseCommand`와 ServiceCommand 관련 타입을
-   `BusAlertCommandParser.kt`(신규)로. `onStartCommand`는 파서를 호출해
-   디스패치만 남긴다. Intent extras 읽기가 전부이므로 Context 의존이 없어
-   가장 안전한 첫 단계.
-2. **중지 로직 통합**: `stopSpecificTracking` / `stopAllTracking` /
-   `stopTrackingForRoute` 3개는 알림 취소·브로드캐스트·상태 정리가 중복된다.
-   공통 부분을 `BusAlertTrackingManager`로 이동하되, **중복 제거가 아니라 이동
-   먼저** — 3개의 미묘한 차이(브로드캐스트 여부, 알림 ID 처리)를 보존한 채
-   옮기고, 통일은 별도 백로그로 남긴다.
-3. **자동알람 경량 모드 이동**: `handleAutoAlarmLightweight` /
+### 분리 방향 (단계 = 커밋 단위) — 전부 완료
+1. **명령 파싱 분리** ✅: `parseCommand`/`ServiceCommand`를
+   `BusAlertCommandParser.kt`로. Intent extras 읽기뿐이라 Context 의존 없음.
+2. **중지 로직 이동** ✅: `stopTrackingForRoute`(이미 콜백으로 되불리던 함수),
+   `stopSpecificTracking`, `stopAllTracking`을 `BusAlertTrackingManager`로.
+   `sendCancellationBroadcast`(호출부가 이 둘뿐이라 같이 이관)도 포함.
+   서비스 라이프사이클 상태(`isServiceActive`/`instance`/
+   `isManuallyStoppedByUser` 등)는 getter/setter 콜백으로 다리를 놓았다 —
+   3개 함수가 서로 얽혀 있어 계획보다 커밋을 2개로 나눠 진행했다
+   (`stopTrackingForRoute` 먼저, 나머지 둘은 별도 세션에서).
+3. **자동알람 경량 모드 이동** ✅: `handleAutoAlarmLightweight` /
    `stopAutoAlarmLightweight` / `updateAutoAlarmBusInfo`를
-   `BusAlertAutoAlarmNotifier`로. 이미 자동알람 담당 클래스가 있으므로 신규
-   파일을 만들지 않는다.
-4. **알림 조립 이동**: `showOngoingBusTracking` / `updateTrackingNotification` /
-   `showBusArrivingSoon`의 NotificationCompat 조립 부분을
-   `BusAlertNotificationUpdater`로.
+   `BusAlertAutoAlarmNotifier`로. 이 클래스는 이미 `service: BusAlertService`
+   전체 참조를 갖고 있어(콜백 아님), 필요한 `private` 멤버를 `internal`로
+   넓히는 방식으로 이동했다.
+4. **알림 조립 이동** ✅: `showOngoingBusTracking` / `updateTrackingNotification` /
+   `showBusArrivingSoon`을 `BusAlertNotificationUpdater`로.
+   `BusAlertNotificationUpdater`의 생성자 타입을 `Service` → `BusAlertService`로
+   넓혀 3단계와 같은 방식을 재사용했다.
 
-### 주의 (이 작업의 함정)
-- **코루틴 스코프 소유권**: `serviceScope`(또는 유사)는 서비스에 남긴다. 협력
-  클래스는 suspend 함수나 콜백만 노출하고 자체 스코프를 만들지 않는다 —
-  onDestroy 시 취소 보장이 깨진다.
-- Foreground 서비스 규칙: `startForeground` 호출 경로(타이밍 포함)를 옮기지
-  말 것. ANR/ForegroundServiceDidNotStartInTimeException 위험.
-- `MainActivity.getInstance()` / `_methodChannel` 역참조가 서비스 안에 있다면
-  그대로 둔다 (구조 개선은 별도 작업).
-- 채널 핸들러(`channels/BusApiChannelHandler` 등)가 서비스의 public 메서드를
-  호출한다. **public 시그니처를 바꾸지 말 것.** 바꾸면 컴파일이 잡아주긴 하지만
-  diff가 번진다.
+3~4단계에서 쓴 패턴(협력 클래스가 `service: BusAlertService` 전체 참조를 갖고
+필요한 멤버를 `internal`로 넓히는 방식)이 2단계의 콜백 주입 방식보다 새 코드
+이동을 훨씬 적은 diff로 끝낼 수 있었다. **다음에 비슷한 이동을 할 때는 콜백
+주입보다 이 패턴을 먼저 고려할 것.**
+
+### 겪은 함정과 실제 대응
+- **코루틴 스코프 소유권**: 우려했던 것과 달리 `stopSpecificTracking`/
+  `stopAllTracking`은 애초에 동기 함수였다(코루틴을 스폰하지 않음) — 이동 후에도
+  스코프 소유권 문제 없음. `stopTrackingForRoute`만 `serviceScope.launch`를
+  쓰는데, 이 스코프는 여전히 서비스가 소유하고 협력 클래스는 주입받은 참조로만
+  쓴다.
+- Foreground 서비스 타이밍(`startForeground` 호출 경로)은 옮기지 않고 그대로
+  뒀다 — `BusAlertNotificationUpdater.updateOngoing()`이 이미 이 책임을 갖고
+  있었고, 이번에 옮긴 함수들은 그걸 호출만 한다.
+- 채널 핸들러가 호출하는 public 메서드(`stopTrackingForRoute`,
+  `showOngoingBusTracking`, `updateTrackingNotification`)는 시그니처를 그대로
+  두고 본문만 위임으로 바꿨다. 외부 호출부가 없는 것으로 확인된(grep 전체 검색)
+  public 메서드(`updateAutoAlarmBusInfo`, `showBusArrivingSoon`)도 혹시 몰라
+  삭제 대신 위임 스텁만 남겼다.
+- Log 태그: 이동한 함수의 `Log.d(TAG, ...)`가 원래 참조하던 `BusAlertService`의
+  `TAG`와, 이동 대상 클래스 자신의 TAG 상수가 다를 수 있다 — 실제로
+  `BusAlertAutoAlarmNotifier`는 자기 TAG가 "BusAlertAutoAlarmNotifier"라
+  그대로 옮기면 로그 태그가 조용히 바뀔 뻔했다. 리터럴 `"BusAlertService"`로
+  치환해 원래 태그를 보존했다 (`BusAlertNotificationUpdater`는 우연히 자기
+  TAG도 "BusAlertService"라 치환이 필요 없었다).
 
 ### 검증
-- 단계마다 `:app:compileDebugKotlin` + 함수 목록 grep 대조.
-- 전체 완료 후 실기기 스모크 (사용자에게 요청): 승차 알람 시작→알림 표시→종료
-  버튼→알림 제거, 자동알람 1회 트리거.
-
-### 완료 기준
-- BusAlertService.kt ≤ ~1,200줄, 컴파일 통과, 함수 누락 0, devlog/topics 갱신.
+- 단계마다 `:app:compileDebugKotlin` (저장소에 `gradlew`/`gradlew.bat`가
+  없으면 — `.gitignore` 대상, Flutter가 최초 빌드 시 생성 — 캐시된 Gradle
+  배포판을 `--project-dir android`로 직접 호출) + `git show HEAD:<원본>`과
+  신규 위치를 `diff`로 대조.
+- **아직 안 함**: 실기기 스모크. devlog 2026-07-25 (2~4차) 각 엔트리 하단에
+  확인해야 할 구체적 시나리오를 적어뒀다 — 다음에 실기기가 준비되면 그 목록을
+  그대로 체크리스트로 쓸 것.
 
 ---
 
