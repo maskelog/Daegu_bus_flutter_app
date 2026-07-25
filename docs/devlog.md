@@ -1894,3 +1894,27 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
   - `versionName=1.0.4`, `versionCode=66`
   - 크기: 48,477,294 bytes
   - SHA-256: `AE6D71EB19546A98B9EB17089837FE94F5D2E7FF4473D3B8A5FF1797F6901EB5`
+
+## 2026-07-25: 1.0.4+66 로컬 sideload 실기기 검증
+
+- Galaxy Note10+(`SM-N976N`, adb 시리얼 `R3CM70K2YZD`)에 `.\build_release.ps1 -Apk`로
+  만든 `1.0.4+66` 릴리스 서명 APK를 `adb install -r`로 덮어썼다. 기존 설치본
+  (`1.0.3+63`)과 서명이 동일해 데이터 손실 없이 업데이트됐다 — 서명이 다르면
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 오류가 나며, 그 경우 사용자 데이터 보존을
+  위해 `uninstall`은 하지 않기로 했다 (2026-07-14 (5차) 항목과 동일한 판단).
+- `adb shell input tap`과 `uiautomator dump`로 지도 마커 탭 → 팝업(정류장명+도착정보)
+  → 하단 단일 CTA → CTA 탭 → 홈 탭 전환까지 전체 흐름을 재현해 확인했다.
+  - 하단 CTA의 접근성 레이블이 `"<정류장명> 도착정보 보기"`(예: `칠성고가도로하단
+    도착정보 보기`)로 확인돼, 시각적으로는 정류장명을 반복하지 않지만 TalkBack
+    레이블에는 포함된다는 문서 서술과 일치함을 확인했다.
+  - CTA 탭 후 홈 탭이 활성화되고 "근처 정류장" 목록에서 해당 정류장이 하이라이트되며
+    하단에 도착정보 카드가 펼쳐지는 것을 스크린샷으로 확인했다.
+  - WebView 기반 지도 마커라 좌표 추정만으로는 JS↔Flutter 브릿지 이벤트가 재발화되지
+    않는 경우가 있었다(이미 선택된 마커 재탭 시). `uiautomator dump`로 정확한
+    bounds를 구해 새 마커를 탭하는 방식으로 우회했다 — 앱 버그는 아니고 조사 방법의
+    한계였다.
+- `adb logcat -d *:E`에 `daegubus`/`FATAL` 관련 항목 없음, 조작 도중 프로세스가
+  계속 실행 중임(`pidof`)을 확인해 크래시가 없었음을 확인했다.
+- **이 검증은 로컬 sideload 기준이며 Play 배포본 검증이 아니다.**
+  `docs/topics/release-versioning.md`의 "검증됨" 단계(Play 배포본 실기기 확인)는
+  아직 미충족 상태다.

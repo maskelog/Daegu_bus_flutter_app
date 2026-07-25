@@ -4,13 +4,17 @@
 > [devlog.md](../devlog.md), 코드 구조 개선 작업은
 > [refactoring-plan.md](../refactoring-plan.md)를 참조한다.
 >
-> 마지막 갱신: 2026-07-15
+> 마지막 갱신: 2026-07-25
 
-## 우선순위 높음: 1.0.4+66 배포 확인
+## 우선순위 높음: 1.0.4+66 Play 배포 확인
 
-- 현재 상태: 단일 48dp 지도 액션 카드를 포함한 AAB 로컬 빌드·서명 완료.
-- 완료 기준: Play Console이 `versionCode 66`을 수락하고 배포한 뒤, Play 배포본에서
-  내부 버튼 상자가 제거된 지도 `도착정보 보기` 카드와 홈 전환을 실기기로 확인한다.
+- 현재 상태: 로컬 릴리스 서명 APK(sideload, Play 배포 아님)를 실기기(Galaxy Note10+,
+  `R3CM70K2YZD`)에 설치해 지도 `도착정보 보기` 단일 카드·홈 전환·edge-to-edge
+  렌더링에 기능 문제가 없음을 2026-07-25에 확인했다 (devlog 참조). Play Console
+  업로드·배포는 아직 하지 않았다.
+- 완료 기준: Play Console이 `versionCode 66`을 수락하고 배포한 뒤, **Play 배포본**을
+  실기기에 설치해 같은 흐름을 재확인한다 (sideload 검증과 Play 배포본 검증은
+  별개로 취급한다).
 
 ## 우선순위 중간: Android SDK 도구 경고 해소
 
