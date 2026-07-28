@@ -12,11 +12,21 @@
   `TTSService`에 `STOP_TTS_TRACKING`을 보내지 않는 미완성 스텁이었다(리팩토링
   이전부터 있던 사전 존재 버그, 작업 1/1b 회귀 아님). `ttsController.stopTtsServiceTracking()`
   호출을 추가해 수정했고 `:app:compileDebugKotlin`은 통과했다(devlog 2026-07-28
-  (8차) 참조).
+  (8차) 참조). 수정을 포함한 `1.0.4+66` 로컬 릴리스 APK를 다시 빌드해 Galaxy
+  Note10+(`R3CM70K2YZD`)에 sideload 설치까지 완료했다(devlog 2026-07-28 (9차)).
+- **adb로 직접 재현 불가 확인**: `TTSService`/`BusAlertService`는 `exported="false"`이고
+  이 기기에서는 `adb shell am start(-foreground-)service`로 비-export 서비스를
+  시작하는 것 자체가 `Requires permission not exported`로 차단된다. 앱 내부
+  흐름으로 재현하려 해도 수동 알람의 TTS는 이어폰 미연결 시 애초에 호출되지
+  않고, 스피커 강제 발화(forceSpeaker)는 출근 자동알람 전용 경로라 즉시
+  스크립트로 재현할 방법이 없다 — 2026-07-28 (7차)처럼 실제 출근 자동알람
+  발동 시점을 기다리거나, 이어폰을 연결한 수동 알람으로 재현해야 한다.
 - 완료 기준: devlog 2026-07-28 (7차)와 동일한 시나리오(자동알람 도착임박 TTS →
-  알림의 "추적 중지" 탭)를 실기기로 재현해 `id=1002` 알림이 즉시 사라지고
-  `TTSService`가 foreground에서 내려가는지 `dumpsys activity services`로
-  확인한다. 아직 실기기 검증 전이므로 완료로 간주하지 않는다.
+  알림의 "추적 중지" 탭, 또는 이어폰 연결 후 수동 알람)를 실기기로 재현해
+  `id=1002` 알림이 즉시 사라지고 `TTSService`가 foreground에서 내려가는지
+  `dumpsys activity services`로 확인한다. 사용자 판단으로 이번 세션은 코드
+  검증(원인 분석 + 컴파일 통과)까지만 진행하고 실기기 재검증은 다음 자연
+  발생 시점으로 보류했다.
 
 ## 우선순위 중간: BusAlertService.kt 1b 자동알람 잔여 검증
 

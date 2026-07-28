@@ -2381,3 +2381,25 @@ sideload 설치해 devlog 2026-07-25 (3차)에 남긴 실기기 검증 목록 �
 - `./gradlew.bat :app:compileDebugKotlin --console=plain -q` 통과(경고 없음).
 - **실기기 재검증 필요**: 2026-07-28 (7차)와 동일한 시나리오(자동알람 도착임박 TTS →
   알림의 "추적 중지" 탭)로 `id=1002` 알림이 즉시 사라지는지 확인해야 한다.
+
+## 2026-07-28 (9차): TTSService 수정 실기기 재현 시도 — adb 직접 주입 불가 확인
+
+- 수정을 포함한 `1.0.4+66` 로컬 릴리스 APK를 `.\build_release.ps1 -Apk`로 다시
+  빌드하고, Galaxy Note10+(`R3CM70K2YZD`)에 `adb install -r`로 기존 서명과
+  동일하게 덮어썼다(성공, 데이터 손실 없음).
+- `adb shell am start-foreground-service`/`am startservice`로 `TTSService`·
+  `BusAlertService`에 직접 `REPEAT_TTS_ALERT`/`ACTION_STOP_TRACKING` 인텐트를
+  주입해 시나리오를 스크립트로 재현하려 했으나, 두 서비스 모두
+  `android:exported="false"`이고 이 기기에서는 셸 권한으로도
+  `Requires permission not exported from uid 11073` 오류로 차단됨을 확인했다.
+- 앱 내부 흐름으로 우회하는 것도 즉시는 불가: 수동 알람의 TTS는 이어폰
+  전용 모드에서 이어폰 미연결 시 애초에 `TTSService`를 호출하지 않고,
+  스피커 강제 발화(forceSpeaker)는 출근 자동알람에만 연결된 경로다.
+  2026-07-28 (7차)도 스크립트 트리거가 아니라 우연히 발동한 실제 출근
+  자동알람을 활용한 것이었음을 재확인했다.
+- 사용자에게 재현 방법(이어폰 연결 후 수동 알람 / 코드 검증으로 충분)을
+  물어 **코드 레벨 검증 + 컴파일 통과로 이번 세션을 마무리**하기로
+  결정했다. 실기기 재검증은 다음 자연 발생하는 자동알람 또는 이어폰
+  연결 수동 알람 시점으로 보류(`docs/topics/follow-up-status.md` 참조).
+- 기기는 수정이 포함된 빌드로 이미 갱신돼 있어, 다음에 자연 발생하는
+  시나리오를 그대로 관찰하면 된다.
