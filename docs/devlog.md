@@ -2125,3 +2125,47 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
 - `BusAlertService.kt`: 1,620 → 1,563줄 (계획서 완료 기준 "≤ ~1,565줄" 충족).
   `BusAlertModels.kt` 신규 69줄. 커밋 `9bf8b2d`.
 - 다음 세션은 1b-2(취소 로직 → `BusAlertTrackingManager`, ~130줄)로 진행하면 된다.
+
+## 2026-07-28 (2차): BusAlertService.kt 추가 축소 — 1b-2 완료 (취소 로직 → BusAlertTrackingManager)
+
+`docs/refactoring-plan.md` 작업 1b의 1b-2 단계를 완료했다. `cancelOngoingTracking`/
+`cancelNotification`/`cancelAllNotifications`/`stopTrackingIfIdle`/
+`sendAllCancellationBroadcast`를 `BusAlertTrackingManager`로 이관했다.
+
+- **새 콜백 0개로 끝남**: 이동 대상 5개 함수가 필요로 하는 의존성(`service`,
+  `activeTrackings`/`monitoredRoutes`/`monitoringJobs`,
+  `isInForegroundProvider`/`setInForeground`, `ongoingNotificationId`/
+  `autoAlarmNotificationId`, `checkAndStopServiceIfNeeded`)이 작업 1의 2단계에서
+  이미 생성자에 다 들어가 있었다 — 계획서가 우려한 "콜백 10개 이상 추가" 신호는
+  발생하지 않았다.
+- `sendAllCancellationBroadcast`는 기존에 콜백 파라미터(`sendAllCancellationBroadcast:
+  () -> Unit`)로 주입되고 있었는데, 함수 본체를 `BusAlertTrackingManager` 안으로
+  옮기면서 그 콜백 파라미터 자체를 제거했다 — 클래스 내부 호출(`stopAllTracking()`
+  안의 601행)은 이제 로컬 멤버 함수로 자동 resolve되어 diff 없이 그대로 컴파일됨.
+  생성자 호출부 2곳(`onCreate`/`initialize`)에서 `::sendAllCancellationBroadcast`
+  인자만 제거.
+- **함정 확인 결과**: `cancelOngoingTracking`은 `BusApiChannelHandler.stopBusTracking`이
+  `activity.busAlertService?.cancelOngoingTracking()`로 외부 호출 중이라(grep 확인)
+  공개 시그니처를 유지하고 위임 스텁만 남겼다. `cancelNotification`/
+  `cancelAllNotifications`는 계획서가 우려한 대로 public이지만, 실제로는 채널
+  핸들러의 동명 메서드(`cancelOngoingTracking(result)`/`cancelAllNotifications(result)`)가
+  이 서비스 메서드를 호출하는 게 아니라 `stopAllBusTracking()`을 직접 호출하고
+  있어서 — 외부 호출부는 0건이었다. 그래도 작업 1의 선례(외부 호출부 0건인 public
+  메서드도 삭제 대신 위임 스텁 유지)를 따라 스텁을 남겼다.
+- `stopTrackingIfIdle`/`sendAllCancellationBroadcast`는 원래 `private`였고 서비스
+  내부 호출부만 있어서(각각 2곳) 스텁 없이 호출부를 `trackingManager.X()`로 직접
+  바꿨다. 두 함수 모두 매니저 안에서는 `internal`로 선언 — cross-class 호출은
+  여전히 필요하지만 앱 외부에 노출할 이유는 없어서.
+- **죽은 코드 발견**: 계획서 대상 목록의 `checkAndStopService()`(1212행, `checkAndStopServiceIfNeeded`와는
+  별개 함수)가 저장소 전체에서 정의부 외 호출부 0건임을 grep으로 확인했다 — `private`
+  + 참조 0건이라 공통 원칙의 죽은 코드 삭제 기준에 정확히 해당한다. 계획서는 이
+  함수를 "이관 대상"으로 적어뒀지만, 이관 대신 삭제했다(이관은 사용되지 않는
+  로직을 그대로 다른 파일로 옮기는 것뿐이라 가치가 없음). 삭제 사실을 커밋 메시지에
+  명시했다.
+- 검증: `git show HEAD:...`로 원본 5개 함수 본문과 새 위치를 정규화(참조 치환 역변환)
+  후 diff 대조 — 이동 외 변경 없음 확인. `:app:compileDebugKotlin` 통과.
+- `BusAlertService.kt`: 1,563 → 1,444줄 (계획서 완료 기준 "≤ ~1,435줄"에는 9줄
+  못 미쳤음 — 이관 코드에 붙인 "어디서 이관됐는지" 주석 몇 줄 때문. 실질적 로직
+  이동은 계획대로 끝났다). `BusAlertTrackingManager.kt`: 705 → 822줄. 커밋 `9c35604`.
+- 다음 세션은 1b-3(도착 확인/추적정보 갱신 클러스터 → 신규 협력 클래스, ~340줄,
+  실기기 검증 중요)로 진행하면 된다.
