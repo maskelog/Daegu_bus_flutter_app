@@ -21,7 +21,8 @@
       실기기 검증 필요 — devlog 2026-07-25 (2~4차) 참조)
 - [ ] 작업 1b: BusAlertService.kt 추가 축소 (1,620줄 → ~1,200줄 목표) — 세션 4개로
       분할. 1b-1~1b-3만 끝내도 목표 달성 예상, 1b-4는 별도 판단 필요 (아래 참조)
-  - [ ] 1b-1: 하단 유틸/확장 함수를 별도 파일로 (가장 쉬움, ~55줄)
+  - [x] 1b-1: 하단 유틸/확장 함수를 별도 파일로 (가장 쉬움, ~55줄) — 2026-07-28
+        완료, 1,620→1,563줄 (devlog 2026-07-28 참조)
   - [ ] 1b-2: 취소 로직을 BusAlertTrackingManager로 (중간, ~130줄)
   - [ ] 1b-3: 도착 확인/추적정보 갱신 클러스터를 신규 협력 클래스로 (가장 큰 감소,
         ~340줄, 실기기 검증 중요)
@@ -194,9 +195,14 @@ diff /tmp/old.txt /tmp/new.txt   # 함수 목록이면 grep -oE 'fun \w+' 등으
 | `onCreate`/`onStartCommand` | 148~643행 | ~495 | 서비스 시작·명령 디스패치. `onStartCommand` 본문만 ~390줄 |
 | `updateBusInfo`/`checkNextBusAndNotify`/`checkArrivalAndNotify`/`updateTrackingInfoFromFlutter` | 756~876, 1008~1044, 1227~1451행 | ~340 | 도착 확인·추적정보 갱신·TTS/알림 트리거 클러스터 |
 | `cancelOngoingTracking`/`cancelNotification`/`cancelAllNotifications`/`stopTrackingIfIdle`/`checkAndStopService` | 1095~1227행 | ~130 | 알림·타이머 취소 클러스터 |
-| 하단 top-level 유틸/확장 함수 + `NotificationDismissReceiver` | 1562~1620행 | ~55 | `isSamsungOneUi`, `getNotificationChannels`, `toMap()` 4개 — 서비스 상태 의존 없음 |
+| 하단 top-level 유틸/확장 함수 + `NotificationDismissReceiver` | ~~1562~1620행~~ | ~~55~~ | ✅ 1b-1 완료 (2026-07-28) — `BusAlertModels.kt`로 이동 |
 
-### 1b-1: 하단 유틸/확장 함수 분리 (가장 쉬움, ~55줄)
+### 1b-1: 하단 유틸/확장 함수 분리 (가장 쉬움, ~55줄) — 완료 (2026-07-28)
+
+> ✅ `BusAlertModels.kt` 신규 생성(69줄)으로 verbatim 이동 완료. `BusAlertService.kt`:
+> 1,620 → 1,563줄. `getNotificationChannels` 호출부는 저장소 전체에 정의부 외
+> 0건이었다(계획서가 우려한 "다른 파일에서 호출" 케이스는 실제로 없었음).
+> 상세는 devlog 2026-07-28 참조.
 
 **읽기 순서**: 이 섹션 → `BusAlertService.kt` 1562~1620행만.
 

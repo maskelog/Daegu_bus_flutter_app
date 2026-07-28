@@ -2098,3 +2098,30 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
   동작하는지.
 - **알림에서 취소 탭 연타**: `sentCancellationEvents`/`eventTimeouts`(이동됨)
   기반 중복 방지가 여전히 중복 취소 이벤트를 막는지.
+
+## 2026-07-28: BusAlertService.kt 추가 축소 — 1b-1 완료 (하단 유틸/확장 함수 분리)
+
+`docs/refactoring-plan.md` 작업 1b의 1b-1 단계를 완료했다. `NotificationDismissReceiver`,
+`isSamsungOneUi()`, `getNotificationChannels()`, `StationArrivalOutput`/`RouteStation`/
+`BusInfo`(모델)/`StationArrivalOutput.BusInfo`의 `toMap()` 확장 함수 4개 — 전부
+서비스 인스턴스 상태에 의존하지 않는 top-level 선언이라 계획서대로 새 파일
+`BusAlertModels.kt`(같은 `services` 패키지)로 verbatim 이동했다.
+
+- 이동 대상은 파일 맨 끝(1562~1620행)이라 잘라내기가 단순했다. `git show HEAD:...`로
+  원본 블록과 새 파일 본문을 diff 대조해 이동 외 변경이 없음을 확인했다(새로 추가한
+  `import com.devground.daegubus.models.BusInfo` 한 줄 제외 — `BusAlertService.kt`는
+  이미 이 import를 갖고 있었지만 새 파일은 독립 파일이라 필요).
+- `StationArrivalOutput`/`RouteStation`은 `BusApiService.kt`(같은 `services` 패키지)에
+  정의돼 있어 import 없이 그대로 참조 가능했다.
+- **함정 확인 결과**: `getNotificationChannels`는 저장소 전체에서 정의부 외 호출부가
+  0건(grep 확인) — 계획서가 우려했던 "다른 파일에서 채널 생성 로직이 호출"하는
+  경우는 실제로는 없었다. `isSamsungOneUi()`는 `BusAlertAutoAlarmNotifier.kt`(같은
+  패키지)에서 호출 중 — 같은 패키지라 import 없이 그대로 컴파일됨.
+  `NotificationDismissReceiver`도 저장소 어디서도(매니페스트 포함) 참조되지 않는
+  걸 확인했으나, 계획 범위가 "이동"이지 "삭제 판단"이 아니므로 그대로 옮겼다(죽은
+  코드 삭제는 `private` 한정이라는 계획서 기준에도 해당 안 됨 — public 클래스).
+- 검증: `gradlew`가 저장소에 없어(`.gitignore` 대상) 캐시된 Gradle 8.11.1 배포판을
+  `--project-dir android`로 직접 호출해 `:app:compileDebugKotlin` 통과 확인.
+- `BusAlertService.kt`: 1,620 → 1,563줄 (계획서 완료 기준 "≤ ~1,565줄" 충족).
+  `BusAlertModels.kt` 신규 69줄. 커밋 `9bf8b2d`.
+- 다음 세션은 1b-2(취소 로직 → `BusAlertTrackingManager`, ~130줄)로 진행하면 된다.
