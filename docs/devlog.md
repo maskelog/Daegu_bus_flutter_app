@@ -2297,3 +2297,61 @@ sideload 설치해 devlog 2026-07-25 (3차)에 남긴 실기기 검증 목록 �
 - stationId 보정 재시도 경로: 재현할 특정 엣지케이스 정류장을 특정하지 못해
   스킵. 1초 후 백업 `notify()`는 육안으로 깜빡임 없음을 육안 확인했으나 로그
   기반 확증은 아니다.
+
+## 2026-07-28 (7차): BusAlertService.kt 1b 실기기 검증 — 자동알람 시작/도착임박/중지
+
+새 자동알람을 등록하려던 중, 기존에 등록돼 있던 623번(평일 17:25, 출근/스피커)
+자동알람이 화면상 라벨과 무관하게 **실시간 ETA 기준으로 16:32에 동적으로
+발동**하는 것을 실시간으로 관찰해 그대로 검증에 활용했다.
+
+### "설정된 자동 알림이 없습니다"는 데이터 손실이 아니었다
+- 발동 직후 `버스 알람` 탭이 빈 목록으로 바뀌어 처음엔 데이터 유실(리팩토링
+  회귀)을 의심했다. `adb shell dumpsys notification`/`dumpsys activity
+  services`로 확인한 결과, 실제로는 `id=1` 추적 알림과 `TTSService`(`id=1002`)가
+  모두 정상 기동 중이었다 — 즉 알람이 "예약 대기" 상태에서 "활성 추적" 상태로
+  전환되면서 설정 목록에서 빠진 것뿐이었다. `BusAlertService.kt`/
+  `MainActivity.kt`에 데이터 삭제 로직은 없다.
+
+### 자동알람 시작
+- `SamsungAlarmManager`가 `com.devground.daegubus.AUTO_ALARM`을 16:32:22에
+  발송 → `AlarmReceiver` 수신 → `BusAlertService` foreground 시작
+  (`startForegroundCount` 4→6) 확인. `logcat -d *:E`에 관련 에러 없고
+  `ForegroundServiceDidNotStartInTimeException`/ANR도 없어 5초 제한 안에
+  정상 기동했다고 판단.
+- 알림 `title="623번 5분"`, `text="새동네아파트앞 · 5분 [대구시산격청사건너1]"`,
+  동시에 `tts_service_channel` 알림도 함께 떠 "출근(스피커)" 모드의 TTS 분기가
+  정상 진입함을 확인.
+- 홈 화면 배너/벨 아이콘에는 반영되지 않았다 — `handleAutoAlarmLightweight`라는
+  이름이 시사하듯 자동알람은 네이티브 전용 경량 추적이라 Flutter UI 상태와
+  동기화하지 않는 설계로 보인다(버그로 보지 않음, 다음에 Flutter 쪽 코드로
+  교차 확인 권장).
+
+### 도착 임박 TTS 트리거
+- 몇 분 뒤 알림이 `"623번 곧 도착"`으로 갱신되고 별도의 `"자동알람 음성 안내"`
+  알림(`자동알람 음성 안내 중`)이 뜨는 것을 확인 — `checkArrivalAndNotify`
+  (1b-3에서 `BusAlertTrackingManager`로 이동) 기반 도착임박 트리거가 정상
+  작동한다.
+
+### 자동알람 중지
+- 알림의 "추적 중지"를 탭하자 `com.devground.daegubus.action.STOP_TRACKING`
+  인텐트가 `BusAlertService`에 전달됐고(logcat 확인), `id=1` 추적 알림은
+  즉시 정상 취소됐다. `startRequested=false`로 전환도 확인.
+
+### 범위 밖 관찰 — TTS 반복 안내 서비스 잔류 (이번 리팩토링과 무관)
+- `id=1002` TTS 알림("자동알람 음성 안내 중")은 추적 중지 후 30초 넘게
+  사라지지 않았다. `dumpsys activity services`로 보면 `TTSService`가
+  `intent={act=REPEAT_TTS_ALERT ...}`로 여전히 foreground 상태였다 — 도착임박
+  음성 안내를 반복 재생하는 별도 서비스/타이머가 `BusAlertService`의 추적 중지
+  신호를 받지 않는 것으로 보인다.
+- `TTSService.kt`는 작업 1/1b 어느 단계에서도 옮기거나 수정하지 않은 파일이라,
+  이번 리팩토링이 만든 회귀는 아닐 가능성이 높다(사전 존재 이슈 추정). 확인을
+  위해 `adb shell am force-stop com.devground.daegubus`로 기기 상태를
+  정리했다.
+- **후속 조사 필요**: `TTSService`의 `REPEAT_TTS_ALERT` 스케줄이
+  `stopSpecificTracking`/`stopAllTracking`과 별도로 취소돼야 하는지 코드
+  검토 필요. `docs/topics/tts-audio.md`와 `TTSService.kt`를 다음 세션에서
+  확인할 것.
+
+### 남은 미검증 항목
+- 자동알람 타임아웃(무응답 시 자동 정리), 중복 트리거 방지(`pendingAutoAlarms`),
+  stationId 보정 재시도는 여전히 미확인.
