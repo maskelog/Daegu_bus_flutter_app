@@ -19,6 +19,15 @@
 - [x] 작업 1: BusAlertService.kt 분리 (2,535줄 → 1,620줄, 2026-07-25 완료. ~1,200줄
       목표는 못 미쳤으나 계획서에 명시된 4단계는 모두 verbatim 이동 + diff 대조로 완료됨.
       실기기 검증 필요 — devlog 2026-07-25 (2~4차) 참조)
+- [ ] 작업 1b: BusAlertService.kt 추가 축소 (1,620줄 → ~1,200줄 목표) — 세션 4개로
+      분할. 1b-1~1b-3만 끝내도 목표 달성 예상, 1b-4는 별도 판단 필요 (아래 참조)
+  - [ ] 1b-1: 하단 유틸/확장 함수를 별도 파일로 (가장 쉬움, ~55줄)
+  - [ ] 1b-2: 취소 로직을 BusAlertTrackingManager로 (중간, ~130줄)
+  - [ ] 1b-3: 도착 확인/추적정보 갱신 클러스터를 신규 협력 클래스로 (가장 큰 감소,
+        ~340줄, 실기기 검증 중요)
+  - [ ] 1b-4: onStartCommand 디스패치 본문 축소 (~390줄) — foreground 서비스 시작
+        타이밍 직결이라 고위험. 1b-1~3 완료 후 목표를 이미 달성했으면 실기기
+        스모크 없이는 손대지 않는 걸 권장 (아래 섹션 참조)
 - [ ] 작업 2: UI 위젯 테스트 보강 — 작업 3~5의 선행 조건
 - [ ] 작업 3: map_screen.dart 분리 (1,578줄) — 작업 2 완료 후
 - [ ] 작업 4: unified_bus_detail_widget.dart 분리 (1,411줄) — 작업 2 완료 후
@@ -163,7 +172,103 @@ diff /tmp/old.txt /tmp/new.txt   # 함수 목록이면 grep -oE 'fun \w+' 등으
   신규 위치를 `diff`로 대조.
 - **아직 안 함**: 실기기 스모크. devlog 2026-07-25 (2~4차) 각 엔트리 하단에
   확인해야 할 구체적 시나리오를 적어뒀다 — 다음에 실기기가 준비되면 그 목록을
-  그대로 체크리스트로 쓸 것.
+  그대로 체크리스트로 쓸 것. **2026-07-28 갱신**: 이후 세션에서 adb로 연결된
+  실기기 접근이 가능해졌다 (`docs/devlog.md` 2026-07-25 sideload 검증 엔트리
+  참조). 지도 CTA 검증에서 쓴 것과 같은 방식(`adb install`, `uiautomator dump`
+  + `input tap`, `logcat`)을 이 목록에도 적용할 수 있다.
+
+---
+
+## 작업 1b: BusAlertService.kt 추가 축소 (작업 1 후속)
+
+> 작업 1의 4단계를 모두 마쳤지만 목표였던 ~1,200줄에는 못 미쳤다 (1,620줄).
+> 한 세션에 전체를 밀어붙이면 시간이 너무 오래 걸린다는 게 확인됐으므로,
+> 아래처럼 위험도가 낮은 것부터 4개 세션으로 쪼갠다. **1b-1~1b-3만 끝내도
+> 합계 ~525줄이 줄어 1,095줄로 목표를 이미 달성한다** — 가장 위험한 1b-4
+> (onStartCommand)는 그 경우 손댈 필요가 없다.
+
+### 현재 구조 (2026-07-28 기준, `git grep -nE` 결과)
+
+| 블록 | 대략 위치 | 줄수 | 비고 |
+|---|---|---|---|
+| `onCreate`/`onStartCommand` | 148~643행 | ~495 | 서비스 시작·명령 디스패치. `onStartCommand` 본문만 ~390줄 |
+| `updateBusInfo`/`checkNextBusAndNotify`/`checkArrivalAndNotify`/`updateTrackingInfoFromFlutter` | 756~876, 1008~1044, 1227~1451행 | ~340 | 도착 확인·추적정보 갱신·TTS/알림 트리거 클러스터 |
+| `cancelOngoingTracking`/`cancelNotification`/`cancelAllNotifications`/`stopTrackingIfIdle`/`checkAndStopService` | 1095~1227행 | ~130 | 알림·타이머 취소 클러스터 |
+| 하단 top-level 유틸/확장 함수 + `NotificationDismissReceiver` | 1562~1620행 | ~55 | `isSamsungOneUi`, `getNotificationChannels`, `toMap()` 4개 — 서비스 상태 의존 없음 |
+
+### 1b-1: 하단 유틸/확장 함수 분리 (가장 쉬움, ~55줄)
+
+**읽기 순서**: 이 섹션 → `BusAlertService.kt` 1562~1620행만.
+
+- 대상: `NotificationDismissReceiver`(BroadcastReceiver, 1562행), `isSamsungOneUi()`
+  (1571행), `getNotificationChannels()`(1575행), `StationArrivalOutput.toMap()`/
+  `RouteStation.toMap()`/`BusInfo.toMap()`/`StationArrivalOutput.BusInfo.toMap()`
+  (1585~1620행) — 전부 top-level 선언이라 서비스 인스턴스 상태에 의존하지 않는다.
+- 새 파일 `BusAlertModels.kt`(같은 `services` 패키지)로 verbatim 이동.
+- 함정: `getNotificationChannels`는 다른 파일(채널 생성 로직)에서 호출될 수 있다 —
+  이동 전 grep으로 호출부를 확인하고, import만 필요하면 추가한다(로직 변경 없음).
+- 완료 기준: `BusAlertService.kt` ≤ ~1,565줄, 컴파일 통과, `git show HEAD:...`
+  diff 대조로 이동 외 변경 없음 확인.
+
+### 1b-2: 취소 로직 → BusAlertTrackingManager (중간, ~130줄)
+
+**읽기 순서**: 이 섹션 → 작업 1의 "2단계" 서술(콜백 주입 패턴 참고) →
+`BusAlertService.kt`의 `cancelOngoingTracking`(1095행)부터 `checkAndStopService`
+(1212~1227행)까지 → 현재 `BusAlertTrackingManager.kt`.
+
+- 대상: `cancelOngoingTracking`/`cancelNotification`/`cancelAllNotifications`/
+  `stopTrackingIfIdle`/`sendAllCancellationBroadcast`(이미 작업 1에서 관련
+  브로드캐스트 헬퍼가 옮겨졌는지 확인)/`checkAndStopService`.
+- `BusAlertTrackingManager`는 이미 서비스 라이프사이클 상태 콜백 다수를 갖고
+  있다(작업 1의 2단계 참조) — 추가로 필요한 콜백만 생성자에 더한다. 새 콜백을
+  10개 이상 추가해야 하면 계획보다 범위가 크다는 신호이니 일부만 옮기고 나머지는
+  devlog에 이유를 남긴 채 다음 세션으로 미룰 것 (작업 1의 2단계에서 실제로 이렇게
+  했다).
+- 함정: `cancelNotification`/`cancelAllNotifications`는 채널 핸들러가 직접 호출할
+  수 있는 public 메서드일 가능성이 높다 — grep으로 호출부를 확인하고, 있으면
+  시그니처를 유지한 채 위임 스텁만 남긴다.
+- 완료 기준: `BusAlertService.kt` ≤ ~1,435줄, 컴파일 통과, diff 대조 완료.
+
+### 1b-3: 도착 확인/추적정보 갱신 클러스터 → 신규 협력 클래스 (가장 큰 감소, ~340줄)
+
+**읽기 순서**: 이 섹션 → `docs/topics/tts-audio.md`(TTS 출력 정책, 이 클러스터가
+TTS를 트리거함) → `BusAlertService.kt`의 `updateBusInfo`(756행)부터
+`updateTrackingInfoFromFlutter`(1348~1451행)까지 전체.
+
+- 대상: `updateBusInfo`, `updateBusInfoFromFlutter`, `checkNextBusAndNotify`,
+  `checkArrivalAndNotify`, `updateTrackingInfoFromFlutter`. 작업 1의 3~4단계에서
+  검증된 패턴(신규 클래스가 `service: BusAlertService` 전체 참조를 갖고, 필요한
+  `private` 멤버를 `internal`로 넓힘)을 우선 고려한다 — 콜백 주입보다 diff가
+  훨씬 작았다.
+- 새 파일(가칭 `BusAlertArrivalMonitor.kt`)로 이동. 기존 협력 클래스 중 역할이
+  겹치는 게 없는지(`BusAlertTrackingManager`? `BusAlertNotificationUpdater`?)
+  먼저 확인하고, 겹치면 새 파일 대신 기존 클래스를 확장한다.
+- 함정: 이 클러스터는 TTS 발화(`ttsController` 경유)와 알림 갱신을 실제로
+  트리거하는 지점이라, 계획서의 "절대 하지 말 것"(알림 구현을
+  `NotificationCompat.Builder` 이외로 바꾸지 말 것)과 특히 관련이 크다. 로직은
+  건드리지 말고 이동만 한다.
+- **실기기 검증 중요**: 이 클러스터를 옮긴 뒤에는 devlog 2026-07-25 (3차)에
+  적힌 "알림 렌더링"/"stationId 보정 재시도"/"1초 후 백업 notify()" 항목을
+  실기기로 반드시 확인한다 (오케스트레이터가 adb로 진행 가능).
+- 완료 기준: `BusAlertService.kt` ≤ ~1,095줄, 컴파일 통과, diff 대조 완료,
+  실기기 확인 완료 또는 devlog에 미확인 항목 명시.
+
+### 1b-4: onStartCommand 디스패치 본문 축소 (~390줄, 고위험 — 신중히 판단)
+
+> **1b-1~3을 마쳐 목표(~1,200줄)를 이미 달성했다면, 이 단계는 필수가 아니다.**
+> 진행 여부는 다음 세션에서 devlog/이 문서를 다시 보고 판단할 것 — 지금 미리
+> 결정하지 않는다.
+
+- `onStartCommand`(251~643행)는 `parseCommand()`가 반환한 `ServiceCommand`를
+  `when`으로 분기해 각 케이스를 처리하는 본문이다. `startForeground` 호출
+  시점·순서가 여기 있을 가능성이 높다 — Android는 `Service.onStartCommand`
+  진입 후 일정 시간 안에 `startForeground`가 호출되지 않으면
+  `ForegroundServiceDidNotStartInTimeException`을 던진다.
+- 옮기더라도 `startForeground` 호출은 `onStartCommand` 안에 남겨야 한다 —
+  협력 클래스로 위임하는 코드 경로가 길어지면 타이밍이 깨질 수 있다.
+- **진행하려면**: 먼저 실기기로 각 `ServiceCommand` 분기(수동 알람 시작/자동알람
+  시작/중지 등)를 한 번씩 트리거해 정상 동작을 스크린샷/logcat으로 기록해두고,
+  이동 후 같은 시나리오를 다시 확인한다. 이 사전 기록 없이는 착수하지 않는다.
 
 ---
 
