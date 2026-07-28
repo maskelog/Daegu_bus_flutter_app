@@ -2220,3 +2220,35 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
 직결된 가장 위험한 변경을 지금 굳이 할 이유가 없다는 판단. `refactoring-plan.md`
 1b-4 체크박스는 미완료로 남기고(예정에 없음), 상단 작업 목록의 "작업 1b" 한 줄만
 갱신했다.
+
+## 2026-07-28 (5차): BusAlertService.kt 1b 실기기 검증 (수동 알람 시작/중지)
+
+`1.0.4+66` 릴리스 서명 APK(main, 1b-1~3 병합 후)를 Galaxy Note10+(`R3CM70K2YZD`)에
+sideload 설치해 devlog 2026-07-25 (3차)에 남긴 실기기 검증 목록 중 두 항목을
+확인했다.
+
+### 방법
+- 즐겨찾기 버스 623번 행의 알람 종(🔔) 아이콘을 탭해 수동 승차 알람 시작 →
+  같은 아이콘을 다시 탭해 중지.
+- `adb shell dumpsys notification --noredact`로 알림 내용과 취소 여부,
+  `adb shell dumpsys activity services`로 서비스 foreground 상태,
+  `adb logcat -d *:E`로 크래시 여부를 확인.
+
+### 결과
+- **알림 렌더링**: 시작 직후 `bus_tracking_ongoing` 채널에 `title="623번 8분"`,
+  `text="새동네아파트앞 · 8분 [성북시장앞]"`, 액션 "추적 중지" 알림이 정상
+  게시됨 (`updateBusInfo`/`checkArrivalAndNotify`/`updateTrackingInfoFromFlutter`
+  클러스터가 1b-3에서 `BusAlertTrackingManager`로 이동한 뒤에도 정상 동작).
+- **수동 알람 중지** (`stopSpecificTracking`, 1b-2에서 이동): 종 아이콘 재탭 →
+  "623번 승차 알람이 해제되었습니다" 토스트, `dumpsys notification`에서 id=1
+  알림이 활성 목록에서 사라지고 `mArchive`에만 남음(정상 취소) 확인.
+- **고아 포그라운드 서비스 아님**: 중지 후 `dumpsys activity services`에서
+  `BusAlertService`가 `startRequested=false`로, `MainActivity`의 일반
+  `bindService` 연결만 남고 foreground 상태가 아님을 확인.
+- `adb logcat -d *:E`에 `daegubus` 관련 FATAL/에러 없음(SELinux audit·광고 SDK
+  경고만 있었고 무관함).
+
+### 아직 안 함
+- 전체 알람 중지(브로드캐스트/앱 스와이프 종료 경로), 자동알람 시작·타임아웃·
+  중복방지·중지, stationId 보정 재시도, 1초 후 백업 `notify()`, 취소 탭 연타
+  — devlog 2026-07-25 (3차) 목록에서 이 항목들은 여전히 미확인 상태다.
