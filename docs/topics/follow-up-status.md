@@ -6,18 +6,17 @@
 >
 > 마지막 갱신: 2026-07-28
 
-## 우선순위 중간: TTSService REPEAT_TTS_ALERT가 추적 중지 후에도 잔류
+## 우선순위 높음: TTSService REPEAT_TTS_ALERT 잔류 버그 — 코드 수정 완료, 실기기 재검증 대기
 
-- 현재 상태: 자동알람 도착임박 TTS 반복 안내(`TTSService`,
-  `act=REPEAT_TTS_ALERT`) 중 알림의 "추적 중지"를 탭해도 `TTSService`가
-  foreground로 계속 남고 알림(`id=1002`)이 30초 넘게 사라지지 않았다
-  (devlog 2026-07-28 (7차) 참조). `TTSService.kt`는 작업 1/1b 어느 단계에서도
-  손대지 않아 이번 리팩토링이 만든 회귀는 아닐 가능성이 높다(사전 존재
-  이슈로 추정) — 확진하려면 `TTSService.kt`와 `docs/topics/tts-audio.md`를
-  코드 레벨에서 확인해야 한다.
-- 완료 기준: `stopSpecificTracking`/`stopAllTracking`이 `REPEAT_TTS_ALERT`
-  스케줄도 함께 취소하는지 코드로 확인하고, 필요하면 수정 후 같은 시나리오를
-  실기기로 재확인한다.
+- 현재 상태: 근본 원인을 코드 레벨로 확인했다 — `BusAlertService.stopTtsTracking()`이
+  `TTSService`에 `STOP_TTS_TRACKING`을 보내지 않는 미완성 스텁이었다(리팩토링
+  이전부터 있던 사전 존재 버그, 작업 1/1b 회귀 아님). `ttsController.stopTtsServiceTracking()`
+  호출을 추가해 수정했고 `:app:compileDebugKotlin`은 통과했다(devlog 2026-07-28
+  (8차) 참조).
+- 완료 기준: devlog 2026-07-28 (7차)와 동일한 시나리오(자동알람 도착임박 TTS →
+  알림의 "추적 중지" 탭)를 실기기로 재현해 `id=1002` 알림이 즉시 사라지고
+  `TTSService`가 foreground에서 내려가는지 `dumpsys activity services`로
+  확인한다. 아직 실기기 검증 전이므로 완료로 간주하지 않는다.
 
 ## 우선순위 중간: BusAlertService.kt 1b 자동알람 잔여 검증
 

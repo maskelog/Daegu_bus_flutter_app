@@ -2355,3 +2355,29 @@ sideload 설치해 devlog 2026-07-25 (3차)에 남긴 실기기 검증 목록 �
 ### 남은 미검증 항목
 - 자동알람 타임아웃(무응답 시 자동 정리), 중복 트리거 방지(`pendingAutoAlarms`),
   stationId 보정 재시도는 여전히 미확인.
+
+## 2026-07-28 (8차): TTSService REPEAT_TTS_ALERT 잔류 버그 근본 원인 확인 및 수정
+
+### 원인
+- `ACTION_STOP_TRACKING`(알림 "추적 중지") → `BusAlertTrackingManager.stopAllTracking()`
+  → 생성자 콜백 `stopTtsTrackingFn(true)` → `BusAlertService.stopTtsTracking()`으로
+  이어지는데, 이 함수가 `isTtsTrackingActive` 플래그만 끄고 로그만 남기는 미완성
+  스텁이었다(`// If there are any TTS-related jobs/handlers, stop them here
+  (expand as needed)` 주석이 TODO 흔적). `TTSService`에 `STOP_TTS_TRACKING` 인텐트를
+  보내는 코드가 없어 서비스가 foreground로 계속 남았다.
+- 개별 알람 중지 경로(`stopSpecificTracking`)는 `ttsController.stopTtsServiceTracking()`을
+  직접 호출해 정상 동작했다 — 전체 중지 경로만 깨져 있었다.
+- `TTSService.kt`의 `STOP_TTS_TRACKING` 핸들러 자체는 정상(`ttsHandler.removeCallbacks` →
+  `stopTracking()` → `stopSelf()`)이라 인텐트만 도착하면 문제없이 정지된다.
+- 리팩토링(작업 1/1b)이 만든 회귀가 아니라 리팩토링 이전부터 있던 미완성 스텁으로
+  확인됨.
+
+### 수정
+- `BusAlertService.kt`의 `stopTtsTracking()`에서 `ttsController.stopTtsServiceTracking()`을
+  호출하도록 채웠다(개별 중지 경로와 동일한 기존 구현 재사용). 1줄 추가, 로직 변경
+  없음.
+
+### 검증
+- `./gradlew.bat :app:compileDebugKotlin --console=plain -q` 통과(경고 없음).
+- **실기기 재검증 필요**: 2026-07-28 (7차)와 동일한 시나리오(자동알람 도착임박 TTS →
+  알림의 "추적 중지" 탭)로 `id=1002` 알림이 즉시 사라지는지 확인해야 한다.
