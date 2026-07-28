@@ -2403,3 +2403,42 @@ sideload 설치해 devlog 2026-07-25 (3차)에 남긴 실기기 검증 목록 �
   연결 수동 알람 시점으로 보류(`docs/topics/follow-up-status.md` 참조).
 - 기기는 수정이 포함된 빌드로 이미 갱신돼 있어, 다음에 자연 발생하는
   시나리오를 그대로 관찰하면 된다.
+
+## 2026-07-28 (10차): TTSService 수정 실기기 검증 완료 (실제 이어폰 알람으로 자연 재현)
+
+- 사용자가 17:35 도착 예정 버스에 이어폰 출력 모드로 알람을 저장했다(이어폰
+  미연결 상태). Note10+(`R3CM70K2YZD`, 수정 포함 `1.0.4+66` 빌드)에서 logcat을
+  관찰한 결과, 저장된 자동알람이 약 60~62초 주기로 재시작을 시도하는 패턴을
+  포착했다: 5초 간격 `"자동알람 이미 추적 중 (Nms 전 시작) - 중복 무시"` 경고가
+  ~60초까지 누적된 뒤 `ACTION_STOP_TRACKING`(BusAlertService)이 발생하고 다시
+  0ms부터 경고가 반복됐다. 17:31:22 / 17:32:24 / 17:33:25 / 17:34:25, 4회
+  연속으로 동일 패턴이 재현됐다(로그 버퍼 회전으로 그 이후 구간은 유실).
+- **수정 검증**: `ACTION_STOP_TRACKING` 직후 매번 `TTSService.onCreate()`가
+  새로 호출되는 것을 확인했다(`getAudioOutputMode`/`[중요] AppSettings 확인`
+  로그가 `onCreate()`에서만 나옴). `onCreate()`가 다시 호출되려면 안드로이드가
+  이전 서비스 인스턴스를 완전히 종료했어야 하므로, 이는 각 사이클마다
+  `TTSService`가 `STOP_TTS_TRACKING`을 받아 정상 `stopSelf()`했다는 뜻이다.
+  수정 전이었다면 최초 인스턴스가 죽지 않아 이후 사이클에서 `onCreate()`가
+  재호출되지 않았을 것이다 — 4회 전부 동일하게 재현돼, 계획했던 단발성
+  "추적 중지 탭" 시나리오보다 더 많은 반복 검증이 이뤄졌다.
+- 로그 관찰 종료(17:35:05) 17분 뒤인 17:52에 `dumpsys activity services`/
+  `dumpsys notification`으로 현재 상태를 재확인: `TTSService`는 실행 중이
+  아니고 `id=1002` 알림도 없다. `BusAlertService`(id=1, 추적 진행 중)만
+  정상적으로 foreground 유지 중 — 잔류 버그 재발 없음.
+- **결론: 실기기에서 수정이 유효함을 확인했다.** `docs/topics/follow-up-status.md`의
+  해당 항목을 제거했다.
+
+### 범위 밖 새 관찰 — 자동알람 반복 재시작 루프의 원인 미확인
+- 위 검증 과정에서 발견한 60~62초 주기 재시작 루프 자체는 이번 수정과
+  무관한 별개 현상이다. `BusAlertService.kt`/`BusAlertTrackingManager.kt`
+  안에서는 이 주기로 `ACTION_STOP_TRACKING`을 스스로 예약하는 코드를 찾지
+  못했다 — Flutter 쪽 타이머/폴링이 원인일 가능성이 있으나 확인 못 함.
+  "자동알람 타임아웃/중복 트리거 방지 미검증" 항목과 연결됐을 수 있어
+  `follow-up-status.md`에 별도 항목으로 추가했다.
+
+### adb 명령
+```
+adb -s R3CM70K2YZD shell dumpsys activity services com.devground.daegubus
+adb -s R3CM70K2YZD shell dumpsys notification --noredact
+adb -s R3CM70K2YZD logcat -d | grep -E "BusAlertService|TTSService"
+```

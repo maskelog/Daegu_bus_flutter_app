@@ -6,27 +6,19 @@
 >
 > 마지막 갱신: 2026-07-28
 
-## 우선순위 높음: TTSService REPEAT_TTS_ALERT 잔류 버그 — 코드 수정 완료, 실기기 재검증 대기
+## 우선순위 중간: 자동알람 반복 재시작 루프의 트리거 주체 미확인 (신규)
 
-- 현재 상태: 근본 원인을 코드 레벨로 확인했다 — `BusAlertService.stopTtsTracking()`이
-  `TTSService`에 `STOP_TTS_TRACKING`을 보내지 않는 미완성 스텁이었다(리팩토링
-  이전부터 있던 사전 존재 버그, 작업 1/1b 회귀 아님). `ttsController.stopTtsServiceTracking()`
-  호출을 추가해 수정했고 `:app:compileDebugKotlin`은 통과했다(devlog 2026-07-28
-  (8차) 참조). 수정을 포함한 `1.0.4+66` 로컬 릴리스 APK를 다시 빌드해 Galaxy
-  Note10+(`R3CM70K2YZD`)에 sideload 설치까지 완료했다(devlog 2026-07-28 (9차)).
-- **adb로 직접 재현 불가 확인**: `TTSService`/`BusAlertService`는 `exported="false"`이고
-  이 기기에서는 `adb shell am start(-foreground-)service`로 비-export 서비스를
-  시작하는 것 자체가 `Requires permission not exported`로 차단된다. 앱 내부
-  흐름으로 재현하려 해도 수동 알람의 TTS는 이어폰 미연결 시 애초에 호출되지
-  않고, 스피커 강제 발화(forceSpeaker)는 출근 자동알람 전용 경로라 즉시
-  스크립트로 재현할 방법이 없다 — 2026-07-28 (7차)처럼 실제 출근 자동알람
-  발동 시점을 기다리거나, 이어폰을 연결한 수동 알람으로 재현해야 한다.
-- 완료 기준: devlog 2026-07-28 (7차)와 동일한 시나리오(자동알람 도착임박 TTS →
-  알림의 "추적 중지" 탭, 또는 이어폰 연결 후 수동 알람)를 실기기로 재현해
-  `id=1002` 알림이 즉시 사라지고 `TTSService`가 foreground에서 내려가는지
-  `dumpsys activity services`로 확인한다. 사용자 판단으로 이번 세션은 코드
-  검증(원인 분석 + 컴파일 통과)까지만 진행하고 실기기 재검증은 다음 자연
-  발생 시점으로 보류했다.
+- 현재 상태: TTSService 수정 검증 중 실기기에서 자동알람이 약 60~62초 주기로
+  "자동알람 이미 추적 중 - 중복 무시" 경고를 5초 간격으로 반복하다가
+  `ACTION_STOP_TRACKING`으로 리셋되고 다시 시작되는 패턴을 발견했다(devlog
+  2026-07-28 (10차) 참조). `BusAlertService.kt`/`BusAlertTrackingManager.kt`
+  안에는 이 주기로 `ACTION_STOP_TRACKING`을 스스로 예약하는 코드가 없어 —
+  Flutter 쪽 타이머나 다른 채널 호출이 원인일 가능성이 있으나 이번 세션에서
+  호출 주체를 특정하지 못했다.
+- 완료 기준: 이 주기적 재시작이 의도된 동작(예: 실시간 정보 갱신)인지, 아니면
+  "자동알람 타임아웃/중복 트리거 방지" 미검증 항목과 연결된 버그인지 코드로
+  추적해 확인한다. Flutter 쪽(`lib/services/alarm/`)에서 `ACTION_STOP_TRACKING`을
+  보내는 Timer/폴링 로직이 있는지부터 확인할 것.
 
 ## 우선순위 중간: BusAlertService.kt 1b 자동알람 잔여 검증
 
@@ -34,7 +26,8 @@
   도착임박 TTS 트리거, 추적 중지는 2026-07-28에 실기기로 확인했다(devlog
   2026-07-28 (7차) 참조, 우연히 발동한 기존 623번 자동알람을 활용). 타임아웃
   (무응답 시 자동 정리)과 중복 트리거 방지(`pendingAutoAlarms`),
-  stationId 보정 재시도는 아직 확인 못 했다.
+  stationId 보정 재시도는 아직 확인 못 했다. 위 신규 항목(자동알람 반복
+  재시작 루프)이 이 중복 트리거 방지와 관련됐을 가능성이 있다.
 - 완료 기준: 타임아웃/중복방지는 재현 시나리오를 설계해(예: 같은 노선을
   짧은 간격으로 두 번 트리거) 실기기로 확인한다. stationId 보정은 해당
   엣지케이스 정류장을 특정해야 한다.
