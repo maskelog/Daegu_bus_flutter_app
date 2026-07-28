@@ -2098,3 +2098,125 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
   동작하는지.
 - **알림에서 취소 탭 연타**: `sentCancellationEvents`/`eventTimeouts`(이동됨)
   기반 중복 방지가 여전히 중복 취소 이벤트를 막는지.
+
+## 2026-07-28: BusAlertService.kt 추가 축소 — 1b-1 완료 (하단 유틸/확장 함수 분리)
+
+`docs/refactoring-plan.md` 작업 1b의 1b-1 단계를 완료했다. `NotificationDismissReceiver`,
+`isSamsungOneUi()`, `getNotificationChannels()`, `StationArrivalOutput`/`RouteStation`/
+`BusInfo`(모델)/`StationArrivalOutput.BusInfo`의 `toMap()` 확장 함수 4개 — 전부
+서비스 인스턴스 상태에 의존하지 않는 top-level 선언이라 계획서대로 새 파일
+`BusAlertModels.kt`(같은 `services` 패키지)로 verbatim 이동했다.
+
+- 이동 대상은 파일 맨 끝(1562~1620행)이라 잘라내기가 단순했다. `git show HEAD:...`로
+  원본 블록과 새 파일 본문을 diff 대조해 이동 외 변경이 없음을 확인했다(새로 추가한
+  `import com.devground.daegubus.models.BusInfo` 한 줄 제외 — `BusAlertService.kt`는
+  이미 이 import를 갖고 있었지만 새 파일은 독립 파일이라 필요).
+- `StationArrivalOutput`/`RouteStation`은 `BusApiService.kt`(같은 `services` 패키지)에
+  정의돼 있어 import 없이 그대로 참조 가능했다.
+- **함정 확인 결과**: `getNotificationChannels`는 저장소 전체에서 정의부 외 호출부가
+  0건(grep 확인) — 계획서가 우려했던 "다른 파일에서 채널 생성 로직이 호출"하는
+  경우는 실제로는 없었다. `isSamsungOneUi()`는 `BusAlertAutoAlarmNotifier.kt`(같은
+  패키지)에서 호출 중 — 같은 패키지라 import 없이 그대로 컴파일됨.
+  `NotificationDismissReceiver`도 저장소 어디서도(매니페스트 포함) 참조되지 않는
+  걸 확인했으나, 계획 범위가 "이동"이지 "삭제 판단"이 아니므로 그대로 옮겼다(죽은
+  코드 삭제는 `private` 한정이라는 계획서 기준에도 해당 안 됨 — public 클래스).
+- 검증: `gradlew`가 저장소에 없어(`.gitignore` 대상) 캐시된 Gradle 8.11.1 배포판을
+  `--project-dir android`로 직접 호출해 `:app:compileDebugKotlin` 통과 확인.
+- `BusAlertService.kt`: 1,620 → 1,563줄 (계획서 완료 기준 "≤ ~1,565줄" 충족).
+  `BusAlertModels.kt` 신규 69줄. 커밋 `9bf8b2d`.
+- 다음 세션은 1b-2(취소 로직 → `BusAlertTrackingManager`, ~130줄)로 진행하면 된다.
+
+## 2026-07-28 (2차): BusAlertService.kt 추가 축소 — 1b-2 완료 (취소 로직 → BusAlertTrackingManager)
+
+`docs/refactoring-plan.md` 작업 1b의 1b-2 단계를 완료했다. `cancelOngoingTracking`/
+`cancelNotification`/`cancelAllNotifications`/`stopTrackingIfIdle`/
+`sendAllCancellationBroadcast`를 `BusAlertTrackingManager`로 이관했다.
+
+- **새 콜백 0개로 끝남**: 이동 대상 5개 함수가 필요로 하는 의존성(`service`,
+  `activeTrackings`/`monitoredRoutes`/`monitoringJobs`,
+  `isInForegroundProvider`/`setInForeground`, `ongoingNotificationId`/
+  `autoAlarmNotificationId`, `checkAndStopServiceIfNeeded`)이 작업 1의 2단계에서
+  이미 생성자에 다 들어가 있었다 — 계획서가 우려한 "콜백 10개 이상 추가" 신호는
+  발생하지 않았다.
+- `sendAllCancellationBroadcast`는 기존에 콜백 파라미터(`sendAllCancellationBroadcast:
+  () -> Unit`)로 주입되고 있었는데, 함수 본체를 `BusAlertTrackingManager` 안으로
+  옮기면서 그 콜백 파라미터 자체를 제거했다 — 클래스 내부 호출(`stopAllTracking()`
+  안의 601행)은 이제 로컬 멤버 함수로 자동 resolve되어 diff 없이 그대로 컴파일됨.
+  생성자 호출부 2곳(`onCreate`/`initialize`)에서 `::sendAllCancellationBroadcast`
+  인자만 제거.
+- **함정 확인 결과**: `cancelOngoingTracking`은 `BusApiChannelHandler.stopBusTracking`이
+  `activity.busAlertService?.cancelOngoingTracking()`로 외부 호출 중이라(grep 확인)
+  공개 시그니처를 유지하고 위임 스텁만 남겼다. `cancelNotification`/
+  `cancelAllNotifications`는 계획서가 우려한 대로 public이지만, 실제로는 채널
+  핸들러의 동명 메서드(`cancelOngoingTracking(result)`/`cancelAllNotifications(result)`)가
+  이 서비스 메서드를 호출하는 게 아니라 `stopAllBusTracking()`을 직접 호출하고
+  있어서 — 외부 호출부는 0건이었다. 그래도 작업 1의 선례(외부 호출부 0건인 public
+  메서드도 삭제 대신 위임 스텁 유지)를 따라 스텁을 남겼다.
+- `stopTrackingIfIdle`/`sendAllCancellationBroadcast`는 원래 `private`였고 서비스
+  내부 호출부만 있어서(각각 2곳) 스텁 없이 호출부를 `trackingManager.X()`로 직접
+  바꿨다. 두 함수 모두 매니저 안에서는 `internal`로 선언 — cross-class 호출은
+  여전히 필요하지만 앱 외부에 노출할 이유는 없어서.
+- **죽은 코드 발견**: 계획서 대상 목록의 `checkAndStopService()`(1212행, `checkAndStopServiceIfNeeded`와는
+  별개 함수)가 저장소 전체에서 정의부 외 호출부 0건임을 grep으로 확인했다 — `private`
+  + 참조 0건이라 공통 원칙의 죽은 코드 삭제 기준에 정확히 해당한다. 계획서는 이
+  함수를 "이관 대상"으로 적어뒀지만, 이관 대신 삭제했다(이관은 사용되지 않는
+  로직을 그대로 다른 파일로 옮기는 것뿐이라 가치가 없음). 삭제 사실을 커밋 메시지에
+  명시했다.
+- 검증: `git show HEAD:...`로 원본 5개 함수 본문과 새 위치를 정규화(참조 치환 역변환)
+  후 diff 대조 — 이동 외 변경 없음 확인. `:app:compileDebugKotlin` 통과.
+- `BusAlertService.kt`: 1,563 → 1,444줄 (계획서 완료 기준 "≤ ~1,435줄"에는 9줄
+  못 미쳤음 — 이관 코드에 붙인 "어디서 이관됐는지" 주석 몇 줄 때문. 실질적 로직
+  이동은 계획대로 끝났다). `BusAlertTrackingManager.kt`: 705 → 822줄. 커밋 `9c35604`.
+- 다음 세션은 1b-3(도착 확인/추적정보 갱신 클러스터 → 신규 협력 클래스, ~340줄,
+  실기기 검증 중요)로 진행하면 된다.
+
+## 2026-07-28 (3차): BusAlertService.kt 추가 축소 — 1b-3 완료 (도착 확인/추적정보 갱신 클러스터 → BusAlertTrackingManager)
+
+`docs/refactoring-plan.md` 작업 1b의 1b-3 단계를 완료했다. `updateBusInfo`/
+`updateBusInfoFromFlutter`/`checkNextBusAndNotify`/`checkArrivalAndNotify`/
+`updateTrackingInfoFromFlutter`를 이관했다.
+
+- **신규 파일 대신 기존 클래스 확장**: 계획서가 지시한 대로 "겹치는 협력 클래스가
+  있는지" 먼저 확인했더니, 이동 대상 5개 중 3개(`updateBusInfo`,
+  `checkArrivalAndNotify`, `checkNextBusAndNotify`)가 이미 `BusAlertTrackingManager`의
+  추적 루프(`startTrackingInternal`) 안에서 콜백(`::updateBusInfo` 등)으로 호출되고
+  있었다 — `BusAlertArrivalMonitor.kt`라는 새 파일 대신 `BusAlertTrackingManager`를
+  확장하는 게 명백히 맞는 선택이었다.
+- **콜백 3개 제거, 4개 신설**: 이동 대상 함수들이 이미 생성자에 있던 콜백
+  (`updateBusInfo`/`checkArrivalAndNotify`/`checkNextBusAndNotify` 콜백 자체)을
+  이관 후 셀프 호출로 대체할 수 있어 제거했다(1b-2의 `sendAllCancellationBroadcast`와
+  같은 패턴). 대신 이전까지 서비스 밖으로 나갈 통로가 없던 의존성 4개를 새로
+  추가했다: `notificationHandler`(`buildOngoingNotification` 호출용),
+  `restartPreventionDurationMs`, `lastManualStopTimeProvider`(기존엔 setter만
+  있고 getter가 없었음), `alertOnArrivalOnlyProvider`. 순증가 1개로 계획서가
+  경계했던 "콜백 10개 이상" 신호와는 거리가 멀었다.
+- `MAX_CONSECUTIVE_ERRORS` 상수(companion object, `private`)가 `updateBusInfo`의
+  유일한 사용처였다 — 이관하면서 `BusAlertTrackingManager`의 companion object에
+  새로 선언하고 `BusAlertService`에서는 삭제했다.
+- Public 메서드(`updateBusInfoFromFlutter`/`updateTrackingInfoFromFlutter`)는
+  각각 `BusApiChannelHandler`/`BusTrackingChannelHandler`가 외부에서 호출하므로
+  위임 스텁 유지. `updateTrackingInfoFromFlutter`의 서비스 내부 호출부 2곳은
+  이미 public 스텁을 그대로 호출하는 형태라 수정 불필요했다. `updateBusInfo`는
+  `private`였고 내부 호출부가 `onStartCommand` 안에 1곳 있어 `trackingManager.
+  updateBusInfo(...)`로 직접 교체(스텁 없음, 1b-2와 같은 판단).
+- 검증: `git show HEAD:...`로 원본 5개 함수 본문과 새 위치를 정규화(참조 치환
+  역변환) 후 diff 대조 — private→fun 가시성 변경, 콜백/프로바이더 치환, trailing
+  공백 정리 외에는 차이 없음 확인. `:app:compileDebugKotlin` 통과.
+- `BusAlertService.kt`: 1,444 → 1,101줄 (계획서 완료 기준 "≤ ~1,095줄"에는 6줄
+  못 미쳤음 — 1b-1/1b-2와 같은 이유, 이관 출처 주석). `BusAlertTrackingManager.kt`:
+  822 → 1,195줄. 커밋 `50f6095`.
+- **실기기 미검증**: 이 클러스터는 TTS 발화와 알림 갱신을 실제로 트리거하는
+  지점이라 devlog 2026-07-25 (3차)가 남긴 확인 목록("알림 렌더링", "stationId
+  보정 재시도", "1초 후 백업 notify()")이 여전히 유효하다. 오케스트레이터가 adb로
+  이어서 확인하기로 하고, 이 세션은 코드 이동 완료를 기준으로 넘어간다.
+- 다음 세션은 1b-4(onStartCommand 디스패치 본문 축소, ~390줄, 고위험) 진행 여부를
+  판단하면 된다 — 1b-1~3 합계로 목표(~1,200줄)를 이미 달성했으므로(1,101줄),
+  계획서에 따르면 1b-4는 필수가 아니다.
+
+## 2026-07-28 (4차): 작업 1b — 1b-4 보류 확정 (사용자 확인)
+
+사용자가 1b-4(onStartCommand 디스패치 본문 축소)를 스킵하기로 확인했다 — 1b-1~3
+완료로 목표(~1,200줄)를 이미 달성(1,101줄)했고, foreground 서비스 시작 타이밍에
+직결된 가장 위험한 변경을 지금 굳이 할 이유가 없다는 판단. `refactoring-plan.md`
+1b-4 체크박스는 미완료로 남기고(예정에 없음), 상단 작업 목록의 "작업 1b" 한 줄만
+갱신했다.

@@ -94,7 +94,8 @@ class BusAlertService : Service() {
 
         // --- 서비스 내부 상수 ---
         const val DEFAULT_ALARM_SOUND = ""
-        private const val MAX_CONSECUTIVE_ERRORS = 3
+        // MAX_CONSECUTIVE_ERRORS는 BusAlertTrackingManager.updateBusInfo로 이관
+        // (2026-07-28, 1b-3) — 그 함수가 유일한 사용처였다.
         private const val ARRIVAL_THRESHOLD_MINUTES = 60
     }
 
@@ -160,7 +161,6 @@ class BusAlertService : Service() {
             serviceScope,
             activeTrackings,
             monitoringJobs,
-            ::updateBusInfo,
             { b, s, r, c, routeId, summary ->
                 notificationUpdater.showOngoingBusTracking(
                     busNo = b,
@@ -174,8 +174,6 @@ class BusAlertService : Service() {
                 )
             },
             ::updateForegroundNotification,
-            ::checkArrivalAndNotify,
-            ::checkNextBusAndNotify,
             ttsController,
             { useTextToSpeech },
             ARRIVAL_THRESHOLD_MINUTES,
@@ -193,15 +191,18 @@ class BusAlertService : Service() {
             { isManuallyStoppedByUser },
             { isManuallyStoppedByUser = it },
             { lastManualStopTime = it },
+            { lastManualStopTime },
             { isAutoAlarmMode = it },
             { autoAlarmStartTime = it },
             { instance = null },
             { isInForeground },
             ::stopMonitoringTimer,
             ::stopTtsTracking,
-            ::sendAllCancellationBroadcast,
             ::checkAndStopServiceIfNeeded,
             AUTO_ALARM_NOTIFICATION_ID,
+            notificationHandler,
+            RESTART_PREVENTION_DURATION,
+            { alertOnArrivalOnly },
         )
         loadSettings()
         notificationHandler.createNotificationChannels()
@@ -354,7 +355,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             // 4단계: 전체 취소 이벤트 발송
             Log.i(TAG, "🛑 4단계: 취소 이벤트 브로드캐스트 시작")
-            sendAllCancellationBroadcast()
+            trackingManager.sendAllCancellationBroadcast()
 
             // 5단계: 모든 추적 작업과 서비스 중지
             Log.i(TAG, "🛑 5단계: 모든 추적 작업 중지 시작")
@@ -446,7 +447,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             if (routeId == null || busNo.isBlank() || stationName.isBlank()) {
                 Log.e(TAG, "$action Aborted: Missing required info")
-                stopTrackingIfIdle()
+                trackingManager.stopTrackingIfIdle()
                 return START_NOT_STICKY
             }
 
@@ -469,7 +470,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                         startTracking(routeId, fixedStationId, stationName, busNo)
                     } else {
                         Log.e(TAG, "stationId 보정 실패. 추적 불가: routeId=$routeId, busNo=$busNo, stationName=$stationName")
-                        stopTrackingIfIdle()
+                        trackingManager.stopTrackingIfIdle()
                     }
                 }
                 return START_NOT_STICKY
@@ -569,7 +570,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             }
             // [AUTO ALARM 실시간 정보 즉시 갱신] autoAlarmTask 등 자동알람 진입점에서 실시간 정보 즉시 fetch
             if (!routeId.isBlank() && !resolvedStationId.isNullOrBlank() && stationName.isNotBlank()) {
-                updateBusInfo(routeId, resolvedStationId, stationName)
+                trackingManager.updateBusInfo(routeId, resolvedStationId, stationName)
             }
         }
         ServiceCommand.StartAutoAlarmLightweight -> {
@@ -624,7 +625,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             // Flutter에 취소 이벤트 전달
             try {
-                sendAllCancellationBroadcast()
+                trackingManager.sendAllCancellationBroadcast()
             } catch (_: Exception) { }
 
             stopAllBusTracking()
@@ -752,87 +753,11 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
         Log.d(TAG, "✅ 경량화된 백업 타이머 시작됨")
     }
-    // 버스 업데이트 함수 개선
-    private fun updateBusInfo(routeId: String, stationId: String, stationName: String) {
-        try {
-            serviceScope.launch {
-                try {
-                    val jsonString = busApiService.getStationInfo(stationId)
-                    val busInfoList = parseJsonBusArrivals(jsonString, routeId)
+    // updateBusInfo/checkNextBusAndNotify/checkArrivalAndNotify/updateTrackingInfoFromFlutter는
+    // BusAlertTrackingManager로 이관 (2026-07-28, 1b-3).
 
-                    // 운행종료가 아닌 버스 중에서 첫 번째 선택
-                    val firstBus = busInfoList.firstOrNull { bus ->
-                        !bus.isOutOfService &&
-                        !bus.estimatedTime.contains("운행종료") &&
-                        bus.estimatedTime != "-"
-                    }
-
-                    Log.d(TAG, "🔍 [updateBusInfo] 버스 목록: ${busInfoList.size}개, 유효한 버스: ${firstBus != null}")
-                    busInfoList.forEachIndexed { index, bus ->
-                        Log.d(TAG, "  [$index] ${bus.busNumber}: ${bus.estimatedTime} (운행종료: ${bus.isOutOfService})")
-                    }
-                    val trackingInfo = activeTrackings[routeId]
-
-                    if (trackingInfo != null) {
-                        if (firstBus != null) {
-                            trackingInfo.lastBusInfo = firstBus
-                            trackingInfo.consecutiveErrors = 0
-                            trackingInfo.lastUpdateTime = System.currentTimeMillis()
-
-                            val remainingMinutes = firstBus.getRemainingMinutes()
-
-                            // 실시간 정보 로깅
-                            Log.d(TAG, "🔄 버스 정보 업데이트: ${trackingInfo.busNo}번 버스, ${remainingMinutes}분 후 도착 예정, 현재 위치: ${firstBus.currentStation}")
-
-                            // 노티피케이션 업데이트
-                            try {
-                                notificationUpdater.showOngoingBusTracking(
-                                    busNo = trackingInfo.busNo,
-                                    stationName = stationName,
-                                    remainingMinutes = remainingMinutes,
-                                    currentStation = firstBus.currentStation,
-                                    isUpdate = true,
-                                    notificationId = ONGOING_NOTIFICATION_ID,
-                                    routeId = routeId,
-                                    allBusesSummary = null
-                                )
-                                updateForegroundNotification()
-                                Log.d(TAG, "✅ 노티피케이션 업데이트 완료: ${trackingInfo.busNo}번")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ 노티피케이션 업데이트 실패: ${e.message}", e)
-                                // 실패 시 백업 방법으로 노티피케이션 업데이트
-                                updateForegroundNotification()
-                            }
-
-                            // 도착 임박 체크
-                            checkArrivalAndNotify(trackingInfo, firstBus)
-                        } else {
-                            trackingInfo.consecutiveErrors++
-                            Log.w(TAG, "⚠️ 버스 정보 없음 (${trackingInfo.consecutiveErrors}번째): ${trackingInfo.busNo}번 (lastBusInfo 기존 값 유지)")
-
-                            if (trackingInfo.consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                                Log.e(TAG, "❌ 연속 오류 한도 초과로 추적 중단: ${trackingInfo.busNo}번")
-                                stopTrackingForRoute(routeId, cancelNotification = true)
-                            } else {
-                                // 정보가 없어도 노티피케이션은 업데이트
-                                updateForegroundNotification()
-                            }
-                        }
-                        // [추가] 실시간 정보 fetch 후 알림 강제 갱신
-                        updateForegroundNotification()
-                    }
-                } catch(e: Exception) {
-                    Log.e(TAG, "버스 정보 업데이트 코루틴 오류: ${e.message}", e)
-                    // 오류 발생 시에도 노티피케이션 업데이트 시도
-                    updateForegroundNotification()
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "버스 정보 업데이트 오류: ${e.message}", e)
-        }
-    }
-
-    // Flutter에서 버스 정보 업데이트 수신 (공개 함수)
+    // Flutter에서 버스 정보 업데이트 수신 (공개 함수) — BusAlertTrackingManager로 이관
+    // (2026-07-28, 1b-3). Public 시그니처는 BusApiChannelHandler가 호출하므로 유지.
     fun updateBusInfoFromFlutter(
         routeId: String,
         busNo: String,
@@ -842,35 +767,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         estimatedTime: String?,
         isLowFloor: Boolean
     ) {
-        try {
-            Log.d(TAG, "🔄 Flutter에서 버스 정보 업데이트 수신: $busNo, $stationName, ${remainingMinutes}분")
-            
-            // 추적 정보가 없으면 무시
-            val trackingInfo = activeTrackings[routeId]
-            if (trackingInfo == null) {
-                Log.w(TAG, "⚠️ 추적 정보 없음 (routeId: $routeId). 업데이트 무시")
-                return
-            }
-            
-            // BusInfo 업데이트
-            val updatedBusInfo = BusInfo(
-                currentStation = currentStation ?: "정보 없음",
-                estimatedTime = estimatedTime ?: "${remainingMinutes}분",
-                remainingStops = trackingInfo.lastBusInfo?.remainingStops ?: "0",
-                busNumber = busNo,
-                isLowFloor = isLowFloor
-            )
-            
-            trackingInfo.lastBusInfo = updatedBusInfo
-            trackingInfo.consecutiveErrors = 0 // 성공적으로 업데이트되었으므로 오류 카운트 리셋
-            
-            // 노티피케이션 즉시 갱신
-            updateForegroundNotification()
-            
-            Log.d(TAG, "✅ Flutter 버스 정보 업데이트 완료: $busNo, 현재 위치: ${updatedBusInfo.currentStation}, 예상 시간: ${updatedBusInfo.estimatedTime}")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Flutter 버스 정보 업데이트 오류: ${e.message}", e)
-        }
+        trackingManager.updateBusInfoFromFlutter(routeId, busNo, stationName, remainingMinutes, currentStation, estimatedTime, isLowFloor)
     }
 
     fun initialize() {
@@ -887,7 +784,6 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             serviceScope,
             activeTrackings,
             monitoringJobs,
-            ::updateBusInfo,
             { b, s, r, c, routeId, summary ->
                 notificationUpdater.showOngoingBusTracking(
                     busNo = b,
@@ -901,8 +797,6 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 )
             },
             ::updateForegroundNotification,
-            ::checkArrivalAndNotify,
-            ::checkNextBusAndNotify,
             ttsController,
             { useTextToSpeech },
             ARRIVAL_THRESHOLD_MINUTES,
@@ -920,15 +814,18 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             { isManuallyStoppedByUser },
             { isManuallyStoppedByUser = it },
             { lastManualStopTime = it },
+            { lastManualStopTime },
             { isAutoAlarmMode = it },
             { autoAlarmStartTime = it },
             { instance = null },
             { isInForeground },
             ::stopMonitoringTimer,
             ::stopTtsTracking,
-            ::sendAllCancellationBroadcast,
             ::checkAndStopServiceIfNeeded,
             AUTO_ALARM_NOTIFICATION_ID,
+            notificationHandler,
+            RESTART_PREVENTION_DURATION,
+            { alertOnArrivalOnly },
         )
         loadSettings()
         notificationHandler.createNotificationChannels()
@@ -1004,43 +901,6 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         autoAlarmNotifier.updateAutoAlarmBusInfo(busNo, stationName, routeId, stationId, remainingMinutes, currentStation)
     }
 
-    // [추가] 다음 버스로 전환되었는지 확인하고 TTS 안내
-    private fun checkNextBusAndNotify(trackingInfo: TrackingInfo, newBusInfo: BusInfo) {
-        val prevBusInfo = trackingInfo.lastBusInfo ?: return
-        
-        // 이전 정보가 '곧 도착'이거나 3분 이내였는데, 
-        // 새로운 정보가 7분 이상으로 늘어났다면 다음 버스로 간주
-        val prevMinutes = prevBusInfo.getRemainingMinutes()
-        val newMinutes = newBusInfo.getRemainingMinutes()
-        
-        // 유효한 시간 범위인지 확인
-        if (prevMinutes < 0 || newMinutes < 0) return
-
-        // 다음 버스 전환 조건:
-        // 1. 이전 버스가 3분 이내 또는 '곧 도착'
-        // 2. 새로운 버스가 7분 이상 남음
-        // 3. 두 시간 차이가 5분 이상 (일시적인 데이터 튀는 현상 방지)
-        if (prevMinutes <= 3 && newMinutes >= 7 && (newMinutes - prevMinutes) >= 5) {
-            Log.i(TAG, "🚌 [다음 버스 감지] 이전: ${prevMinutes}분, 현재: ${newMinutes}분 - TTS 안내 시도")
-            
-            // 중복 안내 방지 (이미 안내했으면 스킵)
-            if (trackingInfo.lastTtsAnnouncedMinutes == newMinutes) {
-                return
-            }
-
-            if (useTextToSpeech) {
-                val ttsMessage = "다음 버스, 약 ${newMinutes}분 후 도착"
-                val isReturnAlarm = trackingInfo.isAutoAlarm && !trackingInfo.isCommuteAlarm
-                ttsController.speakTts(ttsMessage, earphoneOnly = isReturnAlarm, forceSpeaker = trackingInfo.isCommuteAlarm)
-                Log.d(TAG, "[TTS] 다음 버스 안내: $ttsMessage")
-
-                // 안내 상태 업데이트
-                trackingInfo.lastTtsAnnouncedMinutes = newMinutes
-                trackingInfo.lastTtsAnnouncedStation = newBusInfo.currentStation
-            }
-        }
-    }
-
     private fun checkAndStopServiceIfNeeded() {
         if (activeTrackings.isEmpty() && monitoredRoutes.isEmpty() && !isTtsTrackingActive) {
             Log.i(TAG, "Service idle. Requesting stop.")
@@ -1092,259 +952,25 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
     }
 
-    fun cancelOngoingTracking() {
-        Log.d(TAG, "cancelOngoingTracking called (ID: $ONGOING_NOTIFICATION_ID)")
-        try {
-            // 1. 포그라운드 서비스 먼저 중지 (노티피케이션 제거를 위해)
-            if (isInForeground) {
-                Log.d(TAG, "Service is in foreground, calling stopForeground(STOP_FOREGROUND_REMOVE).")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                isInForeground = false
-            }
-
-            // 2. 모든 알림 직접 취소
-            try {
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancelAll()
-                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
-                Log.d(TAG, "모든 알림 직접 취소 완료 (cancelOngoingTracking)")
-            } catch (e: Exception) {
-                Log.e(TAG, "알림 취소 오류 (cancelOngoingTracking): ${e.message}")
-            }
-
-            // 4. 모든 추적 작업 중지
-            monitoringJobs.values.forEach { it.cancel() }
-            monitoringJobs.clear()
-            activeTrackings.clear()
-            monitoredRoutes.clear()
-
-            // 5. Flutter 측에 알림 취소 이벤트 전송 시도
-            try {
-                val allCancelIntent = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED")
-                sendBroadcast(allCancelIntent)
-                Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
-            } catch (e: Exception) {
-                Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
-            }
-
-            // 6. 서비스 중지 요청
-            stopSelf()
-            Log.d(TAG, "Service stop requested from cancelOngoingTracking.")
-        } catch (e: Exception) {
-            Log.e(TAG, "🚌 Ongoing notification cancellation/Foreground stop error: ${e.message}", e)
-            try {
-                // 오류 발생 시 강제 중지 시도
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancelAll()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                isInForeground = false
-                stopSelf()
-                Log.d(TAG, "Force stop attempted after error.")
-            } catch (ex: Exception) {
-                Log.e(TAG, "Additional error when trying to stop service: ${ex.message}", ex)
-            }
-        }
-    }
-
-    
+    fun cancelOngoingTracking() = trackingManager.cancelOngoingTracking()
 
     // 알림 취소 (MainActivity 호출 호환)
-    fun cancelNotification(id: Int) {
-        Log.d(TAG, "알림 취소 요청: ID=$id")
-        try {
-            NotificationManagerCompat.from(this).cancel(id)
-            if (id == ONGOING_NOTIFICATION_ID && activeTrackings.isEmpty()) {
-                if (isInForeground) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    isInForeground = false
-                }
-                checkAndStopServiceIfNeeded()
-            }
-            Log.d(TAG, "✅ 알림 취소 완료: ID=$id")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ 알림 취소 오류: ID=$id, ${e.message}")
-        }
-    }
+    fun cancelNotification(id: Int) = trackingManager.cancelNotification(id)
 
     // 모든 알림 취소
-    fun cancelAllNotifications() {
-        Log.i(TAG, "모든 알림 취소 요청")
-        try {
-            // 모든 알림 취소 및 추적 중지 로직을 stopAllBusTracking()으로 위임
-            stopAllBusTracking()
-            Log.d(TAG, "✅ 모든 알림 취소 및 추적 중지 완료 (cancelAllNotifications)")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ 모든 알림 취소 오류 (cancelAllNotifications): ${e.message}")
-        }
-    }
+    fun cancelAllNotifications() = trackingManager.cancelAllNotifications()
 
-    private fun stopTrackingIfIdle() {
-        serviceScope.launch {
-            checkAndStopServiceIfNeeded()
-        }
-    }
-
-    // sendCancellationBroadcast는 BusAlertTrackingManager로 이관 (2026-07-25).
-    // 호출부가 stopSpecificTracking/stopAllTracking뿐이라 함께 옮겼다.
-    private fun sendAllCancellationBroadcast() {
-        try {
-            val allCancelBroadcast = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED").apply {
-                flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
-            }
-            sendBroadcast(allCancelBroadcast)
-            Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
-
-            // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
-            try {
-                if (applicationContext is MainActivity) {
-                    (applicationContext as MainActivity)._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
-                    Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Flutter 메서드 채널 전송 오류: ${e.message}")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "모든 알람 취소 이벤트 전송 오류: ${e.message}")
-        }
-    }
-
-    private fun checkAndStopService() {
-        if (activeTrackings.isEmpty() && monitoredRoutes.isEmpty() && !isTtsTrackingActive) {
-            Log.i(TAG, "Service idle. Requesting stop.")
-            Handler(Looper.getMainLooper()).postDelayed({
-                if (activeTrackings.isEmpty() && monitoredRoutes.isEmpty() && !isTtsTrackingActive) {
-                    stopSelf()
-                    Log.i(TAG, "Service stopped after delay check.")
-                }
-            }, 1000) // 1초 후 다시 확인
-        }
-    }
+    // cancelOngoingTracking/cancelNotification/cancelAllNotifications/stopTrackingIfIdle/
+    // sendAllCancellationBroadcast는 BusAlertTrackingManager로 이관 (2026-07-28, 1b-2).
+    // checkAndStopService()는 저장소 전체 참조 0건(private, dead code)이라 이관 대신 삭제.
 
     private val hasNotifiedTts = HashSet<String>()
     private val hasNotifiedArrival = HashSet<String>()
 
-    private fun checkArrivalAndNotify(trackingInfo: TrackingInfo, busInfo: BusInfo) {
-        // Check if the bus is out of service
-        if (busInfo.isOutOfService || busInfo.estimatedTime == "운행종료") {
-            Log.d(TAG, "버스 운행종료 상태입니다. 알림을 표시하지 않습니다: ${trackingInfo.busNo}번")
-            return
-        }
+    // checkArrivalAndNotify는 BusAlertTrackingManager로 이관 (2026-07-28, 1b-3).
 
-        // Log current time but don't restrict notifications
-        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        if (currentHour < 5 || currentHour >= 23) {
-            Log.w(TAG, "⚠️ 현재 버스 운행 시간이 아닙니다 (현재 시간: ${currentHour}시). 테스트 목적으로 계속 진행합니다.")
-        }
-
-        val remainingMinutes = when {
-            busInfo.estimatedTime == "곧 도착" -> 0
-            busInfo.estimatedTime == "운행종료" -> -1
-            busInfo.estimatedTime.contains("분") -> {
-                busInfo.estimatedTime.filter { it.isDigit() }.toIntOrNull() ?: -1
-            }
-            busInfo.estimatedTime == "전" -> 0
-            busInfo.estimatedTime == "도착" -> 0
-            busInfo.estimatedTime == "출발" -> 0
-            busInfo.estimatedTime.isBlank() || busInfo.estimatedTime == "정보 없음" -> -1
-            else -> -1 // 기타 예상치 못한 값은 -1(정보 없음)로 처리
-        }
-
-        val isWithinThreshold = when {
-            !trackingInfo.isAutoAlarm ->
-                remainingMinutes >= 0 && remainingMinutes <= ARRIVAL_THRESHOLD_MINUTES
-            alertOnArrivalOnly -> {
-                val stops = busInfo.remainingStops.toIntOrNull() ?: 99
-                // "전"/"도착"/"출발" 같은 상태 문자열이 remainingMinutes=0으로 잘못 매핑되는 것을 방지
-                // 시간 기반 조건은 실제 분 단위 데이터("N분", "곧 도착")에만 적용
-                val isTimeBasedClose = busInfo.estimatedTime == "곧 도착" ||
-                    (busInfo.estimatedTime.contains("분") && remainingMinutes in 0..3)
-                stops < 3 || isTimeBasedClose
-            }
-            else ->
-                // 토글 OFF: 설정된 알람 시각 이후부터 버스 정보가 있으면 발화 (TrackingInfo별 독립 시각)
-                remainingMinutes >= 0 && System.currentTimeMillis() >= trackingInfo.exactAlarmTriggerTime
-        }
-
-        if (isWithinThreshold) {
-            // 시간 변경 또는 버스 위치(정류장) 변경 시 TTS 발화
-            val minutesChanged = trackingInfo.lastNotifiedMinutes != remainingMinutes
-            val stationChanged = busInfo.currentStation.isNotBlank() &&
-                trackingInfo.lastTtsAnnouncedStation != busInfo.currentStation
-            val shouldNotifyTts = minutesChanged || stationChanged
-            if (shouldNotifyTts) {
-                val forceSpeaker = trackingInfo.isCommuteAlarm
-                
-                // 퇴근 알람: 이어폰 연결 시 이어폰으로만 TTS, 미연결 시 노티알림만
-                val isReturnAlarm = trackingInfo.isAutoAlarm && !trackingInfo.isCommuteAlarm
-                
-                if (isReturnAlarm && !ttsController.isHeadsetConnected()) {
-                    // 퇴근 알람 + 이어폰 미연결: 노티알림만 (진동/TTS 없음)
-                    Log.d(TAG, "📵 퇴근 알람: 이어폰 미연결 → 노티알림만 (진동/TTS 없음)")
-                    trackingInfo.lastNotifiedMinutes = remainingMinutes
-                    trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
-                } else {
-                    try {
-                        // 자동알람은 이어폰 체크 우회 (단, 퇴근알람이면서 이어폰 연결 유무에 따른 분기는 위에서 처리됨)
-                        ttsController.startTtsServiceSpeak(
-                            busNo = trackingInfo.busNo,
-                            stationName = trackingInfo.stationName,
-                            routeId = trackingInfo.routeId,
-                            stationId = trackingInfo.stationId,
-                            remainingMinutes = remainingMinutes,
-                            forceSpeaker = forceSpeaker,
-                            currentStation = busInfo.currentStation,
-                            isAutoAlarm = trackingInfo.isAutoAlarm,
-                            isCommuteAlarm = trackingInfo.isCommuteAlarm
-                        )
-
-                        trackingInfo.lastNotifiedMinutes = remainingMinutes
-                        trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
-
-                        Log.d(
-                            TAG,
-                            "📢 TTS 발화: ${trackingInfo.busNo}번 버스, ${remainingMinutes}분 후 도착, 현재 위치: ${busInfo.currentStation} (시간변경=$minutesChanged, 위치변경=$stationChanged, forceSpeaker=$forceSpeaker)"
-                        )
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ TTS 발화 오류: ${e.message}", e)
-
-                        val message =
-                            "${trackingInfo.busNo}번 버스가 ${trackingInfo.stationName} 정류장에 곧 도착합니다."
-                        ttsController.speakTts(message, earphoneOnly = isReturnAlarm, forceSpeaker = forceSpeaker)
-
-                        trackingInfo.lastNotifiedMinutes = remainingMinutes
-                        trackingInfo.lastTtsAnnouncedStation = busInfo.currentStation
-                    }
-                }
-            }
-
-            // 자동알람인 경우 항상 도착 알림 (다음 버스 추적을 위해)
-            val shouldNotifyArrival = if (trackingInfo.isAutoAlarm) {
-                // 자동알람: 이전 알림 시간과 다르면 항상 알림
-                trackingInfo.lastNotifiedMinutes != remainingMinutes
-            } else {
-                // 일반 알람: 한 번만 알림
-                !hasNotifiedArrival.contains(trackingInfo.routeId)
-            }
-
-            if (shouldNotifyArrival) {
-                // [수정] 중복 노티피케이션 제거 요청으로 인해 sendAlertNotification 호출 제거
-                // notificationHandler.sendAlertNotification(...)
-
-                // 자동알람이 아닌 경우에만 hasNotifiedArrival에 추가 (중복 방지)
-                if (!trackingInfo.isAutoAlarm) {
-                    hasNotifiedArrival.add(trackingInfo.routeId)
-                }
-
-                Log.d(TAG, "📳 도착 임박 상태 감지: ${trackingInfo.busNo}번, ${trackingInfo.stationName} (자동알람: ${trackingInfo.isAutoAlarm}) - 별도 알림은 생성하지 않음")
-            }
-        } else if (trackingInfo.isAutoAlarm) {
-            // 자동알람인 경우 버스가 임계값 밖이면 알림 상태 초기화 (다음 버스를 위해)
-            trackingInfo.lastNotifiedMinutes = Int.MAX_VALUE
-            Log.d(TAG, "🔄 자동알람 상태 초기화: ${trackingInfo.busNo}번 버스가 임계값 밖 (${remainingMinutes}분)")
-        }
-    }
-
+    // BusAlertTrackingManager로 이관 (2026-07-28, 1b-3). Public 시그니처는
+    // BusTrackingChannelHandler가 호출하므로 유지.
     fun updateTrackingInfoFromFlutter(
         routeId: String,
         busNo: String,
@@ -1352,95 +978,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         remainingMinutes: Int,
         currentStation: String
     ) {
-        Log.d(TAG, "🔄 updateTrackingInfoFromFlutter 호출: $busNo, $stationName, ${remainingMinutes}분, 현재 위치: $currentStation")
-
-        try {
-            // 🛑 사용자 수동 중지 플래그 확인 (재시작 방지)
-            if (isManuallyStoppedByUser) {
-                val timeSinceStop = System.currentTimeMillis() - lastManualStopTime
-                if (timeSinceStop < RESTART_PREVENTION_DURATION) {
-                    Log.w(TAG, "🛑 User manually stopped ${timeSinceStop / 1000}sec ago - rejecting updateTrackingInfoFromFlutter: $busNo")
-                    return
-                } else {
-                    // 30초가 지났으면 플래그 해제
-                    isManuallyStoppedByUser = false
-                    lastManualStopTime = 0L
-                    Log.i(TAG, "✅ Native restart prevention period expired - allowing updateTrackingInfoFromFlutter: $busNo")
-                }
-            }
-
-            // 1. 추적 정보 업데이트 또는 생성
-            val info = activeTrackings[routeId] ?: TrackingInfo(
-                routeId = routeId,
-                stationName = stationName,
-                busNo = busNo,
-                stationId = ""
-            ).also {
-                activeTrackings[routeId] = it
-                Log.d(TAG, "✅ 새 추적 정보 생성: $busNo, $stationName")
-            }
-
-            // 2. 버스 정보 업데이트 (항상 최신 currentStation 반영)
-            // Check if the bus is out of service
-            val isOutOfService = remainingMinutes < 0 ||
-                                (info.lastBusInfo?.isOutOfService == true) ||
-                                (currentStation.contains("운행종료"))
-
-            val busInfo = BusInfo(
-                currentStation = currentStation,
-                estimatedTime = if (isOutOfService) "운행종료" else if (remainingMinutes <= 0) "곧 도착" else "${remainingMinutes}분",
-                remainingStops = info.lastBusInfo?.remainingStops ?: "0",
-                busNumber = busNo,
-                isLowFloor = info.lastBusInfo?.isLowFloor ?: false,
-                isOutOfService = isOutOfService
-            )
-            info.lastBusInfo = busInfo
-            info.lastUpdateTime = System.currentTimeMillis()
-
-            Log.d(TAG, "✅ 버스 정보 업데이트: $busNo, ${busInfo.estimatedTime}, 현재 위치: ${busInfo.currentStation}")
-
-            // 3. 알림 즉시 업데이트
-            updateForegroundNotification()
-            notificationUpdater.showOngoingBusTracking(
-                busNo = busNo,
-                stationName = stationName,
-                remainingMinutes = remainingMinutes,
-                currentStation = currentStation, // 최신 값으로 무조건 덮어쓰기
-                isUpdate = true,
-                notificationId = ONGOING_NOTIFICATION_ID,
-                allBusesSummary = null,
-                routeId = routeId
-            )
-
-            // 4. 메인 스레드에서 알림 강제 업데이트 (추가)
-            Handler(Looper.getMainLooper()).post {
-                try {
-                    val notification = notificationHandler.buildOngoingNotification(activeTrackings)
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
-                    Log.d(TAG, "✅ 메인 스레드에서 알림 강제 업데이트 완료: ${System.currentTimeMillis()}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ 메인 스레드 알림 업데이트 오류: ${e.message}", e)
-                }
-            }
-
-            // 5. 1초 후 다시 한번 업데이트 (지연 백업)
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    val notification = notificationHandler.buildOngoingNotification(activeTrackings)
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.notify(ONGOING_NOTIFICATION_ID, notification)
-                    Log.d(TAG, "✅ 지연 알림 업데이트 완료: ${System.currentTimeMillis()}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ 지연 알림 업데이트 오류: ${e.message}", e)
-                }
-            }, 1000)
-
-            Log.d(TAG, "✅ updateTrackingInfoFromFlutter 완료: $busNo, ${remainingMinutes}분")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ updateTrackingInfoFromFlutter 오류: ${e.message}", e)
-            updateForegroundNotification() // 오류 발생 시에도 알림 업데이트 시도
-        }
+        trackingManager.updateTrackingInfoFromFlutter(routeId, busNo, stationName, remainingMinutes, currentStation)
     }
 
     /**
@@ -1559,62 +1097,5 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // 이관 (2026-07-25).
 }
 
-class NotificationDismissReceiver : android.content.BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val notificationId = intent.getIntExtra("NOTIFICATION_ID", -1)
-        if (notificationId != -1) {
-            Log.d("NotificationDismiss", "🔔 Notification dismissed (ID: $notificationId)")
-        }
-    }
-}
-
-internal fun isSamsungOneUi(): Boolean {
-    return Build.MANUFACTURER.equals("samsung", ignoreCase = true)
-}
-
-fun getNotificationChannels(context: Context): List<NotificationChannel>? {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val notificationManager =
-            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager?
-        notificationManager?.notificationChannels
-    } else {
-        null
-    }
-}
-
-fun StationArrivalOutput.toMap(): Map<String, Any?> {
-    return mapOf(
-        "name" to name, "sub" to sub, "id" to id, "forward" to forward,
-        "bus" to bus.map { it.toMap() }
-    )
-}
-
-fun RouteStation.toMap(): Map<String, Any?> {
-    return mapOf(
-        "stationId" to stationId, "stationName" to stationName,
-        "sequenceNo" to sequenceNo, "direction" to direction
-    )
-}
-
-fun BusInfo.toMap(): Map<String, Any?> {
-    val isLowFloor = false
-    val isOutOfService = estimatedTime == "운행종료"
-    val remainingMinutes = when {
-        estimatedTime == "곧 도착" -> 0
-        estimatedTime == "운행종료" -> -1
-        estimatedTime.contains("분") -> estimatedTime.filter { it.isDigit() }.toIntOrNull() ?: Int.MAX_VALUE
-        else -> Int.MAX_VALUE
-    }
-    return mapOf(
-        "busNumber" to busNumber, "estimatedTime" to estimatedTime,
-        "currentStation" to currentStation, "isLowFloor" to isLowFloor,
-        "isOutOfService" to isOutOfService, "remainingMinutes" to remainingMinutes
-    )
-}
-
-fun StationArrivalOutput.BusInfo.toMap(): Map<String, Any?> {
-    return mapOf(
-        "busNumber" to busNumber, "currentStation" to currentStation,
-        "remainingStations" to remainingStations, "estimatedTime" to estimatedTime
-    )
-}
+// NotificationDismissReceiver / isSamsungOneUi / getNotificationChannels / toMap 확장 함수는
+// BusAlertModels.kt로 이관 (2026-07-28, 1b-1).

@@ -20,11 +20,15 @@
       목표는 못 미쳤으나 계획서에 명시된 4단계는 모두 verbatim 이동 + diff 대조로 완료됨.
       실기기 검증 필요 — devlog 2026-07-25 (2~4차) 참조)
 - [ ] 작업 1b: BusAlertService.kt 추가 축소 (1,620줄 → ~1,200줄 목표) — 세션 4개로
-      분할. 1b-1~1b-3만 끝내도 목표 달성 예상, 1b-4는 별도 판단 필요 (아래 참조)
-  - [ ] 1b-1: 하단 유틸/확장 함수를 별도 파일로 (가장 쉬움, ~55줄)
-  - [ ] 1b-2: 취소 로직을 BusAlertTrackingManager로 (중간, ~130줄)
-  - [ ] 1b-3: 도착 확인/추적정보 갱신 클러스터를 신규 협력 클래스로 (가장 큰 감소,
-        ~340줄, 실기기 검증 중요)
+      분할. 1b-1~3 완료로 목표 달성(1,101줄), 1b-4는 보류 (2026-07-28, 사용자 확인)
+  - [x] 1b-1: 하단 유틸/확장 함수를 별도 파일로 (가장 쉬움, ~55줄) — 2026-07-28
+        완료, 1,620→1,563줄 (devlog 2026-07-28 참조)
+  - [x] 1b-2: 취소 로직을 BusAlertTrackingManager로 (중간, ~130줄) — 2026-07-28
+        완료, 1,563→1,444줄 (devlog 2026-07-28 (2차) 참조)
+  - [x] 1b-3: 도착 확인/추적정보 갱신 클러스터를 신규 협력 클래스로 (가장 큰 감소,
+        ~340줄, 실기기 검증 중요) — 2026-07-28 완료, 1,444→1,101줄. 신규 클래스
+        대신 기존 `BusAlertTrackingManager` 확장(devlog 2026-07-28 (3차) 참조).
+        **실기기 검증 아직 미완**
   - [ ] 1b-4: onStartCommand 디스패치 본문 축소 (~390줄) — foreground 서비스 시작
         타이밍 직결이라 고위험. 1b-1~3 완료 후 목표를 이미 달성했으면 실기기
         스모크 없이는 손대지 않는 걸 권장 (아래 섹션 참조)
@@ -192,11 +196,16 @@ diff /tmp/old.txt /tmp/new.txt   # 함수 목록이면 grep -oE 'fun \w+' 등으
 | 블록 | 대략 위치 | 줄수 | 비고 |
 |---|---|---|---|
 | `onCreate`/`onStartCommand` | 148~643행 | ~495 | 서비스 시작·명령 디스패치. `onStartCommand` 본문만 ~390줄 |
-| `updateBusInfo`/`checkNextBusAndNotify`/`checkArrivalAndNotify`/`updateTrackingInfoFromFlutter` | 756~876, 1008~1044, 1227~1451행 | ~340 | 도착 확인·추적정보 갱신·TTS/알림 트리거 클러스터 |
-| `cancelOngoingTracking`/`cancelNotification`/`cancelAllNotifications`/`stopTrackingIfIdle`/`checkAndStopService` | 1095~1227행 | ~130 | 알림·타이머 취소 클러스터 |
-| 하단 top-level 유틸/확장 함수 + `NotificationDismissReceiver` | 1562~1620행 | ~55 | `isSamsungOneUi`, `getNotificationChannels`, `toMap()` 4개 — 서비스 상태 의존 없음 |
+| `updateBusInfo`/`updateBusInfoFromFlutter`/`checkNextBusAndNotify`/`checkArrivalAndNotify`/`updateTrackingInfoFromFlutter` | ~~756~876, 1008~1044, 1227~1451행~~ | ~~340~~ | ✅ 1b-3 완료 (2026-07-28) — `BusAlertTrackingManager.kt`로 이동(신규 파일 대신 기존 클래스 확장). 실기기 검증 아직 미완 |
+| `cancelOngoingTracking`/`cancelNotification`/`cancelAllNotifications`/`stopTrackingIfIdle`/`sendAllCancellationBroadcast` | ~~1095~1222행~~ | ~~130~~ | ✅ 1b-2 완료 (2026-07-28) — `BusAlertTrackingManager.kt`로 이동. `checkAndStopService`는 죽은 코드로 판명돼 삭제 |
+| 하단 top-level 유틸/확장 함수 + `NotificationDismissReceiver` | ~~1562~1620행~~ | ~~55~~ | ✅ 1b-1 완료 (2026-07-28) — `BusAlertModels.kt`로 이동 |
 
-### 1b-1: 하단 유틸/확장 함수 분리 (가장 쉬움, ~55줄)
+### 1b-1: 하단 유틸/확장 함수 분리 (가장 쉬움, ~55줄) — 완료 (2026-07-28)
+
+> ✅ `BusAlertModels.kt` 신규 생성(69줄)으로 verbatim 이동 완료. `BusAlertService.kt`:
+> 1,620 → 1,563줄. `getNotificationChannels` 호출부는 저장소 전체에 정의부 외
+> 0건이었다(계획서가 우려한 "다른 파일에서 호출" 케이스는 실제로 없었음).
+> 상세는 devlog 2026-07-28 참조.
 
 **읽기 순서**: 이 섹션 → `BusAlertService.kt` 1562~1620행만.
 
@@ -210,7 +219,13 @@ diff /tmp/old.txt /tmp/new.txt   # 함수 목록이면 grep -oE 'fun \w+' 등으
 - 완료 기준: `BusAlertService.kt` ≤ ~1,565줄, 컴파일 통과, `git show HEAD:...`
   diff 대조로 이동 외 변경 없음 확인.
 
-### 1b-2: 취소 로직 → BusAlertTrackingManager (중간, ~130줄)
+### 1b-2: 취소 로직 → BusAlertTrackingManager (중간, ~130줄) — 완료 (2026-07-28)
+
+> ✅ 5개 함수 모두 verbatim 이동, 새 콜백 0개(기존 생성자 파라미터로 충분했음).
+> `BusAlertService.kt`: 1,563 → 1,444줄. `checkAndStopService()`는 grep으로
+> 저장소 전체 참조 0건(private, dead code)임을 확인해 이관 대신 삭제 — 계획서의
+> "대상" 목록에 있었지만 공통 원칙의 죽은 코드 삭제 기준이 우선했다. 상세는
+> devlog 2026-07-28 (2차) 참조.
 
 **읽기 순서**: 이 섹션 → 작업 1의 "2단계" 서술(콜백 주입 패턴 참고) →
 `BusAlertService.kt`의 `cancelOngoingTracking`(1095행)부터 `checkAndStopService`
@@ -229,7 +244,17 @@ diff /tmp/old.txt /tmp/new.txt   # 함수 목록이면 grep -oE 'fun \w+' 등으
   시그니처를 유지한 채 위임 스텁만 남긴다.
 - 완료 기준: `BusAlertService.kt` ≤ ~1,435줄, 컴파일 통과, diff 대조 완료.
 
-### 1b-3: 도착 확인/추적정보 갱신 클러스터 → 신규 협력 클래스 (가장 큰 감소, ~340줄)
+### 1b-3: 도착 확인/추적정보 갱신 클러스터 → 신규 협력 클래스 (가장 큰 감소, ~340줄) — 완료 (2026-07-28)
+
+> ✅ 5개 함수 모두 verbatim 이동. **신규 파일이 아니라 `BusAlertTrackingManager`를
+> 확장** — 이동 대상 3개(`updateBusInfo`/`checkArrivalAndNotify`/
+> `checkNextBusAndNotify`)가 이미 그 클래스의 추적 루프에서 콜백으로 호출되고
+> 있어서 겹침이 명백했다. 콜백 3개 제거(셀프 호출로 전환) + 4개 신설
+> (`notificationHandler`, `restartPreventionDurationMs`,
+> `lastManualStopTimeProvider`, `alertOnArrivalOnlyProvider`) = 순증가 1개.
+> `BusAlertService.kt`: 1,444 → 1,101줄. **실기기 검증은 아직 미완** — 사용자
+> 지시로 오케스트레이터가 adb로 이어서 확인하기로 하고 이 세션은 코드 이동만
+> 완료. 상세는 devlog 2026-07-28 (3차) 참조.
 
 **읽기 순서**: 이 섹션 → `docs/topics/tts-audio.md`(TTS 출력 정책, 이 클러스터가
 TTS를 트리거함) → `BusAlertService.kt`의 `updateBusInfo`(756행)부터
