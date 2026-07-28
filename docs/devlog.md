@@ -2004,3 +2004,97 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
 - `gradle.bat --project-dir android :app:compileDebugKotlin` 통과.
 - `git show HEAD:...` 원본과 신규 위치를 `diff`로 대조해 의도한 치환 외
   변경이 없음을 확인 (위 "수정" 항목의 치환 목록과 diff 결과가 일치).
+
+## 2026-07-25 (3차): BusAlertService.kt 분리 — 작업 1 완료 (2단계 나머지 + 3~4단계)
+
+사용자가 이전 세션의 진행분(1~2단계 일부)을 main에 머지·컴파일 확인한 뒤, 실기기
+검증은 오케스트레이터가 adb로 별도 진행하기로 하고 이 세션에서 나머지 단계를 계속
+진행하도록 요청했다. `docs/refactoring-plan.md` 작업 1의 2단계 나머지
+(`stopSpecificTracking`/`stopAllTracking`)와 3~4단계(자동알람 경량 모드, 알림 조립)를
+모두 완료했다. 커밋 3개, 매 단계 컴파일 + `git show HEAD:...` diff 대조로 verbatim
+이동만 있었음을 확인했다.
+
+### 2단계 나머지: stopSpecificTracking/stopAllTracking → BusAlertTrackingManager
+- 두 함수 모두 **동기 함수**(코루틴을 스폰하지 않음)라는 걸 실제로 읽고 확인 —
+  이전 세션에서 우려했던 코루틴 스코프 소유권 문제는 애초에 해당 없었다.
+- `BusAlertTrackingManager` 생성자에 `isServiceActive`/`isManuallyStoppedByUser`
+  등 서비스 라이프사이클 상태의 getter/setter 콜백 15개, `cachedBusInfo`,
+  `autoAlarmNotificationId`를 추가했다.
+- `sendCancellationBroadcast`(+ 백업 캐시 `sentCancellationEvents`/`eventTimeouts`)는
+  호출부가 이 두 함수뿐이라 (grep 확인) 같이 이관 — 안 옮기면 죽은 코드로 남을
+  뻔했다.
+- 두 함수 모두 `private`였고 외부(다른 파일) 호출부가 없어 public 위임 스텁 없이
+  호출부(`onStartCommand` 디스패치 2곳, `stopBusTracking`/`stopAllBusTracking`
+  래퍼, `onDestroy`)를 `trackingManager.stopX()`로 직접 바꿨다.
+- `BusAlertService.kt`: 2,430 → 2,021줄.
+
+### 3단계: 자동알람 경량 모드 → BusAlertAutoAlarmNotifier
+- `BusAlertAutoAlarmNotifier`는 이미 `service: BusAlertService` 전체 참조를 갖고
+  있었다(콜백 주입이 아님) — `service.isInForeground`/`service.serviceScope`를
+  이미 직접 읽고 쓰는 걸 확인하고 같은 패턴을 따랐다.
+- 필요한 `private` 멤버 18개(`mainHandler`, `notificationHandler`,
+  `ttsController`, `monitoringJobs`, `activeTrackings`, `pendingAutoAlarms`,
+  `monitoredRoutes`, `cachedBusInfo`, `autoAlarmTimeoutRunnable`,
+  `isAutoAlarmMode`, `autoAlarmStartTime`, `autoAlarmTimeoutMs`,
+  `alarmSoundPlayer`, `currentAutoAlarmBusNo/StationName/RouteId`,
+  `startTracking()`, `updateForegroundNotification()`)를 `internal`로 넓혔다.
+- **함정**: 이동한 함수들의 `Log.d(TAG, ...)`가 원래 `BusAlertService`의
+  `TAG="BusAlertService"`를 가리켰는데, `BusAlertAutoAlarmNotifier`는 자기 TAG가
+  `"BusAlertAutoAlarmNotifier"`다. 그대로 옮기면 실기기 logcat 필터링이 조용히
+  깨질 뻔했다 — 리터럴 `"BusAlertService"`로 치환해 원래 태그를 보존했다.
+- `updateAutoAlarmBusInfo`는 저장소 전체 grep으로 외부 호출부가 0건임을 확인했지만
+  `public`이라 위임 스텁을 남겼다 (계획서의 죽은 코드 삭제 기준은 `private`
+  한정이라 삭제하지 않음).
+- `BusAlertService.kt`: 2,021 → 1,803줄.
+
+### 4단계: 알림 조립 → BusAlertNotificationUpdater
+- `BusAlertNotificationUpdater`의 생성자 타입을 `service: Service` →
+  `service: BusAlertService`로 넓혔다(호출부는 이미 `this`를 넘기고 있어서
+  호출부 수정 0건). 3단계와 같은 "전체 참조 + internal 멤버" 패턴을 재사용.
+- `resolveStationIdIfNeeded`(다른 호출부가 남아 있어 이관하지 않고 `internal`로만
+  전환)와 `CHANNEL_ID_ALERT`도 `internal`로 넓혔다.
+- `showOngoingBusTracking`/`updateTrackingNotification`은 `BusTrackingChannelHandler`가
+  직접 호출하므로 public 위임 스텁 유지. `showBusArrivingSoon`은 외부 호출부
+  0건이지만(grep) public이라 스텁 유지.
+- `BusAlertService.kt` 내부 호출부 7곳(`onCreate`/`initialize`의 `showOngoing`
+  콜백 2곳, 자동알람/도착 확인 알림 경로, `showNotification` 오버로드)을
+  `notificationUpdater.showOngoingBusTracking(...)`로 갱신.
+- `BusAlertService.kt`: 1,803 → 1,620줄.
+
+### 패턴 정리 (다음에 비슷한 이동을 할 때)
+2단계(콜백 주입)보다 3~4단계(협력 클래스가 `service: BusAlertService` 전체 참조를
+갖고 필요한 멤버를 `internal`로 넓히는 방식)가 diff가 훨씬 작고 실수 여지가
+적었다. **다음 유사 이동은 콜백 주입보다 이 패턴을 먼저 고려할 것.**
+
+### 최종 결과
+`BusAlertService.kt`: 2,535 → 1,620줄. 계획서 목표였던 ~1,200줄에는 못 미쳤지만
+4단계 모두 완료. 남은 1,620줄은 대부분 서비스 라이프사이클 자체와 여러 협력
+클래스를 넘나드는 조정 로직이라, 더 줄이려면 이 작업의 범위를 넘어서는 새로운
+설계 판단이 필요하다 — 별도 작업으로 백로그에 남긴다.
+
+### 실기기(adb) 검증 필요 항목 — 오케스트레이터가 이어서 확인
+아래는 코드 검토·컴파일·diff 대조만으로는 확신할 수 없는, 실기기에서 반드시
+확인해야 하는 시나리오다 (각 커밋 메시지에도 동일 내용 기록):
+
+- **수동 알람 중지** (`stopSpecificTracking`): 알람 리스트 삭제 경로와
+  리스트 유지(TTS만 중지) 경로 모두, 올바른 알림 ID가 취소되고 마지막 추적이면
+  포그라운드 서비스가 실제로 중지되는지.
+- **전체 알람 중지** (`stopAllTracking`): UI에서 호출, `ACTION_STOP_TRACKING`
+  브로드캐스트, 앱 스와이프 종료(`onDestroy`) 세 경로 모두 알림/WorkManager
+  작업이 완전히 정리되고 서비스가 고아 포그라운드 서비스로 남지 않는지.
+- **자동알람 시작** (토글 기반 + Flutter 트리거 양쪽): 5초 제한 안에 포그라운드
+  서비스가 실제로 시작되는지, 공휴일 게이트/TTS-vs-사운드 분기가 정상 동작하는지.
+- **자동알람 타임아웃**: `mainHandler.postDelayed`로 예약된 타임아웃 Runnable이
+  설정된 시간 후 실제로 발화해 알람을 정리하는지.
+- **자동알람 중복 트리거 방지** (`pendingAutoAlarms`): 같은 노선을 짧은 간격으로
+  두 번 트리거해도 중복 시작되지 않는지.
+- **자동알람 중지** (수동/타임아웃/공휴일 감지 3가지 경로): 알림 취소, 추적 맵
+  정리, 다른 추적이 없으면 포그라운드 서비스가 idle로 전환되는지.
+- **알림 렌더링**: 수동/자동 알람 모두 버스 번호·정류장·ETA가 올바르게 표시되고,
+  ETA/위치 갱신 시 알림이 새로 생기지 않고 같은 알림이 갱신되는지.
+- **stationId 보정 재시도 경로** (`effectiveStationId`가 비어있거나 짧을 때):
+  보정 후 알림이 실제로 갱신되는지 (조용히 누락되지 않는지).
+- **1초 후 백업 `notify()`**: 알림이 눈에 띄게 깜빡이지 않으면서 안전망으로
+  동작하는지.
+- **알림에서 취소 탭 연타**: `sentCancellationEvents`/`eventTimeouts`(이동됨)
+  기반 중복 방지가 여전히 중복 취소 이벤트를 막는지.

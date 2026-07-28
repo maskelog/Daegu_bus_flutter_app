@@ -1,7 +1,7 @@
 # Live Update 알림 (Android 16 / Samsung Now Bar)
 
 > 이 문서는 **현재 상태**를 서술한다. 변경 이력·시행착오의 전체 맥락은 [devlog.md](../devlog.md)의 해당 날짜 참조.
-> 마지막 갱신: 2026-07-13 (Android 16 / One UI 8 실기기 검증 반영)
+> 마지막 갱신: 2026-07-25 (BusAlertService.kt 분리 반영)
 
 ## 개요
 
@@ -11,7 +11,11 @@ Samsung One UI Now Bar로 승격시켜 실시간 도착 정보를 표시한다.
 ## 현행 아키텍처
 
 - **알림 생성**: `android/app/src/main/kotlin/com/devground/daegubus/utils/NotificationHandler.kt`
-- **추적/갱신**: `services/BusAlertService.kt` (조정 역할) + `BusAlertNotificationUpdater.kt`, `BusAlertTrackingManager.kt`
+- **추적/갱신**: `services/BusAlertService.kt`는 조정 역할만 하고, 실제 알림 조립·발화는
+  `BusAlertNotificationUpdater.kt`(`showOngoingBusTracking`/`updateTrackingNotification`/
+  `showBusArrivingSoon`), 추적 루프·중지는 `BusAlertTrackingManager.kt`, 자동알람 경량 모드는
+  `BusAlertAutoAlarmNotifier.kt`가 담당한다 (2026-07-25 분리, devlog 해당 날짜 참조).
+  `BusAlertService`의 관련 public 메서드는 대부분 이 협력 클래스로의 위임 스텁이다.
 - **빌더**: `NotificationCompat.Builder` + `NotificationCompat.ProgressStyle` — **직접 API 호출** (Reflection 아님)
 - **데이터 흐름**: Flutter가 단일 진실 공급원. Flutter에서 버스 정보를 fetch할 때마다
   `updateBusInfo` 메서드 채널로 Native에 전달 → 알림 즉시 갱신 (2026-02-05 결정)
