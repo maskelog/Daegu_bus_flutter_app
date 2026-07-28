@@ -2442,3 +2442,41 @@ adb -s R3CM70K2YZD shell dumpsys activity services com.devground.daegubus
 adb -s R3CM70K2YZD shell dumpsys notification --noredact
 adb -s R3CM70K2YZD logcat -d | grep -E "BusAlertService|TTSService"
 ```
+
+## 2026-07-28 (11차): 현재 상황 정리
+
+### 완료된 것
+- **지도 CTA 정리 + edge-to-edge 대응**: 2026-07-24 커밋 완료, 2026-07-25
+  sideload 실기기 검증 완료(도착정보 카드·홈 전환·edge-to-edge 렌더링 정상).
+- **BusAlertService.kt 리팩토링**: 작업 1(4단계) + 1b-1~1b-3 완료.
+  2,535줄 → 1,101줄(목표 ~1,200줄 이미 달성). 1b-4(onStartCommand 축소)는
+  고위험·불필요 판단으로 보류 확정(2026-07-28, `refactoring-plan.md` 참조).
+  개별 시나리오(수동 알람 시작/중지, 전체 중지·취소 연타, 자동알람 시작·
+  도착임박 TTS·중지)는 실기기로 검증됨.
+- **TTSService REPEAT_TTS_ALERT 잔류 버그**: `BusAlertService.stopTtsTracking()`이
+  `TTSService`에 정지 신호를 안 보내던 미완성 스텁이었음을 코드로 확인하고
+  수정, 실기기에서 자연 재현된 4회 사이클 전부로 정상 종료를 확인해 완료
+  처리(2026-07-28 (8~10차)).
+
+### 진행 중 / 배포 대기
+- **`1.0.4+66`**: 지도 CTA 단일 카드화 + TTSService 수정을 모두 포함한 로컬
+  릴리스 APK가 Note10+(`R3CM70K2YZD`)에 sideload로 반영돼 있다. **Play
+  Console 업로드·배포는 아직 안 함** — 이게 남은 것 중 유일하게 "우선순위
+  높음"인 항목이다.
+
+### 미해결 (`docs/topics/follow-up-status.md` 참조)
+- **자동알람 반복 재시작 루프**(신규, 원인 미확인): ~60~62초 주기로
+  `ACTION_STOP_TRACKING`이 자체 발생해 자동알람이 재시작되는 패턴을
+  TTSService 검증 중 우연히 발견. 트리거 주체(Flutter 타이머 추정) 미특정.
+- **자동알람 타임아웃/중복 트리거 방지(`pendingAutoAlarms`)/stationId 보정**:
+  1b-3 실기기 검증에서 여전히 미확인 — 위 반복 재시작 루프와 연관 가능성.
+- **Android SDK 도구 버전 불일치 경고**: 우선순위 낮음, 재발 여부만 다음
+  빌드에서 확인하면 됨.
+
+### 작업 트리 상태
+- `git status` 깨끗함(커밋 필요한 변경 없음). `scripts/` 디렉터리만 미추적
+  상태로 남아있는데, 이번 작업 범위(지도 CTA/edge-to-edge/TTSService 수정)
+  밖의 Orca 자동화 설정이라 의도적으로 건드리지 않았다.
+- 다음 순번 후보: (a) Play Console에 `1.0.4+66` 업로드·배포, (b) 자동알람
+  반복 재시작 루프 원인 조사, (c) `refactoring-plan.md`의 작업 2(UI 위젯
+  테스트 보강, 작업 3~5의 선행 조건).
