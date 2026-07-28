@@ -48,7 +48,6 @@ class BusAlertTrackingManager(
     private val isInForegroundProvider: () -> Boolean,
     private val stopMonitoringTimer: () -> Unit,
     private val stopTtsTrackingFn: (Boolean) -> Unit,
-    private val sendAllCancellationBroadcast: () -> Unit,
     private val checkAndStopServiceIfNeeded: () -> Unit,
     private val autoAlarmNotificationId: Int,
 ) {
@@ -700,6 +699,124 @@ class BusAlertTrackingManager(
             } catch (cleanupError: Exception) {
                 Log.e(TAG, "❌ 긴급 복구 실패: ${cleanupError.message}")
             }
+        }
+    }
+
+    // [ADD] BusAlertService.cancelOngoingTracking에서 이관 (2026-07-28, 1b-2)
+    fun cancelOngoingTracking() {
+        Log.d(TAG, "cancelOngoingTracking called (ID: $ongoingNotificationId)")
+        try {
+            // 1. 포그라운드 서비스 먼저 중지 (노티피케이션 제거를 위해)
+            if (isInForegroundProvider()) {
+                Log.d(TAG, "Service is in foreground, calling stopForeground(STOP_FOREGROUND_REMOVE).")
+                service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                setInForeground(false)
+            }
+
+            // 2. 모든 알림 직접 취소
+            try {
+                val notificationManager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancelAll()
+                notificationManager.cancel(ongoingNotificationId)
+                notificationManager.cancel(autoAlarmNotificationId) // 자동알람 전용 알림 취소 추가
+                Log.d(TAG, "모든 알림 직접 취소 완료 (cancelOngoingTracking)")
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 취소 오류 (cancelOngoingTracking): ${e.message}")
+            }
+
+            // 4. 모든 추적 작업 중지
+            monitoringJobs.values.forEach { it.cancel() }
+            monitoringJobs.clear()
+            activeTrackings.clear()
+            monitoredRoutes.clear()
+
+            // 5. Flutter 측에 알림 취소 이벤트 전송 시도
+            try {
+                val allCancelIntent = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED")
+                service.sendBroadcast(allCancelIntent)
+                Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
+            } catch (e: Exception) {
+                Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
+            }
+
+            // 6. 서비스 중지 요청
+            service.stopSelf()
+            Log.d(TAG, "Service stop requested from cancelOngoingTracking.")
+        } catch (e: Exception) {
+            Log.e(TAG, "🚌 Ongoing notification cancellation/Foreground stop error: ${e.message}", e)
+            try {
+                // 오류 발생 시 강제 중지 시도
+                val notificationManager = service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancelAll()
+                service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                setInForeground(false)
+                service.stopSelf()
+                Log.d(TAG, "Force stop attempted after error.")
+            } catch (ex: Exception) {
+                Log.e(TAG, "Additional error when trying to stop service: ${ex.message}", ex)
+            }
+        }
+    }
+
+    // 알림 취소 (MainActivity 호출 호환) — BusAlertService.cancelNotification에서 이관
+    fun cancelNotification(id: Int) {
+        Log.d(TAG, "알림 취소 요청: ID=$id")
+        try {
+            NotificationManagerCompat.from(service).cancel(id)
+            if (id == ongoingNotificationId && activeTrackings.isEmpty()) {
+                if (isInForegroundProvider()) {
+                    service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                    setInForeground(false)
+                }
+                checkAndStopServiceIfNeeded()
+            }
+            Log.d(TAG, "✅ 알림 취소 완료: ID=$id")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 알림 취소 오류: ID=$id, ${e.message}")
+        }
+    }
+
+    // 모든 알림 취소 — BusAlertService.cancelAllNotifications에서 이관
+    fun cancelAllNotifications() {
+        Log.i(TAG, "모든 알림 취소 요청")
+        try {
+            // 모든 알림 취소 및 추적 중지 로직을 stopAllTracking()으로 위임
+            stopAllTracking()
+            Log.d(TAG, "✅ 모든 알림 취소 및 추적 중지 완료 (cancelAllNotifications)")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 모든 알림 취소 오류 (cancelAllNotifications): ${e.message}")
+        }
+    }
+
+    // BusAlertService.stopTrackingIfIdle에서 이관 (private -> internal, 호출부가
+    // BusAlertService에 남아 있어 cross-class 접근 필요)
+    internal fun stopTrackingIfIdle() {
+        serviceScope.launch {
+            checkAndStopServiceIfNeeded()
+        }
+    }
+
+    // BusAlertService.sendAllCancellationBroadcast에서 이관 (private -> internal, 사유는
+    // stopTrackingIfIdle과 동일)
+    internal fun sendAllCancellationBroadcast() {
+        try {
+            val allCancelBroadcast = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED").apply {
+                flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
+            }
+            service.sendBroadcast(allCancelBroadcast)
+            Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
+
+            // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
+            try {
+                if (service.applicationContext is MainActivity) {
+                    (service.applicationContext as MainActivity)._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
+                    Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Flutter 메서드 채널 전송 오류: ${e.message}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "모든 알람 취소 이벤트 전송 오류: ${e.message}")
         }
     }
 }

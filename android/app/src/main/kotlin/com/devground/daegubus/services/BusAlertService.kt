@@ -199,7 +199,6 @@ class BusAlertService : Service() {
             { isInForeground },
             ::stopMonitoringTimer,
             ::stopTtsTracking,
-            ::sendAllCancellationBroadcast,
             ::checkAndStopServiceIfNeeded,
             AUTO_ALARM_NOTIFICATION_ID,
         )
@@ -354,7 +353,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             // 4단계: 전체 취소 이벤트 발송
             Log.i(TAG, "🛑 4단계: 취소 이벤트 브로드캐스트 시작")
-            sendAllCancellationBroadcast()
+            trackingManager.sendAllCancellationBroadcast()
 
             // 5단계: 모든 추적 작업과 서비스 중지
             Log.i(TAG, "🛑 5단계: 모든 추적 작업 중지 시작")
@@ -446,7 +445,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             if (routeId == null || busNo.isBlank() || stationName.isBlank()) {
                 Log.e(TAG, "$action Aborted: Missing required info")
-                stopTrackingIfIdle()
+                trackingManager.stopTrackingIfIdle()
                 return START_NOT_STICKY
             }
 
@@ -469,7 +468,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                         startTracking(routeId, fixedStationId, stationName, busNo)
                     } else {
                         Log.e(TAG, "stationId 보정 실패. 추적 불가: routeId=$routeId, busNo=$busNo, stationName=$stationName")
-                        stopTrackingIfIdle()
+                        trackingManager.stopTrackingIfIdle()
                     }
                 }
                 return START_NOT_STICKY
@@ -624,7 +623,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
             // Flutter에 취소 이벤트 전달
             try {
-                sendAllCancellationBroadcast()
+                trackingManager.sendAllCancellationBroadcast()
             } catch (_: Exception) { }
 
             stopAllBusTracking()
@@ -926,7 +925,6 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             { isInForeground },
             ::stopMonitoringTimer,
             ::stopTtsTracking,
-            ::sendAllCancellationBroadcast,
             ::checkAndStopServiceIfNeeded,
             AUTO_ALARM_NOTIFICATION_ID,
         )
@@ -1092,134 +1090,17 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         }
     }
 
-    fun cancelOngoingTracking() {
-        Log.d(TAG, "cancelOngoingTracking called (ID: $ONGOING_NOTIFICATION_ID)")
-        try {
-            // 1. 포그라운드 서비스 먼저 중지 (노티피케이션 제거를 위해)
-            if (isInForeground) {
-                Log.d(TAG, "Service is in foreground, calling stopForeground(STOP_FOREGROUND_REMOVE).")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                isInForeground = false
-            }
-
-            // 2. 모든 알림 직접 취소
-            try {
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancelAll()
-                notificationManager.cancel(ONGOING_NOTIFICATION_ID)
-                notificationManager.cancel(AUTO_ALARM_NOTIFICATION_ID) // 자동알람 전용 알림 취소 추가
-                Log.d(TAG, "모든 알림 직접 취소 완료 (cancelOngoingTracking)")
-            } catch (e: Exception) {
-                Log.e(TAG, "알림 취소 오류 (cancelOngoingTracking): ${e.message}")
-            }
-
-            // 4. 모든 추적 작업 중지
-            monitoringJobs.values.forEach { it.cancel() }
-            monitoringJobs.clear()
-            activeTrackings.clear()
-            monitoredRoutes.clear()
-
-            // 5. Flutter 측에 알림 취소 이벤트 전송 시도
-            try {
-                val allCancelIntent = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED")
-                sendBroadcast(allCancelIntent)
-                Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
-            } catch (e: Exception) {
-                Log.e(TAG, "알림 취소 이벤트 전송 오류: ${e.message}", e)
-            }
-
-            // 6. 서비스 중지 요청
-            stopSelf()
-            Log.d(TAG, "Service stop requested from cancelOngoingTracking.")
-        } catch (e: Exception) {
-            Log.e(TAG, "🚌 Ongoing notification cancellation/Foreground stop error: ${e.message}", e)
-            try {
-                // 오류 발생 시 강제 중지 시도
-                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancelAll()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                isInForeground = false
-                stopSelf()
-                Log.d(TAG, "Force stop attempted after error.")
-            } catch (ex: Exception) {
-                Log.e(TAG, "Additional error when trying to stop service: ${ex.message}", ex)
-            }
-        }
-    }
-
-    
+    fun cancelOngoingTracking() = trackingManager.cancelOngoingTracking()
 
     // 알림 취소 (MainActivity 호출 호환)
-    fun cancelNotification(id: Int) {
-        Log.d(TAG, "알림 취소 요청: ID=$id")
-        try {
-            NotificationManagerCompat.from(this).cancel(id)
-            if (id == ONGOING_NOTIFICATION_ID && activeTrackings.isEmpty()) {
-                if (isInForeground) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    isInForeground = false
-                }
-                checkAndStopServiceIfNeeded()
-            }
-            Log.d(TAG, "✅ 알림 취소 완료: ID=$id")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ 알림 취소 오류: ID=$id, ${e.message}")
-        }
-    }
+    fun cancelNotification(id: Int) = trackingManager.cancelNotification(id)
 
     // 모든 알림 취소
-    fun cancelAllNotifications() {
-        Log.i(TAG, "모든 알림 취소 요청")
-        try {
-            // 모든 알림 취소 및 추적 중지 로직을 stopAllBusTracking()으로 위임
-            stopAllBusTracking()
-            Log.d(TAG, "✅ 모든 알림 취소 및 추적 중지 완료 (cancelAllNotifications)")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ 모든 알림 취소 오류 (cancelAllNotifications): ${e.message}")
-        }
-    }
+    fun cancelAllNotifications() = trackingManager.cancelAllNotifications()
 
-    private fun stopTrackingIfIdle() {
-        serviceScope.launch {
-            checkAndStopServiceIfNeeded()
-        }
-    }
-
-    // sendCancellationBroadcast는 BusAlertTrackingManager로 이관 (2026-07-25).
-    // 호출부가 stopSpecificTracking/stopAllTracking뿐이라 함께 옮겼다.
-    private fun sendAllCancellationBroadcast() {
-        try {
-            val allCancelBroadcast = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED").apply {
-                flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
-            }
-            sendBroadcast(allCancelBroadcast)
-            Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
-
-            // Flutter 메서드 채널을 통해 직접 이벤트 전송 시도
-            try {
-                if (applicationContext is MainActivity) {
-                    (applicationContext as MainActivity)._methodChannel?.invokeMethod("onAllAlarmsCanceled", null)
-                    Log.d(TAG, "Flutter 메서드 채널로 모든 알람 취소 이벤트 직접 전송 완료")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Flutter 메서드 채널 전송 오류: ${e.message}")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "모든 알람 취소 이벤트 전송 오류: ${e.message}")
-        }
-    }
-
-    private fun checkAndStopService() {
-        if (activeTrackings.isEmpty() && monitoredRoutes.isEmpty() && !isTtsTrackingActive) {
-            Log.i(TAG, "Service idle. Requesting stop.")
-            Handler(Looper.getMainLooper()).postDelayed({
-                if (activeTrackings.isEmpty() && monitoredRoutes.isEmpty() && !isTtsTrackingActive) {
-                    stopSelf()
-                    Log.i(TAG, "Service stopped after delay check.")
-                }
-            }, 1000) // 1초 후 다시 확인
-        }
-    }
+    // cancelOngoingTracking/cancelNotification/cancelAllNotifications/stopTrackingIfIdle/
+    // sendAllCancellationBroadcast는 BusAlertTrackingManager로 이관 (2026-07-28, 1b-2).
+    // checkAndStopService()는 저장소 전체 참조 0건(private, dead code)이라 이관 대신 삭제.
 
     private val hasNotifiedTts = HashSet<String>()
     private val hasNotifiedArrival = HashSet<String>()
