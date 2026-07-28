@@ -1043,7 +1043,9 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // [ADD] Stop TTS tracking (set isTtsTrackingActive to false and clean up)
     fun stopTtsTracking(forceStop: Boolean = false) {
         isTtsTrackingActive = false
-        // If there are any TTS-related jobs/handlers, stop them here (expand as needed)
+        // TTSService에 STOP_TTS_TRACKING을 보내지 않으면 foreground 상태가 남아
+        // REPEAT_TTS_ALERT 알림(id=1002)이 계속 재게시된다 (2026-07-28 실기기 검증에서 발견).
+        ttsController.stopTtsServiceTracking()
         Log.d(TAG, "TTS tracking stopped (stopTtsTracking), forceStop=$forceStop")
     }
 
