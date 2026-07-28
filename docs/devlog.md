@@ -2169,3 +2169,46 @@ fallback 대체공휴일 규칙 구현 중 교차 검증 테스트가 2027 설�
   이동은 계획대로 끝났다). `BusAlertTrackingManager.kt`: 705 → 822줄. 커밋 `9c35604`.
 - 다음 세션은 1b-3(도착 확인/추적정보 갱신 클러스터 → 신규 협력 클래스, ~340줄,
   실기기 검증 중요)로 진행하면 된다.
+
+## 2026-07-28 (3차): BusAlertService.kt 추가 축소 — 1b-3 완료 (도착 확인/추적정보 갱신 클러스터 → BusAlertTrackingManager)
+
+`docs/refactoring-plan.md` 작업 1b의 1b-3 단계를 완료했다. `updateBusInfo`/
+`updateBusInfoFromFlutter`/`checkNextBusAndNotify`/`checkArrivalAndNotify`/
+`updateTrackingInfoFromFlutter`를 이관했다.
+
+- **신규 파일 대신 기존 클래스 확장**: 계획서가 지시한 대로 "겹치는 협력 클래스가
+  있는지" 먼저 확인했더니, 이동 대상 5개 중 3개(`updateBusInfo`,
+  `checkArrivalAndNotify`, `checkNextBusAndNotify`)가 이미 `BusAlertTrackingManager`의
+  추적 루프(`startTrackingInternal`) 안에서 콜백(`::updateBusInfo` 등)으로 호출되고
+  있었다 — `BusAlertArrivalMonitor.kt`라는 새 파일 대신 `BusAlertTrackingManager`를
+  확장하는 게 명백히 맞는 선택이었다.
+- **콜백 3개 제거, 4개 신설**: 이동 대상 함수들이 이미 생성자에 있던 콜백
+  (`updateBusInfo`/`checkArrivalAndNotify`/`checkNextBusAndNotify` 콜백 자체)을
+  이관 후 셀프 호출로 대체할 수 있어 제거했다(1b-2의 `sendAllCancellationBroadcast`와
+  같은 패턴). 대신 이전까지 서비스 밖으로 나갈 통로가 없던 의존성 4개를 새로
+  추가했다: `notificationHandler`(`buildOngoingNotification` 호출용),
+  `restartPreventionDurationMs`, `lastManualStopTimeProvider`(기존엔 setter만
+  있고 getter가 없었음), `alertOnArrivalOnlyProvider`. 순증가 1개로 계획서가
+  경계했던 "콜백 10개 이상" 신호와는 거리가 멀었다.
+- `MAX_CONSECUTIVE_ERRORS` 상수(companion object, `private`)가 `updateBusInfo`의
+  유일한 사용처였다 — 이관하면서 `BusAlertTrackingManager`의 companion object에
+  새로 선언하고 `BusAlertService`에서는 삭제했다.
+- Public 메서드(`updateBusInfoFromFlutter`/`updateTrackingInfoFromFlutter`)는
+  각각 `BusApiChannelHandler`/`BusTrackingChannelHandler`가 외부에서 호출하므로
+  위임 스텁 유지. `updateTrackingInfoFromFlutter`의 서비스 내부 호출부 2곳은
+  이미 public 스텁을 그대로 호출하는 형태라 수정 불필요했다. `updateBusInfo`는
+  `private`였고 내부 호출부가 `onStartCommand` 안에 1곳 있어 `trackingManager.
+  updateBusInfo(...)`로 직접 교체(스텁 없음, 1b-2와 같은 판단).
+- 검증: `git show HEAD:...`로 원본 5개 함수 본문과 새 위치를 정규화(참조 치환
+  역변환) 후 diff 대조 — private→fun 가시성 변경, 콜백/프로바이더 치환, trailing
+  공백 정리 외에는 차이 없음 확인. `:app:compileDebugKotlin` 통과.
+- `BusAlertService.kt`: 1,444 → 1,101줄 (계획서 완료 기준 "≤ ~1,095줄"에는 6줄
+  못 미쳤음 — 1b-1/1b-2와 같은 이유, 이관 출처 주석). `BusAlertTrackingManager.kt`:
+  822 → 1,195줄. 커밋 `50f6095`.
+- **실기기 미검증**: 이 클러스터는 TTS 발화와 알림 갱신을 실제로 트리거하는
+  지점이라 devlog 2026-07-25 (3차)가 남긴 확인 목록("알림 렌더링", "stationId
+  보정 재시도", "1초 후 백업 notify()")이 여전히 유효하다. 오케스트레이터가 adb로
+  이어서 확인하기로 하고, 이 세션은 코드 이동 완료를 기준으로 넘어간다.
+- 다음 세션은 1b-4(onStartCommand 디스패치 본문 축소, ~390줄, 고위험) 진행 여부를
+  판단하면 된다 — 1b-1~3 합계로 목표(~1,200줄)를 이미 달성했으므로(1,101줄),
+  계획서에 따르면 1b-4는 필수가 아니다.
