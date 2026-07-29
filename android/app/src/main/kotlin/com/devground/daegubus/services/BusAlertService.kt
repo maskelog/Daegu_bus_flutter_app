@@ -37,6 +37,8 @@ import com.devground.daegubus.BusNotificationIds
 import com.devground.daegubus.BusOutputMode
 import com.devground.daegubus.models.BusInfo
 import com.devground.daegubus.utils.NotificationHandler
+import com.devground.daegubus.utils.AutoAlarmRuntimePolicy
+import com.devground.daegubus.utils.StationIdPolicy
 import com.devground.daegubus.MainActivity
 import com.devground.daegubus.services.BusAlertTtsController
 import com.devground.daegubus.services.BusAlertNotificationUpdater
@@ -592,16 +594,17 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
             val routeIdText = routeId ?: ""
             val stationIdText = stationId ?: ""
 
-            // 이미 같은 노선 자동알람 추적 중이면 재시작 방지 (이중 트리거 차단)
-            // 단, 10초 이상 지난 경우는 새 알람으로 간주하여 기존 종료 후 재시작
-            if (isAutoAlarmMode && currentAutoAlarmRouteId == routeIdText && routeIdText.isNotBlank()) {
+            // 활성 상태인 같은 노선 요청은 경과 시간과 무관하게 동일 추적의 중복이다.
+            // 정상 다음 회차는 타임아웃으로 이전 추적이 종료된 뒤 시작된다.
+            if (AutoAlarmRuntimePolicy.isDuplicateStart(
+                    isAutoAlarmMode,
+                    currentAutoAlarmRouteId,
+                    routeIdText,
+                )
+            ) {
                 val timeSinceStart = System.currentTimeMillis() - autoAlarmStartTime
-                if (timeSinceStart < 60000L) {
-                    Log.w(TAG, "⚠️ 자동알람 이미 추적 중 (${timeSinceStart}ms 전 시작) - 중복 무시")
-                    return START_NOT_STICKY
-                }
-                Log.i(TAG, "ℹ️ 새 자동알람 요청 (이전 시작 ${timeSinceStart/1000}초 전) - 기존 종료 후 재시작")
-                autoAlarmNotifier.stopAutoAlarmLightweight()
+                Log.w(TAG, "⚠️ 자동알람 이미 추적 중 (${timeSinceStart}ms 전 시작) - 중복 무시")
+                return START_NOT_STICKY
             }
 
             // intent extras로 전달된 alertOnArrivalOnly를 인스턴스 필드에 반영
@@ -838,28 +841,28 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
     // stationId 보정 함수 (정류장 이름 매핑 우선)
     internal suspend fun resolveStationIdIfNeeded(routeId: String, stationName: String, stationId: String, wincId: String?): String {
-        if (stationId.length == 10 && stationId.startsWith("7")) return stationId
+        if (StationIdPolicy.isValid(stationId)) return stationId
 
         // 1. wincId가 있으면 사용
         if (!wincId.isNullOrBlank()) {
             val fixed = busApiService.getStationIdFromBsId(wincId)
-            if (!fixed.isNullOrBlank()) {
+            if (StationIdPolicy.isValid(fixed)) {
                 Log.d(TAG, "resolveStationIdIfNeeded: wincId=$wincId → stationId=$fixed")
-                return fixed
+                return fixed!!
             }
         }
         // 3. routeId로 노선 정류장 리스트 조회 후, stationName 유사 매칭(보조)
         val stations = busApiService.getBusRouteMap(routeId)
         val found = stations.find { normalize(it.stationName) == normalize(stationName) }
-        if (found != null && found.stationId.isNotBlank()) {
+        if (found != null && StationIdPolicy.isValid(found.stationId)) {
             Log.d(TAG, "resolveStationIdIfNeeded: routeId=$routeId, stationName=$stationName → stationId=${found.stationId}")
             return found.stationId
         }
         // 4. 그래도 안되면 stationName을 wincId로 간주
         val fallback = busApiService.getStationIdFromBsId(stationName)
-        if (!fallback.isNullOrBlank()) {
+        if (StationIdPolicy.isValid(fallback)) {
             Log.d(TAG, "resolveStationIdIfNeeded: fallback getStationIdFromBsId($stationName) → $fallback")
-            return fallback
+            return fallback!!
         }
         Log.w(TAG, "resolveStationIdIfNeeded: stationId 보정 실패 (routeId=$routeId, stationName=$stationName, wincId=$wincId)")
         return ""

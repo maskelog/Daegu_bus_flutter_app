@@ -163,8 +163,16 @@ class AlarmReceiver : BroadcastReceiver() {
             } else {
                 emptySet()
             }
+            val deliveredTargetTime = intent.getLongExtra("targetAlarmTime", 0L)
             val nextTargetTime =
-                AutoAlarmScheduleCalculator.findNextTargetTime(nowMillis, hour, minute, repeatDays, excludedDates)
+                AutoAlarmScheduleCalculator.findNextTargetTimeAfterOccurrence(
+                    nowMillis,
+                    deliveredTargetTime,
+                    hour,
+                    minute,
+                    repeatDays,
+                    excludedDates,
+                )
 
             if (nextTargetTime == null) {
                 Log.e(TAG, "❌ 다음 알람 시간을 찾을 수 없습니다")

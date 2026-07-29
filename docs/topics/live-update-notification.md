@@ -1,7 +1,7 @@
 # Live Update 알림 (Android 16 / Samsung Now Bar)
 
 > 이 문서는 **현재 상태**를 서술한다. 변경 이력·시행착오의 전체 맥락은 [devlog.md](../devlog.md)의 해당 날짜 참조.
-> 마지막 갱신: 2026-07-25 (BusAlertService.kt 분리 반영)
+> 마지막 갱신: 2026-07-29 (수동 승차알람 안전 타임아웃 반영)
 
 ## 개요
 
@@ -16,6 +16,12 @@ Samsung One UI Now Bar로 승격시켜 실시간 도착 정보를 표시한다.
   `showBusArrivingSoon`), 추적 루프·중지는 `BusAlertTrackingManager.kt`, 자동알람 경량 모드는
   `BusAlertAutoAlarmNotifier.kt`가 담당한다 (2026-07-25 분리, devlog 해당 날짜 참조).
   `BusAlertService`의 관련 public 메서드는 대부분 이 협력 클래스로의 위임 스텁이다.
+- **수동 승차알람 안전 상한**: 사용자가 종료하지 않아도 추적 시작 2시간 뒤
+  `BusAlertTrackingManager`가 해당 노선의 `stopSpecificTracking()` 정리 경로를
+  실행한다. “곧 도착” 직후 바로 끊지는 않아 놓친 버스의 다음 차량을 계속 볼 수
+  있지만, 방치된 네트워크 조회·FGS 알림은 무기한 유지되지 않는다. 자동알람은
+  이 상한을 사용하지 않고 설정 화면의 5~120분 타임아웃(기본 30분)을 따른다.
+  경과 시간은 시스템 시각 변경의 영향을 받지 않도록 단조 시계로 계산한다.
 - **빌더**: `NotificationCompat.Builder` + `NotificationCompat.ProgressStyle` — **직접 API 호출** (Reflection 아님)
 - **데이터 흐름**: Flutter가 단일 진실 공급원. Flutter에서 버스 정보를 fetch할 때마다
   `updateBusInfo` 메서드 채널로 Native에 전달 → 알림 즉시 갱신 (2026-02-05 결정)
@@ -69,6 +75,11 @@ Live Update 승격 정보가 시스템에 전달되지 않았다. Google 공식 
   Samsung Now Bar 표시·갱신이 정상 작동한다.
 - `POST_PROMOTED_NOTIFICATIONS`, 알림, 정확 알람, FGS 권한과 배터리 최적화 예외가
   허용된 상태에서 검증했다.
+- Galaxy Note10+(`R3CM70K2YZD`)에서 수동 추적 시작·도착정보 갱신·알림 액션
+  중지를 확인했다. 2시간 안전 상한은 같은 릴리스 코드에서 상한만 60초로 줄인
+  가속 빌드로 검증했으며, 경계 뒤 첫 30초 추적 주기에 통합 알림과 foreground
+  서비스가 함께 정리됐다. 이후 상한을 2시간으로 복원한 최종 `1.0.4+66`
+  릴리스 APK를 다시 설치했다(2026-07-29).
 
 ## 폐기된 접근 (다시 쓰지 말 것)
 

@@ -11,6 +11,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.devground.daegubus.MainActivity
 import com.devground.daegubus.models.BusInfo
 import com.devground.daegubus.utils.NotificationHandler
+import com.devground.daegubus.utils.ManualTrackingRuntimePolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -117,6 +118,25 @@ class BusAlertTrackingManager(
             try {
                 while (isActive) {
                     try {
+                        if (ManualTrackingRuntimePolicy.hasTimedOut(
+                                trackingInfo.isAutoAlarm,
+                                trackingInfo.startedAtElapsedRealtimeMillis,
+                                System.nanoTime() / 1_000_000L,
+                            )
+                        ) {
+                            Log.i(
+                                TAG,
+                                "⏱️ 수동 승차알람 2시간 안전 타임아웃: $busNo ($routeId)",
+                            )
+                            stopSpecificTracking(
+                                routeId,
+                                busNo,
+                                stationName,
+                                shouldRemoveFromList = true,
+                            )
+                            break
+                        }
+
                         val arrivals = busApiService.getStationInfo(stationId)
                             .let { jsonString ->
                                 if (jsonString.isBlank() || jsonString == "[]") emptyList()

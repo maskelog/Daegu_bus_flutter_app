@@ -93,4 +93,30 @@ class AutoAlarmScheduleCalculatorTest {
             )
         )
     }
+
+    @Test
+    fun chainingAfterEarlyTrackingSkipsTheOccurrenceThatJustFired() {
+        val deliveredTarget = Calendar.getInstance().apply {
+            set(2026, Calendar.JULY, 28, 17, 35, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val deliveredAt = Calendar.getInstance().apply {
+            set(2026, Calendar.JULY, 28, 17, 30, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        val nextTarget = AutoAlarmScheduleCalculator.findNextTargetTimeAfterOccurrence(
+            nowMillis = deliveredAt.timeInMillis,
+            deliveredTargetTimeMillis = deliveredTarget.timeInMillis,
+            hour = 17,
+            minute = 35,
+            repeatDays = intArrayOf(2, 3),
+        )
+
+        val expected = Calendar.getInstance().apply {
+            set(2026, Calendar.JULY, 29, 17, 35, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        assertEquals(expected.timeInMillis, nextTarget)
+    }
 }

@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import com.devground.daegubus.R
 import com.devground.daegubus.models.BusInfo
 import com.devground.daegubus.utils.NotificationHandler
+import com.devground.daegubus.utils.StationIdPolicy
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -97,10 +98,10 @@ class BusAlertNotificationUpdater(
 
         // stationId 보정
         var effectiveStationId = stationId ?: trackingInfo.stationId
-        if (effectiveStationId.isBlank() || effectiveStationId.length < 10 || !effectiveStationId.startsWith("7")) {
+        if (!StationIdPolicy.isValid(effectiveStationId)) {
             service.serviceScope.launch {
                 val fixedStationId = service.resolveStationIdIfNeeded(effectiveRouteId, stationName, effectiveStationId, wincId)
-                if (fixedStationId.isNotBlank()) {
+                if (StationIdPolicy.isValid(fixedStationId)) {
                     showOngoingBusTracking(
                         busNo, stationName, remainingMinutes, currentStation, isUpdate, notificationId, allBusesSummary, routeId, fixedStationId, wincId, isIndividualAlarm
                     )
@@ -191,10 +192,10 @@ class BusAlertNotificationUpdater(
     ) {
         // stationId 보정
         var effectiveStationId = stationId ?: ""
-        if (effectiveStationId.isBlank()) {
+        if (!StationIdPolicy.isValid(effectiveStationId)) {
             service.serviceScope.launch {
                 val fixedStationId = service.resolveStationIdIfNeeded(routeId, stationName, "", wincId)
-                if (fixedStationId.isNotBlank()) {
+                if (StationIdPolicy.isValid(fixedStationId)) {
                     updateTrackingNotification(
                         busNo = busNo,
                         stationName = stationName,

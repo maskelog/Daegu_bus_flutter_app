@@ -16,6 +16,8 @@ import com.devground.daegubus.MainActivity
 import com.devground.daegubus.R
 import com.devground.daegubus.models.BusInfo
 import com.devground.daegubus.utils.NotificationHandler
+import com.devground.daegubus.utils.AutoAlarmRuntimePolicy
+import com.devground.daegubus.utils.StationIdPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -645,7 +647,12 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
             Log.d("BusAlertService", "🔔 자동알람 경량화 모드 처리: $busNo 번, $stationName, routeId=$routeId, stationId=$stationId, TTS=$useTTS")
 
             // 동기 중복 방지: coroutine 시작 전 즉시 체크 (6ms 간격 중복 호출 차단)
-            if (routeId.isNotBlank() && (service.pendingAutoAlarms.contains(routeId) || service.activeTrackings.containsKey(routeId))) {
+            if (AutoAlarmRuntimePolicy.isPendingOrActive(
+                    routeId,
+                    service.pendingAutoAlarms,
+                    service.activeTrackings.keys,
+                )
+            ) {
                 Log.w("BusAlertService", "⚠️ 자동알람 중복 방지 (동기): $routeId 이미 처리 중 - 무시")
                 return
             }
@@ -722,12 +729,32 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
 
             // 📌 핵심: 실시간 추적 시작 → 첫 API 응답 시 실제 도착 정보로 TTS 발화
             // (기존: 의미 없는 "알람이 시작되었습니다" 멘트 제거 → 실제 "N분 후 도착" 발화)
-            if (routeId.isNotBlank() && stationId.isNotBlank()) {
+            if (routeId.isNotBlank() && StationIdPolicy.isValid(stationId)) {
                 Log.d("BusAlertService", "🔔 자동알람: 실시간 추적 시작 ($routeId, $stationId)")
                 service.addMonitoredRoute(routeId, stationId, stationName)
                 service.startTracking(routeId, stationId, stationName, busNo, isAutoAlarm = true, isCommuteAlarm = isCommuteAlarm, exactAlarmTriggerTime = computedTriggerTime)
+            } else if (routeId.isNotBlank()) {
+                service.serviceScope.launch {
+                    val fixedStationId =
+                        service.resolveStationIdIfNeeded(routeId, stationName, stationId, null)
+                    if (StationIdPolicy.isValid(fixedStationId)) {
+                        Log.d("BusAlertService", "🔧 자동알람 stationId 보정 후 추적 시작: $stationId → $fixedStationId")
+                        service.addMonitoredRoute(routeId, fixedStationId, stationName)
+                        service.startTracking(
+                            routeId,
+                            fixedStationId,
+                            stationName,
+                            busNo,
+                            isAutoAlarm = true,
+                            isCommuteAlarm = isCommuteAlarm,
+                            exactAlarmTriggerTime = computedTriggerTime,
+                        )
+                    } else {
+                        Log.e("BusAlertService", "❌ 자동알람 stationId 보정 실패: routeId=$routeId, stationId=$stationId")
+                    }
+                }
             } else {
-                Log.e("BusAlertService", "❌ 자동알람: routeId 또는 stationId 누락으로 추적 불가")
+                Log.e("BusAlertService", "❌ 자동알람: routeId 누락으로 추적 불가")
             }
 
             // Flutter에 시작 알림 전송 (중복 실행 방지용)
@@ -742,7 +769,13 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
             service.autoAlarmTimeoutRunnable?.let { service.mainHandler.removeCallbacks(it) }
             service.autoAlarmTimeoutRunnable = Runnable {
                 service.autoAlarmTimeoutRunnable = null
-                if (service.isAutoAlarmMode && (System.currentTimeMillis() - service.autoAlarmStartTime) >= service.autoAlarmTimeoutMs) {
+                if (AutoAlarmRuntimePolicy.hasTimedOut(
+                        service.isAutoAlarmMode,
+                        service.autoAlarmStartTime,
+                        System.currentTimeMillis(),
+                        service.autoAlarmTimeoutMs,
+                    )
+                ) {
                     Log.d("BusAlertService", "🔔 자동알람 경량화 모드 타임아웃으로 종료")
                     stopAutoAlarmLightweight()
                 }

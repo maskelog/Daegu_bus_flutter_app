@@ -21,5 +21,7 @@ data class TrackingInfo(
     // [추가] 버스 타입 정보 (1: 급행, 2: 좌석, 3: 일반, 4: 지선/마을)
     var routeTCd: String? = null,
     // [추가] 자동알람 정확한 발화 시각 (ms) - 다중 알람 동시 추적 시 각각 독립된 시각 보유
-    var exactAlarmTriggerTime: Long = 0L
+    var exactAlarmTriggerTime: Long = 0L,
+    // 수동 승차알람 안전 타임아웃 계산 기준(시스템 시각 변경의 영향을 받지 않는 단조 시계)
+    val startedAtElapsedRealtimeMillis: Long = System.nanoTime() / 1_000_000L
 )

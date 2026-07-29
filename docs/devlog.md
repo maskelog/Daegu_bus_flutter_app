@@ -2480,3 +2480,100 @@ adb -s R3CM70K2YZD logcat -d | grep -E "BusAlertService|TTSService"
 - 다음 순번 후보: (a) Play Console에 `1.0.4+66` 업로드·배포, (b) 자동알람
   반복 재시작 루프 원인 조사, (c) `refactoring-plan.md`의 작업 2(UI 위젯
   테스트 보강, 작업 3~5의 선행 조건).
+
+## 2026-07-28 (12차): 자동알람 반복 재시작 루프 수정·잔여 경로 코드 검증
+
+### 반복 재시작 루프 근본 원인
+- Flutter의 1분 타이머가 원인이라는 초기 추정은 틀렸다.
+  `NotificationService.startAutoAlarmUpdates()`는 프로덕션 호출부가 없었다.
+- `AlarmReceiver`는 사전 추적(본 시각 5분 전) 발화 직후 다음 반복 회차를
+  현재 시각 기준으로 계산했다. 본 시각이 아직 미래라 오늘 회차를 다시 선택했고,
+  `trackingStartTime()`이 이미 지난 사전 추적 시각을 `now+3초`로 바꾸면서 같은
+  PendingIntent가 3~5초 간격으로 계속 재발화했다.
+- `BusAlertService`는 같은 노선 요청을 최초 60초 동안만 중복으로 보고, 이후에는
+  기존 추적을 종료하고 새 알람으로 재시작했다. 두 로직이 결합되어 실기기에서
+  관찰한 60~62초 종료·재시작 주기를 설명한다. 이 분기는
+  `stopAutoAlarmLightweight()`를 직접 호출한 뒤 같은 요청을 다시 처리한다.
+
+### 수정
+- `AutoAlarmScheduleCalculator.findNextTargetTimeAfterOccurrence()`를 추가하고,
+  반복 회차 체인은 `max(now, 방금 발화한 targetAlarmTime)` 이후부터 검색해
+  오늘의 동일 회차를 다시 선택하지 않게 했다.
+- 활성 상태인 같은 노선 자동알람은 경과 시간과 무관하게 중복으로 거부한다.
+  `pendingAutoAlarms` 또는 `activeTrackings`에 있는 노선도 coroutine 진입 전에
+  계속 차단한다.
+- 타임아웃 판정을 `AutoAlarmRuntimePolicy.hasTimedOut()`으로 명시해 설정값
+  경계(`elapsed >= timeout`)를 단위 테스트로 고정했다.
+- stationId 유효 조건을 `StationIdPolicy`(`^7\d{9}$`)로 통일했다. 자동알람
+  진입 값이 잘못됐으면 기존 `resolveStationIdIfNeeded()` 경로로 보정한 뒤
+  유효한 결과일 때만 추적을 시작하며, 알림 갱신 재시도도 같은 조건을 사용한다.
+  보정 API가 반환한 비정상 non-empty 값은 더 이상 성공으로 인정하지 않는다.
+
+### 검증
+- TDD RED: 새 정책 구현 전 `:app:compileDebugUnitTestKotlin`이
+  `findNextTargetTimeAfterOccurrence`/`AutoAlarmRuntimePolicy`/
+  `StationIdPolicy` 미정의로 예상대로 실패했다.
+- GREEN: `:app:testDebugUnitTest --tests "com.devground.daegubus.utils.*"` 통과.
+  같은 날 사전 추적 뒤 다음 요일 선택, pending/active 중복 차단, 타임아웃
+  직전·경계, stationId 형식을 검증한다.
+- `flutter analyze` 통과(`No issues found`), `flutter build apk --debug` 통과.
+- 실기기 재검증은 아직 하지 않았다. 수정 빌드에서 임박 자동알람을 등록해
+  중복 발화 부재와 실제 타임아웃 정리를 확인하는 항목은
+  `docs/topics/follow-up-status.md`에 남겼다.
+
+## 2026-07-29 (1차): 수동 승차알람 무제한 추적에 2시간 안전 상한 추가
+
+### 기존 동작과 판단
+- 수동 승차알람의 `BusAlertTrackingManager.startTrackingInternal()` 루프에는
+  시작 시각이나 정상 종료 시간이 없었다. “곧 도착” 뒤에도 다음 버스를 계속
+  선택하므로 사용자가 중지하지 않으면 네트워크 조회와 foreground 알림이
+  무기한 유지될 수 있었다.
+- 도착 즉시 종료하면 사용자가 첫 버스를 놓쳤을 때 다음 버스를 볼 수 없으므로,
+  기존 동작은 유지하되 방치 방지를 위한 보수적인 2시간 최종 상한을 적용했다.
+  자동알람은 기존 설정형 타임아웃(기본 30분, 5~120분)을 그대로 사용한다.
+
+### 구현
+- `ManualTrackingRuntimePolicy.MAX_DURATION_MS`를 2시간으로 두고, 수동 추적만
+  경계 시점에 만료하도록 분리했다.
+- `TrackingInfo`에 단조 시계 기반 시작 시각을 기록한다. 사용자가 기기 시각을
+  바꿔도 타임아웃이 앞당겨지거나 무기한 연장되지 않는다.
+- 30초 추적 루프의 API 조회 전에 만료를 확인한다. 만료 시 별도 축약 정리를
+  만들지 않고 기존 `stopSpecificTracking(..., shouldRemoveFromList=true)`를
+  호출해 모니터링 작업, Flutter 취소 이벤트, TTS, 통합 알림, 마지막
+  foreground 서비스까지 기존 사용자 중지와 같은 경로로 정리한다.
+
+### 검증
+- TDD RED: 정책 구현 전 `:app:compileDebugUnitTestKotlin`이
+  `ManualTrackingRuntimePolicy` 미정의로 예상대로 실패했다.
+- GREEN: `ManualTrackingRuntimePolicyTest` 통과. 2시간 직전에는 유지,
+  정확한 경계에서 종료, 자동알람은 이 정책에서 제외됨을 검증했다.
+- `:app:testDebugUnitTest --tests "com.devground.daegubus.utils.*"` 및
+  `:app:compileDebugKotlin` 통과, `flutter analyze` 통과(`No issues found`),
+  `flutter build apk --debug` 통과.
+- 디버그 APK 빌드에서 SDK XML 3/4 도구 버전 불일치 경고가 재현됐다.
+  빌드는 성공했으며 이번 변경과 무관한 기존 후속 항목이다.
+- 실제 2시간 실기기 경과 검증은 아직 하지 않아
+  `docs/topics/follow-up-status.md`에 남겼다.
+
+## 2026-07-29 (2차): 수동 승차알람 안전 상한 실기기 가속 검증·최종 APK 재설치
+
+- Galaxy Note10+(`R3CM70K2YZD`)에 `1.0.4+66` 릴리스 APK를 데이터 보존
+  업데이트 방식으로 설치했다. 기존 최초 설치 시각과 즐겨찾기 데이터가 유지됐다.
+- 최종 설정과 동일한 종료 경로를 짧게 확인하기 위해
+  `ManualTrackingRuntimePolicy.MAX_DURATION_MS`만 60초로 바꾼 테스트용 릴리스
+  빌드를 설치했다. 623 수동 승차알람은 12:11:03에 foreground 추적을 시작했고,
+  60초를 넘긴 첫 30초 추적 주기인 12:12:09에 자동 종료됐다. 통합 알림이
+  제거되고 `BusAlertService`가 `startRequested=false`로 정리됐으며 크래시는 없었다.
+- 테스트용 60초 값은 즉시 2시간(`2 * 60 * 60 * 1000L`)으로 복원했다. 복원된
+  소스로 릴리스 APK를 다시 빌드해 같은 기기에 최종 설치했으며,
+  `versionName=1.0.4`, `versionCode=66`, `lastUpdateTime=2026-07-29 12:19:03`을
+  확인했다.
+- 최종 설치본에서도 623 수동 추적 시작, 실제 도착정보 알림 갱신, 알림의
+  `추적 중지` 동작을 재확인했다. 중지 후 통합 알림이 사라지고 서비스가
+  `startRequested=false`가 됐으며 AndroidRuntime 크래시는 없었다.
+- 이 가속 검증으로 `follow-up-status.md`의 수동 승차알람 2시간 실기기 확인
+  항목을 완료 처리해 제거했다. Play Console 배포와 자동알람 수정 실기기
+  재검증은 별도 후속 항목으로 유지한다.
+- 최종 복원 소스에서 `flutter analyze`가 `No issues found`로 통과했고,
+  `ManualTrackingRuntimePolicyTest`와 `:app:compileDebugKotlin`도 통과했다.
+  Kotlin 검증에서는 기존 SDK XML 3/4 도구 버전 불일치 경고만 재현됐다.

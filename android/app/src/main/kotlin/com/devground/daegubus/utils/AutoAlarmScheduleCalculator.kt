@@ -70,6 +70,28 @@ object AutoAlarmScheduleCalculator {
     }
 
     /**
+     * 이미 발화한 반복 알람에서 다음 회차를 체인한다.
+     *
+     * 사전 추적은 본 알람 시각보다 먼저 발화하므로 현재 시각만 기준으로 검색하면
+     * 방금 발화한 오늘 회차를 다시 선택할 수 있다. 검색 기준을 본 알람 시각까지
+     * 전진시켜 반드시 그 다음 회차를 고른다.
+     */
+    fun findNextTargetTimeAfterOccurrence(
+        nowMillis: Long,
+        deliveredTargetTimeMillis: Long,
+        hour: Int,
+        minute: Int,
+        repeatDays: IntArray,
+        excludedDates: Set<String> = emptySet(),
+    ): Long? = findNextTargetTime(
+        nowMillis = maxOf(nowMillis, deliveredTargetTimeMillis),
+        hour = hour,
+        minute = minute,
+        repeatDays = repeatDays,
+        excludedDates = excludedDates,
+    )
+
+    /**
      * 정확한 알람 등록 공통 진입점.
      *
      * Android 12(API 31~32)에서는 사용자가 설정에서 정확한 알람 권한을 회수할 수
