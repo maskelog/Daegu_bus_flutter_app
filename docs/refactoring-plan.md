@@ -41,10 +41,11 @@
         타이밍을 건드리지 않고도 목표를 초과 달성했으므로 다시 선택하지 않는다
 - [x] 작업 1c: BusApiChannelHandler.kt 책임 분리 (1,276줄 → 66줄 라우터 +
       470/338/320/131줄 operation 4개, 2026-08-04 완료)
-- [ ] 작업 1d: BusAlertTrackingManager.kt 도착 판정 분리 (1,219줄). 856행 이후
-      버스 정보 갱신·도착 판정 클러스터를 원래 계획의 `BusAlertArrivalMonitor`로
-      분리해 manager와 신규 파일을 각각 약 850/380줄로 낮춘다. 자동알람·TTS
-      트리거 경로이므로 별도 세션에서 회귀 테스트와 실기기 확인까지 진행할 것
+- [x] 작업 1d: BusAlertTrackingManager.kt 도착 판정 분리 (1,219줄 → 922줄 manager +
+      408줄 `BusAlertArrivalMonitor`, 2026-08-04 완료). 버스 정보 갱신·도착 판정
+      5개 API는 manager의 기존 시그니처를 유지한 위임 스텁으로 남겼다. 소스 회귀
+      테스트, 기계적 대조, 전체 검증과 Galaxy Note10+ 실기기 추적·도착 판정·알림
+      중지를 확인했다(devlog 2026-08-04 (3차) 참조)
 - [x] 작업 2: UI 위젯 테스트 보강 — 2026-08-03 현재 map/unified/home 관찰 동작
       테스트와 전체 68건 통과로 작업 3~5 안전망 확보
 - [ ] 작업 3: map_screen.dart 분리 (1,752줄) — 작업 2 완료
@@ -76,7 +77,7 @@
 ```powershell
 # Dart 변경 시
 flutter analyze          # 0건이어야 함 (pre-commit 훅도 실행함)
-flutter test             # 현재 68건 전체 통과가 기준선
+flutter test             # 현재 69건 전체 통과가 기준선
 
 # Kotlin 변경 시 (android/ 디렉토리에서)
 .\gradlew.bat :app:compileDebugKotlin --console=plain -q

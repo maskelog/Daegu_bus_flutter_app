@@ -1,7 +1,7 @@
 # Live Update 알림 (Android 16 / Samsung Now Bar)
 
 > 이 문서는 **현재 상태**를 서술한다. 변경 이력·시행착오의 전체 맥락은 [devlog.md](../devlog.md)의 해당 날짜 참조.
-> 마지막 갱신: 2026-08-04 (API 31 폴백 실기기 검증 반영)
+> 마지막 갱신: 2026-08-04 (도착 판정 협력 클래스 분리·API 31 검증 반영)
 
 ## 개요
 
@@ -13,8 +13,9 @@ Samsung One UI Now Bar로 승격시켜 실시간 도착 정보를 표시한다.
 - **알림 생성**: `android/app/src/main/kotlin/com/devground/daegubus/utils/NotificationHandler.kt`
 - **추적/갱신**: `services/BusAlertService.kt`는 조정 역할만 하고, 실제 알림 조립·발화는
   `BusAlertNotificationUpdater.kt`(`showOngoingBusTracking`/`updateTrackingNotification`/
-  `showBusArrivingSoon`), 추적 루프·중지는 `BusAlertTrackingManager.kt`, 자동알람 경량 모드는
-  `BusAlertAutoAlarmNotifier.kt`가 담당한다 (2026-07-25 분리, devlog 해당 날짜 참조).
+  `showBusArrivingSoon`), 추적 루프·중지는 `BusAlertTrackingManager.kt`, 버스 정보
+  갱신·도착 판정·TTS 트리거 결정은 `BusAlertArrivalMonitor.kt`, 자동알람 경량 모드는
+  `BusAlertAutoAlarmNotifier.kt`가 담당한다 (2026-07-25~08-04 분리, devlog 해당 날짜 참조).
   `BusAlertService`의 관련 public 메서드는 대부분 이 협력 클래스로의 위임 스텁이다.
 - **수동 승차알람 안전 상한**: 사용자가 종료하지 않아도 추적 시작 2시간 뒤
   `BusAlertTrackingManager`가 해당 노선의 `stopSpecificTracking()` 정리 경로를
@@ -93,6 +94,11 @@ Live Update 승격 정보가 시스템에 전달되지 않았다. Google 공식 
   `추적 중지` 액션으로 서비스의 `startRequested=false` 전환과 알림 제거를 확인했다.
   알림 extras에는 `android.requestPromotedOngoing=true`와 짧은 상태 텍스트가
   보존됐다. 단, API 31에서는 상태칩·Now Bar 승격 자체를 확인할 수 없다.
+- 같은 날 `BusAlertArrivalMonitor` 분리 뒤 새 릴리스 APK를 데이터 보존 설치해 다시
+  검증했다. 623번 수동 추적이 실제 도착 정보를 받아 `곧 도착`으로 판정했고,
+  알림의 `추적 중지` 후 서비스 `startRequested=false` 전환과 추적 알림 제거를
+  확인했다. TTS 경로는 이어폰 전용 사용자 설정과 미연결 상태를 읽어 의도대로
+  발화를 건너뛰었으며, 충돌·ANR·Flutter 미처리 예외는 0건이었다.
 
 ## 폐기된 접근 (다시 쓰지 말 것)
 

@@ -1,7 +1,7 @@
 # TTS·오디오 출력 정책
 
 > 이 문서는 **현재 상태**를 서술한다. 변경 이력은 [devlog.md](../devlog.md)의 해당 날짜 참조.
-> 마지막 갱신: 2026-07-05 (devlog 2026-02-20 기반으로 초기 작성)
+> 마지막 갱신: 2026-08-04 (도착 판정 협력 클래스 분리 반영)
 
 ## 개요
 
@@ -13,6 +13,9 @@
   `autoAlarmForceEarphone` 인자로 출력 경로 결정
 - `BusAlertTtsController.kt` — TTS·오디오 포커스·헤드셋 연결 체크를 담당.
   `startTtsServiceSpeak`에서 인텐트 옵션으로 플래그를 `TTSService`에 전달
+- `BusAlertArrivalMonitor.kt` — 버스 정보 갱신과 도착 임계값 판정을 담당하고,
+  발화가 필요하면 `BusAlertTtsController`를 호출한다. 기존 public 진입점은
+  `BusAlertTrackingManager`의 위임 메서드로 유지한다.
 - `BusAlertAlarmSoundPlayer.kt` — 알람음 재생
 
 ## 출력 정책

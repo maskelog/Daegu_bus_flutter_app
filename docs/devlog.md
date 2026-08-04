@@ -2745,3 +2745,48 @@ adb -s R3CM70K2YZD logcat -d | grep -E "BusAlertService|TTSService"
   이미 달성했고 lifecycle/foreground 시작 타이밍이 중심이라 추가 분리하지 않았다.
   `BusAlertTrackingManager` 1,219줄은 856행 이후 도착 판정 클러스터를 별도
   `BusAlertArrivalMonitor`로 옮기는 작업을 다음 Kotlin 리팩터링 항목으로 등록했다.
+
+## 2026-08-04 (3차): BusAlertTrackingManager 도착 판정 분리
+
+### 구조·동작 보존
+
+- `BusAlertTrackingManager.kt`의 버스 정보 갱신·도착 판정 클러스터 5개
+  (`updateBusInfo`, `updateBusInfoFromFlutter`, `checkNextBusAndNotify`,
+  `checkArrivalAndNotify`, `updateTrackingInfoFromFlutter`)를 신규
+  `BusAlertArrivalMonitor.kt`로 이동했다.
+- manager에는 기존 public 시그니처를 그대로 유지하는 위임 메서드를 남겨
+  `BusAlertService`와 method channel 호출부를 변경하지 않았다. 중지 시 호출만
+  기존 `stopTrackingForRoute(routeId, cancelNotification = true)`에서 동일 의미의
+  콜백 `stopTrackingForRoute(routeId, true)`로 치환했다.
+- `BusAlertTrackingManager.kt`는 1,219줄에서 922줄, 신규 monitor는 408줄이다.
+  원본과 신규 함수 목록은 각각 5개로 일치했고, 위 콜백 치환을 역변환한 줄 단위
+  기계적 대조 결과도 동일했다. 삭제한 함수나 동작은 없다.
+
+### TDD·정적 검증
+
+- RED: monitor 파일, manager의 5개 위임, 양쪽 크기 상한을 요구하는 소스 회귀
+  테스트를 먼저 추가했고 기존 구조에서는 파일 부재로 실패했다.
+- GREEN: 대상 테스트와 Flutter 전체 69건이 통과했고 `flutter analyze`도
+  `No issues found`로 끝났다.
+- `:app:compileDebugKotlin`과
+  `:app:testDebugUnitTest :app:lintDebug --no-daemon`이 성공했다.
+- `build_release.ps1 -Apk`로 `1.0.4+66` 릴리스 APK(57.1MB)를 생성했다. SHA-256은
+  `9D6218BB95A84BC5CCB2260D56913DCB4975BF68966BE97B6BF1E877600C72AB`이다.
+  `flutter build apk --debug`도 성공했다. 기존 Android SDK XML 3/4 경고 외 새
+  컴파일·lint 오류는 없었다.
+
+### Galaxy Note10+ 실기기 회귀
+
+- Galaxy Note10+(`SM-N976N`, `R3CM70K2YZD`), Android 12(API 31)에
+  `adb install -r`로 데이터 보존 설치했다. 최초 설치 시각
+  `2026-07-13 13:34:04`와 저장된 즐겨찾기는 유지됐다.
+- 홈에서 623번 수동 추적을 시작하자 `BusAlertService`가 foreground로 전환되고
+  도착 정보가 `곧 도착 [현재: 북구선거관리위원회건너]`로 갱신됐다. 이는 이동한
+  버스 정보 갱신·도착 판정 경로가 실제 API 응답으로 실행됐음을 확인한 것이다.
+- TTS 트리거 경로는 현재 이어폰 전용 설정과 이어폰 미연결 상태를 읽어 의도대로
+  `TTSService` 호출을 건너뛰었다. 사용자 오디오 설정은 변경하지 않았다.
+- 알림을 펼쳐 `추적 중지` 액션을 실행한 뒤 서비스는 `startRequested=false`가
+  됐고 추적 알림 활성 개수는 0개였다. `FATAL EXCEPTION`, 앱 ANR,
+  `AndroidRuntime` fatal, `E/flutter`, Flutter 미처리 예외는 모두 0건이었다.
+- API 31 장치이므로 Android 16 상태칩·One UI 8 Now Bar 재검증은 이번 범위가
+  아니며 기존 [follow-up-status.md](topics/follow-up-status.md) 항목을 유지한다.

@@ -5,7 +5,7 @@
 ## 검증 게이트
 
 - Dart 정적 분석: `flutter analyze`
-- Flutter 테스트: `flutter test` — 현재 기준선 68건
+- Flutter 테스트: `flutter test` — 현재 기준선 69건
 - Android JVM 테스트·lint: `android/`에서
   `.\gradlew.bat :app:testDebugUnitTest :app:lintDebug`
 - Kotlin만 바뀐 빠른 확인: `.\gradlew.bat :app:compileDebugKotlin`
@@ -43,7 +43,8 @@
   단색 벡터 `notification_icon`을 사용하고, RemoteViews 내부 그림과 분리한다.
   `android_quality_regression_test.dart`는 Live Update 경로에 네이티브 빌더,
   `setExtras()`, 수동 promoted 플래그 조작이 다시 들어오지 않도록 고정한다. 같은
-  테스트가 `bus_api` 36개 메서드 집합과 책임별 operation 크기 상한도 검사한다.
+  테스트가 `bus_api` 36개 메서드 집합과 책임별 operation 크기 상한, 도착 판정
+  5개 API의 `BusAlertArrivalMonitor` 위임과 manager/monitor 크기 상한도 검사한다.
 
 ## 알려진 로컬 환경 경고
 
