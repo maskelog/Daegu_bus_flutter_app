@@ -97,6 +97,40 @@ void main() {
     expect(ttsSource, contains('fun speakTTS('));
   });
 
+  test('버스 도착 갱신과 판정은 tracking manager에서 monitor로 분리한다', () {
+    final managerSource = _readAndroidSource(
+      'kotlin/com/devground/daegubus/services/BusAlertTrackingManager.kt',
+    );
+    final monitorSource = _readAndroidSource(
+      'kotlin/com/devground/daegubus/services/BusAlertArrivalMonitor.kt',
+    );
+
+    expect(managerSource.split('\n').length, lessThanOrEqualTo(950));
+    expect(monitorSource.split('\n').length, lessThanOrEqualTo(450));
+    expect(
+      managerSource,
+      contains('private val arrivalMonitor = BusAlertArrivalMonitor('),
+    );
+    for (final method in <String>[
+      'updateBusInfo',
+      'updateBusInfoFromFlutter',
+      'checkNextBusAndNotify',
+      'checkArrivalAndNotify',
+      'updateTrackingInfoFromFlutter',
+    ]) {
+      expect(
+        managerSource,
+        contains('arrivalMonitor.$method('),
+        reason: '$method 공개 진입점은 manager에 유지한다.',
+      );
+      expect(
+        monitorSource,
+        contains('fun $method('),
+        reason: '$method 구현은 arrival monitor가 소유한다.',
+      );
+    }
+  });
+
   test('TTS 반복 예약은 Android 7에서도 사용할 수 있는 Handler API만 쓴다', () {
     final source = _readAndroidSource(
       'kotlin/com/devground/daegubus/services/TTSService.kt',
