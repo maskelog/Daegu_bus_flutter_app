@@ -193,3 +193,11 @@ logcat.txt
 .gitignore
 BusInfo_old_backup.kt
 bash_stackdump_backup.txt
+
+# 앱 저장소 재현성 및 로컬 에이전트 작업 영역
+!pubspec.lock
+!android/gradlew
+!android/gradlew.bat
+!android/gradle/wrapper/gradle-wrapper.jar
+/.claude/worktrees/
+/.claude/settings.local.json

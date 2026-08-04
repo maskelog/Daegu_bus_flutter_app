@@ -61,8 +61,10 @@
   extras로 왕복한다. `AutoAlarmScheduleCalculator.findNextTargetTime`이 해당 날짜를
   스킵한다(탐색 창 60일). 앱을 1개월 이상 안 열면 목록이 낡을 수 있다(우아한 저하).
 - **알람 등록은 `AutoAlarmScheduleCalculator.scheduleExactAlarm`으로만**: Android
-  12(API 31~32)에서 정확한 알람 권한이 회수된 경우 `setAndAllowWhileIdle`(부정확)로
-  저하해 알람 소실을 막는다. `setAlarmClock`을 직접 부르지 말 것.
+  12+(API 31+)에서는 사용자 승인형 `SCHEDULE_EXACT_ALARM`만 선언한다. 권한이
+  허용되지 않은 경우 `setAndAllowWhileIdle`(부정확)로 저하해 알람 소실을 막는다.
+  Play 정책 제한이 큰 `USE_EXACT_ALARM`은 선언하지 않으며 `setAlarmClock`을 직접
+  부르지 말 것.
   권한 상태는 permission 채널의 `canScheduleExactAlarms`로 조회
   (`PermissionService.canScheduleExactAlarms()`), 설정 화면 알람 섹션의
   `_ExactAlarmTile`이 회수 상태를 안내하고 시스템 권한 화면으로 유도한다.

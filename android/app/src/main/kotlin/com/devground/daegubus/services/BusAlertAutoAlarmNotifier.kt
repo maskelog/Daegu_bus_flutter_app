@@ -10,8 +10,10 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
 import android.widget.RemoteViews
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.IconCompat
 import com.devground.daegubus.MainActivity
 import com.devground.daegubus.R
 import com.devground.daegubus.models.BusInfo
@@ -95,6 +97,7 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     fun cleanupLegacyAutoAlarmChannels(
         notificationManager: NotificationManager,
         keepChannelId: String
@@ -154,7 +157,7 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
 
             val ongoingChannelId = NotificationHandler.getOngoingChannelId()
             val notification = NotificationCompat.Builder(context, ongoingChannelId)
-                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setSmallIcon(R.drawable.notification_icon)
                 .setStyle(NotificationCompat.DecoratedCustomViewStyle())
                 .setCustomContentView(smallView)
                 .setCustomBigContentView(bigView)
@@ -288,28 +291,27 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                         else                 -> "${remainingMinutes}분후"
                     }.take(7)
 
-                    @Suppress("NewApi")
-                    val nativeBuilder = Notification.Builder(context, autoAlarmChannelId)
+                    val liveBuilder = NotificationCompat.Builder(context, autoAlarmChannelId)
                         .setContentTitle(liveTitle)
                         .setContentText(liveBody)
                         .setSubText(stationName.take(14))
                         .setShortCriticalText(chipText)
-                        .setSmallIcon(R.drawable.ic_bus_notification)
-                        .setCategory(Notification.CATEGORY_PROGRESS)
+                        .setSmallIcon(R.drawable.notification_icon)
+                        .setCategory(NotificationCompat.CATEGORY_PROGRESS)
                         .setContentIntent(contentPendingIntent)
                         .setOngoing(true)
                         .setAutoCancel(false)
                         .setOnlyAlertOnce(true)
                         .setShowWhen(true)
                         .setColor(busTypeColor)
-                        .setColorized(true)
-                        .setVisibility(Notification.VISIBILITY_PUBLIC)
-                        .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-                        .addAction(Notification.Action.Builder(
-                            android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_cancel),
+                        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                        .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                        .setRequestPromotedOngoing(true)
+                        .addAction(
+                            R.drawable.ic_cancel,
                             "알람 끄기",
                             stopPendingIntent
-                        ).build())
+                        )
 
                     Log.d(TAG, "🎯 상태칩: '$chipText'  제목: '$liveTitle'")
 
@@ -318,18 +320,9 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                     } else {
                         System.currentTimeMillis() + 60_000L
                     }
-                    nativeBuilder.setWhen(arrivalTimeMillis)
-                    nativeBuilder.setUsesChronometer(true)
-                    nativeBuilder.setChronometerCountDown(true)
-
-                    nativeBuilder.setExtras(android.os.Bundle().apply {
-                        putBoolean("android.requestPromotedOngoing", true)
-                    })
-                    try {
-                        nativeBuilder.javaClass
-                            .getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
-                            .invoke(nativeBuilder, true)
-                    } catch (_: ReflectiveOperationException) { }
+                    liveBuilder.setWhen(arrivalTimeMillis)
+                    liveBuilder.setUsesChronometer(true)
+                    liveBuilder.setChronometerCountDown(true)
 
                     val MAX_STOPS = 30
                     val MAX_MINUTES = 30
@@ -341,23 +334,26 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                     val remainingPercent = (100 - progressPercent).coerceIn(0, 100)
                     val progress = progressPercent.coerceIn(0, 100)
 
-                    @Suppress("NewApi")
                     try {
-                        val progressStyle = Notification.ProgressStyle()
+                        val progressStyle = NotificationCompat.ProgressStyle()
                             .setProgress(progress)
-
-                        try { progressStyle.setStyledByProgress(true) } catch (_: Exception) {}
-
-                        val busIcon = android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_tracker)
-                        progressStyle.setProgressTrackerIcon(busIcon)
+                            .setProgressTrackerIcon(
+                                IconCompat.createWithResource(context, R.drawable.ic_bus_tracker)
+                            )
 
                         try {
-                            val segments = mutableListOf<Notification.ProgressStyle.Segment>()
+                            val segments = mutableListOf<NotificationCompat.ProgressStyle.Segment>()
                             if (progress > 0) {
-                                segments.add(Notification.ProgressStyle.Segment(progress).setColor(busTypeColor))
+                                segments.add(
+                                    NotificationCompat.ProgressStyle.Segment(progress)
+                                        .setColor(busTypeColor)
+                                )
                             }
                             if (remainingPercent > 0) {
-                                segments.add(Notification.ProgressStyle.Segment(remainingPercent).setColor(0xFFE0E0E0.toInt()))
+                                segments.add(
+                                    NotificationCompat.ProgressStyle.Segment(remainingPercent)
+                                        .setColor(0xFFE0E0E0.toInt())
+                                )
                             }
                             if (segments.isNotEmpty()) {
                                 progressStyle.setProgressSegments(segments)
@@ -365,21 +361,19 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                         } catch (_: Exception) {}
 
                         try {
-                            val startPt = Notification.ProgressStyle.Point(1)
+                            val startPt = NotificationCompat.ProgressStyle.Point(1)
                                 .setColor(0xFF4CAF50.toInt())
-                            val endPt = Notification.ProgressStyle.Point(99)
+                            val endPt = NotificationCompat.ProgressStyle.Point(99)
                                 .setColor(0xFFFF5722.toInt())
                             progressStyle.setProgressPoints(listOf(startPt, endPt))
                         } catch (_: Exception) {}
 
-                        nativeBuilder.setStyle(progressStyle)
-                        nativeBuilder.setProgress(100, progress, false)
+                        liveBuilder.setStyle(progressStyle)
+                        liveBuilder.setProgress(100, progress, false)
                     } catch (e: Exception) {
                         Log.w(TAG, "⚠️ 자동알람 ProgressStyle 설정 실패: ${e.message}")
-                        nativeBuilder.setProgress(100, progress, false)
+                        liveBuilder.setProgress(100, progress, false)
                     }
-
-                    val chipApplied = setLiveUpdateStatusChip(nativeBuilder, chipText)
 
                     if (isSamsungOneUi()) {
                         val detailText = chipText
@@ -419,10 +413,10 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                         }
                         val samsungExtras = android.os.Bundle()
                         applyOneUiOngoingExtras(samsungExtras, oneUiBundle)
-                        nativeBuilder.addExtras(samsungExtras)
+                        liveBuilder.addExtras(samsungExtras)
                     }
 
-                    var builtNotification = nativeBuilder.build()
+                    val builtNotification = liveBuilder.build()
                     @Suppress("NewApi")
                     val hasPromotableCharacteristics = if (Build.VERSION.SDK_INT >= 36) {
                         try {
@@ -452,17 +446,11 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
                     Log.d(TAG, "📋 NotificationManager.canPostPromotedNotifications(): $canPostPromoted")
 
                     val isPromotedEnabled = canPostPromoted && hasPromotableCharacteristics
-                    Log.d(TAG, if (chipApplied && isPromotedEnabled)
+                    Log.d(TAG, if (isPromotedEnabled)
                         "✅ 상태칩 적용 완료: '$chipText'"
                     else
-                        "⚠️ 상태칩 미승격: chipApplied=$chipApplied, hasPromotable=$hasPromotableCharacteristics, canPostPromoted=$canPostPromoted"
+                        "⚠️ 상태칩 미승격: hasPromotable=$hasPromotableCharacteristics, canPostPromoted=$canPostPromoted"
                     )
-                    @Suppress("NewApi")
-                    builtNotification.flags = builtNotification.flags or
-                        Notification.FLAG_ONGOING_EVENT or
-                        Notification.FLAG_NO_CLEAR or
-                        Notification.FLAG_PROMOTED_ONGOING
-
                     notificationManager.notify(BusAlertService.ONGOING_NOTIFICATION_ID, builtNotification)
                     Log.d(TAG, "✅ 자동알람 Live Update 알림 갱신: $busNo, ${chipText}, 위치=$currentStation")
                     return
@@ -514,7 +502,7 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
             }
 
             val notification = NotificationCompat.Builder(context, autoAlarmChannelId)
-                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setSmallIcon(R.drawable.notification_icon)
                 .setStyle(NotificationCompat.DecoratedCustomViewStyle())
                 .setCustomContentView(smallView)
                 .setCustomBigContentView(bigView)
@@ -537,30 +525,6 @@ class BusAlertAutoAlarmNotifier(private val service: BusAlertService) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ 자동알람 알림 업데이트 실패: ${e.message}", e)
         }
-    }
-
-    @Suppress("NewApi")
-    @android.annotation.SuppressLint("NewApi")
-    fun setLiveUpdateStatusChip(
-        nativeBuilder: Notification.Builder,
-        chipText: String
-    ): Boolean {
-        val safeChipText = chipText.trim().take(7).ifBlank { "???" }
-        val legacyChipText = chipText.trim().ifBlank { "정보 없음" }
-        var success = false
-        try {
-            nativeBuilder.setShortCriticalText(safeChipText)
-            Log.d(TAG, "✅ setShortCriticalText('$safeChipText') 직접 호출 성공")
-            success = true
-        } catch (e: Exception) {
-            Log.w(TAG, "⚠️ setShortCriticalText 호출 실패: ${e.message}")
-        }
-
-        try {
-            nativeBuilder.setContentInfo(safeChipText)
-        } catch (_: Exception) { }
-
-        return success
     }
 
     fun buildLiveUpdateStatusChipText(

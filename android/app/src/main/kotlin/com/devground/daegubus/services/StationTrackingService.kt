@@ -15,8 +15,6 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Timer
-import java.util.TimerTask
 import kotlin.math.min
 import com.devground.daegubus.MainActivity
 import com.devground.daegubus.R
@@ -37,11 +35,12 @@ class StationTrackingService : Service() {
         const val ACTION_STOP_TRACKING = "com.devground.daegubus.action.STOP_STATION_TRACKING"
         const val EXTRA_STATION_ID = "com.devground.daegubus.extra.STATION_ID"
         const val EXTRA_STATION_NAME = "com.devground.daegubus.extra.STATION_NAME"
+        private const val TRACKING_INTERVAL_MS = 15_000L
     }
 
     // 서비스의 작업을 위한 코루틴 스코프 (메인 스레드 + SupervisorJob)
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private var trackingTimer: Timer? = null // 주기적인 업데이트를 위한 타이머
+    private var trackingJob: Job? = null
     private lateinit var busApiService: BusApiService // 버스 API 호출을 위한 서비스
     private var currentStationId: String? = null // 현재 추적 중인 정류장 ID
     private var currentStationName: String? = null // 현재 추적 중인 정류장 이름
@@ -109,10 +108,9 @@ class StationTrackingService : Service() {
 
     // 내부적으로 추적을 시작하는 로직
     private fun startTrackingInternal(stationId: String, stationName: String) {
-        // 이미 타이머가 실행 중이면 취소하고 새로 시작
-        if (trackingTimer != null) {
-            Log.w(TAG, "이미 타이머가 실행 중입니다. 기존 타이머를 취소하고 새로 시작합니다.")
-            trackingTimer?.cancel()
+        if (trackingJob != null) {
+            Log.w(TAG, "이미 반복 작업이 실행 중입니다. 기존 작업을 취소하고 새로 시작합니다.")
+            trackingJob?.cancel()
         }
         Log.i(TAG, "정류장 추적 시작: ID=$stationId, 이름=$stationName")
         currentStationId = stationId
@@ -121,27 +119,26 @@ class StationTrackingService : Service() {
         // 추적 시작 즉시 첫 번째 데이터 업데이트 및 알림 표시 실행
         fetchAndNotify()
 
-        // 타이머 설정 (예: 15초마다 도착 정보 업데이트)
-        trackingTimer = Timer()
-        trackingTimer?.scheduleAtFixedRate(object : TimerTask() {
-            override fun run() {
-                fetchAndNotify() // 주기적으로 fetchAndNotify 호출
+        // 프로세스가 cached 상태에서 복귀해도 누락된 실행을 몰아서 수행하지 않는다.
+        trackingJob = serviceScope.launch {
+            while (isActive) {
+                delay(TRACKING_INTERVAL_MS)
+                fetchAndNotify()
             }
-        }, 15000, 15000) // 15초 후에 첫 실행, 이후 15초 간격으로 반복
+        }
     }
 
     // 내부적으로 추적을 중지하는 로직
     private fun stopTrackingInternal() {
-        Log.i(TAG, "정류장 추적 중지 시도: ID=$currentStationId, 타이머=${if (trackingTimer != null) "있음" else "없음"}")
+        Log.i(TAG, "정류장 추적 중지 시도: ID=$currentStationId, 반복작업=${if (trackingJob != null) "있음" else "없음"}")
 
         try {
-            // 타이머 취소
-            if (trackingTimer != null) {
-                trackingTimer?.cancel()
-                trackingTimer = null
-                Log.d(TAG, "타이머 취소 완료")
+            if (trackingJob != null) {
+                trackingJob?.cancel()
+                trackingJob = null
+                Log.d(TAG, "반복 작업 취소 완료")
             } else {
-                Log.d(TAG, "취소할 타이머가 없음")
+                Log.d(TAG, "취소할 반복 작업이 없음")
             }
 
             // 알림 취소 시도 - 명시적으로 Foreground 상태도 중단
@@ -156,13 +153,8 @@ class StationTrackingService : Service() {
 
                 // 포그라운드 서비스 중단
                 try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                        Log.d(TAG, "Foreground 서비스 중단 완료 (Android N+)")
-                    } else {
-                        stopForeground(true)
-                        Log.d(TAG, "Foreground 서비스 중단 완료 (레거시)")
-                    }
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    Log.d(TAG, "Foreground 서비스 중단 완료")
                 } catch (e: Exception) {
                     Log.e(TAG, "Foreground 서비스 중단 중 오류: ${e.message}")
                 }
@@ -186,7 +178,7 @@ class StationTrackingService : Service() {
             // 오류가 발생해도 추적 정보는 반드시 초기화
             currentStationId = null
             currentStationName = null
-            trackingTimer = null
+            trackingJob = null
         }
     }
 
@@ -319,7 +311,7 @@ class StationTrackingService : Service() {
             )
 
             val builder = NotificationCompat.Builder(this, CHANNEL_STATION_TRACKING)
-                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setSmallIcon(R.drawable.notification_icon)
                 .setContentTitle(title)
                 .setContentText(bodyText)
                 .setStyle(inboxStyle)

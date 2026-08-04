@@ -376,11 +376,13 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                 
                 // 자동알람 전용 브로드캐스트 전송
                 try {
-                    val autoAlarmIntent = Intent("com.devground.daegubus.STOP_AUTO_ALARM")
-                    autoAlarmIntent.putExtra("busNo", command.busNo)
-                    autoAlarmIntent.putExtra("stationName", command.stationName)
-                    autoAlarmIntent.putExtra("routeId", command.routeId)
-                    autoAlarmIntent.flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
+                    val autoAlarmIntent = Intent("com.devground.daegubus.STOP_AUTO_ALARM").apply {
+                        setPackage(packageName)
+                        putExtra("busNo", command.busNo)
+                        putExtra("stationName", command.stationName)
+                        putExtra("routeId", command.routeId)
+                        this.flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
+                    }
                     sendBroadcast(autoAlarmIntent)
                     Log.d(TAG, "✅ 자동알람 중지 브로드캐스트 전송 완료")
                 } catch (e: Exception) {
@@ -774,62 +776,7 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     }
 
     fun initialize() {
-        Log.d(TAG, "Service initialize called")
-        busApiService = BusApiService(applicationContext)
-        notificationHandler = NotificationHandler(this)
-        notificationUpdater = BusAlertNotificationUpdater(this, notificationHandler)
-        if (!::ttsController.isInitialized) {
-            ttsController = BusAlertTtsController(applicationContext) { /* no-op */ }
-            ttsController.initializeTts()
-        }
-        trackingManager = BusAlertTrackingManager(
-            busApiService,
-            serviceScope,
-            activeTrackings,
-            monitoringJobs,
-            { b, s, r, c, routeId, summary ->
-                notificationUpdater.showOngoingBusTracking(
-                    busNo = b,
-                    stationName = s,
-                    remainingMinutes = r,
-                    currentStation = c,
-                    isUpdate = true,
-                    notificationId = ONGOING_NOTIFICATION_ID,
-                    allBusesSummary = summary,
-                    routeId = routeId
-                )
-            },
-            ::updateForegroundNotification,
-            ttsController,
-            { useTextToSpeech },
-            ARRIVAL_THRESHOLD_MINUTES,
-            this,
-            monitoredRoutes,
-            arrivingSoonNotified,
-            hasNotifiedTts,
-            hasNotifiedArrival,
-            ::generateNotificationId,
-            { isInForeground = it },
-            ONGOING_NOTIFICATION_ID,
-            cachedBusInfo,
-            { isServiceActive },
-            { isServiceActive = it },
-            { isManuallyStoppedByUser },
-            { isManuallyStoppedByUser = it },
-            { lastManualStopTime = it },
-            { lastManualStopTime },
-            { isAutoAlarmMode = it },
-            { autoAlarmStartTime = it },
-            { instance = null },
-            { isInForeground },
-            ::stopMonitoringTimer,
-            ::stopTtsTracking,
-            ::checkAndStopServiceIfNeeded,
-            AUTO_ALARM_NOTIFICATION_ID,
-            notificationHandler,
-            RESTART_PREVENTION_DURATION,
-            { alertOnArrivalOnly },
-        )
+        Log.d(TAG, "Service settings refresh called")
         loadSettings()
         notificationHandler.createNotificationChannels()
     }

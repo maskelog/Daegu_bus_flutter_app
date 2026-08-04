@@ -316,6 +316,7 @@ class BusAlertTrackingManager(
             }
 
             val cancellationIntent = Intent("com.devground.daegubus.NOTIFICATION_CANCELLED").apply {
+                setPackage(service.packageName)
                 putExtra("busNo", busNo)
                 putExtra("routeId", routeId)
                 putExtra("stationName", stationName)
@@ -760,7 +761,9 @@ class BusAlertTrackingManager(
 
             // 5. Flutter 측에 알림 취소 이벤트 전송 시도
             try {
-                val allCancelIntent = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED")
+                val allCancelIntent = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED").apply {
+                    setPackage(service.packageName)
+                }
                 service.sendBroadcast(allCancelIntent)
                 Log.d(TAG, "모든 추적 취소 이벤트 브로드캐스트 전송")
             } catch (e: Exception) {
@@ -829,6 +832,7 @@ class BusAlertTrackingManager(
     internal fun sendAllCancellationBroadcast() {
         try {
             val allCancelBroadcast = Intent("com.devground.daegubus.ALL_TRACKING_CANCELLED").apply {
+                setPackage(service.packageName)
                 flags = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
             }
             service.sendBroadcast(allCancelBroadcast)

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -37,7 +38,6 @@ import com.devground.daegubus.channels.StationTrackingChannelHandler
 import com.devground.daegubus.channels.TtsChannelHandler
 import com.devground.daegubus.services.BusApiService
 import com.devground.daegubus.services.BusAlertService
-import com.devground.daegubus.services.TTSService
 import com.devground.daegubus.utils.NotificationHandler
 import android.webkit.WebView
 
@@ -100,7 +100,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
     private val LOCATION_PERMISSION_REQUEST_CODE = 124
     private lateinit var audioManager: AudioManager
     private lateinit var tts: TextToSpeech
-    private var alarmCancelReceiver: BroadcastReceiver? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         try {
@@ -172,10 +171,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 initializeEssentialComponents()
             }
 
-            // 알람 취소 브로드캐스트 리시버 등록
-            val filter = IntentFilter("cancel_alarm")
-            registerReceiver(alarmCancelReceiver, filter)
-
         } catch (e: Exception) {
             Log.e(TAG, "❌ MainActivity onCreate 오류: ${e.message}", e)
         }
@@ -224,9 +219,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
             } catch (e: Exception) {
                 Log.e(TAG, "TTS 초기화 오류: ${e.message}", e)
             }
-
-            // 알림 취소 이벤트 수신을 위한 브로드캐스트 리시버 등록
-            registerNotificationCancelReceiver()
 
             // 서비스 시작 및 바인딩
             startAndBindBusAlertService()
@@ -372,12 +364,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 Log.e(TAG, "서비스 바인딩 해제 오류: ${e.message}")
             }
 
-            // 브로드캐스트 리시버 해제
-            unregisterAlarmCancelReceiver()
-
-            // 알람 취소 브로드캐스트 리시버 해제
-            unregisterReceiver(alarmCancelReceiver)
-
             super.onDestroy()
         } catch (e: Exception) {
             Log.e(TAG, "onDestroy 오류: ${e.message}", e)
@@ -409,24 +395,12 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun unregisterAlarmCancelReceiver() {
-        try {
-            alarmCancelReceiver?.let {
-                unregisterReceiver(it)
-                alarmCancelReceiver = null
-                Log.d(TAG, "알림 취소 브로드캐스트 리시버 해제 완료")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "알림 취소 리시버 해제 오류: ${e.message}", e)
-        }
-    }
-
     // Create notification channel for alarms
     private fun createAlarmNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "Bus Alarms"
             val descriptionText = "Notifications for scheduled bus alarms"
-            val importance = NotificationManager.IMPORTANCE_MAX // 최고 우선순위로 변경
+            val importance = NotificationManager.IMPORTANCE_HIGH
             val channel = NotificationChannel(ALARM_NOTIFICATION_CHANNEL_ID, name, importance).apply {
                 description = descriptionText
                 enableLights(true)
@@ -447,70 +421,6 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun handleNotificationAction(action: String, intent: Intent) {
-        when (action) {
-            "cancel_alarm" -> {
-                val alarmId = intent.getIntExtra("alarm_id", -1)
-                val busNo = intent.getStringExtra("busNo") ?: ""
-                val stationName = intent.getStringExtra("stationName") ?: ""
-                val routeId = intent.getStringExtra("routeId") ?: ""
-
-                if (alarmId != -1) {
-                    Log.d(TAG, "🔔 노티피케이션에서 알람 취소: ID=$alarmId, 버스=$busNo, 정류장=$stationName, 노선=$routeId")
-
-                    // 알림 취소
-                    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.cancel(alarmId)
-
-                    // TTS 서비스 중지
-                    val ttsIntent = Intent(this, TTSService::class.java)
-                    ttsIntent.action = "STOP_TTS"
-                    startService(ttsIntent)
-
-                    // 현재 알람만 취소 상태로 저장
-                    val prefs = getSharedPreferences("alarm_preferences", Context.MODE_PRIVATE)
-                    val editor = prefs.edit()
-                    editor.putBoolean("alarm_cancelled_$alarmId", true).apply()
-
-                    // ✅ Flutter 쪽에 알람 취소 정보 전달 (중요!)
-                    if (busNo.isNotEmpty() && stationName.isNotEmpty() && routeId.isNotEmpty()) {
-                        try {
-                            flutterEngine?.dartExecutor?.binaryMessenger?.let { messenger ->
-                                val channel = MethodChannel(messenger, "com.devground.daegubus/bus_api")
-                                channel.invokeMethod("cancelAlarmFromNotification", mapOf(
-                                    "busNo" to busNo,
-                                    "stationName" to stationName,
-                                    "routeId" to routeId,
-                                    "alarmId" to alarmId
-                                ))
-                                Log.d(TAG, "✅ Flutter에 알람 취소 정보 전달 완료")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Flutter에 알람 취소 정보 전달 실패: ${e.message}")
-                        }
-                    }
-
-                    // 토스트 메시지로 알림
-                    Toast.makeText(
-                        this,
-                        "현재 알람이 취소되었습니다",
-                        Toast.LENGTH_SHORT
-                    ).show()
-
-                    Log.d(TAG, "✅ Alarm notification cancelled: $alarmId (one-time cancel)")
-                }
-            }
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        val action = intent.action
-        if (action != null && action != "cancel_alarm") {
-            handleNotificationAction(action, intent)
-        }
-    }
-
     // 브로드캐스트 리시버 등록 메소드
     private fun registerNotificationCancelReceiver() {
         try {
@@ -520,13 +430,13 @@ class MainActivity : FlutterActivity(), TextToSpeech.OnInitListener {
                 addAction("com.devground.daegubus.STOP_AUTO_ALARM") // 자동알람 중지 액션 추가
                 // 필요하다면 다른 액션도 추가
             }
-            // Android 버전에 따른 리시버 등록 방식 분기 (Exported/Not Exported)
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    registerReceiver(notificationCancelReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
-                } else {
-                    registerReceiver(notificationCancelReceiver, intentFilter)
-                }
+                ContextCompat.registerReceiver(
+                    this,
+                    notificationCancelReceiver,
+                    intentFilter,
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
                 Log.d(TAG, "NotificationCancelReceiver 등록됨")
             } catch (e: Exception) {
                 Log.e(TAG, "NotificationCancelReceiver 등록 오류: ${e.message}", e)

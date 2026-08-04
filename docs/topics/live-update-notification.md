@@ -1,7 +1,7 @@
 # Live Update 알림 (Android 16 / Samsung Now Bar)
 
 > 이 문서는 **현재 상태**를 서술한다. 변경 이력·시행착오의 전체 맥락은 [devlog.md](../devlog.md)의 해당 날짜 참조.
-> 마지막 갱신: 2026-07-29 (수동 승차알람 안전 타임아웃 반영)
+> 마지막 갱신: 2026-08-04 (API 31 폴백 실기기 검증 반영)
 
 ## 개요
 
@@ -22,7 +22,9 @@ Samsung One UI Now Bar로 승격시켜 실시간 도착 정보를 표시한다.
   있지만, 방치된 네트워크 조회·FGS 알림은 무기한 유지되지 않는다. 자동알람은
   이 상한을 사용하지 않고 설정 화면의 5~120분 타임아웃(기본 30분)을 따른다.
   경과 시간은 시스템 시각 변경의 영향을 받지 않도록 단조 시계로 계산한다.
-- **빌더**: `NotificationCompat.Builder` + `NotificationCompat.ProgressStyle` — **직접 API 호출** (Reflection 아님)
+- **빌더**: 수동 추적(`NotificationHandler`)과 자동알람(`BusAlertAutoAlarmNotifier`)
+  모두 `NotificationCompat.Builder` + `NotificationCompat.ProgressStyle`을 **직접 호출**한다.
+  Reflection, 네이티브 빌더, 빌드 후 플래그 조작은 사용하지 않는다.
 - **데이터 흐름**: Flutter가 단일 진실 공급원. Flutter에서 버스 정보를 fetch할 때마다
   `updateBusInfo` 메서드 채널로 Native에 전달 → 알림 즉시 갱신 (2026-02-05 결정)
 
@@ -56,6 +58,8 @@ Live Update 승격 정보가 시스템에 전달되지 않았다. Google 공식 
 
 - **`setExtras()` 금지 → `addExtras()` 사용**: `setExtras()`는 NotificationCompat이 내부적으로
   설정한 extras를 덮어써 승격이 깨진다. (2026-02-16)
+- **`setColorized(true)` 금지**: Live Update 승격 판정을 방해할 수 있으므로 노선 색은
+  `setColor()`에만 전달한다.
 - **설정 바로가기 인텐트**: `Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS` +
   `EXTRA_APP_PACKAGE`가 올바른 값. `ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS`는 잘못된 값이었음.
 - **디버깅 API**: `NotificationManager.canPostPromotedNotifications()`(사용자 설정 여부),
@@ -80,12 +84,24 @@ Live Update 승격 정보가 시스템에 전달되지 않았다. Google 공식 
   가속 빌드로 검증했으며, 경계 뒤 첫 30초 추적 주기에 통합 알림과 foreground
   서비스가 함께 정리됐다. 이후 상한을 2시간으로 복원한 최종 `1.0.4+66`
   릴리스 APK를 다시 설치했다(2026-07-29).
+- 2026-08-03에 수동 추적·자동알람의 네이티브 빌더 회귀를 제거한 뒤 Kotlin 컴파일과
+  소스 회귀 테스트는 통과했다. 이 변경을 포함한 API 36 실기기 상태칩·Now Bar 재확인은
+  [follow-up-status.md](follow-up-status.md)에 남아 있다.
+- 2026-08-04 현행 변경을 포함한 `1.0.4+66` 릴리스 APK를 Galaxy Note10+
+  (Android 12/API 31, One UI 4.1)에 설치했다. 수동 623번 추적에서
+  `bus_tracking_ongoing` foreground 알림의 제목·도착 정보가 갱신됐고, 펼친 알림의
+  `추적 중지` 액션으로 서비스의 `startRequested=false` 전환과 알림 제거를 확인했다.
+  알림 extras에는 `android.requestPromotedOngoing=true`와 짧은 상태 텍스트가
+  보존됐다. 단, API 31에서는 상태칩·Now Bar 승격 자체를 확인할 수 없다.
 
 ## 폐기된 접근 (다시 쓰지 말 것)
 
 - ~~Reflection으로 `setRequestPromotedOngoing` / `setShortCriticalText` 호출~~ (2026-01-28 ~ 02-05)
 - ~~네이티브 `Notification.Builder` / `Notification.ProgressStyle`~~
 - ~~`builtNotification.flags` 수동 조작 (`FLAG_PROMOTED_ONGOING` 등)~~
+
+`test/android_quality_regression_test.dart`가 위 세 접근과 `setExtras()`·colorized 재도입을
+소스 수준에서 차단한다.
 
 ## devlog 참조
 

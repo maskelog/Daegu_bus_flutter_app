@@ -28,8 +28,6 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
 
     init {
         initializeDatabase(context)
-        // 릴리즈 모드에서 데이터베이스 권한 확인 및 수정
-        fixDatabasePermissions()
     }
 
     // 데이터베이스 초기화 및 무결성 확인
@@ -326,21 +324,4 @@ class DatabaseHelper private constructor(private val context: Context) : SQLiteO
         return R * c
     }
 
-    // 데이터베이스 권한 확인 및 수정 (릴리즈 모드 대응)
-    private fun fixDatabasePermissions() {
-        val dbPath = context.getDatabasePath(DATABASE_NAME)
-        if (dbPath.exists()) {
-            // 파일 권한 확인 및 수정
-            if (!dbPath.canWrite()) {
-                Log.w(TAG, "데이터베이스 파일에 쓰기 권한이 없습니다. 권한을 수정합니다.")
-                try {
-                    // 파일 권한 수정 시도
-                    dbPath.setWritable(true, false)
-                    Log.d(TAG, "데이터베이스 파일 권한 수정 완료")
-                } catch (e: Exception) {
-                    Log.e(TAG, "데이터베이스 파일 권한 수정 실패: ${e.message}", e)
-                }
-            }
-        }
-    }
 }

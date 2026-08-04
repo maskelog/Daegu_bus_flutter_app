@@ -4,7 +4,21 @@
 > [devlog.md](../devlog.md), 코드 구조 개선 작업은
 > [refactoring-plan.md](../refactoring-plan.md)를 참조한다.
 >
-> 마지막 갱신: 2026-07-29
+> 마지막 갱신: 2026-08-04
+
+## 우선순위 높음: Android 16 Live Update 회귀 수정 실기기 확인
+
+- 현재 상태: 수동 추적과 자동알람 경로에 재도입돼 있던 네이티브
+  `Notification.Builder`/`Notification.ProgressStyle`, Reflection, 수동 promoted 플래그
+  조작을 제거하고 2026-02-16의 `NotificationCompat` 직접 호출 구조로 통일했다.
+  소스 회귀 테스트와 Kotlin 컴파일은 통과했다. 이 변경을 포함한 릴리스 APK를
+  Galaxy Note10+(Android 12/API 31, One UI 4.1)에 설치해 수동 추적 알림의
+  도착 정보 갱신, 펼친 알림의 `추적 중지` 액션, foreground 서비스 정리를 확인했다.
+  API 31은 표준 진행 알림 폴백만 검증할 수 있으므로 API 36 승격 검증은 남아 있다.
+- 완료 기준: API 36 / One UI 8 실기기에서 (1) 수동 추적 상태칩 텍스트·진행 아이콘,
+  (2) 자동알람 상태칩·Now Bar 갱신, (3) `추적 중지`·`알람 끄기` 액션을 확인하고
+  `hasPromotableCharacteristics()`와 `canPostPromotedNotifications()`가 모두 true인지
+  logcat으로 기록한다.
 
 ## 우선순위 중간: 자동알람 수정 실기기 재검증
 
@@ -14,7 +28,9 @@
   `AlarmReceiver`가 사전 추적 직후 오늘 회차를 다시 체인하고,
   `BusAlertService`가 60초 지난 중복을 새 알람으로 오인한 결합 버그로
   코드에서 확인·수정했다. 다음 회차 계산, pending/active 중복 방지,
-  타임아웃 경계, stationId 형식 판정은 JVM 단위 테스트로 검증했다.
+  타임아웃 경계, stationId 형식 판정은 JVM 단위 테스트로 검증했다. 2026-08-04
+  데이터 보존 업데이트 뒤에도 기존 17:35 알람의 활성 상태와 17:30
+  `RTC_WAKEUP` 예약이 유지되는 것은 확인했지만, 예약 시각의 실제 기동은 기다리지 않았다.
 - 완료 기준: 수정 빌드를 실기기에 설치한 뒤 트리거가 임박한 자동알람으로
   (1) 본 시각 전 3~5초 재발화가 없는지, (2) 설정 타임아웃 후 서비스·알림이
   정리되는지 확인한다. stationId 보정은 형식이 잘못된 실제 정류장 데이터를
@@ -22,9 +38,10 @@
 
 ## 우선순위 높음: 1.0.4+66 Play 배포 확인
 
-- 현재 상태: 로컬 릴리스 서명 APK(sideload, Play 배포 아님)를 실기기(Galaxy Note10+,
-  `R3CM70K2YZD`)에 설치해 지도 `도착정보 보기` 단일 카드·홈 전환·edge-to-edge
-  렌더링에 기능 문제가 없음을 2026-07-25에 확인했다 (devlog 참조). Play Console
+- 현재 상태: 2026-08-04 현행 작업 트리에서 다시 빌드한 로컬 릴리스 서명
+  APK(sideload, Play 배포 아님)를 Galaxy Note10+(`R3CM70K2YZD`)에 데이터 보존
+  업데이트했다. 서명·최초 설치 시각·데이터 디렉터리 inode가 유지됐고 홈·검색·지도·
+  노선·알람·설정, 수동 추적 알림과 중지 액션까지 정상 동작했다. Play Console
   업로드·배포는 아직 하지 않았다.
 - 완료 기준: Play Console이 `versionCode 66`을 수락하고 배포한 뒤, **Play 배포본**을
   실기기에 설치해 같은 흐름을 재확인한다 (sideload 검증과 Play 배포본 검증은
@@ -34,7 +51,8 @@
 
 - 현재 상태: 2026-07-15 AAB 빌드에서 Android Studio와 command-line tools 사이의
   SDK XML 버전 불일치 경고가 1건 발생했고, 2026-07-29 디버그 APK 빌드에서도
-  SDK XML 3/4 불일치 경고가 재현됐다. 두 빌드 모두 성공했다.
+  SDK XML 3/4 불일치 경고가 재현됐다. 2026-08-04 `build_release.ps1 -Apk`에서도
+  같은 경고가 재현됐으며 세 빌드 모두 성공했다.
 - 완료 기준: 두 도구의 SDK 구성 버전을 정렬하고 다음 `build_release.ps1` 실행에서
   같은 경고가 재발하지 않는지 확인한다.
 

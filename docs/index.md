@@ -18,6 +18,7 @@
 | [topics/map-station-home-flow.md](topics/map-station-home-flow.md) | 지도 정류장 선택 → 홈 전환 — 임베드/푸시 화면의 결과 전달 흐름 |
 | [topics/route-branding.md](topics/route-branding.md) | 노선 배지 색상 — 직행/급행/순환/간선/지선/출근맞춤/군위/투어/DRT 팔레트 |
 | [topics/release-versioning.md](topics/release-versioning.md) | 릴리스 버전 관리 — versionName/versionCode 증가 규칙과 현행 버전 |
+| [topics/build-quality.md](topics/build-quality.md) | 빌드 품질·CI·의존성 — 현행 검증 게이트, 재현 가능한 체크아웃, 정책 민감 권한 |
 
 ## 시간순 로그
 

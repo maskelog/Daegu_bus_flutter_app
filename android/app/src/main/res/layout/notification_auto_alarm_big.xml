@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 자동알람 알림 - 펼친 상태 (진행바 + 상세 정보) -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
@@ -34,7 +35,8 @@
                 android:layout_height="16dp"
                 android:src="@drawable/ic_bus_notification"
                 android:contentDescription=""
-                android:tint="@android:color/white" />
+                android:tint="@android:color/white"
+                tools:ignore="UseAppTint" />
 
             <TextView
                 android:id="@+id/tv_bus_no"

@@ -2577,3 +2577,171 @@ adb -s R3CM70K2YZD logcat -d | grep -E "BusAlertService|TTSService"
 - 최종 복원 소스에서 `flutter analyze`가 `No issues found`로 통과했고,
   `ManualTrackingRuntimePolicyTest`와 `:app:compileDebugKotlin`도 통과했다.
   Kotlin 검증에서는 기존 SDK XML 3/4 도구 버전 불일치 경고만 재현됐다.
+
+## 2026-08-03: Codex CLI·Claude Code 작업 종합 점검 및 품질 게이트 정비
+
+### 점검에서 확인한 문제
+
+- 기존 Flutter 분석·테스트·디버그 빌드는 통과했지만 Android `lintDebug`는 API
+  레벨, 동적 리시버, 암시적 브로드캐스트, 잘못된 중요도 상수, RemoteViews tint로
+  20개 오류가 발생했다.
+- `BusAlertService.initialize()`가 `onCreate()`에서 만든 객체 그래프를 다시 생성했고,
+  `NotificationHandler` 생성자는 해제할 수 없는 동적 리시버를 매번 등록했다.
+- API 24~28에서 없는 `Handler.hasCallbacks`를 사용했고, 정류장 추적은 cached
+  프로세스 복귀 때 밀린 실행이 몰릴 수 있는 `Timer.scheduleAtFixedRate` 기반이었다.
+- 앱 lockfile·Gradle wrapper가 ignore되어 새 체크아웃 재현성이 없었고,
+  `.claude/worktrees/funny-fermat`는 `.gitmodules` 없는 gitlink였다. CI도 없었다.
+- `USE_EXACT_ALARM`, 직접 배터리 최적화 예외 요청, overlay 권한은 Play 정책 검토가
+  필요한 구성인데 제품 핵심 기능에 비해 선언 범위가 넓었다.
+
+### 수정
+
+- Android 품질 회귀 테스트를 추가해 TTS API, 리시버 수명주기, 서비스 초기화,
+  내부 브로드캐스트 범위, 알림 small icon, 제한 권한, DB 권한, 반복 작업 정책을
+  소스 수준에서 고정했다. 각 결함은 수정 전 RED를 확인했다.
+- `BusAlertService` 객체 그래프는 `onCreate()`에서 한 번만 만들고 `initialize()`는
+  설정·채널 갱신만 한다. 죽은 `ServiceManager`와 MainActivity의 미할당
+  `alarmCancelReceiver`, `NotificationHandler`의 미해제 내부 리시버를 삭제했다.
+- 내부 브로드캐스트에 앱 패키지를 지정하고 MainActivity 동적 리시버는
+  `ContextCompat.RECEIVER_NOT_EXPORTED`로 등록한다. 알림 채널 중요도는 지원되는
+  `IMPORTANCE_HIGH`, 상태 표시줄 아이콘은 단색 `notification_icon`으로 통일했다.
+- TTS 반복 예약은 `removeCallbacks` 후 `postDelayed`, 정류장 반복 갱신은 취소 가능한
+  coroutine `Job`과 `delay`로 바꿨다. DB 파일을 전 앱 쓰기 가능하게 만드는 권한
+  변경도 제거했다.
+- 정확 알람은 사용자 승인형 `SCHEDULE_EXACT_ALARM`만 남기고 미승인 시 기존 부정확
+  알람 폴백을 사용한다. 배터리 최적화는 제한 권한 직접 요청 대신 시스템 설정
+  목록을 열며 `SYSTEM_ALERT_WINDOW`도 제거했다.
+- 호환 범위 lockfile 업데이트 54개와 직접 의존성 메이저 업데이트를 적용했다.
+  `flutter_dotenv` 6의 `testLoad` 제거는 `loadFromString`으로 이전했다.
+  `permission_handler` 13은 SDK 37/AGP 9.0.1/Kotlin 2.3.20 요구로 실제 Gradle 실패를
+  확인해, 현행 SDK 36/AGP 8.9.1과 호환되는 12.0.3으로 제한했다.
+- `pubspec.lock`과 Gradle wrapper를 추적 대상으로 바꾸고 로컬 Claude 설정·worktree
+  gitlink는 파일을 보존한 채 Git 추적만 해제했다. Flutter 3.35.6/Java 17 기준의
+  `.github/workflows/ci.yml`을 추가했다.
+
+### 검증
+
+- `flutter analyze`: `No issues found`
+- `flutter test`: 66건 전체 통과
+- `:app:testDebugUnitTest :app:lintDebug --no-daemon`: 성공. lint 20 errors/42
+  warnings에서 0 errors/34 warnings로 개선
+- `flutter build apk --debug`: 성공,
+  `build/app/outputs/flutter-apk/app-debug.apk` 생성
+- 기존 Android SDK XML 3/4 도구 불일치와 외부 플러그인의 deprecated/Java 8 경고는
+  재현됐으나 빌드는 성공했다. SDK 도구 경고는 `follow-up-status.md`에 유지한다.
+
+## 2026-08-03 (2차): Claude 로컬 잔여물 정리·Live Update 빌더 회귀 수정
+
+### Claude 로컬 상태 정리
+
+- Git에서 이미 추적 해제한 `.claude/settings.local.json`과 끊어진
+  `.claude/worktrees/funny-fermat` 실파일을 휴지통으로 이동했다. worktree는 Git에
+  등록돼 있지 않았고 `.git.disabled`가 가리킨 옛 Git 메타데이터도 존재하지 않았다.
+- 미완성 작업 커밋 `3658d6a`는 로컬 `claude/funny-fermat`와 원격
+  `origin/claude/funny-fermat` 브랜치에 모두 남겼다. 삭제한 worktree의 추적 파일은
+  해당 커밋과 내용이 같았고 확인된 차이는 줄바꿈뿐이었다.
+
+### Live Update 회귀의 근본 원인과 수정
+
+- 프로젝트 규칙과 현행 문서는 2026-02-16부터 `NotificationCompat.Builder` 직접
+  호출을 요구하지만, 2026-03-20 상태칩 복원 커밋 `2598c0d`가 수동 추적 경로에
+  네이티브 `Notification.Builder`/`Notification.ProgressStyle`, Reflection,
+  `setExtras()`, `FLAG_PROMOTED_ONGOING` 수동 조작을 다시 도입했다. 이후 자동알람
+  알림 분리 때 같은 패턴이 `BusAlertAutoAlarmNotifier`로 이동했다.
+- 수동 추적과 자동알람을 모두 `NotificationCompat.Builder`,
+  `NotificationCompat.ProgressStyle`, `IconCompat` 직접 호출로 통일했다.
+  `setRequestPromotedOngoing(true)`와 `setShortCriticalText()`도 호환 빌더에서 직접
+  설정하고, Samsung 보조 extras는 `addExtras()`로만 병합한다.
+- 빌드 후 flags 수동 변경과 자동알람의 `setColorized(true)`를 제거했다. 진행 구간,
+  트래커 아이콘, 상태칩 텍스트, 알림 액션과 API 35 이하 RemoteViews 폴백은 유지했다.
+
+### TDD·검증
+
+- RED: `android_quality_regression_test.dart`에 네이티브 빌더·ProgressStyle,
+  `setExtras()`, promoted 플래그 수동 변경, colorized 재도입을 거부하고 AndroidX
+  직접 호출을 요구하는 테스트를 추가했다. 수정 전에는
+  `Notification.Builder(`, 이어서 `setColorized(true)` 때문에 예상대로 실패했다.
+- GREEN: 해당 회귀 테스트 13건 전체 통과.
+- `:app:compileDebugKotlin --no-daemon`: 성공. 기존 SDK XML 3/4와 deprecated API
+  경고는 재현됐지만 이번 변경의 컴파일 오류는 없다.
+- `flutter analyze`: `No issues found`, `flutter test`: 67건 전체 통과.
+- `:app:testDebugUnitTest :app:lintDebug --no-daemon`: 성공, lint 0 errors/34 warnings.
+- `flutter build apk --debug`: 성공,
+  `build/app/outputs/flutter-apk/app-debug.apk` 생성.
+- API 36 / One UI 8 실기기에서 수동 추적·자동알람 상태칩과 Now Bar를 다시 확인하는
+  항목은 `docs/topics/follow-up-status.md`에 남겼다.
+
+## 2026-08-04: Galaxy Note10+ API 31 릴리스 스모크·알림 액션 검증
+
+### 설치·기동
+
+- Galaxy Note10+(`SM-N976N`, `R3CM70K2YZD`), Android 12(API 31), One UI 4.1에서
+  `build_release.ps1 -Apk`로 현행 작업 트리의 `1.0.4+66` 릴리스 APK를 빌드했다.
+  빌드는 성공했고 기존 SDK XML 3/4 도구 불일치와 외부 Java 8/deprecated 경고만
+  재현됐다.
+- `adb install -r`로 데이터 보존 업데이트했다. 앱 서명 SHA-256 앞 8자리
+  `c41b5ee7`, 최초 설치 시각 `2026-07-13 13:34:04`, 데이터 디렉터리 inode
+  `598810`이 설치 전후 동일했고 마지막 업데이트 시각만 `2026-08-04 13:37:46`으로
+  바뀌었다.
+- `MainActivity` 콜드 스타트는 `am start -W` 기준 1,534ms였고 저장된 즐겨찾기,
+  17:35 자동알람, 사용자 설정이 유지됐다.
+
+### UI·알림 검증
+
+- 홈 실시간 도착 정보, 623 노선 검색, 지도, 노선도, 알람, 설정 화면을 순회했다.
+  잘림이나 빈 화면 없이 데이터가 표시됐고 정확 알람 권한은 `허용됨`이었다.
+- 홈에서 623번 수동 추적을 시작하자 `BusAlertService`가 foreground로 전환되고
+  `bus_tracking_ongoing` 채널 알림이 표시됐다. 알림 제목과 본문은 실제 도착 정보에
+  맞춰 갱신됐으며 category는 `progress`, 공개 범위는 `PUBLIC`, 액션은
+  `추적 중지` 1개였다. API 31에서도 `android.requestPromotedOngoing=true`와
+  짧은 상태 텍스트 extras가 유지됐다.
+- 알림창에서 알림을 펼쳐 `추적 중지`를 실행했다. 서비스는
+  `startRequested=false`로 바뀌고 추적 알림은 제거됐다. 기존 자동알람 체크 상태는
+  유지됐고 AlarmManager에는 당일 17:30 `RTC_WAKEUP`이
+  `exactAllowReason=permission`으로 남아 있었다.
+
+### 안정성·남은 범위
+
+- 설치 직전 logcat을 비운 뒤 전체 여정을 실행했으며 `FATAL EXCEPTION`, 앱 ANR,
+  `AndroidRuntime`, Flutter 미처리 예외는 0건이었다. 앱 프로세스와 화면도 종료 시까지
+  정상 유지됐다.
+- Samsung API 31 그래픽 계층의 `FrameEvents: updateAcquireFence` 반복 로그,
+  Google Play services 플래그 경고, 광고 WebView SSL 실패가 있었으나 화면·데이터·
+  알림 동작 실패는 재현되지 않았다. `TTSService`가 정상 출력 모드 조회를 `E` 레벨로
+  기록하는 기존 로그 노이즈도 확인했다.
+- 이 장치는 API 31이므로 Android 16 상태칩·진행 아이콘·One UI 8 Now Bar와
+  자동알람 예약 시각의 실제 기동/중복 발화/타임아웃은 검증하지 않았다. 두 범위는
+  `docs/topics/follow-up-status.md`에 유지한다.
+
+## 2026-08-04 (2차): BusApiChannelHandler 책임별 분리
+
+### 대상 선정·구조
+
+- Kotlin 파일을 계측한 결과 1,000줄 초과 파일은 `BusApiChannelHandler` 1,276줄,
+  `BusAlertTrackingManager` 1,219줄, `BusAlertService` 1,053줄이었다. 이번 세션은
+  36개 method channel 처리와 네 책임이 한 파일에 섞인 `BusApiChannelHandler`만
+  선택했다.
+- 채널 진입점은 36개 메서드 이름을 보존하는 66줄 라우터로 축소했다. 실제 구현은
+  `BusApiTrackingOperations`(470줄), `BusApiQueryOperations`(338줄),
+  `BusApiAlarmOperations`(320줄), `BusApiTtsOperations`(131줄)로 분리했다.
+- 기능 변경 없이 함수 블록을 그대로 이동하고 접근 지정자만 `private`에서
+  내부 클래스의 `fun`으로 넓혔다. 기존/신규 함수 목록은 각각 36개로 일치했고
+  네 블록의 줄 단위 내용도 모두 동일했다. `BusApiChannel` 로그 TAG, 알림의
+  `NotificationCompat.Builder`, TTS 오류 응답 시맨틱을 유지했다.
+
+### TDD·검증
+
+- RED: 네 operation 파일, 36개 라우팅 집합, 라우터·operation 크기 상한을 요구하는
+  회귀 테스트를 먼저 추가했고 기존 구조에서는 파일 부재로 실패했다.
+- GREEN: 분리 뒤 대상 테스트와 Flutter 전체 68건이 통과했다.
+- `flutter analyze`: `No issues found`.
+- `:app:compileDebugKotlin`: 성공. 이어서
+  `:app:testDebugUnitTest :app:lintDebug --no-daemon`도 성공했다.
+- `flutter build apk --debug`: 성공,
+  `build/app/outputs/flutter-apk/app-debug.apk` 생성.
+- 기존 SDK XML 3/4 불일치와 deprecated API 경고는 재현됐지만 이번 분리에서 새
+  컴파일·lint 오류는 발생하지 않았다.
+- 남은 1,000줄 초과 파일 중 `BusAlertService` 1,053줄은 기존 목표(1,200줄 이하)를
+  이미 달성했고 lifecycle/foreground 시작 타이밍이 중심이라 추가 분리하지 않았다.
+  `BusAlertTrackingManager` 1,219줄은 856행 이후 도착 판정 클러스터를 별도
+  `BusAlertArrivalMonitor`로 옮기는 작업을 다음 Kotlin 리팩터링 항목으로 등록했다.

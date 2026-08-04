@@ -19,8 +19,9 @@
 - [x] 작업 1: BusAlertService.kt 분리 (2,535줄 → 1,620줄, 2026-07-25 완료. ~1,200줄
       목표는 못 미쳤으나 계획서에 명시된 4단계는 모두 verbatim 이동 + diff 대조로 완료됨.
       실기기 검증 필요 — devlog 2026-07-25 (2~4차) 참조)
-- [ ] 작업 1b: BusAlertService.kt 추가 축소 (1,620줄 → ~1,200줄 목표) — 세션 4개로
-      분할. 1b-1~3 완료로 목표 달성(1,101줄), 1b-4는 보류 (2026-07-28, 사용자 확인)
+- [x] 작업 1b: BusAlertService.kt 추가 축소 (1,620줄 → 1,053줄) — 1b-1~3으로
+      목표를 달성했고, 중복 객체 그래프 초기화 제거로 추가 축소. 1b-4는 위험 대비
+      이득이 없어 생략 확정 (2026-08-03)
   - [x] 1b-1: 하단 유틸/확장 함수를 별도 파일로 (가장 쉬움, ~55줄) — 2026-07-28
         완료, 1,620→1,563줄 (devlog 2026-07-28 참조)
   - [x] 1b-2: 취소 로직을 BusAlertTrackingManager로 (중간, ~130줄) — 2026-07-28
@@ -36,14 +37,20 @@
         `TTSService`(REPEAT_TTS_ALERT)가 추적 중지 후에도 잔류하는 현상을
         발견했으나 `TTSService.kt`는 1b 대상 파일이 아니라 별도 후속 항목으로
         분리함
-  - [ ] 1b-4: onStartCommand 디스패치 본문 축소 (~390줄) — foreground 서비스 시작
-        타이밍 직결이라 고위험. 1b-1~3 완료 후 목표를 이미 달성했으면 실기기
-        스모크 없이는 손대지 않는 걸 권장 (아래 섹션 참조)
-- [ ] 작업 2: UI 위젯 테스트 보강 — 작업 3~5의 선행 조건
-- [ ] 작업 3: map_screen.dart 분리 (1,578줄) — 작업 2 완료 후
-- [ ] 작업 4: unified_bus_detail_widget.dart 분리 (1,411줄) — 작업 2 완료 후
-- [ ] 작업 5: home_widgets.dart 분리 (1,032줄) — 작업 2 완료 후
-- [ ] 작업 6: alarm_service.dart 잔여 이관 (1,150줄)
+  - [x] 1b-4: onStartCommand 디스패치 본문 축소 — 생략 완료. foreground 서비스
+        타이밍을 건드리지 않고도 목표를 초과 달성했으므로 다시 선택하지 않는다
+- [x] 작업 1c: BusApiChannelHandler.kt 책임 분리 (1,276줄 → 66줄 라우터 +
+      470/338/320/131줄 operation 4개, 2026-08-04 완료)
+- [ ] 작업 1d: BusAlertTrackingManager.kt 도착 판정 분리 (1,219줄). 856행 이후
+      버스 정보 갱신·도착 판정 클러스터를 원래 계획의 `BusAlertArrivalMonitor`로
+      분리해 manager와 신규 파일을 각각 약 850/380줄로 낮춘다. 자동알람·TTS
+      트리거 경로이므로 별도 세션에서 회귀 테스트와 실기기 확인까지 진행할 것
+- [x] 작업 2: UI 위젯 테스트 보강 — 2026-08-03 현재 map/unified/home 관찰 동작
+      테스트와 전체 68건 통과로 작업 3~5 안전망 확보
+- [ ] 작업 3: map_screen.dart 분리 (1,752줄) — 작업 2 완료
+- [ ] 작업 4: unified_bus_detail_widget.dart 분리 (1,540줄) — 작업 2 완료
+- [ ] 작업 5: home_widgets.dart 분리 (1,048줄) — 작업 2 완료
+- [ ] 작업 6: alarm_service.dart 잔여 이관 (1,159줄)
 
 ---
 
@@ -69,7 +76,7 @@
 ```powershell
 # Dart 변경 시
 flutter analyze          # 0건이어야 함 (pre-commit 훅도 실행함)
-flutter test             # 현재 38건 전체 통과가 기준선
+flutter test             # 현재 68건 전체 통과가 기준선
 
 # Kotlin 변경 시 (android/ 디렉토리에서)
 .\gradlew.bat :app:compileDebugKotlin --console=plain -q
@@ -93,7 +100,8 @@ diff /tmp/old.txt /tmp/new.txt   # 함수 목록이면 grep -oE 'fun \w+' 등으
 ### 절대 하지 말 것
 - 알림 구현을 `NotificationCompat.Builder` 이외로 바꾸기 (2026-02-16 결정,
   배경은 devlog 참조)
-- `flutter upgrade`, 의존성 버전 변경, `pubspec.yaml` 버전 변경
+- 리팩터링 세션에서 `flutter upgrade`, 의존성 버전 변경, `pubspec.yaml` 앱 버전 변경
+  (의존성 관리는 별도 유지보수 작업에서 전체 검증과 함께 수행)
 - Codex/Cursor가 만질 수 있는 파일의 병렬 수정 유발 (AGENTS.md)
 - 원본 대비 diff가 커지는 재포맷 (dart format이 자동으로 하는 것은 허용)
 
@@ -177,10 +185,8 @@ diff /tmp/old.txt /tmp/new.txt   # 함수 목록이면 grep -oE 'fun \w+' 등으
   TAG도 "BusAlertService"라 치환이 필요 없었다).
 
 ### 검증
-- 단계마다 `:app:compileDebugKotlin` (저장소에 `gradlew`/`gradlew.bat`가
-  없으면 — `.gitignore` 대상, Flutter가 최초 빌드 시 생성 — 캐시된 Gradle
-  배포판을 `--project-dir android`로 직접 호출) + `git show HEAD:<원본>`과
-  신규 위치를 `diff`로 대조.
+- 단계마다 추적 중인 Gradle wrapper로 `:app:compileDebugKotlin`을 실행하고
+  `git show HEAD:<원본>`과 신규 위치를 `diff`로 대조.
 - **아직 안 함**: 실기기 스모크. devlog 2026-07-25 (2~4차) 각 엔트리 하단에
   확인해야 할 구체적 시나리오를 적어뒀다 — 다음에 실기기가 준비되면 그 목록을
   그대로 체크리스트로 쓸 것. **2026-07-28 갱신**: 이후 세션에서 adb로 연결된
@@ -304,14 +310,34 @@ TTS를 트리거함) → `BusAlertService.kt`의 `updateBusInfo`(756행)부터
 
 ---
 
+## 작업 1c: BusApiChannelHandler.kt 책임 분리 — 완료 (2026-08-04)
+
+> 사용자 요청으로 기존 UI 백로그보다 먼저 수행한 Kotlin 모놀리스 정리다.
+
+- `BusApiChannelHandler.kt` 1,276줄에 섞여 있던 36개 메서드를 추적 제어,
+  정류장·노선 조회, 알림·자동알람, TTS의 네 책임으로 분류했다.
+- 메서드 이름과 `when` 라우팅은 66줄 진입점에 그대로 남기고 실제 구현은
+  `BusApiTrackingOperations`(470줄), `BusApiQueryOperations`(338줄),
+  `BusApiAlarmOperations`(320줄), `BusApiTtsOperations`(131줄)로 옮겼다.
+- 기존 함수 36개와 신규 함수 36개를 이름으로 대조했고, 각 함수 블록은
+  `private fun`을 `fun`으로 넓힌 것 외에는 줄 단위로 동일함을 확인했다. 로그 TAG와
+  BUS_API/TTS 채널 사이의 서로 다른 오류 응답 시맨틱도 유지했다.
+- 소스 회귀 테스트가 36개 라우팅 집합, 라우터 140줄 이하, operation당 500줄 이하를
+  고정한다. Kotlin 컴파일, Android JVM 테스트·lint, Flutter 분석·68개 테스트,
+  디버그 APK 빌드까지 통과했다.
+
+---
+
 ## 작업 2: UI 위젯 테스트 보강 (작업 3~5의 선행 조건)
 
 **목표**: 분리 대상 3개 파일의 관찰 가능한 동작을 위젯 테스트로 고정해,
 UI 분리가 동작을 깨면 테스트가 잡아내게 한다.
 
 ### 현재 상태
-- `test/`에 38건 통과 중이나 대부분 로직/파싱 테스트. 화면 위젯 테스트는
-  `widget_test.dart`(스모크)와 `agent_automation_test.dart` 수준.
+- 2026-08-03 완료. `test/` 전체 66건이 통과한다.
+- map은 초기화 실패/마운트와 정류장 액션 카드, unified detail은 도착 목록·노선
+  아이콘·급행 색상, home은 정류장 ID 비노출·노선 브랜드 색상을 위젯 테스트로
+  고정했다.
 - `test/helpers/`에 기존 테스트 헬퍼 있음 — 먼저 읽고 재사용할 것.
 
 ### 방법

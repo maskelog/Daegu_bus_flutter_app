@@ -484,7 +484,7 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("자동알람 음성 안내")
             .setContentText(content)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.notification_icon)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setSilent(true)
@@ -515,11 +515,10 @@ class TTSService : Service(), TextToSpeech.OnInitListener {
             // 사용자 피드백 반영: 자동 알람은 사용자가 중지할 때까지 계속되어야 하므로
             // 서비스 종료(stopSelf) 코드를 제거하고, 반복 발화가 유지되도록 함.
             
-            // 반복 발화를 위해 핸들러 작동 확인
-            if (!ttsHandler.hasCallbacks(ttsRunnable)) {
-                Log.d(TAG, "🔊 자동알람 반복 발화 스케줄링 시작")
-                ttsHandler.postDelayed(ttsRunnable, SPEAK_INTERVAL)
-            }
+            // API 24~28에도 존재하는 메서드만 사용하면서 중복 예약을 방지한다.
+            Log.d(TAG, "🔊 자동알람 반복 발화 스케줄링 시작")
+            ttsHandler.removeCallbacks(ttsRunnable)
+            ttsHandler.postDelayed(ttsRunnable, SPEAK_INTERVAL)
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ 자동알람 TTS 처리 오류: ${e.message}", e)

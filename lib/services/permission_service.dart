@@ -183,65 +183,27 @@ class PermissionService {
     }
   }
 
-  /// 배터리 최적화 제외 요청
+  /// 배터리 최적화 설정 목록 열기
   static Future<void> requestIgnoreBatteryOptimizations() async {
     if (!Platform.isAndroid) return;
 
     try {
-      // 네이티브 채널 우선: 일부 기기에서 permission_handler가 즉시 denied를 반환해
-      // 실제 요청 화면이 열리지 않는 이슈가 있어 먼저 네이티브 채널을 우선 시도
-      try {
-        final bool isIgnored =
-            await _methodChannel.invokeMethod<bool>(
-              'isIgnoringBatteryOptimizations',
-            ) ??
-            false;
-
-        if (isIgnored) {
-          logMessage('🔋 배터리 최적화 제외 이미 허용됨', level: LogLevel.debug);
-          return;
-        }
-
-        final bool result = await _methodChannel.invokeMethod<bool>(
-          'requestIgnoreBatteryOptimizations',
-        ) ??
-            false;
-
-        if (result) {
-          logMessage('🔋 배터리 최적화 제외 요청 성공 (네이티브)', level: LogLevel.info);
-          return;
-        }
-      } catch (nativeError) {
-        logMessage('⚠️ 네이티브 채널로 배터리 최적화 요청 실패: $nativeError', level: LogLevel.warning);
+      if (await isIgnoringBatteryOptimizations()) {
+        logMessage('🔋 배터리 최적화 제외 이미 허용됨', level: LogLevel.debug);
+        return;
       }
 
-      // 네이티브 채널이 동작하지 않거나 실패한 경우 폴백: permission_handler 사용
-      try {
-        final currentStatus = await Permission.ignoreBatteryOptimizations.status;
-        if (currentStatus.isGranted) {
-          logMessage('🔋 배터리 최적화 제외 이미 허용됨 (폴백)', level: LogLevel.debug);
-          return;
-        }
-
-        final status = await Permission.ignoreBatteryOptimizations.request();
-        if (status.isGranted) {
-          logMessage('🔋 배터리 최적화 제외 승인됨 (폴백)', level: LogLevel.info);
-          return;
-        } else if (status.isPermanentlyDenied) {
-          logMessage('⚠️ 배터리 최적화 권한 영속 거부 → 설정 페이지로 이동', level: LogLevel.warning);
-          openAppSettings();
-          return;
-        }
-
-        logMessage('⚠️ 배터리 최적화 제외 거부됨 - 설정에서 수동으로 허용해주세요', level: LogLevel.warning);
-      } catch (fallbackError) {
-        logMessage('❌ 배터리 최적화 폴백 처리 오류: $fallbackError', level: LogLevel.error);
-        // 사용자에게 수동 설정 안내
-        logMessage('📱 설정 > 배터리 > 앱 배터리 사용량 최적화에서 이 앱을 제외해주세요', level: LogLevel.info);
+      final opened = await _methodChannel.invokeMethod<bool>(
+            'requestIgnoreBatteryOptimizations',
+          ) ??
+          false;
+      if (opened) {
+        logMessage('🔋 배터리 최적화 설정 목록을 열었습니다', level: LogLevel.info);
+      } else {
+        logMessage('⚠️ 배터리 최적화 설정 목록을 열지 못했습니다', level: LogLevel.warning);
       }
     } catch (e) {
-      logMessage('❌ 배터리 최적화 요청 전체 오류: $e', level: LogLevel.error);
-      logMessage('📱 설정에서 수동으로 배터리 최적화를 해제해주세요', level: LogLevel.info);
+      logMessage('❌ 배터리 최적화 설정 이동 오류: $e', level: LogLevel.error);
     }
   }
 

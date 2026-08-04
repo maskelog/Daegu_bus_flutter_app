@@ -274,7 +274,7 @@ class BusAlertNotificationUpdater(
     fun showBusArrivingSoon(busNo: String, stationName: String, currentStation: String?) {
         try {
             val builder = NotificationCompat.Builder(service, BusAlertService.CHANNEL_ID_ALERT)
-                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setSmallIcon(R.drawable.notification_icon)
                 .setContentTitle("$busNo 버스 곧 도착")
                 .setContentText("$busNo bus is arriving at $stationName.")
                 .setPriority(NotificationCompat.PRIORITY_HIGH)

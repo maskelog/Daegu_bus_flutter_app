@@ -6,28 +6,22 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Log
 import android.widget.RemoteViews
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.IconCompat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.devground.daegubus.services.BusAlertService
 import com.devground.daegubus.MainActivity
 import com.devground.daegubus.R
-import android.content.BroadcastReceiver
-import android.content.IntentFilter
-import android.net.Uri
-import android.provider.Settings
 
 class NotificationHandler(private val context: Context) {
 
@@ -107,7 +101,7 @@ class NotificationHandler(private val context: Context) {
                 val alertChannel = NotificationChannel(
                     CHANNEL_ID_ALERT,
                     CHANNEL_NAME_ALERT,
-                    NotificationManager.IMPORTANCE_MAX
+                    NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = "버스 도착 임박 시 알림"
                     enableVibration(true)
@@ -139,6 +133,7 @@ class NotificationHandler(private val context: Context) {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun cleanupLegacyOngoingChannels(
         notificationManager: NotificationManager,
         keepChannelId: String
@@ -152,34 +147,6 @@ class NotificationHandler(private val context: Context) {
                     Log.d(TAG, "🧹 Deleted legacy channel: $channelId")
                 } catch (e: Exception) { /* ignore */ }
             }
-    }
-
-    init {
-        try {
-            val filter = IntentFilter(BusAlertService.ACTION_STOP_TRACKING)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(NotificationCancelReceiver(), filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                context.registerReceiver(NotificationCancelReceiver(), filter)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "NotificationCancelReceiver registration error: ${e.message}")
-        }
-    }
-
-    class NotificationCancelReceiver : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            val routeId = intent.getStringExtra("routeId") ?: return
-            val busNo = intent.getStringExtra("busNo") ?: return
-            val stationName = intent.getStringExtra("stationName") ?: return
-            val stopIntent = Intent(context, BusAlertService::class.java).apply {
-                action = BusAlertService.ACTION_STOP_TRACKING
-                putExtra("routeId", routeId)
-                putExtra("busNo", busNo)
-                putExtra("stationName", stationName)
-            }
-            context.startService(stopIntent)
-        }
     }
 
     private fun createCancelBroadcastPendingIntent(
@@ -257,7 +224,7 @@ class NotificationHandler(private val context: Context) {
         val firstTracking = activeTrackings.values.firstOrNull()
         val defaultContentIntent = createPendingIntent()
 
-        // Android 16+ (API 36) Live Updates 지원: 실기기에서 검증된 텍스트 상태칩 경로 사용
+        // Android 16+ (API 36) Live Updates: AndroidX 호환성 레이어를 통한 공식 샘플 패턴
         if (Build.VERSION.SDK_INT >= 36) {
             val busTypeColor = when (firstTracking?.routeTCd) {
                 "1" -> 0xFFDC2626.toInt()
@@ -267,21 +234,19 @@ class NotificationHandler(private val context: Context) {
                 else -> ContextCompat.getColor(context, R.color.tracking_color)
             }
 
-            // 네이티브 빌더 생성 (API 26+)
-            val nativeBuilder = Notification.Builder(context, ongoingChannelId)
+            val liveBuilder = NotificationCompat.Builder(context, ongoingChannelId)
                 .setContentTitle(title)
                 .setContentText(contentText)
-                .setSmallIcon(R.drawable.ic_bus_notification)
+                .setSmallIcon(R.drawable.notification_icon)
                 .setOngoing(true)
-                .setCategory(Notification.CATEGORY_PROGRESS)
-                .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setColor(busTypeColor)
-                // Live Update 자격 조건: colorized=true 는 승격/상태칩 표시를 방해할 수 있으므로 사용하지 않음
                 .setOnlyAlertOnce(true)
+                .setRequestPromotedOngoing(true)
 
-            defaultContentIntent?.let { nativeBuilder.setContentIntent(it) }
-            requestPromotedOngoing(nativeBuilder)
+            defaultContentIntent?.let { liveBuilder.setContentIntent(it) }
 
             if (firstTracking != null) {
                 val busInfo        = firstTracking.lastBusInfo
@@ -295,71 +260,62 @@ class NotificationHandler(private val context: Context) {
                 val liveBody  = buildLiveBody(firstTracking.stationName, currentStation, stopsInt, remainingMin, extraCount)
                 val chipText  = buildChipText(stopsInt, remainingMin, busInfo?.estimatedTime)
 
-                nativeBuilder.setContentTitle(liveTitle)
-                nativeBuilder.setContentText(liveBody)
-                // subText: 하차 예정 정류장명
-                nativeBuilder.setSubText(firstTracking.stationName.take(14))
-
-                // 상태칩 — "7개소전" 형식 (max 7자)
-                @Suppress("NewApi")
-                nativeBuilder.setShortCriticalText(chipText)
+                liveBuilder
+                    .setContentTitle(liveTitle)
+                    .setContentText(liveBody)
+                    .setSubText(firstTracking.stationName.take(14))
+                    .setShortCriticalText(chipText)
                 Log.d(TAG, "🎯 상태칩: '$chipText'  제목: '$liveTitle'")
 
-                // ── 버스 아이콘 ───────────────────────────────────────────────────
                 createColoredBusIcon(context, busTypeColor, firstTracking.busNo)?.let {
-                    nativeBuilder.setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(it))
+                    liveBuilder.setLargeIcon(it)
                 }
 
-                // ── ProgressStyle (레퍼런스 buildPlatformProgressStyle 구조 적용) ─
-                // progress = 정거장 수 기반 동적 계산 (없으면 분 기반 fallback)
                 val progress      = calcProgress(stopsInt, remainingMin)
                 val remaining     = (100 - progress).coerceIn(0, 100)
 
-                @Suppress("NewApi")
                 try {
-                    val progressStyle = Notification.ProgressStyle()
+                    val progressStyle = NotificationCompat.ProgressStyle()
                         .setProgress(progress)
                         .setProgressTrackerIcon(
-                            android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bus_tracker)
+                            IconCompat.createWithResource(context, R.drawable.ic_bus_tracker)
                         )
-                    try { progressStyle.setStyledByProgress(true) } catch (_: Exception) { }
 
-                    // 세그먼트: 이동완료(버스색) + 잔여구간(회색)
-                    val segments = mutableListOf<Notification.ProgressStyle.Segment>()
-                    if (progress > 0)   segments.add(Notification.ProgressStyle.Segment(progress).setColor(busTypeColor))
-                    if (remaining > 0)  segments.add(Notification.ProgressStyle.Segment(remaining).setColor(0xFFE0E0E0.toInt()))
+                    val segments = mutableListOf<NotificationCompat.ProgressStyle.Segment>()
+                    if (progress > 0) {
+                        segments.add(NotificationCompat.ProgressStyle.Segment(progress).setColor(busTypeColor))
+                    }
+                    if (remaining > 0) {
+                        segments.add(
+                            NotificationCompat.ProgressStyle.Segment(remaining)
+                                .setColor(0xFFE0E0E0.toInt())
+                        )
+                    }
                     if (segments.isNotEmpty()) progressStyle.setProgressSegments(segments)
 
-                    // 포인트: 출발(초록 ●) / 도착(빨강 ●)
-                    // 유효 범위 1~99 (0/100은 "Dropped the point" 경고 후 무시됨)
-                    progressStyle.setProgressPoints(listOf(
-                        Notification.ProgressStyle.Point(1).setColor(0xFF4CAF50.toInt()),
-                        Notification.ProgressStyle.Point(99).setColor(0xFFFF5722.toInt())
-                    ))
-                    nativeBuilder.setStyle(progressStyle)
-                    // 레퍼런스: ProgressStyle 설정 후 setProgress() 추가 호출 필수
-                    nativeBuilder.setProgress(100, progress, false)
+                    progressStyle.setProgressPoints(
+                        listOf(
+                            NotificationCompat.ProgressStyle.Point(1)
+                                .setColor(0xFF4CAF50.toInt()),
+                            NotificationCompat.ProgressStyle.Point(99)
+                                .setColor(0xFFFF5722.toInt())
+                        )
+                    )
+                    liveBuilder.setStyle(progressStyle)
+                    liveBuilder.setProgress(100, progress, false)
                 } catch (e: Exception) {
                     Log.e(TAG, "ProgressStyle 설정 실패: ${e.message}")
-                    nativeBuilder.setProgress(100, calcProgress(stopsInt, remainingMin), false)
+                    liveBuilder.setProgress(100, progress, false)
                 }
             }
 
-            // 액션 추가 — 자동알람 전용 노티에 이미 "알람 끄기" 있으므로 ONGOING에는 "추적 중지"만 표시
-            nativeBuilder.addAction(Notification.Action.Builder(
-                android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_stop_tracking),
-                "추적 중지", createStopPendingIntent()).build())
+            liveBuilder.addAction(
+                R.drawable.ic_stop_tracking,
+                "추적 중지",
+                createStopPendingIntent()
+            )
 
-            val builtNotification = nativeBuilder.build()
-            // FLAG_PROMOTED_ONGOING 수동 설정 필수 —
-            // setRequestPromotedOngoing() 리플렉션이 삼성 One UI에서 실패하고
-            // setExtras extras 경로만으로는 hasPromotableCharacteristics()가 false를 반환하기 때문
-            @Suppress("NewApi")
-            builtNotification.flags = builtNotification.flags or
-                Notification.FLAG_ONGOING_EVENT or
-                Notification.FLAG_NO_CLEAR or
-                Notification.FLAG_FOREGROUND_SERVICE or
-                Notification.FLAG_PROMOTED_ONGOING
+            val builtNotification = liveBuilder.build()
 
             try {
                 val hasPromotableMethod = builtNotification.javaClass.getMethod("hasPromotableCharacteristics")
@@ -374,7 +330,7 @@ class NotificationHandler(private val context: Context) {
         val notificationBuilder = NotificationCompat.Builder(context, ongoingChannelId)
             .setContentTitle(title)
             .setContentText(contentText)
-            .setSmallIcon(R.drawable.ic_bus_notification)
+            .setSmallIcon(R.drawable.notification_icon)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
@@ -395,7 +351,6 @@ class NotificationHandler(private val context: Context) {
         }
 
         val builtNotification = notificationBuilder.build()
-        builtNotification.flags = builtNotification.flags or Notification.FLAG_ONGOING_EVENT or Notification.FLAG_NO_CLEAR or Notification.FLAG_FOREGROUND_SERVICE
         
         if (Build.VERSION.SDK_INT >= 36) {
             try {
@@ -406,22 +361,6 @@ class NotificationHandler(private val context: Context) {
 
         if (shouldVibrateOnChange && isVibrationEnabled()) vibrateOnce()
         return builtNotification
-    }
-
-    private fun requestPromotedOngoing(builder: Notification.Builder) {
-        builder.setExtras(
-            Bundle().apply {
-                putBoolean("android.requestPromotedOngoing", true)
-            },
-        )
-
-        try {
-            builder.javaClass
-                .getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
-                .invoke(builder, true)
-        } catch (_: ReflectiveOperationException) {
-            // SDK 표면에 직접 노출되지 않은 환경에서도 extras 경로로 승격 요청을 유지한다.
-        }
     }
 
     // ── Live Update 텍스트 빌더 (레퍼런스: live-update/DeliveryStatus.kt 참고) ──
@@ -598,7 +537,7 @@ class NotificationHandler(private val context: Context) {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID_ALERT)
             .setContentTitle("버스 도착 임박!")
             .setContentText("$busNo 번 버스가 $stationName 정류장에 곧 도착합니다.")
-            .setSmallIcon(R.drawable.ic_bus_notification)
+            .setSmallIcon(R.drawable.notification_icon)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -615,7 +554,7 @@ class NotificationHandler(private val context: Context) {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID_ERROR)
             .setContentTitle("버스 추적 오류")
             .setContentText(if (!busNo.isNullOrEmpty() && !stationName.isNullOrEmpty()) "$busNo ($stationName): $message" else message)
-            .setSmallIcon(R.drawable.ic_bus_notification)
+            .setSmallIcon(R.drawable.notification_icon)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(createPendingIntent())
@@ -656,7 +595,7 @@ class NotificationHandler(private val context: Context) {
          val builder = NotificationCompat.Builder(context, CHANNEL_ID_ALERT)
              .setContentTitle(title)
              .setContentText(contentText)
-             .setSmallIcon(R.mipmap.ic_launcher)
+             .setSmallIcon(R.drawable.notification_icon)
              .setPriority(NotificationCompat.PRIORITY_HIGH)
              .setCategory(NotificationCompat.CATEGORY_ALARM)
              .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -674,7 +613,7 @@ class NotificationHandler(private val context: Context) {
              .setContentTitle("Bus Arriving Soon!")
              .setContentText("Bus $busNo is arriving soon at $stationName station.")
              .setSubText(currentStation ?: "")
-             .setSmallIcon(R.drawable.ic_bus_notification)
+             .setSmallIcon(R.drawable.notification_icon)
              .setPriority(NotificationCompat.PRIORITY_HIGH)
              .setCategory(NotificationCompat.CATEGORY_ALARM)
              .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)

@@ -48,7 +48,7 @@ Future<void> _loadRuntimeConfig() async {
   try {
     if (kReleaseMode) {
       // 운영 빌드는 .env 파일 의존 없이 빌드 시점 주입 값만 사용해 비밀 유출 경로를 차단합니다.
-      dotenv.testLoad(mergeWith: mergedEnv);
+      dotenv.loadFromString(mergeWith: mergedEnv, isOptional: true);
       debugPrint('[SECURITY] Release 모드: runtime .env 로드 비활성화');
     } else if (kDebugMode) {
       // 개발 모드는 디버그 확인용으로만 .env를 optional 로딩합니다.
@@ -59,10 +59,10 @@ Future<void> _loadRuntimeConfig() async {
       );
     } else {
       // 그 외 모드(Fallback)
-      dotenv.testLoad(mergeWith: mergedEnv);
+      dotenv.loadFromString(mergeWith: mergedEnv, isOptional: true);
     }
   } catch (_) {
-    dotenv.testLoad(mergeWith: mergedEnv);
+    dotenv.loadFromString(mergeWith: mergedEnv, isOptional: true);
   }
 
   final kakaoKey = dotenv.env['KAKAO_JS_API_KEY']?.trim();
