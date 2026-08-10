@@ -44,8 +44,12 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "8.9.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.0" apply false
+    id("com.android.application") version "9.0.1" apply false
+    // 루트 build.gradle.kts에서 특정 모듈에만 선택 적용하기 위해 클래스패스에만 올린다.
+    id("com.android.built-in-kotlin") version "9.0.1" apply false
+    // AGP 9는 KGP 2.2.10에 런타임 의존한다. 낮은 버전을 선언하면 Gradle이 자동 승격하므로
+    // 명시적으로 맞춰 둔다.
+    id("org.jetbrains.kotlin.android") version "2.2.10" apply false
 }
 
 include(":app")
