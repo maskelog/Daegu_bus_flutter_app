@@ -2861,3 +2861,61 @@ AGP 9.0 미만)을 모두 해결했다.
 - `android.newDsl` / `android.builtInKotlin` opt-out은 AGP 10에서 제거된다.
   Flutter SDK 업그레이드로 flutter-gradle-plugin이 새 DSL로 이전하면 두 플래그와
   루트의 선택 적용 블록을 함께 걷어낼 것.
+
+## 2026-08-10 (2차): Note10+ 실기기 검증과 strict keep rule 크래시
+
+1차에서 넘긴 실기기 스모크를 진행했고, 빌드 검증만으로는 잡히지 않던 시작 크래시를
+발견해 수정했다.
+
+### 발견: R8 strict keep rule 모드가 WorkManager를 깨뜨림
+
+- Note10+(`SM-N976N`, `R3CM70K2YZD`, Android 12 / API 31)에 `adb install -r`로
+  데이터 보존 설치 후 첫 실행에서 즉시 크래시했다.
+
+      java.lang.RuntimeException: Unable to get provider
+      androidx.startup.InitializationProvider: ... Failed to create an instance of
+      class androidx.work.impl.WorkDatabase.canonicalName
+        at androidx.work.WorkManagerInitializer
+
+- 원인은 AGP 9가 기본으로 켜는 `android.r8.strictFullModeForKeepRules`다.
+  이 모드에서 `-keep class A`는 더 이상 기본 생성자를 함께 유지하지 않는데,
+  `configuration.txt` 907행의 room-runtime 2.5.0 consumer rule이
+  `-keep class * extends androidx.room.RoomDatabase` (멤버 지정 없음)라
+  `WorkDatabase`의 생성자가 제거됐다.
+- 같은 형태의 규칙이 384행 `-keep class * extends androidx.work.Worker`,
+  936행 `-keep class * implements androidx.versionedparcelable.VersionedParcelable`
+  에도 있다. 전부 우리가 고칠 수 없는 서드파티 규칙이라, 앱에서 하나씩 덮는 대신
+  `android.r8.strictFullModeForKeepRules=false`로 이 플래그만 AGP 8 동작으로
+  되돌렸다. `enableR8.fullMode`와 `optimizedResourceShrinking`은 유지되므로
+  Play Console 지적 3개 항목에는 영향이 없다.
+- 교훈: `missing_rules.txt`가 비어 있고 릴리스 빌드가 성공해도 full mode의
+  런타임 안전성은 증명되지 않는다. 실기기 기동이 유일한 검증이다.
+
+### 검증 결과 (수정 APK, 1.0.4+66)
+
+- **기동**: 크래시 없음. 즐겨찾기(대구삼성창조캠퍼스3, 623, 304)와 최초 설치 시각
+  `2026-07-13 13:34:04` 모두 보존됐다.
+- **도착정보 (Retrofit suspend + Gson)**: 홈에서 623번 4분(2 개소전)/9분,
+  304번 8분/24분, 급행2 4분/10분이 표시됐다. Dart는 MethodChannel
+  `getStationInfo`로 네이티브를 호출하고, logcat에 `retrofit2.Retrofit.
+  loadServiceMethod`가 실제 실행된 기록이 남아 full mode에서 네이티브 Retrofit
+  리플렉션이 동작함을 확인했다.
+- **노선 검색·상세**: 623 검색 → `623번 일반` 1건 → 달성군청↔검단동, 배차간격
+  평일 13분, 정류장 176개 목록까지 로드됐다.
+- **WebView 노선도 브릿지**: 카카오 지도가 렌더링되고 정류장 마커가 표시됐다.
+  마커를 탭하자 `칠성고가도로하단` 정보창과 해당 정류장 도착정보(가창2/동구3/
+  팔공1 출발예정), 하단 `도착정보 보기` 시트가 떴다. JS→Flutter `postMessage`
+  경로가 살아 있다는 뜻이다. chromium ERROR / Uncaught 0건.
+- **알림 액션**: 623 알림 아이콘 탭으로 `BusAlertService`가 foreground 전환
+  (`isForeground=true`, channel `bus_tracking_ongoing`, category=progress).
+  알림 내용이 `곧 도착 [경대교건너]` → `19분 [현재: 복현대백맨션건너]`로 갱신돼
+  추적 루프가 도는 것을 확인했다. 펼친 알림의 `추적 중지`를 실행하자
+  `isForeground=true` 0건이 되고 추적 알림이 사라졌다. IconCompat
+  (VersionedParcelable) 경로도 이 과정에서 함께 통과했다.
+- 전체 세션 로그에서 `FATAL EXCEPTION`, `E/flutter`, 미처리 예외, ANR 모두 0건.
+
+### 남은 범위
+
+- API 31 장치이므로 Android 16 상태칩·One UI 8 Now Bar 재검증은 이번에도 범위 밖이며
+  기존 [follow-up-status.md](topics/follow-up-status.md) 항목을 유지한다.
+- 자동 알람(예약 시간 기반) 경로는 이번 스모크에서 다루지 않았다.
