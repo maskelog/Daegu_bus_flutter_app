@@ -2790,3 +2790,74 @@ adb -s R3CM70K2YZD logcat -d | grep -E "BusAlertService|TTSService"
   `AndroidRuntime` fatal, `E/flutter`, Flutter 미처리 예외는 모두 0건이었다.
 - API 31 장치이므로 Android 16 상태칩·One UI 8 Now Bar 재검증은 이번 범위가
   아니며 기존 [follow-up-status.md](topics/follow-up-status.md) 항목을 유지한다.
+
+## 2026-08-10: R8 full mode·최적화 리소스 축소·AGP 9 업그레이드
+
+Play Console이 지적한 3개 항목(R8 호환성 모드 사용, 최적화된 리소스 축소 미사용,
+AGP 9.0 미만)을 모두 해결했다.
+
+### R8 full mode
+
+- `android.enableR8.fullMode=false`는 2025-03 커밋 `581ee10`("난독화(R8) 설정
+  비활성화로 릴리즈 빌드 오류 해결")에서 들어온 값이다. 같은 커밋이
+  proguard-rules.pro를 182줄 줄이며 규칙을 걷어냈고, 이후 규칙이 consumer rules
+  기준으로 다시 정리돼 원래 실패 원인은 남아 있지 않다고 판단해 `true`로 되돌렸다.
+- AGP 8.9.1 기준 최적화 리소스 축소 플래그 이름은 `android.r8.optimizedShrinking`,
+  AGP 9부터는 `android.r8.optimizedResourceShrinking`이다. AGP jar의
+  `BooleanOption.class`를 직접 열어 확인했다.
+
+### Retrofit full mode 대응 (런타임 리스크)
+
+- `configuration.txt`를 보면 Retrofit 2.9.0의 consumer rules에는 full mode 전용
+  keep 규칙 3개(`retrofit2.Call`, `retrofit2.Response`,
+  `kotlin.coroutines.Continuation`)가 없다. 이 3개는 Retrofit 2.10.0에서 추가됐다.
+- `BusInfoApi`는 전부 `suspend fun`이라 마지막 파라미터가
+  `Continuation<? super BusArrivalResponse>`다. full mode에서 제네릭 시그니처가
+  지워지면 **빌드는 성공하고 런타임에만** 도착정보 파싱이 깨진다.
+- 규칙을 proguard-rules.pro에 직접 추가한 뒤, `apkanalyzer dex code --class x2.b0`
+  으로 난독화된 인터페이스의 `dalvik/annotation/Signature`에
+  `Lr6/c<-Lx2/a0;>` (= `Continuation<? super BusArrivalResponse>`)가 남아 있음을
+  DEX 레벨에서 확인했다. Retrofit 2.11+로 올리면 이 블록은 삭제 가능하다.
+
+### AGP 9 업그레이드와 Kotlin 플러그인 교착
+
+- Flutter 3.35.6의 `gradle_utils.dart` 기준 지원 상한은 AGP 9.0 / Gradle 9.1.0이고
+  AGP 9.0은 Gradle 9.0 이상을 요구한다. 즉 가능한 조합은 AGP 9.0.x + Gradle 9.1.0
+  하나뿐이라 그대로 맞췄다.
+- AGP 9는 `newDsl`과 `builtInKotlin`을 기본 활성화한다. 그런데
+  `FlutterPluginUtils.getAndroidExtension()`이 `findByType(BaseExtension)!!`를
+  쓰고 `FlutterPlugin`이 `applicationVariants`/`libraryVariants`를 쓴다.
+  newDsl 상태에서는 즉시 깨지므로 `android.newDsl=false`가 필요하다.
+- built-in Kotlin은 교착 상태였다. device_info_plus / flutter_tts /
+  package_info_plus / wakelock_plus / shared_preferences_android /
+  webview_flutter_android 6종은 `kotlin-android`를 무조건 적용해 built-in Kotlin과
+  충돌한다. 반대로 android_alarm_manager_plus 5.1.1은
+  `if (agpMajor < 9) apply(kotlin-android)` 후 `KotlinAndroidProjectExtension`을
+  바로 참조해 AGP 9에서는 built-in Kotlin을 전제한다. 전역 플래그 하나로는 양립 불가.
+- `flutter pub outdated` 결과 6종의 최신 버전은 모두 Resolvable = 현재 버전이었다.
+  AGP 9 대응 버전들은 Flutter 3.35.6(Dart 3.9.2)보다 높은 SDK를 요구한다.
+- 해결: 전역은 `android.builtInKotlin=false`로 두고, 루트 build.gradle.kts에서
+  `android_alarm_manager_plus` 모듈에만 `com.android.built-in-kotlin`을 적용했다.
+  이를 위해 settings.gradle.kts에 해당 플러그인 마커를 `apply false`로 올렸다.
+- 부수 정리: 중복이던 `android/build.gradle`(Groovy, Gradle 9에서 제거된
+  `rootProject.buildDir` 사용) 삭제, ndkVersion 27.0.12077973 → 28.2.13676358,
+  minSdk >= 21에서 불필요한 androidx.multidex 의존성·multiDexEnabled 제거.
+
+### 검증
+
+- `gradlew help`(Gradle 9.1.0)가 성공했고 Flutter 플러그인 13개가 모두 configure 됐다.
+- `flutter build apk --release` 성공. 57.1MB(직전 릴리스) → 56.5MB(full mode만)
+  → 56.4MB(AGP 9 포함).
+- `missing_rules.txt` 비어 있음, `REMOVED CONSUMER RULE` 0건, `resources.txt`에
+  AGP 9 최적화 리소스 축소의 도달성 기록 1,929줄.
+- R8이 제거한 `com.devground.daegubus.WorkManagerCallback`은 MainActivity.kt:534에
+  선언만 있고 참조가 없는 죽은 코드라 제거가 정상이다.
+
+### 남은 일
+
+- **실기기 스모크 미실시.** 빌드 성공은 Retrofit suspend/Gson 런타임 경로를
+  증명하지 않는다. 릴리스 전 도착정보 조회, WebView 노선도 브릿지, 알림 액션
+  3가지를 실기기에서 확인할 것.
+- `android.newDsl` / `android.builtInKotlin` opt-out은 AGP 10에서 제거된다.
+  Flutter SDK 업그레이드로 flutter-gradle-plugin이 새 DSL로 이전하면 두 플래그와
+  루트의 선택 적용 블록을 함께 걷어낼 것.
