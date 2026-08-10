@@ -23,7 +23,16 @@
 -keep class org.jsoup.** { *; }
 
 # 네트워크 라이브러리
-# okhttp3, retrofit2, okio: v2.9.0+/4.x 이상 자체 consumer rules 포함 → 수동 규칙 불필요
+# okhttp3, okio: 자체 consumer rules 포함 → 수동 규칙 불필요
+#
+# retrofit2 2.9.0의 consumer rules에는 R8 full mode 전용 규칙 3개가 빠져 있다
+# (Retrofit 2.10.0에서 추가됨). BusInfoApi는 전부 suspend 함수라 마지막 파라미터가
+# Continuation<? super BusArrivalResponse> 이고, full mode에서 이 타입들이 제거되면
+# 제네릭 시그니처가 지워져 런타임에 도착정보 파싱이 통째로 실패한다.
+# Retrofit 2.11+로 올리면 이 블록은 삭제 가능.
+-keep,allowobfuscation,allowshrinking interface retrofit2.Call
+-keep,allowobfuscation,allowshrinking class retrofit2.Response
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
 
 # 노티피케이션 관련 클래스
 # androidx.core.app: AndroidX 자체 consumer rules 포함 → 수동 규칙 불필요
