@@ -2919,3 +2919,62 @@ AGP 9.0 미만)을 모두 해결했다.
 - API 31 장치이므로 Android 16 상태칩·One UI 8 Now Bar 재검증은 이번에도 범위 밖이며
   기존 [follow-up-status.md](topics/follow-up-status.md) 항목을 유지한다.
 - 자동 알람(예약 시간 기반) 경로는 이번 스모크에서 다루지 않았다.
+
+## 2026-08-11: Play 내부 테스트 배포본 실기기 검증 (1.0.4+68)
+
+### 업로드 과정에서 나온 오해
+
+- Play Console이 "이전 출시 버전에서 지원되던 기기 19,171개를 더 이상 지원하지
+  않습니다" 경고를 냈다. 조사 결과 **빌드 설정 문제가 아니었다.**
+- 지원 기기 표에서 전화/태블릿/TV/차량/Chromebook/Android XR이 예외 없이 -100%,
+  "이 출시에서 지원하는 총 기기 수 = 0"이었다. 타게팅 축소는 특정 축만 줄어들지
+  모든 폼 팩터를 동시에 0으로 만들지 못한다. Play 안내문의 "App Bundle이
+  누락되었기 때문일 수 있습니다"가 실제 원인이었고, 릴리스에 AAB를 첨부하니
+  기기 수가 정상 표시됐다.
+- 확인 과정에서 릴리스 66 시점(`c454be7`)과 현재의 기기 관련 설정이 완전히
+  동일함을 확인했다: minSdk 24(flutter.minSdkVersion), targetSdk 36, compileSdk 36,
+  abiFilters armeabi-v7a/arm64-v8a/x86_64, 필수 uses-feature 없음,
+  compatible-screens·maxSdkVersion 없음, 밀도 리소스 mdpi~xxxhdpi 유지.
+  릴리스 63도 같은 ABI 3종이라 ABI 축소 이력 자체가 없다.
+- versionCode는 66 → 67(사용됨) → 68로 올렸다.
+
+### Play 배포본 확인
+
+- Note10+(`R3CM70K2YZD`, Android 12 / API 31)에 내부 테스트로 설치.
+  `installerPackageName=com.android.vending`, splits는 base + arm64_v8a +
+  ko/en/es + xxhdpi로 전달됐다. 사이드로드 APK가 아닌 Play 재서명·분할 아티팩트다.
+- `dumpsys package`의 `minSdk=29`는 앱 선언값이 아니라 Play가 이 기기에 제공한
+  변형(variant)의 값이다. 매니페스트 선언은 24로 그대로다.
+- 이번 설치는 fresh install이라(`firstInstallTime=2026-08-11 10:28`) 기존
+  즐겨찾기 데이터는 초기화됐다.
+
+### 검증 결과
+
+- **기동**: 크래시 없음.
+- **위치 기반 근처 정류장**: 새동네아파트앞/칠성고가도로하단/새동네아파트건너가
+  도착정보와 함께 표시됐다. 8/10 검증 때 "주변 정류장을 찾는 중..."에서 멈춰 있던
+  부분이 이번엔 동작했다(권한 재부여 영향으로 보인다).
+- **도착정보**: 501 4분/17분, 623 8분/25분, 304 10분/19분.
+- **노선 검색·상세**: 623 → 달성군청↔검단동, 정류장 176개.
+- **추적 알림**: `BusAlertService` foreground 전환
+  (`isForeground=true`, channel `bus_tracking_ongoing`, category=progress).
+- **자동 알람 (8/10에 못 다룬 항목)**: 즐겨찾기 버스를 거쳐
+  `AutoAlarmEditScreen`에 진입해 501/새동네아파트앞/10:41/평일 알람을 생성했다.
+  `dumpsys alarm`의 현재 uid(u0a1082)에 등록이 확인됐다.
+
+      com.devground.daegubus.AUTO_ALARM T=0(RTC_WAKEUP) F=3 AC=true
+      OW=2026-08-12 10:36:00  (등록 2026-08-11 10:42:26)
+
+  표시 시각 10:41보다 5분 이른 10:36에 등록되는데, 도착 정보를 미리 조회하기 위한
+  사전 발동으로 보인다. 알람 삭제 후 `Pending alarm batches`에서 잔존 0건으로
+  취소도 확인했다.
+- 전체 세션 로그에서 `FATAL EXCEPTION`, `E/flutter`, 미처리 예외 **0건**.
+- 검증용으로 만든 자동 알람과 즐겨찾기 501은 모두 원복했다.
+
+### 참고
+
+- 자동 알람 추가 흐름은 `SearchScreen`이 `BusStop`을 반환해야만
+  `AutoAlarmEditScreen`으로 넘어간다([alarm_screen.dart](../lib/screens/alarm_screen.dart)).
+  버스 번호로 검색하면 노선 상세로 빠져 알람 생성에 도달하지 못한다. 즐겨찾기
+  경로는 정상이다. 버그로 단정하긴 이르나 UX상 걸리는 지점으로 남겨 둔다.
+- API 31 장치라 Android 16 상태칩·One UI 8 Now Bar 재검증은 이번에도 범위 밖이다.
