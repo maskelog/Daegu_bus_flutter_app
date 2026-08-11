@@ -2978,3 +2978,49 @@ AGP 9.0 미만)을 모두 해결했다.
   버스 번호로 검색하면 노선 상세로 빠져 알람 생성에 도달하지 못한다. 즐겨찾기
   경로는 정상이다. 버그로 단정하긴 이르나 UX상 걸리는 지점으로 남겨 둔다.
 - API 31 장치라 Android 16 상태칩·One UI 8 Now Bar 재검증은 이번에도 범위 밖이다.
+
+## 2026-08-11 (2차): 자동 알람 off 후 재부팅 유령 알람 검증
+
+사용자가 자동 알람을 삭제가 아닌 **토글 off**로 끈 뒤, 재부팅 시 되살아나지 않는지
+확인했다. `BootReceiver`가 `auto_alarm_store`의 항목을 활성 여부 확인 없이 전부
+재등록하는 구조라 실증이 필요한 지점이었다.
+
+### 코드 경로
+
+    _toggleAutoAlarm (lib/screens/alarm_screen.dart:433)
+      → AlarmService.cancelScheduledAutoAlarm (lib/services/alarm_service.dart:444)
+          → nativeBridge.cancelNativeAutoAlarm  (현행 ID + 레거시 ID 2종까지 정리)
+      → 채널 "cancelNativeAutoAlarm" (BusApiChannelHandler.kt:53)
+          → alarmManager.cancel(pendingIntent) + pendingIntent.cancel()
+          → auto_alarm_store 에서 alarmId 제거   ← 재부팅 부활을 막는 지점
+
+레거시 ID 정리는 과거 Flutter의 `String.hashCode` 기반 ID와 과거 BootReceiver의
+`Math.abs(Java hash)` 기반 ID까지 함께 취소한다.
+
+### 실증
+
+- 토글 off 시점(11:15:50) `dumpsys alarm`에 `reason=alarm_cancelled` 기록.
+  직전 등록은 `PI:ff01606 OW=2026-08-12 11:10:00`(11:15 알람의 5분 전 사전 발동).
+- 재부팅 전 사전 조건 확인: User 0이 `stopped=false` 이므로 BOOT_COMPLETED가
+  전달되는 상태였다. (stopped 상태면 브로드캐스트가 오지 않아 테스트가 무의미해진다)
+- `adb reboot` 후 부팅 완료(12:16:20) + 90초 대기.
+- **BootReceiver가 실제로 실행된 것을 확인**했다. 릴리스 빌드는 `Log.d`가 제거돼
+  자체 로그가 남지 않으므로 ActivityManager 로그로 확인했다:
+
+      Start proc 12520:com.devground.daegubus/u0a1082 for broadcast
+        {com.devground.daegubus/com.devground.daegubus.receivers.BootReceiver}
+
+  사용자 상태도 `RUNNING_UNLOCKED`였다.
+- 그럼에도 `Pending alarm batches` 내 daegubus 항목 **0건**, 등록된
+  `AUTO_ALARM` **0건**. 유령 알람은 발생하지 않았다.
+- 앱을 다시 띄우니 알람(623 / 새동네아파트건너 / 11:15 / 평일 / 출근)이 목록에
+  그대로 남아 있고 토글은 off, 활성 시 표시되는 "다음: ..." 줄은 없었다.
+  설정은 보존하고 예약만 해제하는 의도된 동작이다.
+- `FATAL EXCEPTION` / `E/flutter` / 미처리 예외 0건.
+
+### 남은 리스크
+
+- `BootReceiver.rescheduleAllAlarms()`에는 `isActive` 가드가 없고 저장소 동기화에만
+  의존한다. 지금은 취소 경로가 store를 지우므로 맞게 동작하지만, 비활성화 경로가
+  하나라도 `cancelNativeAutoAlarm`을 우회하면 재부팅 후 꺼둔 알람이 되살아난다.
+  storeEntry에 `isActive`를 넣고 BootReceiver에서 거르는 가드를 추가할 것.
