@@ -229,7 +229,7 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   @override
   bool get wantKeepAlive => true;
   static const double _defaultMapLat = 35.8714;
@@ -237,6 +237,9 @@ class _MapScreenState extends State<MapScreen>
   static const Duration _nearbyCacheTtl = Duration(seconds: 90);
   static const Duration _stationInfoCacheTtl = Duration(seconds: 45);
   static const Duration _stationInfoRefreshGap = Duration(seconds: 8);
+  static const int _nearbyCacheLimit = 12;
+  static const int _stationInfoCacheLimit = 24;
+  static const int _stationIdCacheLimit = 100;
 
   late WebViewController _webViewController;
   Position? _currentPosition;
@@ -260,6 +263,7 @@ class _MapScreenState extends State<MapScreen>
   int _stationInfoRequestSequence = 0;
   bool _isLoading = true;
   bool _mapReady = false;
+  bool _isAppVisible = true;
   bool _gpsReady = false;
   bool _mapInitialized = false;
   bool _initializedWithFallbackPosition = false;
@@ -288,8 +292,54 @@ class _MapScreenState extends State<MapScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     debugPrint('[mapInit] MapScreen initState');
     _initializeMap();
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    _clearRuntimeCaches();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _isAppVisible = true;
+      if (widget.routeId != null && _mapReady && _busPositionTimer == null) {
+        _startBusPositionTracking();
+      }
+      return;
+    }
+
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _isAppVisible = false;
+      _busPositionTimer?.cancel();
+      _busPositionTimer = null;
+      _clearRuntimeCaches();
+    }
+  }
+
+  void _trimOldest<K, V>(Map<K, V> cache, int limit) {
+    while (cache.length > limit) {
+      cache.remove(cache.keys.first);
+    }
+  }
+
+  void _trimRuntimeCaches() {
+    _trimOldest(_nearbyCache, _nearbyCacheLimit);
+    _trimOldest(_stationInfoCache, _stationInfoCacheLimit);
+    _trimOldest(_stationInfoLastRequestedAt, _stationInfoCacheLimit);
+    _trimOldest(_stationIdCache, _stationIdCacheLimit);
+  }
+
+  void _clearRuntimeCaches() {
+    _nearbyCache.clear();
+    _stationInfoCache.clear();
+    _stationInfoLastRequestedAt.clear();
+    _stationIdCache.clear();
   }
 
   @override
@@ -348,7 +398,7 @@ class _MapScreenState extends State<MapScreen>
       unawaited(_refreshCurrentPosition(initTrace));
     } catch (e) {
       debugPrint('[$initTrace] 지도 화면 초기화 실패: $e');
-      if (mounted) {
+      if (mounted && _isAppVisible) {
         setState(() {
           _errorMessage = '지도 초기화 중 오류가 발생했습니다: $e';
           _isLoading = false;
@@ -818,7 +868,10 @@ class _MapScreenState extends State<MapScreen>
       debugPrint(
         '[$effectiveTraceId] findNearby native returned ${stations.length}개 (radius=$radiusMeters)',
       );
-      _nearbyCache[cacheKey] = _TimedCacheEntry(stations, DateTime.now());
+      if (mounted && _isAppVisible) {
+        _nearbyCache[cacheKey] = _TimedCacheEntry(stations, DateTime.now());
+        _trimRuntimeCaches();
+      }
       return stations;
     }).catchError((Object error, StackTrace stackTrace) {
       debugPrint('[$effectiveTraceId] findNearby native call failed: $error');
@@ -894,7 +947,11 @@ class _MapScreenState extends State<MapScreen>
     _stationInfoLastRequestedAt[stationId] = DateTime.now();
 
     final future = ApiService.getStationInfo(stationId).then((arrivals) {
-      _stationInfoCache[stationId] = _TimedCacheEntry(arrivals, DateTime.now());
+      if (mounted) {
+        _stationInfoCache[stationId] =
+            _TimedCacheEntry(arrivals, DateTime.now());
+        _trimRuntimeCaches();
+      }
       return arrivals;
     }).whenComplete(() {
       _stationInfoInFlight.remove(stationId);
@@ -1506,6 +1563,7 @@ class _MapScreenState extends State<MapScreen>
             stationId = resolvedStationId;
             selectedStation = chosen;
             _stationIdCache[stationName] = stationId;
+            _trimRuntimeCaches();
           }
         }
       }
@@ -1689,6 +1747,7 @@ class _MapScreenState extends State<MapScreen>
     if (widget.routeId == null) return;
 
     // 90초마다 버스 위치 업데이트 (부하 더욱 감소)
+    _busPositionTimer?.cancel();
     _busPositionTimer = Timer.periodic(const Duration(seconds: 90), (timer) {
       _updateBusPositions();
     });
@@ -1743,10 +1802,12 @@ class _MapScreenState extends State<MapScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _busPositionTimer?.cancel();
     _searchThrottleTimer?.cancel();
     _kakaoInitFallbackTimer?.cancel();
     _mapSearchDebouncer.dispose();
+    _clearRuntimeCaches();
     super.dispose();
   }
 }

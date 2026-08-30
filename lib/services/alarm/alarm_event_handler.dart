@@ -37,11 +37,11 @@ class AlarmEventHandler {
     try {
       switch (call.method) {
         case 'onAlarmCanceledFromNotification':
-          return _onAlarmCanceledFromNotification(call);
+          return await _onAlarmCanceledFromNotification(call);
         case 'onAllAlarmsCanceled':
-          return _onAllAlarmsCanceled();
+          return await _onAllAlarmsCanceled();
         case 'stopAutoAlarmFromBroadcast':
-          return _onStopAutoAlarmFromBroadcast(call);
+          return await _onStopAutoAlarmFromBroadcast(call);
         case 'onAutoAlarmStarted':
           final Map<String, dynamic> args =
               Map<String, dynamic>.from(call.arguments);

@@ -85,11 +85,6 @@ class _HomeScreenState extends State<HomeScreen>
     alarmService.initialize();
     alarmService.addListener(_onAlarmChanged);
     _initializeData();
-    unawaited(
-      MapScreen.preloadKakaoMapHtml().catchError((Object e, StackTrace st) {
-        debugPrint('Kakao 지도 HTML 사전 로드 실패: $e');
-      }),
-    );
     _checkMapPermission();
     _loadBannerAd();
   }
@@ -489,9 +484,8 @@ class _HomeScreenState extends State<HomeScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: HomeSearchBar(
-                hintText: _tabController.index == 1
-                    ? '버스 노선 번호 검색'
-                    : '버스 또는 정류장 검색',
+                hintText:
+                    _tabController.index == 1 ? '버스 노선 번호 검색' : '버스 또는 정류장 검색',
                 onSearchTap: () async {
                   HapticFeedback.lightImpact();
                   final isRouteTab = _tabController.index == 1;
@@ -558,8 +552,12 @@ class _HomeScreenState extends State<HomeScreen>
                     builder: (context, _) => IndexedStack(
                       index: _tabController.index,
                       children: [
-                        _buildMapScreen(),
-                        _buildMapTab(),
+                        _tabController.index == 0
+                            ? _buildMapScreen()
+                            : const SizedBox.shrink(),
+                        _tabController.index == 1
+                            ? _buildMapTab()
+                            : const SizedBox.shrink(),
                         _buildHomeTab(),
                         _buildAlarmTab(),
                       ],
@@ -1039,6 +1037,3 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 }
-
-
-

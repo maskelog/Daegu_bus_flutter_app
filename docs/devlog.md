@@ -3024,3 +3024,53 @@ AGP 9.0 미만)을 모두 해결했다.
   의존한다. 지금은 취소 경로가 store를 지우므로 맞게 동작하지만, 비활성화 경로가
   하나라도 `cancelNativeAutoAlarm`을 우회하면 재부팅 후 꺼둔 알람이 되살아난다.
   storeEntry에 `isActive`를 넣고 BootReceiver에서 거르는 가드를 추가할 것.
+
+## 2026-08-29: Google Play 2027 메모리·기기 이전 품질 대응
+
+Android Developers Blog의 새 요구사항(Anonymous RSS + Swap, Bitmap memory, DEX
+최적화, Zero-Tap Sign-In)을 현재 앱 구조와 대조했다. 앱에는 사용자 계정/로그인이 없어
+Restore Credentials API 대상은 아니며, 메모리와 백업 범위를 우선 정리했다.
+
+### 변경
+
+- 기본 홈 탭에서도 `IndexedStack`이 지도/노선도 child를 모두 생성해 Kakao WebView를
+  숨긴 채 유지하던 구조를 lazy 생성으로 바꿨다. 지도 탭을 선택할 때만 만들고 탭을
+  벗어나면 dispose한다. 시작 시 지도 HTML 사전 로드도 제거했다.
+- 지도 런타임 캐시에 상한을 추가했다: 주변 좌표 12, 정류장 도착 24, 정류장 ID 100.
+  앱 background/cached 전환과 메모리 압박 때 캐시와 노선 버스 위치 타이머를 정리한다.
+  완료 시점에 앱이 이미 background라면 비동기 API 결과를 캐시에 다시 넣지 않는다.
+- Android 12+ `data_extraction_rules.xml`과 Android 11 이하 `backup_rules.xml`을
+  매니페스트에 연결했다. 즐겨찾기·설정·자동 알람이 든 Flutter preferences는 유지하고,
+  번들에서 다시 만드는 DB와 `BusRouteCache.xml`만 cloud backup/device transfer에서
+  제외했다. cloud backup은 암호화 기능이 있는 기기에서만 허용한다.
+- `app_quality_memory_policy_test.dart`를 먼저 실패시킨 뒤 위 동작과 설정을 구현했다.
+  현재 정책은 `topics/app-quality-memory-migration.md`에 정리했다.
+
+### 검증
+
+- `flutter analyze` — 성공, 종료 코드 0 (`No issues found`, 91.9초).
+- `flutter test` — 성공, 종료 코드 0, 72건.
+- `android\\gradlew.bat :app:compileDebugKotlin --no-daemon` — 첫 실행은 비어 있던 로컬
+  Pub 캐시 `package_info_plus-9.0.1` 때문에 실패했다. 빈 디렉터리만 제거하고
+  `flutter pub get`으로 같은 버전을 복구한 뒤 재실행 성공, 종료 코드 0.
+- `flutter build apk --debug` — 성공, 종료 코드 0. 생성된 `app-debug.apk`는
+  160,170,239바이트다.
+- `android\\gradlew.bat :app:testDebugUnitTest --no-daemon` — 성공, 종료 코드 0.
+- `:app:testDebugUnitTest :app:lintDebug` 결합 게이트 — lint 때문에 종료 코드 1.
+  기존 알림 호출의 `MissingPermission` 3건과 로컬 `local.properties`의
+  `PropertyEscape` 2건이며 이번 변경 파일의 오류는 아니다. 미완료 항목은
+  `topics/follow-up-status.md`에 등록했다.
+
+실제 메모리 감소량과 Play의 최소 25% DEX coverage는 로컬 빌드로 단정하지 않는다.
+실기기 `dumpsys meminfo` 상태별 기준선과 Play Console Android vitals/AAB insight 확인이
+남아 있다.
+
+## 2026-08-30: Flutter 3.47 정적 분석 호환성 정리
+
+- Flutter 3.47.2에서 추가로 검출된 정적 분석 4건을 정리했다.
+- 즐겨찾기 목록 재정렬을 지원 중단된 `onReorder`에서 `onReorderItem`으로 이전하고,
+  새 콜백이 목적지 인덱스를 이미 보정하므로 기존 수동 감소 로직을 제거했다.
+- `AlarmEventHandler.handleMethodCall()`의 비동기 분기 3곳을 `await`해 `try/catch`가
+  Future 완료 시점의 예외도 처리하도록 했다.
+- Flutter 3.47.2 `flutter analyze --no-pub` — 성공, 이슈 0건.
+- Flutter 3.47.2 `flutter test --no-pub` — 성공, 72건 전체 통과.

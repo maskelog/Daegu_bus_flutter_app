@@ -19,6 +19,7 @@
 | [topics/route-branding.md](topics/route-branding.md) | 노선 배지 색상 — 직행/급행/순환/간선/지선/출근맞춤/군위/투어/DRT 팔레트 |
 | [topics/release-versioning.md](topics/release-versioning.md) | 릴리스 버전 관리 — versionName/versionCode 증가 규칙과 현행 버전 |
 | [topics/build-quality.md](topics/build-quality.md) | 빌드 품질·CI·의존성 — 현행 검증 게이트, 재현 가능한 체크아웃, 정책 민감 권한 |
+| [topics/app-quality-memory-migration.md](topics/app-quality-memory-migration.md) | Google Play 2027 앱 품질 기준 — 메모리, DEX 최적화, 안전한 기기 이전의 현행 대응 |
 
 ## 시간순 로그
 

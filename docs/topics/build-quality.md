@@ -1,17 +1,21 @@
 # 빌드 품질·CI·의존성
 
-> 마지막 갱신: 2026-08-04
+> 마지막 갱신: 2026-08-30
 
 ## 검증 게이트
 
 - Dart 정적 분석: `flutter analyze`
-- Flutter 테스트: `flutter test` — 현재 기준선 69건
+- Flutter 테스트: `flutter test` — 현재 기준선 72건
 - Android JVM 테스트·lint: `android/`에서
   `.\gradlew.bat :app:testDebugUnitTest :app:lintDebug`
 - Kotlin만 바뀐 빠른 확인: `.\gradlew.bat :app:compileDebugKotlin`
 - 최종 디버그 산출물: `flutter build apk --debug`
 - `.github/workflows/ci.yml`은 main push와 pull request에서 위 검증을 자동 실행한다.
-  CI 기준은 Flutter 3.35.6, Java 17, Gradle wrapper 8.11.1이다.
+  CI 기준은 Flutter 3.35.6과 Java 17이다. 현재 Android 빌드는 AGP 9.0.1,
+  Gradle wrapper 9.1.0을 사용한다.
+- Flutter 3.47 계열에서도 정적 분석이 깨끗하게 통과한다. 즐겨찾기 재정렬은
+  `SliverReorderableList.onReorderItem`을 사용하고, 알람 MethodChannel의 비동기
+  분기는 `try/catch` 안에서 `await`해 비동기 예외까지 같은 오류 경로로 처리한다.
 
 ## 재현 가능한 체크아웃
 
@@ -28,8 +32,8 @@
 
 - 2026-08-03에 lockfile 내 호환 업데이트 54개와 직접 의존성 메이저 업데이트를
   적용했다. `flutter_dotenv` 6의 `testLoad` 제거는 `loadFromString`으로 이전했다.
-- `permission_handler`는 12.x로 제한한다. 13.x는 compileSdk 37, AGP 9.0.1,
-  Kotlin 2.3.20을 요구하므로 현재 SDK 36/AGP 8.9.1 기준과 맞지 않는다.
+- `permission_handler`는 12.x로 제한한다. 13.x는 compileSdk 37과 Kotlin 2.3.20을
+  요구하므로 현재 SDK 36/Kotlin 2.2.10 기준과 맞지 않는다.
 - 향후 메이저 업데이트는 하나씩 적용하고 `flutter analyze`, `flutter test`, Android
   JVM 테스트·lint, APK 빌드를 모두 통과시킨 뒤 유지한다.
 
@@ -51,3 +55,10 @@
 - Android SDK XML 3/4 불일치 경고가 계속 재현된다. Android Studio와 command-line
   tools 버전 차이에서 나오며 현재 빌드는 성공한다. 해소 기준은
   [follow-up-status.md](follow-up-status.md)에 유지한다.
+
+## Play 앱 품질 최적화
+
+- 릴리스 빌드는 R8 full mode, 코드 축소·난독화, 최적화된 리소스 축소를 활성화한다.
+  `localFastRelease=true`는 로컬 반복 빌드 전용이며 Play 업로드 산출물에 사용하지 않는다.
+- 메모리와 안전한 기기 이전의 현행 정책은
+  [app-quality-memory-migration.md](app-quality-memory-migration.md)에 유지한다.

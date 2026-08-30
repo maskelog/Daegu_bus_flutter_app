@@ -56,6 +56,27 @@
 - 완료 기준: 두 도구의 SDK 구성 버전을 정렬하고 다음 `build_release.ps1` 실행에서
   같은 경고가 재발하지 않는지 확인한다.
 
+## 우선순위 중간: Play 메모리 품질 지표 기준선 수집
+
+- 현재 상태: 홈 시작 시 숨은 WebView 생성을 제거하고 지도 런타임 캐시 상한과
+  background/메모리 압박 정리를 적용했다. 소스 회귀 테스트와 로컬 빌드 게이트는
+  메모리 실측을 대신하지 않는다.
+- 완료 기준: 같은 릴리스 후보로 저RAM/중RAM 기기에서 홈, 지도 foreground, 지도에서
+  홈으로 복귀, 앱 background/cached 상태의 `dumpsys meminfo` 기준선을 기록한다.
+  Play Console Android vitals에서 Anonymous RSS + Swap, Bitmap memory, OOM 필터와
+  새 AAB의 DEX optimization coverage가 기준을 만족하는지 확인한다.
+
+## 우선순위 높음: Android lint 게이트 복구
+
+- 현재 상태: 2026-08-29 `:app:lintDebug`는 기존 `MissingPermission` 3건
+  (`NotificationHandler.kt` 2건, `StationTrackingService.kt` 1건)과 개발자 로컬
+  `android/local.properties`의 `PropertyEscape` 2건으로 실패한다. 같은 실행의
+  `:app:testDebugUnitTest`는 성공했고, 앱 품질 최적화 변경 파일에서 새 lint 오류는
+  나오지 않았다.
+- 완료 기준: 알림 권한 거부/SecurityException 경로를 동작 테스트로 고정해 3개 호출을
+  안전하게 처리하고, 로컬 SDK 경로 표기를 Gradle properties 문법에 맞춘 뒤
+  `:app:testDebugUnitTest :app:lintDebug`가 종료 코드 0으로 완료돼야 한다.
+
 ## 관리 원칙
 
 - 과거 devlog의 `아직 검증하지 않음` 표기는 그 뒤의 전체 검증이 해당 변경을 포함했는지

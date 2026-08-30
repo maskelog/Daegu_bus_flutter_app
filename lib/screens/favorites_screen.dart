@@ -124,7 +124,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   /// 드래그로 순서 변경 후 저장
   void _reorderFavorites(int oldIndex, int newIndex) {
     setState(() {
-      if (newIndex > oldIndex) newIndex--;
       final item = _favoriteBuses.removeAt(oldIndex);
       _favoriteBuses.insert(newIndex, item);
     });
@@ -546,7 +545,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               )
             else
               SliverReorderableList(
-                onReorder: _reorderFavorites,
+                onReorderItem: _reorderFavorites,
                 itemCount: _favoriteBuses.length,
                 itemBuilder: (context, index) {
                   final favorite = _favoriteBuses[index];

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Android 11 이하에서도 재생성 가능한 데이터만 백업에서 제외한다. -->
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="BusRouteCache.xml" />
+</full-backup-content>
