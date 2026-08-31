@@ -23,6 +23,10 @@ linter:
   rules:
     # avoid_print: false  # Uncomment to disable the `avoid_print` rule
     # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
+    # Flutter 3.47 신규 lint. 기존 표현을 대규모로 기계 변경하지 않기 위해 비활성화.
+    prefer_initializing_formals: false
+    use_null_aware_elements: false
+    unnecessary_underscores: false
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

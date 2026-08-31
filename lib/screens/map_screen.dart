@@ -14,6 +14,7 @@ import '../models/bus_arrival.dart';
 import '../models/bus_info.dart';
 import 'map_widgets.dart';
 import '../utils/debouncer.dart';
+import '../widgets/home_search_bar.dart';
 
 const String _kakaoJsApiKeyFromDefine = String.fromEnvironment(
   'KAKAO_JS_API_KEY',
@@ -528,6 +529,24 @@ class _MapScreenState extends State<MapScreen>
               bottomInset: widget.bottomInset,
             ),
           if (_actionStation != null) _buildStationActionCard(context),
+          // push로 열린 경우(탭 임베드가 아님)에만 자체 뒤로가기 버튼 표시
+          if (widget.onShowStationOnHome == null)
+            Positioned(
+              top: 0,
+              left: 16,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: HeaderCircleButton(
+                    icon: Icons.arrow_back_rounded,
+                    semanticLabel: '뒤로가기',
+                    semanticHint: '이전 화면으로 이동',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

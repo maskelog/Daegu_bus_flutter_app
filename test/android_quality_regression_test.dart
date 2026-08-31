@@ -308,6 +308,21 @@ void main() {
     );
   });
 
+  test('배터리 최적화 제외 상태는 초기 홈 진입을 막지 않는다', () {
+    final startupSource = File(
+      'lib/screens/startup_screen.dart',
+    ).readAsStringSync();
+
+    expect(
+      startupSource,
+      isNot(contains('granted && batteryOptimizationEnabled')),
+    );
+    expect(
+      _occurrences(startupSource, 'if (granted && mounted)'),
+      greaterThanOrEqualTo(2),
+    );
+  });
+
   test('데이터베이스 파일을 다른 앱에 쓰기 가능하게 만들지 않는다', () {
     final source = _readAndroidSource(
       'kotlin/com/devground/daegubus/utils/DatabaseHelper.kt',

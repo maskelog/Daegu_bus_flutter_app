@@ -1,19 +1,19 @@
 # 빌드 품질·CI·의존성
 
-> 마지막 갱신: 2026-08-30
+> 마지막 갱신: 2026-08-31
 
 ## 검증 게이트
 
 - Dart 정적 분석: `flutter analyze`
-- Flutter 테스트: `flutter test` — 현재 기준선 72건
+- Flutter 테스트: `flutter test` — 현재 기준선 73건
 - Android JVM 테스트·lint: `android/`에서
   `.\gradlew.bat :app:testDebugUnitTest :app:lintDebug`
 - Kotlin만 바뀐 빠른 확인: `.\gradlew.bat :app:compileDebugKotlin`
 - 최종 디버그 산출물: `flutter build apk --debug`
 - `.github/workflows/ci.yml`은 main push와 pull request에서 위 검증을 자동 실행한다.
-  CI 기준은 Flutter 3.35.6과 Java 17이다. 현재 Android 빌드는 AGP 9.0.1,
-  Gradle wrapper 9.1.0을 사용한다.
-- Flutter 3.47 계열에서도 정적 분석이 깨끗하게 통과한다. 즐겨찾기 재정렬은
+  CI 기준은 Flutter 3.47.2(Dart 3.13.2)와 Java 17이다. 현재 Android 빌드는
+  AGP 9.0.1, Gradle wrapper 9.1.0, KGP 2.2.20을 사용한다.
+- Flutter 3.47.2에서 정적 분석이 깨끗하게 통과한다. 즐겨찾기 재정렬은
   `SliverReorderableList.onReorderItem`을 사용하고, 알람 MethodChannel의 비동기
   분기는 `try/catch` 안에서 `await`해 비동기 예외까지 같은 오류 경로로 처리한다.
 
@@ -32,8 +32,11 @@
 
 - 2026-08-03에 lockfile 내 호환 업데이트 54개와 직접 의존성 메이저 업데이트를
   적용했다. `flutter_dotenv` 6의 `testLoad` 제거는 `loadFromString`으로 이전했다.
-- `permission_handler`는 12.x로 제한한다. 13.x는 compileSdk 37과 Kotlin 2.3.20을
-  요구하므로 현재 SDK 36/Kotlin 2.2.10 기준과 맞지 않는다.
+- `permission_handler`는 12.x로 제한한다. 13.x는 compileSdk 37을 요구하므로 현재
+  SDK 36 기준과 맞지 않는다.
+- Android Command-line Tools의 `apkanalyzer`는 Flutter 3.47.2 AAB 완료 검증에
+  필요하다. 도구가 없으면 Gradle이 번들을 만들었더라도 native debug symbol 분리
+  확인 단계에서 Flutter가 종료 코드 1을 반환한다.
 - 향후 메이저 업데이트는 하나씩 적용하고 `flutter analyze`, `flutter test`, Android
   JVM 테스트·lint, APK 빌드를 모두 통과시킨 뒤 유지한다.
 
@@ -43,6 +46,8 @@
   폴백한다. `USE_EXACT_ALARM`은 선언하지 않는다.
 - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`와 `SYSTEM_ALERT_WINDOW`는 선언하지 않는다.
   배터리 최적화 안내는 직접 예외 요청 대신 시스템 설정 목록을 연다.
+  제조사별 "배터리 사용량 제한 없음"과 Android Doze 예외 상태는 일치하지 않을 수
+  있으므로, 배터리 최적화 제외 여부는 초기 홈 진입을 막는 필수 권한으로 취급하지 않는다.
 - 알림은 계속 `NotificationCompat.Builder`로 생성한다. 상태 표시줄 small icon은
   단색 벡터 `notification_icon`을 사용하고, RemoteViews 내부 그림과 분리한다.
   `android_quality_regression_test.dart`는 Live Update 경로에 네이티브 빌더,

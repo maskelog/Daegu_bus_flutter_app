@@ -34,6 +34,14 @@ bad behavior threshold를 적용한다. 로그인 기능이 있는 앱의 Restor
 - 로컬 설정만으로 Play의 최소 25% optimization/shrinking/obfuscation coverage 충족을
   확정하지 않는다. 업로드한 AAB의 Play Console DEX optimization insight가 최종 증거다.
 
+## 실기기 메모리 기준선
+
+- 2026-08-31 Galaxy Note10+의 디버그 빌드에서 지도 foreground `TOTAL PSS`는
+  641,847KB, 홈 전환 후 background 상태는 499,531KB였다. 지도 WebView가 생성된 뒤
+  홈으로 돌아오면 화면이 dispose되고 메모리가 감소하는 방향은 확인했다.
+- 디버그 런타임 수치는 릴리스 빌드나 저RAM 기기의 Play 품질 지표를 대신하지 않는다.
+  동일 릴리스 후보의 상태별 반복 측정과 Android vitals 확인은 계속 필요하다.
+
 ## 안전한 기기 이전
 
 - Android 12 이상은 `data_extraction_rules.xml`, Android 11 이하는

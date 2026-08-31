@@ -1,6 +1,6 @@
 # Flutter ↔ 네이티브 메서드 채널
 
-## 현행 구조 (2026-08-04 갱신)
+## 현행 구조 (2026-08-31 갱신)
 
 채널 생성·와이어링은 `MainActivity.configureFlutterEngine()`에서 하고,
 핸들러 구현은 `android/.../daegubus/channels/` 패키지에 분리되어 있다.
@@ -9,7 +9,7 @@
 |---|---|---|
 | `bus_api` | `BusApiChannelHandler` (36개 라우팅) | 책임별 operation으로 호출을 전달하는 66줄 진입점. Flutter로의 역호출(`invokeMethod`)도 이 채널로 나감 |
 | `tts` | `TtsChannelHandler` | TTS 발화·볼륨·오디오 출력 모드·알람 소리 설정 |
-| `permission` | `PermissionChannelHandler` | 정확한 알람·배터리 최적화 상태·promoted 알림 권한 조회/설정 이동. 배터리 최적화는 직접 예외 요청 대신 시스템 설정 목록을 연다 |
+| `permission` | `PermissionChannelHandler` | 정확한 알람·배터리 최적화 상태·promoted 알림 권한 조회/설정 이동. 배터리 최적화는 직접 예외 요청 대신 시스템 설정 목록을 열되 홈 진입을 막지 않는다 |
 | `station_tracking` | `StationTrackingChannelHandler` | `getBusInfo`(정류장 도착 정보 동기 조회), 추적 중지 |
 | `bus_tracking` | `BusTrackingChannelHandler` | 추적 알림 업데이트·추적/자동알람 중지·정류장 추적 시작 |
 

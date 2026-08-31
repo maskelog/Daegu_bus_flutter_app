@@ -140,7 +140,7 @@ class _StartupScreenState extends State<StartupScreen>
           await PermissionService.isIgnoringBatteryOptimizations();
       _promotedNotificationsEnabled = promotedEnabled;
       _batteryOptimizationEnabled = batteryOptimizationEnabled;
-      if (granted && batteryOptimizationEnabled && mounted) {
+      if (granted && mounted) {
         // 권한이 허용되었음을 저장
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_permissionsGrantedKey, true);
@@ -150,9 +150,7 @@ class _StartupScreenState extends State<StartupScreen>
         _goHome();
       } else if (mounted) {
         setState(() {
-          _errorMessage = batteryOptimizationEnabled
-              ? '일부 권한이 허용되지 않아 기능이 제한될 수 있습니다.'
-              : '배터리 사용량 제한 없음을 설정하면 자동알람이 더 안정적으로 동작합니다.';
+          _errorMessage = '일부 권한이 허용되지 않아 기능이 제한될 수 있습니다.';
         });
       }
     } catch (e) {
@@ -178,13 +176,11 @@ class _StartupScreenState extends State<StartupScreen>
 
     setState(() {
       _batteryOptimizationEnabled = batteryOptimizationEnabled;
-      if (batteryOptimizationEnabled) {
-        _waitingForBatteryOptimization = false;
-        _errorMessage = null;
-      }
+      _waitingForBatteryOptimization = false;
+      _errorMessage = null;
     });
 
-    if (granted && batteryOptimizationEnabled) {
+    if (granted && mounted) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_permissionsGrantedKey, true);
       if (mounted) {

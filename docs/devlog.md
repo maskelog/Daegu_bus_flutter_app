@@ -3074,3 +3074,80 @@ Restore Credentials API 대상은 아니며, 메모리와 백업 범위를 우�
   Future 완료 시점의 예외도 처리하도록 했다.
 - Flutter 3.47.2 `flutter analyze --no-pub` — 성공, 이슈 0건.
 - Flutter 3.47.2 `flutter test --no-pub` — 성공, 72건 전체 통과.
+
+## 2026-08-31: 배터리 최적화 안내 홈 진입 차단 수정 및 실기기 검증
+
+Galaxy Note10+에 디버그 APK를 무선 ADB로 설치해 초기 권한 흐름을 확인했다. Samsung의
+"배터리 사용량 제한 없음"을 설정해도 `PowerManager.isIgnoringBatteryOptimizations()`와
+`dumpsys deviceidle whitelist`에는 앱이 Doze 예외로 나오지 않아 권한 화면이 반복됐다.
+제조사별 백그라운드 제한 설정과 Android Doze 예외를 같은 상태로 취급한 것이 원인이었다.
+
+### 변경
+
+- 위치·알림 핵심 권한이 허용되면 배터리 최적화 제외 여부와 무관하게 홈으로 이동한다.
+- 배터리 최적화 설정 이동과 상태 표시는 권장 안내로 유지하되 필수 진입 조건에서 제외했다.
+- `android_quality_regression_test.dart`에 Doze 예외 상태가 홈 진입을 막지 않는 소스
+  회귀 테스트를 추가했다. 수정 전 실패하고 수정 후 통과하는 것을 확인했다.
+
+### 실기기 검증
+
+- 버전 `1.0.4+68` 데이터 보존 업데이트 설치 및 콜드 스타트 성공.
+- Doze 예외 목록에 앱이 없는 상태에서 권한 화면을 통과해 홈 도착 정보가 표시됐다.
+- 지도는 `.env.json`을 `--dart-define-from-file`로 주입한 빌드에서 주변 정류장 검색과
+  현재 위치 버튼까지 정상 표시됐고, 노선도 전환과 홈·백그라운드 복귀도 성공했다.
+- logcat의 `FATAL EXCEPTION`, `E/flutter`, ANR은 0건이었다.
+- 디버그 `TOTAL PSS`는 지도 foreground 641,847KB에서 홈 전환·background 후
+  499,531KB로 감소했다. 릴리스 메모리 기준선으로는 사용하지 않는다.
+- `flutter analyze --no-pub` — 성공, 이슈 0건.
+- `flutter test --no-pub` — 성공, 73건 전체 통과.
+
+## 2026-08-31: Flutter 3.47.2 전환 및 1.0.4+69 AAB 생성
+
+- 프로젝트 기준을 Flutter 3.47.2/Dart 3.13.2로 올리고 CI도 같은 버전으로 맞췄다.
+- Dart SDK 하한을 3.13으로 올리고 SDK 번들 패키지 6종의 lockfile을 갱신했다.
+- KGP를 2.2.20으로 올리고, 새 Flutter와 충돌하던 과거
+  `android_alarm_manager_plus` 선택적 built-in Kotlin 적용 블록을 제거했다.
+- `build_release.ps1`은 PATH에 Flutter가 없으면 `android/local.properties`의
+  `flutter.sdk`를 사용한다.
+- Flutter 3.47의 새 스타일 lint 3종은 기존 표현을 대규모로 기계 변경하지 않도록
+  프로젝트에서 비활성화했다. 오류·경고 진단은 그대로 유지한다.
+
+### AAB 검증
+
+- `flutter analyze --no-pub` — 성공, 이슈 0건.
+- `flutter test --no-pub` — 성공, 73건 전체 통과.
+- 첫 `build_release.ps1`은 Android Command-line Tools가 없어 Flutter의 native debug
+  symbol 확인 단계에서 실패했다. 공식 Windows 도구 패키지를 SHA-256 검증 후 설치했다.
+- 재실행 성공: `1.0.4+69`, targetSdk 36, 서명·난독화 AAB 59,115,190바이트.
+- 번들에 arm64-v8a/armeabi-v7a/x86_64의 `libapp.so.sym`·`libflutter.so.sym` 6개와
+  ProGuard mapping이 포함됐고 JAR 서명 무결성 검사는 종료 코드 0이었다.
+- Play Console 업로드는 아직 수행하지 않았다. Console의 업로드 키 대조와 정책 검사는
+  실제 업로드가 최종 확인 단계다.
+
+## 2026-08-31: 노선 지도 화면 뒤로가기 버튼 누락 수정
+
+Galaxy Note10+에 `1.0.4+69` 릴리스 서명 APK를 무선 ADB로 설치해 홈·지도·노선도·알람
+전 화면을 직접 조작하며 점검했다. 노선 상세(`RouteMapScreen`)에서 지도 아이콘을 눌러
+진입하는 `MapScreen`(routeId 지정) 화면에 자체 뒤로가기 버튼이 없어 시스템 back
+제스처로만 복귀 가능한 것을 발견했다. 홈 탭에 임베드된 지도(`onShowStationOnHome`
+콜백 전달)는 탭 전환이라 문제가 없었고, `Navigator.push`로 여는 이 경로에서만
+누락됐다.
+
+### 변경
+
+- `lib/screens/map_screen.dart`: `onShowStationOnHome`이 없을 때(탭 임베드가 아닌
+  push 진입일 때)만 좌측 상단에 `HeaderCircleButton` 뒤로가기 버튼을 표시한다.
+  `RouteMapScreen`이 이미 쓰는 것과 동일한 컴포넌트라 디자인이 일관된다.
+
+### 실기기 검증
+
+- 점검 중 501번 버스 벨 아이콘을 눌러 실제 실시간 추적 알림(`bus_tracking_ongoing`)이
+  약 35분간 떠 있었다 — 테스트 잔여물이며 버스 통과 후 자체 종료됨을
+  `dumpsys notification`/`dumpsys activity services`로 확인했다. 자동알람
+  자체(동구3, 19:35 평일)는 영향받지 않았다.
+- 크래시·ANR 없음 (앱 PID 유지, `died`/`FATAL EXCEPTION` 로그 0건).
+- `flutter analyze lib/screens/map_screen.dart` — 이슈 0건.
+- 릴리스 APK 재빌드 후 재설치, 노선도 → 623 검색 → 노선 상세 → 지도 아이콘 →
+  좌측 상단 뒤로가기 버튼 표시 확인, 탭 시 노선 상세로 정상 복귀 확인.
+- 이 수정을 포함해 `1.0.4+69` AAB(56.4MB)를 재생성했다. Play Console 업로드는
+  아직 수행하지 않았다.
